@@ -51,7 +51,13 @@ const HOLE_SUPPORT_POINT_TOLERANCE: f64 = 1.0e-8;
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()) else { return false; };
+    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    ) else {
+        return false;
+    };
     let decode_ctx = &decode_ctx;
 
     graph_is_coherent_inner(decode_ctx, history).unwrap_or(false)
@@ -75,7 +81,6 @@ fn graph_is_coherent_inner(
     for state in &history.states {
         if !by_index.contains_key(&state.node_index) {
             {
-
                 decode.reserve_map(&mut by_index, 1, "index F3D ASM history states")?;
             }
         }
@@ -121,7 +126,6 @@ fn graph_is_coherent_inner(
             return Ok(false);
         }
         {
-
             decode.reserve_set(&mut visited, 1, "visit F3D ASM history state")?;
         }
         visited.insert(index);
@@ -299,7 +303,6 @@ fn bind_snapshot_revision_ids(
         .flat_map(|board| &board.changes)
         .filter_map(super::history_records::AsmEntityChange::old_ref)
     {
-
         ctx.reserve_vec(&mut old_references, 1, "collect F3D ASM old references")?;
         old_references.push(old_reference);
     }
@@ -351,7 +354,6 @@ fn archived_active_record_count(
         .flat_map(|state| &state.records)
         .filter_map(|record| record.revision_id)
     {
-
         ctx.reserve_vec(&mut archived, 1, "collect F3D archived revisions")?;
         archived.push(revision_id);
     }
@@ -423,7 +425,6 @@ fn bind_historical_entity_versions(
         .flat_map(|state| &state.records)
         .filter_map(|record| record.revision_id)
     {
-
         ctx.reserve_vec(&mut archived_ids, 1, "index F3D archived revision IDs")?;
         archived_ids.push(revision_id);
     }
@@ -439,7 +440,6 @@ fn bind_historical_entity_versions(
     let mut by_node = HashMap::new();
     for (ordinal, state) in states.iter().enumerate() {
         if !by_node.contains_key(&state.node_index) {
-
             ctx.reserve_map(&mut by_node, 1, "index F3D history node ordinals")?;
         }
         by_node.insert(state.node_index, ordinal);
@@ -479,7 +479,11 @@ fn bind_historical_entity_versions(
         let version_count = versions.len();
 
         let mut state_versions = Vec::new();
-        ctx.reserve_vec(&mut state_versions, version_count, "materialize F3D state versions")?;
+        ctx.reserve_vec(
+            &mut state_versions,
+            version_count,
+            "materialize F3D state versions",
+        )?;
         for (&entity_ref, &record_ref) in &versions {
             state_versions.push(AsmEntityVersion {
                 entity_ref,
@@ -510,7 +514,12 @@ fn bind_historical_entity_versions(
                     if versions.contains_key(&old) || archived_ids.binary_search(&old).is_err() {
                         return Ok(());
                     }
-                    ctx.insert_btree_map(&mut versions, old, old, "restore F3D historical version")?;
+                    ctx.insert_btree_map(
+                        &mut versions,
+                        old,
+                        old,
+                        "restore F3D historical version",
+                    )?;
                 }
             }
         }
@@ -798,7 +807,11 @@ fn historical_record_archive(
     };
 
     let mut revision_entities = HashMap::new();
-    ctx.reserve_map(&mut revision_entities, active_records.len(), "index F3D active record revisions")?;
+    ctx.reserve_map(
+        &mut revision_entities,
+        active_records.len(),
+        "index F3D active record revisions",
+    )?;
     for entity_ref in 0..active_count {
         revision_entities.insert(entity_ref, entity_ref);
     }
@@ -812,14 +825,22 @@ fn historical_record_archive(
         };
         let entity_ref = change.new_ref().unwrap_or(old_ref);
 
-        ctx.reserve_map(&mut revision_entities, 1, "index F3D archived record revisions")?;
+        ctx.reserve_map(
+            &mut revision_entities,
+            1,
+            "index F3D archived record revisions",
+        )?;
         if revision_entities.insert(old_ref, entity_ref).is_some() {
             return Ok(None);
         }
     }
 
     let mut records = HashMap::new();
-    ctx.reserve_map(&mut records, active_records.len(), "retain F3D active record archive")?;
+    ctx.reserve_map(
+        &mut records,
+        active_records.len(),
+        "retain F3D active record archive",
+    )?;
     for (revision, record) in active_records.iter().enumerate() {
         let Some(revision) = i64::try_from(revision).ok() else {
             return Ok(None);
@@ -827,7 +848,6 @@ fn historical_record_archive(
         records.insert(revision, clone_historical_record(ctx, record)?);
     }
     for (revision_id, framed) in archived_frames {
-
         ctx.reserve_map(&mut records, 1, "retain F3D archived record archive")?;
         if records.insert(revision_id, framed).is_some() {
             return Ok(None);
@@ -857,7 +877,8 @@ fn historical_record_archive(
                 ctx.refuse_codec_limit("copy F3D archived record tokens", 0, u64::MAX)
             })?;
             let _temporary = ctx.reserve_scoped(token_bytes, "copy F3D archived record tokens")?;
-            let mut tokens = ctx.retained_vec(record.tokens.len(), "copy F3D archived record tokens")?;
+            let mut tokens =
+                ctx.retained_vec(record.tokens.len(), "copy F3D archived record tokens")?;
             for token in record.tokens.iter() {
                 tokens.push(clone_historical_token(ctx, token)?);
             }
@@ -898,9 +919,15 @@ fn clone_historical_token(
 ) -> Result<cadmpeg_asm::sab::Token, cadmpeg_core::CodecError> {
     use cadmpeg_asm::sab::Token;
     Ok(match token {
-        Token::Str(value) => Token::Str(ctx.copy_retained_text(value, "copy F3D historical record text")?),
-        Token::Ident(value) => Token::Ident(ctx.copy_retained_text(value, "copy F3D historical record text")?),
-        Token::SubIdent(value) => Token::SubIdent(ctx.copy_retained_text(value, "copy F3D historical record text")?),
+        Token::Str(value) => {
+            Token::Str(ctx.copy_retained_text(value, "copy F3D historical record text")?)
+        }
+        Token::Ident(value) => {
+            Token::Ident(ctx.copy_retained_text(value, "copy F3D historical record text")?)
+        }
+        Token::SubIdent(value) => {
+            Token::SubIdent(ctx.copy_retained_text(value, "copy F3D historical record text")?)
+        }
         _ => token.clone(),
     })
 }
@@ -909,7 +936,6 @@ fn bind_historical_transitions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     states: &mut [AsmDeltaState],
 ) -> Result<(), cadmpeg_core::CodecError> {
-
     let mut by_node = HashMap::new();
     ctx.reserve_map(&mut by_node, states.len(), "index F3D transition nodes")?;
     for (ordinal, state) in states.iter().enumerate() {
@@ -920,7 +946,11 @@ fn bind_historical_transitions(
     }
 
     let mut transitions = Vec::new();
-    ctx.reserve_vec(&mut transitions, states.len(), "collect F3D historical transitions")?;
+    ctx.reserve_vec(
+        &mut transitions,
+        states.len(),
+        "collect F3D historical transitions",
+    )?;
     for state in states.iter() {
         let previous = match state.next_ref {
             Some(node) => {
@@ -1043,8 +1073,14 @@ fn historical_transition(
     };
     let empty = AsmHistoricalTopology::default();
     let previous_topology = previous_topology.unwrap_or(&empty);
-    let current_record_keys = ctx.collect_vec(current_versions.keys().copied(), "collect F3D transition version keys")?;
-    let previous_record_keys = ctx.collect_vec(previous_versions.keys().copied(), "collect F3D transition version keys")?;
+    let current_record_keys = ctx.collect_vec(
+        current_versions.keys().copied(),
+        "collect F3D transition version keys",
+    )?;
+    let previous_record_keys = ctx.collect_vec(
+        previous_versions.keys().copied(),
+        "collect F3D transition version keys",
+    )?;
     Ok(Some(AsmHistoricalTransition {
         previous_state_id: previous.map(|state| state.state_id),
         records: entity_delta(
@@ -1075,10 +1111,14 @@ fn historical_version_map(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     versions: &[AsmEntityVersion],
 ) -> Result<BTreeMap<i64, i64>, cadmpeg_core::CodecError> {
-
     let mut indexed = BTreeMap::new();
     for version in versions {
-        ctx.insert_btree_map(&mut indexed, version.entity_ref, version.record_ref, "index F3D transition versions")?;
+        ctx.insert_btree_map(
+            &mut indexed,
+            version.entity_ref,
+            version.record_ref,
+            "index F3D transition versions",
+        )?;
     }
     Ok(indexed)
 }
@@ -1096,19 +1136,34 @@ fn entity_delta(
     let previous_count = u64::try_from(previous.len()).map_err(|_| {
         ctx.refuse_codec_limit("index F3D previous transition entities", 0, u64::MAX)
     })?;
-    let current = ctx.collect_btree_set(current.iter().copied(), "index F3D current transition entities")?;
-    let previous = ctx.collect_btree_set(previous.iter().copied(), "index F3D previous transition entities")?;
+    let current = ctx.collect_btree_set(
+        current.iter().copied(),
+        "index F3D current transition entities",
+    )?;
+    let previous = ctx.collect_btree_set(
+        previous.iter().copied(),
+        "index F3D previous transition entities",
+    )?;
     let work = current_count
         .checked_add(previous_count)
         .ok_or_else(|| ctx.refuse_codec_limit("compare F3D transition entities", 0, u64::MAX))?;
     ctx.charge_work(work, "compare F3D transition entities")?;
     Ok(AsmHistoricalEntityDelta {
-        inserted: ctx.collect_vec(current.difference(&previous).copied(), "collect F3D transition delta")?,
-        deleted: ctx.collect_vec(previous.difference(&current).copied(), "collect F3D transition delta")?,
-        updated: ctx.collect_vec(current
+        inserted: ctx.collect_vec(
+            current.difference(&previous).copied(),
+            "collect F3D transition delta",
+        )?,
+        deleted: ctx.collect_vec(
+            previous.difference(&current).copied(),
+            "collect F3D transition delta",
+        )?,
+        updated: ctx.collect_vec(
+            current
                 .intersection(&previous)
                 .copied()
-                .filter(|entity| current_versions.get(entity) != previous_versions.get(entity)), "collect F3D transition delta")?,
+                .filter(|entity| current_versions.get(entity) != previous_versions.get(entity)),
+            "collect F3D transition delta",
+        )?,
     })
 }
 
@@ -1124,7 +1179,6 @@ pub(crate) fn bind_feature_outputs(
         let mut by_node = HashMap::new();
         for state in &history.states {
             if !by_node.contains_key(&state.node_index) {
-
                 ctx.reserve_map(&mut by_node, 1, "index F3D feature output history nodes")?;
             }
             by_node.insert(state.node_index, state);
@@ -1144,7 +1198,6 @@ pub(crate) fn bind_feature_outputs(
                 continue;
             };
             if !state_outputs.contains_key(&state.state_id) {
-
                 ctx.reserve_map(&mut state_outputs, 1, "index F3D feature output states")?;
             }
             state_outputs
@@ -1158,9 +1211,10 @@ pub(crate) fn bind_feature_outputs(
         let Some(slot) = stable_ref(body.id.as_str()) else {
             continue;
         };
-        let id = body.id.try_clone_for_decode(ctx, "copy F3D active body identity")?;
+        let id = body
+            .id
+            .try_clone_for_decode(ctx, "copy F3D active body identity")?;
         if !active.contains_key(&slot) {
-
             ctx.reserve_map(&mut active, 1, "index F3D active feature output bodies")?;
         }
         active.insert(slot, id);
@@ -1262,7 +1316,6 @@ pub(crate) fn bind_sweep_result_modes(
     let mut body_kinds = HashMap::new();
     for body in bodies {
         if !body_kinds.contains_key(&body.id) {
-
             ctx.reserve_map(&mut body_kinds, 1, "index F3D sweep body kinds")?;
         }
         body_kinds.insert(&body.id, body.kind);
@@ -1303,8 +1356,11 @@ pub(crate) fn bind_sweep_result_modes(
         };
         let mut solid_sections = Vec::new();
         if matches!(mode, SweepMode::Solid { .. }) {
-
-            ctx.reserve_vec(&mut solid_sections, section_count, "convert F3D solid sweep sections")?;
+            ctx.reserve_vec(
+                &mut solid_sections,
+                section_count,
+                "convert F3D solid sweep sections",
+            )?;
         }
         feature.evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition
@@ -1411,15 +1467,21 @@ pub(crate) fn bind_feature_body_selections(
             let Some(slot) = slot else {
                 continue 'pattern;
             };
-            ctx.insert_btree_set(&mut slots, slot, "index F3D pattern body slots").map(|_| ())?;
+            ctx.insert_btree_set(&mut slots, slot, "index F3D pattern body slots")
+                .map(|_| ())?;
         }
         if slots.len() != expected_count {
             continue;
         }
-        let feature_id = feature.id.try_clone_for_decode(ctx, "copy F3D pattern body feature ID")?;
+        let feature_id = feature
+            .id
+            .try_clone_for_decode(ctx, "copy F3D pattern body feature ID")?;
         if !pattern_body_slots.contains_key(&feature_id) {
-
-            ctx.reserve_map(&mut pattern_body_slots, 1, "index F3D pattern body features")?;
+            ctx.reserve_map(
+                &mut pattern_body_slots,
+                1,
+                "index F3D pattern body features",
+            )?;
         }
         pattern_body_slots.insert(feature_id, slots);
     }
@@ -1939,10 +2001,15 @@ fn pattern_combine_tool_slots(
     {
         return Ok(None);
     }
-    Ok(Some(ctx.collect_vec(pattern_bodies
-            .iter()
-            .copied()
-            .filter(|body| *body != target_body), "collect F3D pattern Combine tools")?))
+    Ok(Some(
+        ctx.collect_vec(
+            pattern_bodies
+                .iter()
+                .copied()
+                .filter(|body| *body != target_body),
+            "collect F3D pattern Combine tools",
+        )?,
+    ))
 }
 
 fn combine_recipe_family_tool_slots(
@@ -1988,7 +2055,6 @@ fn combine_recipe_family_tool_slots(
             && crate::ids::native_stream(&recipe.id) == Some(stream)
     }) {
         if !recipes_by_id.contains_key(recipe.id.as_str()) {
-
             ctx.reserve_map(&mut recipes_by_id, 1, "index F3D Combine recipes")?;
         }
         recipes_by_id
@@ -2030,25 +2096,33 @@ fn combine_recipe_family_tool_slots(
             reference.form,
             design.id.value.as_str(),
         );
-        ctx.push_btree_group(&mut families, key, (
-            selector,
-            resolved,
-            reference.preceding_body_slots.as_slice(),
-        ), "index F3D Combine tool families", "collect F3D Combine family members")?;
+        ctx.push_btree_group(
+            &mut families,
+            key,
+            (
+                selector,
+                resolved,
+                reference.preceding_body_slots.as_slice(),
+            ),
+            "index F3D Combine tool families",
+            "collect F3D Combine family members",
+        )?;
     }
 
     let mut selected = BTreeSet::new();
     for family in families.into_values() {
         let mut exact = BTreeSet::new();
         for body in family.iter().filter_map(|(_, body, _)| *body) {
-            ctx.insert_btree_set(&mut exact, body, "index F3D Combine exact tool bodies").map(|_| ())?;
+            ctx.insert_btree_set(&mut exact, body, "index F3D Combine exact tool bodies")
+                .map(|_| ())?;
         }
         if family.iter().all(|(_, body, _)| body.is_some()) {
             if exact.len() != family.len() {
                 return Ok(None);
             }
             for body in exact {
-                ctx.insert_btree_set(&mut selected, body, "index F3D Combine selected tools").map(|_| ())?;
+                ctx.insert_btree_set(&mut selected, body, "index F3D Combine selected tools")
+                    .map(|_| ())?;
             }
             continue;
         }
@@ -2069,7 +2143,12 @@ fn combine_recipe_family_tool_slots(
         let candidate_slice = required!(candidate_sets.next());
         let mut candidates = BTreeSet::new();
         for candidate in *candidate_slice {
-            ctx.insert_btree_set(&mut candidates, *candidate, "index F3D Combine candidate tools").map(|_| ())?;
+            ctx.insert_btree_set(
+                &mut candidates,
+                *candidate,
+                "index F3D Combine candidate tools",
+            )
+            .map(|_| ())?;
         }
         if candidates.len() != family.len()
             || candidates.contains(&target_body)
@@ -2082,13 +2161,17 @@ fn combine_recipe_family_tool_slots(
             return Ok(None);
         }
         for body in candidates {
-            ctx.insert_btree_set(&mut selected, body, "index F3D Combine selected tools").map(|_| ())?;
+            ctx.insert_btree_set(&mut selected, body, "index F3D Combine selected tools")
+                .map(|_| ())?;
         }
     }
     if selected.len() != tool_record_indices.len() || selected.contains(&target_body) {
         return Ok(None);
     }
-    Ok(Some(ctx.collect_vec(selected, "collect F3D Combine recipe tool slots")?))
+    Ok(Some(ctx.collect_vec(
+        selected,
+        "collect F3D Combine recipe tool slots",
+    )?))
 }
 
 fn combine_external_local_tools(
@@ -2231,18 +2314,30 @@ fn unique_external_body_candidate(
     regions: &[cadmpeg_ir::topology::Region],
     shells: &[cadmpeg_ir::topology::Shell],
 ) -> Result<Option<cadmpeg_ir::ids::BodyId>, cadmpeg_core::CodecError> {
-    let body_by_region = ctx.collect_hash_map(regions.iter().map(|region| (&region.id, &region.body)), "index F3D external body regions")?;
-    let body_by_face = ctx.collect_hash_map(shells
+    let body_by_region = ctx.collect_hash_map(
+        regions.iter().map(|region| (&region.id, &region.body)),
+        "index F3D external body regions",
+    )?;
+    let body_by_face = ctx.collect_hash_map(
+        shells
             .iter()
             .filter_map(|shell| {
                 let body = body_by_region.get(&shell.region)?;
                 Some(shell.faces().iter().map(move |face| (face, *body)))
             })
-            .flatten(), "index F3D external body faces")?;
-    let body_metadata = ctx.collect_hash_map(bodies.iter().map(|body| (&body.id, body)), "index F3D external body metadata")?;
+            .flatten(),
+        "index F3D external body faces",
+    )?;
+    let body_metadata = ctx.collect_hash_map(
+        bodies.iter().map(|body| (&body.id, body)),
+        "index F3D external body metadata",
+    )?;
     let current_prefix = current_history_source
         .map(|source| {
-            ctx.format_retained(format_args!("f3d:brep/{source}/"), "retain F3D current history prefix")
+            ctx.format_retained(
+                format_args!("f3d:brep/{source}/"),
+                "retain F3D current history prefix",
+            )
         })
         .transpose()?;
     let mut candidates: Option<BTreeSet<cadmpeg_ir::ids::BodyId>> = None;
@@ -2260,7 +2355,11 @@ fn unique_external_body_candidate(
             }
             if !reference_candidates.contains(body) {
                 let id = body.try_clone_for_decode(ctx, "copy F3D external body candidate")?;
-                ctx.insert_btree_set(&mut reference_candidates, id, "collect F3D external body candidates")?;
+                ctx.insert_btree_set(
+                    &mut reference_candidates,
+                    id,
+                    "collect F3D external body candidates",
+                )?;
             }
         }
         if let Some(candidates) = &mut candidates {
@@ -2277,7 +2376,9 @@ fn unique_external_body_candidate(
     };
     let mut displayed = BTreeSet::new();
     for body in candidates.iter().filter(|body| {
-        body_metadata.get(body).is_some_and(|body| body.visible == Some(true))
+        body_metadata
+            .get(body)
+            .is_some_and(|body| body.visible == Some(true))
     }) {
         let id = body.try_clone_for_decode(ctx, "copy F3D displayed external body")?;
         ctx.insert_btree_set(&mut displayed, id, "collect F3D displayed external bodies")?;
@@ -2349,7 +2450,6 @@ fn bind_body_recipe_body_selection(
             return Ok(());
         };
         if !body_slots.contains(&body_slot) {
-
             ctx.reserve_vec(&mut body_slots, 1, "collect F3D body recipe slots")?;
             body_slots.push(body_slot);
         }
@@ -2358,7 +2458,11 @@ fn bind_body_recipe_body_selection(
         .map_err(|_| ctx.refuse_codec_limit("collect F3D body recipe identities", 0, u64::MAX))?;
 
     let mut body_ids = Vec::new();
-    ctx.reserve_vec(&mut body_ids, body_slots.len(), "collect F3D body recipe identities")?;
+    ctx.reserve_vec(
+        &mut body_ids,
+        body_slots.len(),
+        "collect F3D body recipe identities",
+    )?;
     for slot in body_slots {
         body_ids.push(crate::ids::history_input_body_id_charged(
             ctx,
@@ -2449,7 +2553,11 @@ fn bind_direct_body_recipe_body_selection(
                     return Ok(());
                 }
 
-                ctx.reserve_vec(&mut selected, 1, "collect F3D direct body recipe selections")?;
+                ctx.reserve_vec(
+                    &mut selected,
+                    1,
+                    "collect F3D direct body recipe selections",
+                )?;
                 selected.push(body);
             }
             let count = u64::try_from(selected.len()).map_err(|_| {
@@ -2464,7 +2572,10 @@ fn bind_direct_body_recipe_body_selection(
             *selection = BodySelection::Resolved { bodies, native };
             return Ok(());
         }
-        BodySelection::NativeSet(native) => ctx.collect_vec(native.iter().map(String::as_str), "collect F3D direct body recipe native members")?,
+        BodySelection::NativeSet(native) => ctx.collect_vec(
+            native.iter().map(String::as_str),
+            "collect F3D direct body recipe native members",
+        )?,
         _ => return Ok(()),
     };
     if native_members.is_empty() {
@@ -2634,9 +2745,10 @@ fn body_recipe_link_candidate(
     let Some(body) = matching_body else {
         return Ok(None);
     };
-    Ok(Some(
-        body.try_clone_for_decode(ctx, "copy F3D persistent body link identity")?,
-    ))
+    Ok(Some(body.try_clone_for_decode(
+        ctx,
+        "copy F3D persistent body link identity",
+    )?))
 }
 
 fn body_recipe_face_body_candidates(
@@ -2707,7 +2819,6 @@ fn unique_feature_history_states<'a>(
     let mut states = HashMap::new();
     for state in &history.states {
         if !states.contains_key(&state.state_id) {
-
             ctx.reserve_map(&mut states, 1, "index F3D feature history states")?;
         }
         states
@@ -2728,7 +2839,11 @@ fn singleton_revised_input_body_across_state_chain<'a>(
     let mut visited = HashSet::new();
     let mut revised = BTreeSet::new();
     while current.state_id != previous_state_id {
-        if !ctx.insert_hash_set(&mut visited, current.state_id, "visit F3D revised input body states")? {
+        if !ctx.insert_hash_set(
+            &mut visited,
+            current.state_id,
+            "visit F3D revised input body states",
+        )? {
             return Ok(None);
         }
         let Some(transition) = current.transition.as_ref() else {
@@ -2741,7 +2856,8 @@ fn singleton_revised_input_body_across_state_chain<'a>(
             .iter()
             .chain(&transition.topology.bodies.deleted)
         {
-            ctx.insert_btree_set(&mut revised, body, "index F3D revised input bodies").map(|_| ())?;
+            ctx.insert_btree_set(&mut revised, body, "index F3D revised input bodies")
+                .map(|_| ())?;
         }
         let Some(previous_id) = transition.previous_state_id else {
             return Ok(None);
@@ -2774,7 +2890,11 @@ fn singleton_body_revision_across_state_chain<'a>(
     let mut visited = HashSet::new();
     let mut selected = None;
     while current.state_id != previous_state_id {
-        if !ctx.insert_hash_set(&mut visited, current.state_id, "visit F3D stable body revision states")? {
+        if !ctx.insert_hash_set(
+            &mut visited,
+            current.state_id,
+            "visit F3D stable body revision states",
+        )? {
             return Ok(None);
         }
         let Some(revision) = body_revision_without_topology_change(current) else {
@@ -3139,13 +3259,16 @@ fn bind_surface_stitch_face_selection(
         return Ok(());
     }
     let stream = crate::ids::native_stream(&scope.id);
-    let mut matching_groups = ctx.collect_vec(groups.iter().filter(|group| {
+    let mut matching_groups = ctx.collect_vec(
+        groups.iter().filter(|group| {
             crate::ids::native_stream(&group.id) == stream
                 && group.scope_record_index == scope.record_index
                 && group.role() == DesignOperandRole::ROLE_0X5
                 && group.extrude_role().is_none()
                 && group.extrude_face_role().is_none()
-        }), "collect F3D Stitch face groups")?;
+        }),
+        "collect F3D Stitch face groups",
+    )?;
     matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
     if matching_groups.len().checked_mul(2) != Some(input_end)
         || matching_groups
@@ -3241,7 +3364,6 @@ fn bind_entity_face_groups(
                 return Ok(());
             };
             if !selected.contains(&(source, candidate.face_slot, local)) {
-
                 ctx.reserve_vec(&mut selected, 1, "collect F3D entity face candidates")?;
                 selected.push((source, candidate.face_slot, local));
             }
@@ -3278,11 +3400,15 @@ fn bind_entity_face_groups(
     }
     for face in &faces {
         if !topology.faces.contains(face) {
-            let retained = face.try_clone_for_decode(ctx, "copy F3D historical topology face identity")?;
-            topology.faces.insert_for_decode(ctx, retained, "index F3D historical entity faces")?;
+            let retained =
+                face.try_clone_for_decode(ctx, "copy F3D historical topology face identity")?;
+            topology
+                .faces
+                .insert_for_decode(ctx, retained, "index F3D historical entity faces")?;
         }
     }
-    let native = ctx.copy_retained_text(native_id, "copy F3D historical face selection identity")?;
+    let native =
+        ctx.copy_retained_text(native_id, "copy F3D historical face selection identity")?;
     ctx.charge_collection_items(
         u64::try_from(faces.len()).map_err(|_| {
             ctx.refuse_codec_limit("validate F3D historical entity faces", 0, u64::MAX)
@@ -3354,7 +3480,9 @@ fn bind_hole_face_selection(
     };
     if !topology.faces.contains(&face) {
         let retained = face.try_clone_for_decode(ctx, "copy F3D historical hole topology face")?;
-        topology.faces.insert_for_decode(ctx, retained, "index F3D historical hole face")?;
+        topology
+            .faces
+            .insert_for_decode(ctx, retained, "index F3D historical hole face")?;
     }
     let native = ctx.copy_retained_text(native_id, "copy F3D historical hole identity")?;
     let mut selected = ctx.collection_vec(1, "validate F3D historical hole face")?;
@@ -3496,7 +3624,11 @@ fn bind_entity_selection_path(
         .map_err(|_| ctx.refuse_codec_limit("collect F3D path edge slots", 0, u64::MAX))?;
 
     let mut edge_slots = Vec::new();
-    ctx.reserve_vec(&mut edge_slots, group.members().len(), "collect F3D path edge slots")?;
+    ctx.reserve_vec(
+        &mut edge_slots,
+        group.members().len(),
+        "collect F3D path edge slots",
+    )?;
     for (ordinal, record_index) in group
         .members()
         .iter()
@@ -3525,7 +3657,11 @@ fn bind_entity_selection_path(
     }
 
     let mut edge_ids = Vec::new();
-    ctx.reserve_vec(&mut edge_ids, edge_slots.len(), "collect F3D path edge identities")?;
+    ctx.reserve_vec(
+        &mut edge_ids,
+        edge_slots.len(),
+        "collect F3D path edge identities",
+    )?;
     for slot in edge_slots {
         edge_ids.push(crate::ids::history_input_edge_id_charged(
             ctx,
@@ -3625,7 +3761,9 @@ pub(crate) fn project_feature_input_topologies(
             continue;
         };
         let id = crate::ids::history_input_state_id_charged(ctx, &feature.id, previous_state_id)?;
-        let input_of = feature.id.try_clone_for_decode(ctx, "copy F3D input feature identity")?;
+        let input_of = feature
+            .id
+            .try_clone_for_decode(ctx, "copy F3D input feature identity")?;
         let native_ref = ctx.copy_retained_text(&state.id, "copy F3D input state reference")?;
 
         ctx.reserve_vec(&mut projected, 1, "collect F3D input topologies")?;
@@ -3668,7 +3806,8 @@ pub(crate) fn bind_vertex_recipe_history(
     timelines: &[crate::records::entity_header::DesignFeatureTimeline],
     histories: &[AsmHistory],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source_ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(ctx, scopes, timelines)?;
+    let source_ordinals =
+        crate::design::feature_project::authored_scope_ordinals_per_stream(ctx, scopes, timelines)?;
     let mut input_states = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -3701,7 +3840,6 @@ pub(crate) fn bind_vertex_recipe_history(
         });
         let id = ctx.copy_retained_text(&scope.id, "copy F3D vertex recipe scope identity")?;
         if !input_states.contains_key(&id) {
-
             ctx.reserve_map(&mut input_states, 1, "index F3D vertex recipe input states")?;
         }
         input_states.insert(id, predecessor.1);
@@ -3849,11 +3987,14 @@ fn vertex_recipe_candidate(
 ) -> Result<Option<(i64, cadmpeg_ir::math::Point3)>, cadmpeg_core::CodecError> {
     let mut face_slots = Vec::new();
     for reference in &recipe.recipe_references {
-        let mut slots = ctx.collect_vec(reference
+        let mut slots = ctx.collect_vec(
+            reference
                 .candidate_faces
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
-                .filter(|face| topology.faces.contains(face)), "collect F3D vertex recipe candidate faces")?;
+                .filter(|face| topology.faces.contains(face)),
+            "collect F3D vertex recipe candidate faces",
+        )?;
         slots.sort_unstable();
         slots.dedup();
         let [slot] = slots.as_slice() else {
@@ -3932,8 +4073,16 @@ fn boundary_vertices_for_faces(
             {
                 return Ok(None);
             }
-            decode.insert_hash_set(&mut vertices, edge.start_vertex, "collect F3D boundary vertices")?;
-            decode.insert_hash_set(&mut vertices, edge.end_vertex, "collect F3D boundary vertices")?;
+            decode.insert_hash_set(
+                &mut vertices,
+                edge.start_vertex,
+                "collect F3D boundary vertices",
+            )?;
+            decode.insert_hash_set(
+                &mut vertices,
+                edge.end_vertex,
+                "collect F3D boundary vertices",
+            )?;
         }
     }
     Ok((!vertices.is_empty()).then_some(vertices))
@@ -4373,11 +4522,16 @@ fn insert_scope_history_binding(
     history_id: &str,
 ) -> Result<(), cadmpeg_core::CodecError> {
     if !resolved.contains_key(scope_id) {
-
         decode.reserve_map(resolved, 1, "index F3D scope history bindings")?;
     }
-    let scope = { let ctx = decode; ctx.copy_retained_text(scope_id, "copy F3D bound scope identity")? };
-    let history = { let ctx = decode; ctx.copy_retained_text(history_id, "copy F3D bound history identity")? };
+    let scope = {
+        let ctx = decode;
+        ctx.copy_retained_text(scope_id, "copy F3D bound scope identity")?
+    };
+    let history = {
+        let ctx = decode;
+        ctx.copy_retained_text(history_id, "copy F3D bound history identity")?
+    };
     resolved.insert(scope, history);
     Ok(())
 }
@@ -4395,23 +4549,31 @@ pub(crate) fn bind_scope_histories(
             continue;
         };
         let scope_candidates = if let Some(previous_state_id) = scope.previous_history_state_id() {
-            let direct = decode.collect_vec(histories.iter().filter(|history| {
+            let direct = decode.collect_vec(
+                histories.iter().filter(|history| {
                     history_state_pair(history, state_id, previous_state_id, true).is_some()
-                }), "collect F3D direct scope histories")?;
+                }),
+                "collect F3D direct scope histories",
+            )?;
             if direct.is_empty() {
-                decode.collect_vec(histories.iter().filter(|history| {
+                decode.collect_vec(
+                    histories.iter().filter(|history| {
                         history_state_pair(history, state_id, previous_state_id, false).is_some()
-                    }), "collect F3D reachable scope histories")?
+                    }),
+                    "collect F3D reachable scope histories",
+                )?
             } else {
                 direct
             }
         } else {
-            decode.collect_vec(histories
+            decode.collect_vec(
+                histories
                     .iter()
-                    .filter(|history| unique_history_state_in(history, state_id)), "collect F3D matching scope histories")?
+                    .filter(|history| unique_history_state_in(history, state_id)),
+                "collect F3D matching scope histories",
+            )?
         };
         if !scope_candidates.is_empty() {
-
             decode.reserve_vec(&mut candidates, 1, "collect F3D scopes with histories")?;
             candidates.push((scope, scope_candidates));
         }
@@ -4505,13 +4667,23 @@ pub(crate) fn bind_scope_histories(
             continue;
         };
         let key = (stream, state_id, scope.previous_history_state_id());
-        decode.push_hash_group(&mut groups, key, index, "index F3D scope history groups", "collect F3D scope history group members")?;
+        decode.push_hash_group(
+            &mut groups,
+            key,
+            index,
+            "index F3D scope history groups",
+            "collect F3D scope history group members",
+        )?;
     }
     for members in groups.values() {
         let mut candidate_histories = HashSet::new();
         for index in members {
             for history in &candidates[*index].1 {
-                decode.insert_hash_set(&mut candidate_histories, history.id.as_str(), "index F3D scope candidate histories")?;
+                decode.insert_hash_set(
+                    &mut candidate_histories,
+                    history.id.as_str(),
+                    "index F3D scope candidate histories",
+                )?;
             }
         }
         if candidate_histories.len() != members.len() {
@@ -4521,8 +4693,15 @@ pub(crate) fn bind_scope_histories(
             let mut assigned = HashSet::new();
             for index in members {
                 if let Some(history_id) = resolved.get(&candidates[*index].0.id) {
-                    let copy = { let ctx = decode; ctx.copy_retained_text(history_id, "copy F3D assigned history identity")? };
-                    decode.insert_hash_set(&mut assigned, copy, "index F3D assigned scope histories")?;
+                    let copy = {
+                        let ctx = decode;
+                        ctx.copy_retained_text(history_id, "copy F3D assigned history identity")?
+                    };
+                    decode.insert_hash_set(
+                        &mut assigned,
+                        copy,
+                        "index F3D assigned scope histories",
+                    )?;
                 }
             }
             if assigned.len()
@@ -4615,7 +4794,6 @@ fn history_state_index<'h>(
     let mut states = HashMap::new();
     for state in &history.states {
         if !states.contains_key(&state.state_id) {
-
             decode.reserve_map(&mut states, 1, "index F3D history states")?;
         }
         states
@@ -4676,15 +4854,21 @@ fn bind_historical_recipe_reference_candidates(
     }) {
         match tag.entity_kind {
             AsmHistoricalEntityKind::Face if live_faces.contains(&tag.entity_ref) => {
-
-                decode.reserve_vec(&mut reference.candidate_faces, 1, "collect F3D recipe reference faces")?;
+                decode.reserve_vec(
+                    &mut reference.candidate_faces,
+                    1,
+                    "collect F3D recipe reference faces",
+                )?;
                 reference
                     .candidate_faces
                     .push(historical_face_id(decode, tag.entity_ref)?);
             }
             AsmHistoricalEntityKind::Edge if live_edges.contains(&tag.entity_ref) => {
-
-                decode.reserve_vec(&mut reference.candidate_edges, 1, "collect F3D recipe reference edges")?;
+                decode.reserve_vec(
+                    &mut reference.candidate_edges,
+                    1,
+                    "collect F3D recipe reference edges",
+                )?;
                 reference
                     .candidate_edges
                     .push(historical_edge_id(decode, tag.entity_ref)?);
@@ -4718,7 +4902,6 @@ fn historical_recipe_faces(
             && live_faces.contains(&tag.entity_ref)
             && tag.design_references.contains(&design_reference)
         {
-
             decode.reserve_vec(&mut faces, 1, "collect F3D historical recipe faces")?;
             faces.push(historical_face_id(decode, tag.entity_ref)?);
         }
@@ -4743,7 +4926,6 @@ fn direct_face_recipe_candidates(
         .filter(|reference| reference.design_reference == i64::from(recipe_record_index))
         .flat_map(|reference| &reference.candidate_faces)
     {
-
         decode.reserve_vec(&mut faces, 1, "collect F3D direct face recipe candidates")?;
         faces.push((face).try_clone_for_decode(decode, "copy F3D historical face identity")?);
     }
@@ -4757,7 +4939,10 @@ fn historical_face_id(
     slot: i64,
 ) -> Result<cadmpeg_ir::ids::FaceId, cadmpeg_core::CodecError> {
     let ctx = decode;
-    let text = ctx.format_retained(format_args!("f3d:brep:entity#{slot}"), "retain F3D historical face identity")?;
+    let text = ctx.format_retained(
+        format_args!("f3d:brep:entity#{slot}"),
+        "retain F3D historical face identity",
+    )?;
     cadmpeg_ir::ids::FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -4766,7 +4951,10 @@ fn historical_edge_id(
     slot: i64,
 ) -> Result<cadmpeg_ir::ids::EdgeId, cadmpeg_core::CodecError> {
     let ctx = decode;
-    let text = ctx.format_retained(format_args!("f3d:brep:entity#{slot}"), "retain F3D historical edge identity")?;
+    let text = ctx.format_retained(
+        format_args!("f3d:brep:entity#{slot}"),
+        "retain F3D historical edge identity",
+    )?;
     cadmpeg_ir::ids::EdgeId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -4782,9 +4970,12 @@ pub(crate) fn bind_face_operand_history_candidates(
     if projection_was_finalized(histories) {
         return Ok(());
     }
-    let recipe_record_indices = decode.collect_hash_map(recipes
+    let recipe_record_indices = decode.collect_hash_map(
+        recipes
             .iter()
-            .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value))), "index F3D face operand recipe records")?;
+            .filter_map(|recipe| Some((recipe.id.as_str(), recipe.record_index?.value))),
+        "index F3D face operand recipe records",
+    )?;
     for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
@@ -4842,13 +5033,17 @@ pub(crate) fn bind_face_operand_history_candidates(
         if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
             operand.candidate_faces =
                 historical_recipe_faces(decode, i64::from(*recipe_record_index), topology)?;
-            operand.unreferenced_candidate_faces = decode.try_collect_vec((operand.candidate_faces.iter().filter(|face| {
+            operand.unreferenced_candidate_faces = decode.try_collect_vec(
+                (operand.candidate_faces.iter().filter(|face| {
                     !operand
                         .recipe_references
                         .iter()
                         .flat_map(|reference| &reference.candidate_faces)
                         .any(|candidate| candidate == *face)
-                })).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "collect F3D unreferenced candidate faces")?;
+                }))
+                .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
+                "collect F3D unreferenced candidate faces",
+            )?;
             operand.alternate_selector_candidate_faces.clear();
         }
         let Some(changed_faces) =
@@ -4880,7 +5075,12 @@ pub(crate) fn bind_face_operand_history_candidates(
                     (!candidates.is_empty()).then_some(candidates)
                 })
                 .map(|candidates| {
-                    decode.try_collect_vec((candidates).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "copy F3D thread face candidates")
+                    decode.try_collect_vec(
+                        (candidates).iter().map(|face| {
+                            face.try_clone_for_decode(decode, "copy F3D historical face identity")
+                        }),
+                        "copy F3D thread face candidates",
+                    )
                 })
                 .transpose()?
         } else {
@@ -4954,9 +5154,13 @@ pub(crate) fn bind_face_operand_history_candidates(
         };
         operand.preceding_candidate_faces =
             selection::faces_in_topology(decode, history_candidates, topology)?;
-        operand.changed_candidate_faces = decode.try_collect_vec((operand.preceding_candidate_faces.iter().filter(|face| {
+        operand.changed_candidate_faces = decode.try_collect_vec(
+            (operand.preceding_candidate_faces.iter().filter(|face| {
                 stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot))
-            })).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "collect F3D changed candidate faces")?;
+            }))
+            .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
+            "collect F3D changed candidate faces",
+        )?;
         operand.historical_support_contexts = historical_face_support_contexts(
             decode,
             history_candidates,
@@ -4965,10 +5169,13 @@ pub(crate) fn bind_face_operand_history_candidates(
             &changed_faces,
         )?;
         if direct_face_candidates.is_some() {
-            operand.resolved_face_slots = decode.collect_vec(operand
+            operand.resolved_face_slots = decode.collect_vec(
+                operand
                     .preceding_candidate_faces
                     .iter()
-                    .filter_map(|face| stable_ref(face.as_str())), "collect F3D direct resolved face slots")?;
+                    .filter_map(|face| stable_ref(face.as_str())),
+                "collect F3D direct resolved face slots",
+            )?;
             continue;
         }
         let preserves_stable_face_set = feature_family
@@ -5251,7 +5458,11 @@ fn resolve_draft_face_by_surface_transition(
         .iter()
         .filter_map(|face| stable_ref(face.as_str()))
     {
-        decode.insert_hash_set(&mut candidate_slots, face, "index F3D draft face candidates")?;
+        decode.insert_hash_set(
+            &mut candidate_slots,
+            face,
+            "index F3D draft face candidates",
+        )?;
     }
     if candidate_slots.is_empty() {
         return Ok(None);
@@ -5264,7 +5475,13 @@ fn resolve_draft_face_by_surface_transition(
         .filter_map(|face| stable_ref(face.as_str()))
         .filter(|face| candidate_slots.contains(face))
     {
-        decode.insert_btree_set(&mut alternate_slots, face, "collect F3D draft alternate faces").map(|_| ())?;
+        decode
+            .insert_btree_set(
+                &mut alternate_slots,
+                face,
+                "collect F3D draft alternate faces",
+            )
+            .map(|_| ())?;
     }
     let mut exact_slots = BTreeSet::new();
     for face in operand
@@ -5274,7 +5491,9 @@ fn resolve_draft_face_by_surface_transition(
         .filter_map(|face| stable_ref(face.as_str()))
         .filter(|face| candidate_slots.contains(face))
     {
-        decode.insert_btree_set(&mut exact_slots, face, "collect F3D draft exact faces").map(|_| ())?;
+        decode
+            .insert_btree_set(&mut exact_slots, face, "collect F3D draft exact faces")
+            .map(|_| ())?;
     }
     let has_alternates = !alternate_slots.is_empty();
     let candidates = if has_alternates {
@@ -5326,7 +5545,11 @@ fn resolve_pattern_face_by_surface_radius(
         .iter()
         .filter_map(|face| stable_ref(face.as_str()))
     {
-        decode.insert_hash_set(&mut candidate_faces, face, "index F3D pattern face candidates")?;
+        decode.insert_hash_set(
+            &mut candidate_faces,
+            face,
+            "index F3D pattern face candidates",
+        )?;
     }
     if candidate_faces.is_empty() {
         return Ok(None);
@@ -5338,7 +5561,11 @@ fn resolve_pattern_face_by_surface_radius(
         .iter()
         .filter(|binding| candidate_faces.contains(&binding.entity))
     {
-        if !decode.insert_hash_set(&mut bound_candidates, binding.entity, "index F3D pattern bound faces")? {
+        if !decode.insert_hash_set(
+            &mut bound_candidates,
+            binding.entity,
+            "index F3D pattern bound faces",
+        )? {
             return Ok(None);
         }
         let mut radii = result
@@ -5537,7 +5764,11 @@ fn resolve_bounded_face_recipe_target(
     let first_clause = &operand.recipe_references[..first_clause_len];
     let mut topology_faces = HashSet::new();
     for face in &preceding.faces {
-        decode.insert_hash_set(&mut topology_faces, *face, "index F3D bounded topology faces")?;
+        decode.insert_hash_set(
+            &mut topology_faces,
+            *face,
+            "index F3D bounded topology faces",
+        )?;
     }
     let mut target_candidates = BTreeSet::new();
     for face in first_clause
@@ -5547,7 +5778,13 @@ fn resolve_bounded_face_recipe_target(
         .filter_map(|face| stable_ref(face.as_str()))
         .filter(|face| topology_faces.contains(face))
     {
-        decode.insert_btree_set(&mut target_candidates, face, "collect F3D bounded target faces").map(|_| ())?;
+        decode
+            .insert_btree_set(
+                &mut target_candidates,
+                face,
+                "collect F3D bounded target faces",
+            )
+            .map(|_| ())?;
     }
     for reference in first_clause.iter().skip(1) {
         let mut candidates = HashSet::new();
@@ -5585,7 +5822,6 @@ fn resolve_bounded_face_recipe_target(
         }
         if !ambiguous {
             if let Some(face) = unique {
-
                 decode.reserve_vec(&mut construction_faces, 1, "collect F3D construction faces")?;
                 construction_faces.push(face);
             }
@@ -5616,7 +5852,10 @@ fn resolve_bounded_face_recipe_target(
         if rows.is_empty() {
             return Ok(None);
         }
-        let positions = decode.collect_vec(rows.iter().map(|row| row.position), "collect F3D bounded loop positions")?;
+        let positions = decode.collect_vec(
+            rows.iter().map(|row| row.position),
+            "collect F3D bounded loop positions",
+        )?;
         Ok(Some((rows.len(), positions)))
     };
     let mut matches = Vec::new();
@@ -5642,7 +5881,6 @@ fn resolve_bounded_face_recipe_target(
             }
         }
         if matched {
-
             decode.reserve_vec(&mut matches, 1, "collect F3D bounded face matches")?;
             matches.push(candidate);
         }
@@ -5757,12 +5995,15 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 .iter()
                 .filter_map(|face| stable_ref(face.as_str()))
             {
-                decode.insert_btree_set(&mut face_slots, face, "index F3D body recipe face slots").map(|_| ())?;
+                decode
+                    .insert_btree_set(&mut face_slots, face, "index F3D body recipe face slots")
+                    .map(|_| ())?;
             }
             let Some(body_slots) = bodies_intersecting(decode, topology, &face_slots)? else {
                 continue;
             };
-            *reference.preceding_body_slots = decode.collect_vec(body_slots, "collect F3D body recipe preceding bodies")?;
+            *reference.preceding_body_slots =
+                decode.collect_vec(body_slots, "collect F3D body recipe preceding bodies")?;
         }
         if let [reference] = operand.references().as_slice() {
             if let [face] = reference.preceding_candidate_faces.as_slice() {
@@ -5782,7 +6023,13 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         }
         let mut intersection = BTreeSet::new();
         for body in &first.preceding_body_slots {
-            decode.insert_btree_set(&mut intersection, *body, "index F3D body recipe intersection").map(|_| ())?;
+            decode
+                .insert_btree_set(
+                    &mut intersection,
+                    *body,
+                    "index F3D body recipe intersection",
+                )
+                .map(|_| ())?;
         }
         for reference in &operand.references()[1..] {
             intersection.retain(|body| reference.preceding_body_slots.contains(body));
@@ -5795,7 +6042,6 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
         HashMap::<_, Option<&crate::records::recipes::ConstructionRecipe>>::new();
     for recipe in recipes {
         if !recipes_by_id.contains_key(recipe.id.as_str()) {
-
             decode.reserve_map(&mut recipes_by_id, 1, "index F3D body recipes by id")?;
         }
         recipes_by_id
@@ -5828,8 +6074,11 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
             continue;
         };
         if !resolved_by_identity.contains_key(&identity) {
-
-            decode.reserve_map(&mut resolved_by_identity, 1, "index F3D resolved body recipe identities")?;
+            decode.reserve_map(
+                &mut resolved_by_identity,
+                1,
+                "index F3D resolved body recipe identities",
+            )?;
         }
         resolved_by_identity
             .entry(identity)
@@ -5906,7 +6155,6 @@ fn complete_body_face_slots(
         let mut counts = HashMap::new();
         for &slot in slots {
             if !counts.contains_key(&slot) {
-
                 decode.reserve_map(&mut counts, 1, "index F3D complete body entity counts")?;
             }
             *counts.entry(slot).or_default() += 1;
@@ -5927,8 +6175,11 @@ fn complete_body_face_slots(
         let mut owner_by_member = HashMap::new();
         for relation in relations {
             if !members_by_owner.contains_key(&relation.owner_ref) {
-
-                decode.reserve_map(&mut members_by_owner, 1, "index F3D complete body relation owners")?;
+                decode.reserve_map(
+                    &mut members_by_owner,
+                    1,
+                    "index F3D complete body relation owners",
+                )?;
             }
             members_by_owner
                 .entry(relation.owner_ref)
@@ -5936,8 +6187,11 @@ fn complete_body_face_slots(
                 .or_insert(Some(relation.member_refs.as_slice()));
             for &member in &relation.member_refs {
                 if !owner_by_member.contains_key(&member) {
-
-                    decode.reserve_map(&mut owner_by_member, 1, "index F3D complete body relation members")?;
+                    decode.reserve_map(
+                        &mut owner_by_member,
+                        1,
+                        "index F3D complete body relation members",
+                    )?;
                 }
                 owner_by_member
                     .entry(member)
@@ -5970,7 +6224,11 @@ fn complete_body_face_slots(
     let mut seen_shells = HashSet::new();
     let mut seen_faces = HashSet::new();
     for &region in regions {
-        if !decode.insert_hash_set(&mut seen_regions, region, "collect F3D complete body regions")? || region_counts.get(&region).copied() != Some(1)
+        if !decode.insert_hash_set(
+            &mut seen_regions,
+            region,
+            "collect F3D complete body regions",
+        )? || region_counts.get(&region).copied() != Some(1)
             || body_regions.owner_by_member.get(&region).copied().flatten() != Some(body)
         {
             return Ok(None);
@@ -5984,7 +6242,11 @@ fn complete_body_face_slots(
             return Ok(None);
         }
         for &shell in shells {
-            if !decode.insert_hash_set(&mut seen_shells, shell, "collect F3D complete body shells")? || shell_counts.get(&shell).copied() != Some(1)
+            if !decode.insert_hash_set(
+                &mut seen_shells,
+                shell,
+                "collect F3D complete body shells",
+            )? || shell_counts.get(&shell).copied() != Some(1)
                 || region_shells.owner_by_member.get(&shell).copied().flatten() != Some(region)
             {
                 return Ok(None);
@@ -5994,7 +6256,11 @@ fn complete_body_face_slots(
                 return Ok(None);
             }
             for &face in faces {
-                if !decode.insert_hash_set(&mut seen_faces, face, "collect F3D complete body faces")? || face_counts.get(&face).copied() != Some(1)
+                if !decode.insert_hash_set(
+                    &mut seen_faces,
+                    face,
+                    "collect F3D complete body faces",
+                )? || face_counts.get(&face).copied() != Some(1)
                     || shell_faces.owner_by_member.get(&face).copied().flatten() != Some(shell)
                 {
                     return Ok(None);
@@ -6103,11 +6369,9 @@ fn resolve_direct_face_recipe_clauses(
             .iter_mut()
             .find(|(selector, token, _)| (*selector, *token) == key)
         {
-
             decode.reserve_vec(references, 1, "group F3D direct face references")?;
             references.push(reference);
         } else {
-
             decode.reserve_vec(&mut clauses, 1, "collect F3D direct face clauses")?;
 
             let mut grouped = Vec::new();
@@ -6118,7 +6382,11 @@ fn resolve_direct_face_recipe_clauses(
     }
     let mut topology_faces = HashSet::new();
     for face in &topology.faces {
-        decode.insert_hash_set(&mut topology_faces, *face, "index F3D direct topology faces")?;
+        decode.insert_hash_set(
+            &mut topology_faces,
+            *face,
+            "index F3D direct topology faces",
+        )?;
     }
     let mut resolved = Vec::new();
     for (_, _, references) in clauses {
@@ -6135,7 +6403,11 @@ fn resolve_direct_face_recipe_clauses(
                 .filter_map(|face| stable_ref(face.as_str()))
                 .filter(|face| topology_faces.contains(face) && changed_faces.contains(face))
             {
-                decode.insert_hash_set(&mut eligible, face, "collect F3D direct face clause candidates")?;
+                decode.insert_hash_set(
+                    &mut eligible,
+                    face,
+                    "collect F3D direct face clause candidates",
+                )?;
             }
             let candidates = eligible;
             if candidates.is_empty() {
@@ -6160,7 +6432,6 @@ fn resolve_direct_face_recipe_clauses(
             return Ok(Vec::new());
         }
         if !resolved.contains(&face) {
-
             decode.reserve_vec(&mut resolved, 1, "collect F3D resolved direct faces")?;
             resolved.push(face);
         }
@@ -6251,9 +6522,16 @@ fn bind_profile_face_group_cardinality(
                     }) {
                         let mut preceding_faces = HashSet::new();
                         for face in &topology.faces {
-                            decode.insert_hash_set(&mut preceding_faces, *face, "index F3D profile preceding faces")?;
+                            decode.insert_hash_set(
+                                &mut preceding_faces,
+                                *face,
+                                "index F3D profile preceding faces",
+                            )?;
                         }
-                        let mut deleted = decode.collect_vec(transition.topology.faces.deleted.iter().copied(), "copy F3D profile deleted faces")?;
+                        let mut deleted = decode.collect_vec(
+                            transition.topology.faces.deleted.iter().copied(),
+                            "copy F3D profile deleted faces",
+                        )?;
                         deleted.sort_unstable();
                         deleted.dedup();
                         (deleted.len() == group.members().len()
@@ -6284,9 +6562,14 @@ fn bind_profile_face_group_cardinality(
             };
             for (index, face) in indices.into_iter().zip(faces) {
                 let face_id = historical_face_id(decode, face)?;
-                let preceding_id = face_id.try_clone_for_decode(decode, "copy F3D historical face identity")?;
-                operands[index].preceding_candidate_faces = decode.collect_vec(std::iter::once(preceding_id), "bind F3D profile preceding face")?;
-                operands[index].changed_candidate_faces = decode.collect_vec(std::iter::once(face_id), "bind F3D profile changed face")?;
+                let preceding_id =
+                    face_id.try_clone_for_decode(decode, "copy F3D historical face identity")?;
+                operands[index].preceding_candidate_faces = decode.collect_vec(
+                    std::iter::once(preceding_id),
+                    "bind F3D profile preceding face",
+                )?;
+                operands[index].changed_candidate_faces = decode
+                    .collect_vec(std::iter::once(face_id), "bind F3D profile changed face")?;
                 operands[index].resolved_face_slots = vec![face];
             }
         }
@@ -6302,7 +6585,11 @@ fn profile_face_group_cardinality_candidates(
 ) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
     let mut preceding_faces = HashSet::new();
     for face in &topology.faces {
-        decode.insert_hash_set(&mut preceding_faces, *face, "index F3D profile candidate faces")?;
+        decode.insert_hash_set(
+            &mut preceding_faces,
+            *face,
+            "index F3D profile candidate faces",
+        )?;
     }
     let mut faces_by_carrier = HashMap::<i64, Vec<i64>>::new();
     for face in changed_faces
@@ -6318,7 +6605,13 @@ fn profile_face_group_cardinality_candidates(
             continue;
         };
         if bindings.next().is_none() {
-            decode.push_hash_group(&mut faces_by_carrier, carrier, face, "index F3D profile face carriers", "collect F3D profile carrier faces")?;
+            decode.push_hash_group(
+                &mut faces_by_carrier,
+                carrier,
+                face,
+                "index F3D profile face carriers",
+                "collect F3D profile carrier faces",
+            )?;
         }
     }
     let mut candidates = faces_by_carrier
@@ -6345,7 +6638,11 @@ fn face_changes_across_state_chain<'a>(
     let mut visited = HashSet::new();
     let mut changed = HashSet::new();
     while current.state_id != previous_state_id {
-        if !decode.insert_hash_set(&mut visited, current.state_id, "track F3D face change state chain")? {
+        if !decode.insert_hash_set(
+            &mut visited,
+            current.state_id,
+            "track F3D face change state chain",
+        )? {
             return Ok(None);
         }
         let Some(transition) = current.transition.as_ref() else {
@@ -6388,7 +6685,11 @@ fn edge_changes_across_state_chain<'a>(
     let mut deleted = HashSet::new();
     let mut updated = HashSet::new();
     while current.state_id != previous_state_id {
-        if !decode.insert_hash_set(&mut visited, current.state_id, "track F3D edge change state chain")? {
+        if !decode.insert_hash_set(
+            &mut visited,
+            current.state_id,
+            "track F3D edge change state chain",
+        )? {
             return Ok(None);
         }
         let Some(transition) = current.transition.as_ref() else {
@@ -6423,7 +6724,11 @@ fn historical_face_support_contexts(
 > {
     let mut preceding_faces = HashSet::new();
     for face in &preceding_topology.faces {
-        decode.insert_hash_set(&mut preceding_faces, *face, "index F3D historical support faces")?;
+        decode.insert_hash_set(
+            &mut preceding_faces,
+            *face,
+            "index F3D historical support faces",
+        )?;
     }
     let mut contexts = Vec::new();
     'candidates: for candidate in candidates {
@@ -6450,7 +6755,11 @@ fn historical_face_support_contexts(
                     if bindings.next().is_some() {
                         continue 'candidates;
                     }
-                    decode.insert_hash_set(&mut carriers, binding.carrier, "index F3D historical support carriers")?;
+                    decode.insert_hash_set(
+                        &mut carriers,
+                        binding.carrier,
+                        "index F3D historical support carriers",
+                    )?;
                 }
             }
             if carriers.len() != 1 {
@@ -6461,22 +6770,28 @@ fn historical_face_support_contexts(
             };
             carrier
         };
-        let mut preceding_face_slots = decode.collect_vec(preceding_topology
+        let mut preceding_face_slots = decode.collect_vec(
+            preceding_topology
                 .face_surfaces
                 .iter()
                 .filter(|binding| {
                     binding.carrier == surface_slot && preceding_faces.contains(&binding.entity)
                 })
-                .map(|binding| binding.entity), "collect F3D historical support face slots")?;
+                .map(|binding| binding.entity),
+            "collect F3D historical support face slots",
+        )?;
         preceding_face_slots.sort_unstable();
         preceding_face_slots.dedup();
         if preceding_face_slots.is_empty() {
             continue;
         }
-        let changed_preceding_face_slots = decode.collect_vec(preceding_face_slots
+        let changed_preceding_face_slots = decode.collect_vec(
+            preceding_face_slots
                 .iter()
                 .copied()
-                .filter(|face| changed_faces.contains(face)), "collect F3D changed support face slots")?;
+                .filter(|face| changed_faces.contains(face)),
+            "collect F3D changed support face slots",
+        )?;
         let preceding_face_boundaries =
             face_boundary_contexts_for_slots(decode, &preceding_face_slots, preceding_topology)?;
 
@@ -6523,11 +6838,14 @@ fn face_boundary_edges(
             decode.insert_hash_set(&mut coedges, *coedge, "index F3D boundary coedges")?;
         }
     }
-    let mut edges = decode.collect_vec(topology
+    let mut edges = decode.collect_vec(
+        topology
             .coedge_topology
             .iter()
             .filter(|coedge| coedges.contains(&coedge.coedge))
-            .map(|coedge| coedge.edge), "collect F3D boundary edges")?;
+            .map(|coedge| coedge.edge),
+        "collect F3D boundary edges",
+    )?;
     edges.sort_unstable();
     edges.dedup();
     Ok(edges)
@@ -6557,7 +6875,10 @@ fn face_boundary_contexts(
     Vec<crate::records::topology::historical_context::DesignHistoricalFaceBoundaryContext>,
     cadmpeg_core::CodecError,
 > {
-    let face_slots = decode.collect_vec(faces.iter().filter_map(|face| stable_ref(face.as_str())), "collect F3D boundary face slots")?;
+    let face_slots = decode.collect_vec(
+        faces.iter().filter_map(|face| stable_ref(face.as_str())),
+        "collect F3D boundary face slots",
+    )?;
     face_boundary_contexts_for_slots(decode, &face_slots, topology)
 }
 
@@ -6736,7 +7057,11 @@ fn preceding_support_face_slots(
 ) -> Result<Vec<i64>, cadmpeg_core::CodecError> {
     let mut preceding_faces = HashSet::new();
     for face in &preceding_topology.faces {
-        decode.insert_hash_set(&mut preceding_faces, *face, "index F3D preceding support faces")?;
+        decode.insert_hash_set(
+            &mut preceding_faces,
+            *face,
+            "index F3D preceding support faces",
+        )?;
     }
     let mut support_faces = Vec::new();
     for result_face in result_faces {
@@ -6760,7 +7085,6 @@ fn preceding_support_face_slots(
             continue;
         };
         if preceding_bindings.next().is_none() && !support_faces.contains(&preceding_face) {
-
             decode.reserve_vec(&mut support_faces, 1, "collect F3D preceding support faces")?;
             support_faces.push(preceding_face);
         }
@@ -6793,11 +7117,14 @@ fn edge_recipe_reference_context(
     let result_faces = selection::faces_in_topology(decode, candidate_faces, result.topology)?;
     let result_face_boundaries = face_boundary_contexts(decode, &result_faces, result.topology)?;
     let result_edges = face_boundary_edges(decode, &result_faces, result.topology)?;
-    let result_shared_edge_slots = decode.collect_vec(result
+    let result_shared_edge_slots = decode.collect_vec(
+        result
             .boundary_edges
             .iter()
             .copied()
-            .filter(|edge| result_edges.contains(edge)), "collect F3D result shared edges")?;
+            .filter(|edge| result_edges.contains(edge)),
+        "collect F3D result shared edges",
+    )?;
     let preceding_faces =
         selection::faces_in_topology(decode, candidate_faces, preceding.topology)?;
     let preceding_face_boundaries =
@@ -6810,15 +7137,21 @@ fn edge_recipe_reference_context(
         preceding.topology,
     )?;
     let preceding_edges = face_boundary_edges(decode, &preceding_faces, preceding.topology)?;
-    let shared_edge_slots = decode.collect_vec(preceding
+    let shared_edge_slots = decode.collect_vec(
+        preceding
             .boundary_edges
             .iter()
             .copied()
-            .filter(|edge| preceding_edges.contains(edge)), "collect F3D shared edge slots")?;
-    let changed_shared_edge_slots = decode.collect_vec(shared_edge_slots
+            .filter(|edge| preceding_edges.contains(edge)),
+        "collect F3D shared edge slots",
+    )?;
+    let changed_shared_edge_slots = decode.collect_vec(
+        shared_edge_slots
             .iter()
             .copied()
-            .filter(|edge| changed_edges.contains(edge)), "collect F3D changed shared edges")?;
+            .filter(|edge| changed_edges.contains(edge)),
+        "collect F3D changed shared edges",
+    )?;
     let mut support_edges = HashSet::new();
     for edge in preceding_support_face_boundaries
         .iter()
@@ -6827,11 +7160,14 @@ fn edge_recipe_reference_context(
     {
         decode.insert_hash_set(&mut support_edges, edge, "index F3D support edges")?;
     }
-    let mut changed_reference_edge_slots = decode.collect_vec(preceding_edges
+    let mut changed_reference_edge_slots = decode.collect_vec(
+        preceding_edges
             .iter()
             .copied()
             .chain(support_edges.iter().copied())
-            .filter(|edge| changed_edges.contains(edge)), "collect F3D changed reference edges")?;
+            .filter(|edge| changed_edges.contains(edge)),
+        "collect F3D changed reference edges",
+    )?;
     changed_reference_edge_slots.sort_unstable();
     changed_reference_edge_slots.dedup();
     Ok(
@@ -6898,8 +7234,7 @@ fn side_one_recipe_edge(
     let Some(first) = edge_sets.first() else {
         return Ok(None);
     };
-    let mut candidates =
-        decode.collect_vec(first.iter().copied(), "copy F3D recipe side edges")?;
+    let mut candidates = decode.collect_vec(first.iter().copied(), "copy F3D recipe side edges")?;
     for edges in edge_sets.iter().skip(1) {
         candidates.retain(|candidate| edges.contains(candidate));
     }
@@ -6929,7 +7264,6 @@ pub(crate) fn bind_edge_operand_history_candidates(
     for recipe in recipes {
         if let Some(index) = recipe.record_index {
             if !recipe_record_indices.contains_key(recipe.id.as_str()) {
-
                 decode.reserve_map(&mut recipe_record_indices, 1, "index F3D edge recipes")?;
             }
             recipe_record_indices.insert(recipe.id.as_str(), index.value);
@@ -6944,7 +7278,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 .as_ref()
                 .and_then(|transition| transition.previous_state_id)
             {
-                decode.insert_hash_set(&mut preceding, previous, "index F3D terminal predecessors")?;
+                decode.insert_hash_set(
+                    &mut preceding,
+                    previous,
+                    "index F3D terminal predecessors",
+                )?;
             }
         }
         let mut terminals = history
@@ -6953,8 +7291,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .filter(|state| !preceding.contains(&state.state_id));
         if let Some(state) = terminals.next().filter(|_| terminals.next().is_none()) {
             if let Some(topology) = state.topology() {
-
-                decode.reserve_vec(&mut terminal_topologies, 1, "collect F3D terminal topologies")?;
+                decode.reserve_vec(
+                    &mut terminal_topologies,
+                    1,
+                    "collect F3D terminal topologies",
+                )?;
                 terminal_topologies.push((state.state_id, topology));
             }
         }
@@ -7033,25 +7374,38 @@ pub(crate) fn bind_edge_operand_history_candidates(
         };
         let mut preceding_faces = HashSet::new();
         for face in &topology.faces {
-            decode.insert_hash_set(&mut preceding_faces, *face, "index F3D preceding edge faces")?;
+            decode.insert_hash_set(
+                &mut preceding_faces,
+                *face,
+                "index F3D preceding edge faces",
+            )?;
         }
-        let inserted_faces = decode.collect_vec(result_topology
+        let inserted_faces = decode.collect_vec(
+            result_topology
                 .faces
                 .iter()
                 .copied()
-                .filter(|face| !preceding_faces.contains(face)), "collect F3D inserted faces")?;
+                .filter(|face| !preceding_faces.contains(face)),
+            "collect F3D inserted faces",
+        )?;
         let mut result_edges = HashSet::new();
         for edge in &result_topology.edges {
             decode.insert_hash_set(&mut result_edges, *edge, "index F3D result edges")?;
         }
         let deleted_edges =
-            decode.collect_vec(topology.edges.iter().copied().filter(|edge| {
+            decode.collect_vec(
+                topology.edges.iter().copied().filter(|edge| {
                     !result_edges.contains(edge) && chain_deleted_edges.contains(edge)
-                }), "collect F3D deleted edge candidates")?;
-        let updated_edges = decode.collect_vec(topology.edges.iter().copied().filter(|edge| {
+                }),
+                "collect F3D deleted edge candidates",
+            )?;
+        let updated_edges = decode.collect_vec(
+            topology.edges.iter().copied().filter(|edge| {
                 result_edges.contains(edge)
                     && (chain_deleted_edges.contains(edge) || chain_updated_edges.contains(edge))
-            }), "collect F3D updated edge candidates")?;
+            }),
+            "collect F3D updated edge candidates",
+        )?;
         operand.recipe_state_id = Some(previous_state_id);
         operand.result_candidate_faces =
             selection::faces_in_topology(decode, &operand.candidate_faces, result_topology)?;
@@ -7059,20 +7413,31 @@ pub(crate) fn bind_edge_operand_history_candidates(
             face_boundary_edges(decode, &operand.result_candidate_faces, result_topology)?;
         operand.preceding_candidate_faces =
             selection::faces_in_topology(decode, &operand.candidate_faces, topology)?;
-        operand.changed_candidate_faces = decode.try_collect_vec((operand.preceding_candidate_faces.iter().filter(|face| {
+        operand.changed_candidate_faces = decode.try_collect_vec(
+            (operand.preceding_candidate_faces.iter().filter(|face| {
                 stable_ref(face.as_str()).is_some_and(|slot| changed_faces.contains(&slot))
-            })).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "collect F3D changed edge faces")?;
+            }))
+            .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
+            "collect F3D changed edge faces",
+        )?;
         operand.preceding_boundary_edge_slots =
             face_boundary_edges(decode, &operand.preceding_candidate_faces, topology)?;
         let mut changed_edges = HashSet::new();
         for edge in deleted_edges.iter().chain(&updated_edges) {
-            decode.insert_hash_set(&mut changed_edges, *edge, "index F3D changed edge candidates")?;
+            decode.insert_hash_set(
+                &mut changed_edges,
+                *edge,
+                "index F3D changed edge candidates",
+            )?;
         }
-        operand.changed_boundary_edge_slots = decode.collect_vec(operand
+        operand.changed_boundary_edge_slots = decode.collect_vec(
+            operand
                 .preceding_boundary_edge_slots
                 .iter()
                 .copied()
-                .filter(|edge| changed_edges.contains(edge)), "collect F3D changed boundary edges")?;
+                .filter(|edge| changed_edges.contains(edge)),
+            "collect F3D changed boundary edges",
+        )?;
         operand.deleted_boundary_edge_slots = selection::boundary_edges_in_changes(
             decode,
             &operand.preceding_boundary_edge_slots,
@@ -7091,11 +7456,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
             topology,
             &deleted_edges,
         )?;
-        operand.changed_boundary_edge_contexts = decode.try_collect_vec(operand
+        operand.changed_boundary_edge_contexts = decode.try_collect_vec(
+            operand
                 .changed_boundary_edge_slots
                 .iter()
                 .copied()
-                .map(|edge| selection::historical_edge_context(decode, edge, topology)), "collect F3D changed boundary contexts")?;
+                .map(|edge| selection::historical_edge_context(decode, edge, topology)),
+            "collect F3D changed boundary contexts",
+        )?;
         let mut reference_contexts = Vec::new();
         for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
             let Ok(reference_ordinal) = u32::try_from(ordinal) else {
@@ -7116,7 +7484,11 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 &changed_edges,
             )?;
 
-            decode.reserve_vec(&mut reference_contexts, 1, "collect F3D edge recipe contexts")?;
+            decode.reserve_vec(
+                &mut reference_contexts,
+                1,
+                "collect F3D edge recipe contexts",
+            )?;
             reference_contexts.push(context);
         }
         operand.recipe_reference_contexts = reference_contexts;
@@ -7143,11 +7515,20 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 collect_reference_edge_sets(decode, &reference_faces, topology)?;
             let mut candidate_edges = BTreeSet::new();
             for edge in reference_edge_sets.iter().flatten() {
-                decode.insert_btree_set(&mut candidate_edges, *edge, "index F3D sweep candidate edges").map(|_| ())?;
+                decode
+                    .insert_btree_set(
+                        &mut candidate_edges,
+                        *edge,
+                        "index F3D sweep candidate edges",
+                    )
+                    .map(|_| ())?;
             }
-            let contexts = decode.try_collect_vec(candidate_edges
+            let contexts = decode.try_collect_vec(
+                candidate_edges
                     .into_iter()
-                    .map(|edge| selection::historical_edge_context(decode, edge, topology)), "collect F3D sweep edge contexts")?;
+                    .map(|edge| selection::historical_edge_context(decode, edge, topology)),
+                "collect F3D sweep edge contexts",
+            )?;
             operand.recipe_selectors = selection::recipe_selector_candidates(
                 decode,
                 operand.recipe_structure.as_ref(),
@@ -7172,11 +7553,20 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 collect_reference_edge_sets(decode, &reference_faces, topology)?;
             let mut candidate_edges = BTreeSet::new();
             for edge in reference_edge_sets.iter().flatten() {
-                decode.insert_btree_set(&mut candidate_edges, *edge, "index F3D revolve candidate edges").map(|_| ())?;
+                decode
+                    .insert_btree_set(
+                        &mut candidate_edges,
+                        *edge,
+                        "index F3D revolve candidate edges",
+                    )
+                    .map(|_| ())?;
             }
-            let contexts = decode.try_collect_vec(candidate_edges
+            let contexts = decode.try_collect_vec(
+                candidate_edges
                     .into_iter()
-                    .map(|edge| selection::historical_edge_context(decode, edge, topology)), "collect F3D revolve edge contexts")?;
+                    .map(|edge| selection::historical_edge_context(decode, edge, topology)),
+                "collect F3D revolve edge contexts",
+            )?;
             operand.recipe_selectors = selection::recipe_selector_candidates(
                 decode,
                 operand.recipe_structure.as_ref(),
@@ -7198,12 +7588,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
             }
             continue;
         }
-        let changed_edge_contexts = decode.try_collect_vec(topology
+        let changed_edge_contexts = decode.try_collect_vec(
+            topology
                 .edges
                 .iter()
                 .copied()
                 .filter(|edge| changed_edges.contains(edge))
-                .map(|edge| selection::historical_edge_context(decode, edge, topology)), "collect F3D changed edge contexts")?;
+                .map(|edge| selection::historical_edge_context(decode, edge, topology)),
+            "collect F3D changed edge contexts",
+        )?;
         operand.recipe_selectors = selection::recipe_selector_candidates(
             decode,
             operand.recipe_structure.as_ref(),
@@ -7259,7 +7652,11 @@ fn historical_edge_axis(
             bindings.next().is_none().then_some(carrier)
         })
     {
-        decode.insert_hash_set(&mut support_surfaces, carrier, "index F3D edge axis support surfaces")?;
+        decode.insert_hash_set(
+            &mut support_surfaces,
+            carrier,
+            "index F3D edge axis support surfaces",
+        )?;
     }
     let mut axes = topology
         .surface_axes
@@ -7376,11 +7773,14 @@ fn surface_patch_edge_operand_slot(
     };
     let faces = selection::faces_in_topology(decode, face_candidates, topology)?;
     let face_boundary_edges = face_boundary_edges(decode, &faces, topology)?;
-    let mut candidates = decode.collect_vec(edge_reference
+    let mut candidates = decode.collect_vec(
+        edge_reference
             .candidate_edges
             .iter()
             .filter_map(|edge| stable_ref(edge.as_str()))
-            .filter(|edge| face_boundary_edges.contains(edge)), "collect F3D surface patch edge candidates")?;
+            .filter(|edge| face_boundary_edges.contains(edge)),
+        "collect F3D surface patch edge candidates",
+    )?;
     candidates.sort_unstable();
     candidates.dedup();
     match candidates.as_slice() {
@@ -7418,10 +7818,13 @@ fn bind_active_edge_operand_candidates(
             continue;
         }
         let boundary_edges = face_boundary_edges(decode, &candidate_faces, topology)?;
-        let contexts = decode.try_collect_vec(boundary_edges
+        let contexts = decode.try_collect_vec(
+            boundary_edges
                 .iter()
                 .copied()
-                .map(|edge| selection::historical_edge_context(decode, edge, topology)), "collect F3D terminal edge contexts")?;
+                .map(|edge| selection::historical_edge_context(decode, edge, topology)),
+            "collect F3D terminal edge contexts",
+        )?;
         let selectors = selection::recipe_selector_candidates(
             decode,
             operand.recipe_structure.as_ref(),
@@ -7474,7 +7877,11 @@ fn terminal_edge_recipe_faces(
     primary: &[cadmpeg_ir::ids::FaceId],
     reference_faces: &[Vec<cadmpeg_ir::ids::FaceId>],
 ) -> Result<Vec<cadmpeg_ir::ids::FaceId>, cadmpeg_core::CodecError> {
-    let mut faces = decode.try_collect_vec((primary.iter().chain(reference_faces.iter().flatten())).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "collect F3D terminal edge recipe faces")?;
+    let mut faces = decode.try_collect_vec(
+        (primary.iter().chain(reference_faces.iter().flatten()))
+            .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
+        "collect F3D terminal edge recipe faces",
+    )?;
     faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
     faces.dedup();
     Ok(faces)
@@ -7492,8 +7899,12 @@ fn terminal_edge_recipe_reference_faces(
         } else {
             &reference.candidate_faces
         };
-        let faces =
-            decode.try_collect_vec((faces).into_iter().map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")), "copy F3D terminal reference faces")?;
+        let faces = decode.try_collect_vec(
+            (faces)
+                .iter()
+                .map(|face| face.try_clone_for_decode(decode, "copy F3D historical face identity")),
+            "copy F3D terminal reference faces",
+        )?;
 
         decode.reserve_vec(&mut selected, 1, "collect F3D terminal reference groups")?;
         selected.push(faces);
@@ -7564,7 +7975,11 @@ fn treatment_edge_candidates(
     )?;
     let mut deleted_edge_set = HashSet::new();
     for edge in deleted_edges {
-        decode.insert_hash_set(&mut deleted_edge_set, *edge, "index F3D treatment deleted edges")?;
+        decode.insert_hash_set(
+            &mut deleted_edge_set,
+            *edge,
+            "index F3D treatment deleted edges",
+        )?;
     }
     let mut candidate_edges = HashSet::new();
     for edge in result_candidate_faces
@@ -7575,7 +7990,11 @@ fn treatment_edge_candidates(
         .flatten()
         .copied()
     {
-        decode.insert_hash_set(&mut candidate_edges, edge, "index F3D treatment candidate edges")?;
+        decode.insert_hash_set(
+            &mut candidate_edges,
+            edge,
+            "index F3D treatment candidate edges",
+        )?;
     }
     let mut radii_out = Vec::new();
     let mut transitions_out = Vec::new();
@@ -7606,11 +8025,13 @@ fn treatment_edge_candidates(
                     .intersection(right_edges)
                     .filter(|edge| deleted_edge_set.contains(edge))
                 {
-
-                    decode.reserve_vec(&mut transitions_out, 1, "collect F3D treatment transition edges")?;
+                    decode.reserve_vec(
+                        &mut transitions_out,
+                        1,
+                        "collect F3D treatment transition edges",
+                    )?;
                     transitions_out.push(*edge);
                     if let Some(radius) = radius {
-
                         decode.reserve_vec(&mut radii_out, 1, "collect F3D treatment radii")?;
                         radii_out.push(
                             crate::records::topology::edge_identity::DesignEdgeTreatmentRadiusCandidate {
@@ -7645,18 +8066,32 @@ fn treatment_face_supports(
 ) -> Result<Vec<(i64, i64, Vec<i64>)>, cadmpeg_core::CodecError> {
     let mut preceding_faces = HashSet::new();
     for face in &preceding.faces {
-        decode.insert_hash_set(&mut preceding_faces, *face, "index F3D treatment preceding faces")?;
+        decode.insert_hash_set(
+            &mut preceding_faces,
+            *face,
+            "index F3D treatment preceding faces",
+        )?;
     }
     let mut preceding_surfaces = HashSet::new();
     for surface in &preceding.surfaces {
-        decode.insert_hash_set(&mut preceding_surfaces, *surface, "index F3D treatment preceding surfaces")?;
+        decode.insert_hash_set(
+            &mut preceding_surfaces,
+            *surface,
+            "index F3D treatment preceding surfaces",
+        )?;
     }
     let result_carriers = unique_face_carriers(decode, result)?;
     let preceding_carrier_faces = unique_carrier_faces(decode, preceding, &preceding_faces)?;
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
         for edge in edges {
-            decode.push_hash_group(&mut adjacent_faces, *edge, *face, "index F3D adjacent treatment edges", "collect F3D adjacent treatment faces")?;
+            decode.push_hash_group(
+                &mut adjacent_faces,
+                *edge,
+                *face,
+                "index F3D adjacent treatment edges",
+                "collect F3D adjacent treatment faces",
+            )?;
         }
     }
     let mut selected = Vec::new();
@@ -7670,14 +8105,17 @@ fn treatment_face_supports(
         let Some(inserted_boundary) = result_boundaries.get(&inserted) else {
             continue;
         };
-        let mut supports = decode.collect_vec(inserted_boundary
+        let mut supports = decode.collect_vec(
+            inserted_boundary
                 .iter()
                 .filter_map(|edge| adjacent_faces.get(edge))
                 .flatten()
                 .copied()
                 .filter(|face| *face != inserted)
                 .filter_map(|face| result_carriers.get(&face).copied().flatten())
-                .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten()), "collect F3D treatment support faces")?;
+                .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten()),
+            "collect F3D treatment support faces",
+        )?;
         supports.sort_unstable();
         supports.dedup();
 
@@ -7698,7 +8136,6 @@ fn face_boundary_edge_index(
         let mut out = HashMap::<i64, Option<&[i64]>>::new();
         for relation in relations {
             if !out.contains_key(&relation.owner_ref) {
-
                 decode.reserve_map(&mut out, 1, "index F3D boundary relations")?;
             }
             out.entry(relation.owner_ref)
@@ -7712,7 +8149,6 @@ fn face_boundary_edge_index(
     let mut coedge_edges = HashMap::<i64, Option<i64>>::new();
     for coedge in &topology.coedge_topology {
         if !coedge_edges.contains_key(&coedge.coedge) {
-
             decode.reserve_map(&mut coedge_edges, 1, "index F3D boundary coedge edges")?;
         }
         coedge_edges
@@ -7738,7 +8174,6 @@ fn face_boundary_edge_index(
             }
         }
         if !boundaries.contains_key(face) {
-
             decode.reserve_map(&mut boundaries, 1, "index F3D face boundaries")?;
         }
         boundaries.insert(*face, edges);
@@ -7753,7 +8188,6 @@ fn unique_face_carriers(
     let mut out = HashMap::new();
     for binding in &topology.face_surfaces {
         if !out.contains_key(&binding.entity) {
-
             decode.reserve_map(&mut out, 1, "index F3D face carriers")?;
         }
         out.entry(binding.entity)
@@ -7775,7 +8209,6 @@ fn unique_carrier_faces(
         .filter(|binding| included_faces.contains(&binding.entity))
     {
         if !out.contains_key(&binding.carrier) {
-
             decode.reserve_map(&mut out, 1, "index F3D carrier faces")?;
         }
         out.entry(binding.carrier)
@@ -7821,8 +8254,7 @@ fn affected_body_refs(
         return Ok(None);
     };
     let current_changes = changed_family_refs(ctx, &transition.topology, false)?;
-    let Some(mut affected) = bodies_intersecting(ctx, current_topology, &current_changes)?
-    else {
+    let Some(mut affected) = bodies_intersecting(ctx, current_topology, &current_changes)? else {
         return Ok(None);
     };
     if let Some(previous) = previous {
@@ -7830,15 +8262,17 @@ fn affected_body_refs(
             return Ok(None);
         };
         let deleted = changed_family_refs(ctx, &transition.topology, true)?;
-        let Some(previous_affected) = bodies_intersecting(ctx, previous_topology, &deleted)?
-        else {
+        let Some(previous_affected) = bodies_intersecting(ctx, previous_topology, &deleted)? else {
             return Ok(None);
         };
         for body in previous_affected {
             ctx.insert_btree_set(&mut affected, body, "merge F3D affected history bodies")?;
         }
     }
-    Ok(Some(ctx.collect_vec(affected, "collect F3D affected history bodies")?))
+    Ok(Some(ctx.collect_vec(
+        affected,
+        "collect F3D affected history bodies",
+    )?))
 }
 
 fn changed_family_refs(
@@ -7894,20 +8328,32 @@ fn bodies_intersecting(
     let shell_free_vertices = relation_map(decode, &topology.shell_free_vertices)?;
     let face_loops = relation_map(decode, &topology.face_loops)?;
     let loop_coedges = relation_map(decode, &topology.loop_coedges)?;
-    let coedges = decode.collect_hash_map(topology
+    let coedges = decode.collect_hash_map(
+        topology
             .coedge_topology
             .iter()
-            .map(|coedge| (coedge.coedge, coedge)), "index F3D historical coedges")?;
-    let edges = decode.collect_hash_map(topology.edge_vertices.iter().map(|edge| (edge.edge, edge)), "index F3D historical edge vertices")?;
+            .map(|coedge| (coedge.coedge, coedge)),
+        "index F3D historical coedges",
+    )?;
+    let edges = decode.collect_hash_map(
+        topology.edge_vertices.iter().map(|edge| (edge.edge, edge)),
+        "index F3D historical edge vertices",
+    )?;
     let carrier = |items: &[AsmHistoricalCarrierBinding]| {
-        decode.collect_hash_map(items
+        decode.collect_hash_map(
+            items
                 .iter()
-                .map(|binding| (binding.entity, binding.carrier)), "index F3D historical carriers")
+                .map(|binding| (binding.entity, binding.carrier)),
+            "index F3D historical carriers",
+        )
     };
     let optional_carrier = |items: &[AsmHistoricalOptionalCarrierBinding]| {
-        decode.collect_hash_map(items
+        decode.collect_hash_map(
+            items
                 .iter()
-                .map(|binding| (binding.entity, binding.carrier)), "index F3D historical optional carriers")
+                .map(|binding| (binding.entity, binding.carrier)),
+            "index F3D historical optional carriers",
+        )
     };
     let face_surfaces = carrier(&topology.face_surfaces)?;
     let edge_curves = optional_carrier(&topology.edge_curves)?;
@@ -7916,52 +8362,119 @@ fn bodies_intersecting(
     let mut affected = BTreeSet::new();
     for &body in &topology.bodies {
         let mut closure = BTreeSet::new();
-        decode.insert_btree_set(&mut closure, body, "collect F3D historical body closure").map(|_| ())?;
+        decode
+            .insert_btree_set(&mut closure, body, "collect F3D historical body closure")
+            .map(|_| ())?;
         for &region in *history_some!(body_regions.get(&body)) {
-            decode.insert_btree_set(&mut closure, region, "collect F3D historical body closure").map(|_| ())?;
+            decode
+                .insert_btree_set(&mut closure, region, "collect F3D historical body closure")
+                .map(|_| ())?;
             for &shell in *history_some!(region_shells.get(&region)) {
-                decode.insert_btree_set(&mut closure, shell, "collect F3D historical body closure").map(|_| ())?;
-                let mut shell_edges = decode.collect_vec(history_some!(shell_wire_edges.get(&shell)).iter().copied(), "copy F3D historical shell edges")?;
-                let mut shell_vertices = decode.collect_vec(history_some!(shell_free_vertices.get(&shell))
+                decode
+                    .insert_btree_set(&mut closure, shell, "collect F3D historical body closure")
+                    .map(|_| ())?;
+                let mut shell_edges = decode.collect_vec(
+                    history_some!(shell_wire_edges.get(&shell)).iter().copied(),
+                    "copy F3D historical shell edges",
+                )?;
+                let mut shell_vertices = decode.collect_vec(
+                    history_some!(shell_free_vertices.get(&shell))
                         .iter()
-                        .copied(), "copy F3D historical shell vertices")?;
+                        .copied(),
+                    "copy F3D historical shell vertices",
+                )?;
                 for &face in *history_some!(shell_faces.get(&shell)) {
-                    decode.insert_btree_set(&mut closure, face, "collect F3D historical body closure").map(|_| ())?;
-                    decode.insert_btree_set(&mut closure, *history_some!(face_surfaces.get(&face)), "collect F3D historical body closure").map(|_| ())?;
+                    decode
+                        .insert_btree_set(&mut closure, face, "collect F3D historical body closure")
+                        .map(|_| ())?;
+                    decode
+                        .insert_btree_set(
+                            &mut closure,
+                            *history_some!(face_surfaces.get(&face)),
+                            "collect F3D historical body closure",
+                        )
+                        .map(|_| ())?;
                     for &loop_ in *history_some!(face_loops.get(&face)) {
-                        decode.insert_btree_set(&mut closure, loop_, "collect F3D historical body closure").map(|_| ())?;
+                        decode
+                            .insert_btree_set(
+                                &mut closure,
+                                loop_,
+                                "collect F3D historical body closure",
+                            )
+                            .map(|_| ())?;
                         for &coedge in *history_some!(loop_coedges.get(&loop_)) {
-                            decode.insert_btree_set(&mut closure, coedge, "collect F3D historical body closure").map(|_| ())?;
+                            decode
+                                .insert_btree_set(
+                                    &mut closure,
+                                    coedge,
+                                    "collect F3D historical body closure",
+                                )
+                                .map(|_| ())?;
                             let coedge_topology = history_some!(coedges.get(&coedge));
 
-                            decode.reserve_vec(&mut shell_edges, 1, "collect F3D historical shell edges")?;
+                            decode.reserve_vec(
+                                &mut shell_edges,
+                                1,
+                                "collect F3D historical shell edges",
+                            )?;
                             shell_edges.push(coedge_topology.edge);
                             if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
-                                decode.insert_btree_set(&mut closure, pcurve, "collect F3D historical body closure").map(|_| ())?;
+                                decode
+                                    .insert_btree_set(
+                                        &mut closure,
+                                        pcurve,
+                                        "collect F3D historical body closure",
+                                    )
+                                    .map(|_| ())?;
                             }
                         }
                     }
                 }
                 for edge in shell_edges {
-                    decode.insert_btree_set(&mut closure, edge, "collect F3D historical body closure").map(|_| ())?;
+                    decode
+                        .insert_btree_set(&mut closure, edge, "collect F3D historical body closure")
+                        .map(|_| ())?;
                     let edge_topology = history_some!(edges.get(&edge));
                     for vertex in [edge_topology.start_vertex, edge_topology.end_vertex] {
-
-                        decode.reserve_vec(&mut shell_vertices, 1, "collect F3D historical shell vertices")?;
+                        decode.reserve_vec(
+                            &mut shell_vertices,
+                            1,
+                            "collect F3D historical shell vertices",
+                        )?;
                         shell_vertices.push(vertex);
                     }
                     if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
-                        decode.insert_btree_set(&mut closure, curve, "collect F3D historical body closure").map(|_| ())?;
+                        decode
+                            .insert_btree_set(
+                                &mut closure,
+                                curve,
+                                "collect F3D historical body closure",
+                            )
+                            .map(|_| ())?;
                     }
                 }
                 for vertex in shell_vertices {
-                    decode.insert_btree_set(&mut closure, vertex, "collect F3D historical body closure").map(|_| ())?;
-                    decode.insert_btree_set(&mut closure, *history_some!(vertex_points.get(&vertex)), "collect F3D historical body closure").map(|_| ())?;
+                    decode
+                        .insert_btree_set(
+                            &mut closure,
+                            vertex,
+                            "collect F3D historical body closure",
+                        )
+                        .map(|_| ())?;
+                    decode
+                        .insert_btree_set(
+                            &mut closure,
+                            *history_some!(vertex_points.get(&vertex)),
+                            "collect F3D historical body closure",
+                        )
+                        .map(|_| ())?;
                 }
             }
         }
         if !closure.is_disjoint(changed) {
-            decode.insert_btree_set(&mut affected, body, "collect F3D affected topology bodies").map(|_| ())?;
+            decode
+                .insert_btree_set(&mut affected, body, "collect F3D affected topology bodies")
+                .map(|_| ())?;
         }
     }
     Ok(Some(affected))
@@ -7971,9 +8484,12 @@ fn relation_map<'a>(
     decode: &cadmpeg_core::decode::DecodeContext<'_>,
     items: &'a [AsmHistoricalRelation],
 ) -> Result<HashMap<i64, &'a [i64]>, cadmpeg_core::CodecError> {
-    decode.collect_hash_map(items
+    decode.collect_hash_map(
+        items
             .iter()
-            .map(|relation| (relation.owner_ref, relation.member_refs.as_slice())), "index F3D historical relations")
+            .map(|relation| (relation.owner_ref, relation.member_refs.as_slice())),
+        "index F3D historical relations",
+    )
 }
 
 fn historical_topology(
@@ -7993,7 +8509,10 @@ fn historical_topology(
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ids: impl Iterator<Item = &'a str>,
     ) -> Result<Option<Vec<i64>>, cadmpeg_core::CodecError> {
-        ctx.collect_options(ids.map(stable_ref), "collect F3D historical topology references")
+        ctx.collect_options(
+            ids.map(stable_ref),
+            "collect F3D historical topology references",
+        )
     }
 
     fn relations<'a, M>(
@@ -8012,7 +8531,11 @@ fn historical_topology(
                 return Ok(None);
             };
 
-            ctx.reserve_vec(&mut collected, 1, "collect F3D historical topology relations")?;
+            ctx.reserve_vec(
+                &mut collected,
+                1,
+                "collect F3D historical topology relations",
+            )?;
             collected.push(AsmHistoricalRelation {
                 owner_ref,
                 member_refs,
@@ -8021,7 +8544,8 @@ fn historical_topology(
         Ok(Some(collected))
     }
 
-    let mut surface_radii = ctx.collect_vec(brep.surfaces.iter().filter_map(|surface| {
+    let mut surface_radii = ctx.collect_vec(
+        brep.surfaces.iter().filter_map(|surface| {
             use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let radius = match &surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -8039,7 +8563,9 @@ fn historical_topology(
                 surface: stable_ref(surface.id.as_str())?,
                 radius: radius.abs(),
             })
-        }), "collect F3D historical surface radii")?;
+        }),
+        "collect F3D historical surface radii",
+    )?;
     for (owner, procedural) in &brep.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(definition_payload) =
             procedural.definition()
@@ -8056,14 +8582,19 @@ fn historical_topology(
         };
         surface_radii.retain(|candidate| candidate.surface != surface);
 
-        ctx.reserve_vec(&mut surface_radii, 1, "collect F3D historical surface radii")?;
+        ctx.reserve_vec(
+            &mut surface_radii,
+            1,
+            "collect F3D historical surface radii",
+        )?;
         surface_radii.push(crate::history_records::AsmHistoricalSurfaceRadius {
             surface,
             radius: signed_radius.get().abs(),
         });
     }
     surface_radii.sort_by_key(|candidate| candidate.surface);
-    let mut surface_cylinders = ctx.collect_vec(brep.surfaces.iter().filter_map(|surface| {
+    let mut surface_cylinders = ctx.collect_vec(
+        brep.surfaces.iter().filter_map(|surface| {
             let Some(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) = surface.geometry.solved()
             else {
                 return None;
@@ -8077,9 +8608,12 @@ fn historical_topology(
                 axis,
                 radius: radius.abs(),
             })
-        }), "collect F3D historical surface cylinders")?;
+        }),
+        "collect F3D historical surface cylinders",
+    )?;
     surface_cylinders.sort_by_key(|candidate| candidate.surface);
-    let mut surface_planes = ctx.collect_vec(brep.surfaces.iter().filter_map(|surface| {
+    let mut surface_planes = ctx.collect_vec(
+        brep.surfaces.iter().filter_map(|surface| {
             let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = surface.geometry.solved()
             else {
                 return None;
@@ -8091,9 +8625,12 @@ fn historical_topology(
                 origin,
                 normal,
             })
-        }), "collect F3D historical surface planes")?;
+        }),
+        "collect F3D historical surface planes",
+    )?;
     surface_planes.sort_by_key(|candidate| candidate.surface);
-    let mut surface_axes = ctx.collect_vec(brep.surfaces.iter().filter_map(|surface| {
+    let mut surface_axes = ctx.collect_vec(
+        brep.surfaces.iter().filter_map(|surface| {
             use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
             let (origin, direction) = match surface.geometry {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
@@ -8118,7 +8655,9 @@ fn historical_topology(
                 origin,
                 direction,
             })
-        }), "collect F3D historical surface axes")?;
+        }),
+        "collect F3D historical surface axes",
+    )?;
     surface_axes.sort_by_key(|candidate| candidate.surface);
 
     Ok(Some(AsmHistoricalTopology {
@@ -8170,7 +8709,8 @@ fn historical_topology(
             ctx,
             brep.curves.iter().map(|entity| entity.id.as_str())
         )?),
-        curve_axes: ctx.collect_vec(brep.curves.iter().filter_map(|curve| {
+        curve_axes: ctx.collect_vec(
+            brep.curves.iter().filter_map(|curve| {
                 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
                 let (origin, direction) = match curve.geometry {
                     CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
@@ -8195,7 +8735,9 @@ fn historical_topology(
                     origin,
                     direction,
                 })
-            }), "collect F3D historical curve axes")?,
+            }),
+            "collect F3D historical curve axes",
+        )?,
         pcurves: topology_some!(refs(
             ctx,
             brep.pcurves.iter().map(|entity| entity.id.as_str())
@@ -8273,7 +8815,8 @@ fn historical_topology(
                 )
             })
         )?),
-        coedge_topology: topology_some!(ctx.collect_options(brep.coedges.iter().map(|coedge| {
+        coedge_topology: topology_some!(ctx.collect_options(
+            brep.coedges.iter().map(|coedge| {
                 let (next, previous) =
                     cadmpeg_ir::topology::coedge_ring_neighbors(&brep.loops, coedge)?;
                 Some(AsmHistoricalCoedge {
@@ -8284,21 +8827,30 @@ fn historical_topology(
                     previous: stable_ref(previous.as_str())?,
                     radial_next: stable_ref(coedge.radial_next.as_str())?,
                 })
-            }), "collect F3D historical coedges")?),
-        edge_vertices: topology_some!(ctx.collect_options(brep.edges.iter().map(|edge| {
+            }),
+            "collect F3D historical coedges"
+        )?),
+        edge_vertices: topology_some!(ctx.collect_options(
+            brep.edges.iter().map(|edge| {
                 Some(AsmHistoricalEdge {
                     edge: stable_ref(edge.id.as_str())?,
                     start_vertex: stable_ref(edge.start.as_str())?,
                     end_vertex: stable_ref(edge.end.as_str())?,
                 })
-            }), "collect F3D historical edges")?),
-        face_surfaces: topology_some!(ctx.collect_options(brep.faces.iter().map(|face| {
+            }),
+            "collect F3D historical edges"
+        )?),
+        face_surfaces: topology_some!(ctx.collect_options(
+            brep.faces.iter().map(|face| {
                 Some(AsmHistoricalCarrierBinding {
                     entity: stable_ref(face.id.as_str())?,
                     carrier: stable_ref(face.surface.as_str())?,
                 })
-            }), "collect F3D historical face surfaces")?),
-        edge_curves: topology_some!(ctx.collect_options(brep.edges.iter().map(|edge| {
+            }),
+            "collect F3D historical face surfaces"
+        )?),
+        edge_curves: topology_some!(ctx.collect_options(
+            brep.edges.iter().map(|edge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
                     entity: stable_ref(edge.id.as_str())?,
                     carrier: match edge.curve() {
@@ -8306,8 +8858,11 @@ fn historical_topology(
                         None => None,
                     },
                 })
-            }), "collect F3D historical edge curves")?),
-        coedge_pcurves: topology_some!(ctx.collect_options(brep.coedges.iter().map(|coedge| {
+            }),
+            "collect F3D historical edge curves"
+        )?),
+        coedge_pcurves: topology_some!(ctx.collect_options(
+            brep.coedges.iter().map(|coedge| {
                 Some(AsmHistoricalOptionalCarrierBinding {
                     entity: stable_ref(coedge.id.as_str())?,
                     carrier: match coedge.pcurves.first() {
@@ -8315,19 +8870,27 @@ fn historical_topology(
                         None => None,
                     },
                 })
-            }), "collect F3D historical coedge pcurves")?),
-        vertex_points: topology_some!(ctx.collect_options(brep.vertices.iter().map(|vertex| {
+            }),
+            "collect F3D historical coedge pcurves"
+        )?),
+        vertex_points: topology_some!(ctx.collect_options(
+            brep.vertices.iter().map(|vertex| {
                 Some(AsmHistoricalCarrierBinding {
                     entity: stable_ref(vertex.id.as_str())?,
                     carrier: stable_ref(vertex.point.as_str())?,
                 })
-            }), "collect F3D historical vertex points")?),
-        point_positions: topology_some!(ctx.collect_options(brep.points.iter().map(|point| {
+            }),
+            "collect F3D historical vertex points"
+        )?),
+        point_positions: topology_some!(ctx.collect_options(
+            brep.points.iter().map(|point| {
                 Some(AsmHistoricalPoint {
                     point: stable_ref(point.id.as_str())?,
                     position: point.position().get(),
                 })
-            }), "collect F3D historical point positions")?),
+            }),
+            "collect F3D historical point positions"
+        )?),
     }))
 }
 
@@ -8351,11 +8914,17 @@ pub(crate) fn historical_topology_with_tags(
         let Some(entity_ref) = entity_ref else {
             continue;
         };
-        let design_references = ctx.collect_vec(tag.design_references.iter().copied(), "collect F3D historical tag design references")?;
+        let design_references = ctx.collect_vec(
+            tag.design_references.iter().copied(),
+            "collect F3D historical tag design references",
+        )?;
         let token = ctx.copy_retained_text(tag.token.as_str(), "copy F3D historical tag token")?;
 
-        ctx.reserve_vec(&mut topology
-            .persistent_subentity_tags, 1, "collect F3D historical persistent tags")?;
+        ctx.reserve_vec(
+            &mut topology.persistent_subentity_tags,
+            1,
+            "collect F3D historical persistent tags",
+        )?;
         topology.persistent_subentity_tags.push(
             crate::history_records::AsmHistoricalPersistentSubentityTag {
                 entity_kind,
@@ -8380,7 +8949,11 @@ fn materialize_record_table(
     }
 
     let mut present = HashSet::new();
-    ctx.reserve_set(&mut present, state.entity_versions.len(), "index F3D historical record presence")?;
+    ctx.reserve_set(
+        &mut present,
+        state.entity_versions.len(),
+        "index F3D historical record presence",
+    )?;
     for version in &state.entity_versions {
         present.insert(version.entity_ref);
     }
@@ -8389,7 +8962,11 @@ fn materialize_record_table(
     }
 
     let mut records = Vec::new();
-    ctx.reserve_vec(&mut records, state.entity_versions.len(), "materialize F3D historical record table")?;
+    ctx.reserve_vec(
+        &mut records,
+        state.entity_versions.len(),
+        "materialize F3D historical record table",
+    )?;
     for version in &state.entity_versions {
         let Some(record) = archive.get(&version.record_ref) else {
             return Ok(None);
@@ -8531,7 +9108,11 @@ fn decode_history_records(
                     .count();
 
                 let mut entity_references = Vec::new();
-                ctx.reserve_vec(&mut entity_references, reference_count, "frame F3D history references")?;
+                ctx.reserve_vec(
+                    &mut entity_references,
+                    reference_count,
+                    "frame F3D history references",
+                )?;
                 for token in record.tokens.iter() {
                     if let cadmpeg_asm::sab::Token::Ref(value) = token {
                         entity_references.push(*value);
@@ -8583,7 +9164,8 @@ fn decode_history_records(
             )?;
             let parent =
                 ctx.copy_retained_text(state_id, "copy opaque F3D history record parent")?;
-            let error = ctx.format_retained(format_args!("{}", &error), "retain opaque F3D history error")?;
+            let error =
+                ctx.format_retained(format_args!("{error}"), "retain opaque F3D history error")?;
             decoded.push(AsmHistoryRecord {
                 id,
                 parent,

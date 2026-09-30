@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
-
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
@@ -126,7 +125,13 @@ fn copy_design_type(
         ctx.copy_retained(design_type.module.as_bytes(), "f3d design type module")?,
     )
     .map_err(|_| CodecError::Malformed("F3D Design module text is invalid UTF-8".into()))?;
-    let id = design_record_id_charged(ctx, stream, ":design-type#", design_type.byte_offset, "f3d design type id suffix")?;
+    let id = design_record_id_charged(
+        ctx,
+        stream,
+        ":design-type#",
+        design_type.byte_offset,
+        "f3d design type id suffix",
+    )?;
     Ok(SegmentType {
         id,
         byte_offset: design_type.byte_offset,
@@ -151,9 +156,12 @@ fn insert_component_naming_space(
 ) -> Result<(), CodecError> {
     if let Some(existing) = by_component.get(&component_record_index) {
         if existing.context_uuid != context_uuid {
-            return Err(crate::design::text::malformed_design(ctx, format_args!(
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
                 "Design component {component_record_index} has conflicting context UUID bindings"
-            )));
+            ),
+            ));
         }
         return Ok(());
     }
@@ -161,7 +169,13 @@ fn insert_component_naming_space(
     ctx.reserve_map(by_component, 1, "f3d component naming spaces by entity")?;
     let byte_offset = u64::try_from(marker)
         .map_err(|_| ctx.refuse_codec_limit("f3d component naming marker offset", 0, 1))?;
-    let id = design_record_id_charged(ctx, bulk_name, ":design-component-naming-space#", byte_offset, "f3d component naming space id suffix")?;
+    let id = design_record_id_charged(
+        ctx,
+        bulk_name,
+        ":design-component-naming-space#",
+        byte_offset,
+        "f3d component naming space id suffix",
+    )?;
     let context_uuid_offset = u64::try_from(context_uuid_offset)
         .map_err(|_| ctx.refuse_codec_limit("f3d component naming UUID offset", 0, 1))?;
     by_component.insert(
@@ -304,10 +318,17 @@ pub(crate) fn decode_component_naming_spaces(
             .filter(|entity| !by_component.contains_key(entity))
             .min()
         {
-            return Err(crate::design::text::malformed_design(ctx, format_args!("Design component {missing} has no context UUID binding")));
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!("Design component {missing} has no context UUID binding"),
+            ));
         }
 
-        ctx.reserve_vec(&mut out, by_component.len(), "f3d component naming spaces output")?;
+        ctx.reserve_vec(
+            &mut out,
+            by_component.len(),
+            "f3d component naming spaces output",
+        )?;
         out.extend(by_component.into_values());
     }
     crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
@@ -470,9 +491,12 @@ pub(super) fn typed_primary_frames<'a>(
         }
         for &entity_id in design_type.entities.values() {
             if typed_entities.contains(&entity_id) {
-                return Err(crate::design::text::malformed_design(ctx, format_args!(
+                return Err(crate::design::text::malformed_design(
+                    ctx,
+                    format_args!(
                         "F3D Design {record_kind} entity {entity_id} is registered more than once"
-                    )));
+                    ),
+                ));
             }
 
             ctx.reserve_set(&mut typed_entities, 1, "f3d typed primary entities")?;
@@ -492,7 +516,6 @@ pub(super) fn typed_primary_frames<'a>(
             continue;
         }
         if !resolved_entities.contains(&primary_frame.entity_id) {
-
             ctx.reserve_set(&mut resolved_entities, 1, "f3d resolved primary entities")?;
             resolved_entities.insert(primary_frame.entity_id);
         }
@@ -527,7 +550,6 @@ pub(super) fn stream_types_by_entity<'a>(
     }) {
         for &entity_id in design_type.entities.values() {
             if !by_entity.contains_key(&entity_id) {
-
                 ctx.reserve_map(&mut by_entity, 1, "f3d stream types by entity")?;
             }
             by_entity.insert(
@@ -676,7 +698,6 @@ fn parse_feature_timeline_record(
     else {
         return Ok(None);
     };
-    
 
     let work = count
         .checked_next_power_of_two()
@@ -742,7 +763,13 @@ fn parse_feature_timeline_record(
     let Some(record_index) = std::num::NonZeroU64::new(expected_entity_id) else {
         return Ok(None);
     };
-    let id = design_record_id_charged(ctx, stream, ":design-feature-timeline#", frame_start, "retain F3D timeline identity")?;
+    let id = design_record_id_charged(
+        ctx,
+        stream,
+        ":design-feature-timeline#",
+        frame_start,
+        "retain F3D timeline identity",
+    )?;
     Ok(DesignFeatureTimeline::try_new(
         id,
         frame,
@@ -813,7 +840,13 @@ pub(crate) fn decode_feature_timelines(
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {
-                ctx.push_hash_group(&mut type_guids_by_entity, *entity_id, design_type.type_guid.as_str(), "index F3D timeline entity", "index F3D timeline type GUID")?;
+                ctx.push_hash_group(
+                    &mut type_guids_by_entity,
+                    *entity_id,
+                    design_type.type_guid.as_str(),
+                    "index F3D timeline entity",
+                    "index F3D timeline type GUID",
+                )?;
             }
         }
         let mut source_ordinal = 0_u32;

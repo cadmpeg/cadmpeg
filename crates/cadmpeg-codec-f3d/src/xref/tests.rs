@@ -218,8 +218,12 @@ fn xref_occurrence_id_refuses_retained_limit() {
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
-    let error = ctx.format_retained(format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0), "retain F3D xref record ID")
-    .unwrap_err();
+    let error = ctx
+        .format_retained(
+            format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0),
+            "retain F3D xref record ID",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D xref record ID")
@@ -1037,10 +1041,12 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = crate::test_support::with_decode_context(|decode_ctx| super::occurrence_path(decode_ctx, &bytes))
-        .unwrap()
-        .expect("synthetic path")
-        .1;
+    let path_end = crate::test_support::with_decode_context(|decode_ctx| {
+        super::occurrence_path(decode_ctx, &bytes)
+    })
+    .unwrap()
+    .expect("synthetic path")
+    .1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
     bytes.extend(

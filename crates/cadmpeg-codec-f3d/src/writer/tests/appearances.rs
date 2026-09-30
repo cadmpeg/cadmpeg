@@ -96,8 +96,13 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
         Some(1.5)
     );
     assert!(round_trip.ir().model.appearance_bindings.is_empty());
-    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, round_trip.ir()).expect("service native validation")).is_empty());
-    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
+    let validation = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(
         validation.is_ok(),
         "validation findings: {:?}",

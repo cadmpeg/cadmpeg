@@ -54,7 +54,10 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
     }
     let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.into();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| super::super::project_work_plane(decode_ctx, &plane, transform)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| super::super::project_work_plane(
+            decode_ctx, &plane, transform
+        ))
+        .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })
     ));
     let mut policy = DecodePolicy::default();

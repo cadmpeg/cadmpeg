@@ -73,7 +73,11 @@ fn edge_recipe_structure_refuses_candidate_work_limit() {
 
 #[test]
 fn edge_recipe_topology_references_refuse_collection_limit() {
-    let structure = crate::test_support::with_decode_context(|ctx| super::super::edge_recipe_structure_with_context(ctx, &EDGE_RECIPE).expect("recipe structure")).unwrap();
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        super::super::edge_recipe_structure_with_context(ctx, &EDGE_RECIPE)
+            .expect("recipe structure")
+    })
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -126,7 +130,8 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
     ];
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
+    // Two clause slots, six field slots and nine field words precede the topology entry.
+    policy.limits.max_collection_items = 2 + 6 + 9;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         surface_patch_recipe_structure_with_context(&ctx, &program, 4),

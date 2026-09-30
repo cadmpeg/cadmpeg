@@ -113,7 +113,8 @@ fn legacy_path_limit(dimension: ResourceDimension, operation: &str) {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 1,
+        // Two paths each admit four identity GUIDs before the two occurrence GUIDs.
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2 * 4 + 1,
         ResourceDimension::WorkUnits => policy.limits.max_work_units = 1,
         _ => panic!("unsupported test limit"),
     }

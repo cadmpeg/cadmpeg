@@ -174,11 +174,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &parameters,
         owners: &owners,
         construction_groups: std::slice::from_ref(&group),
-..Default::default()
-};
-    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
-        .unwrap()
-        .expect("typed EdgeFlange definition");
+        ..Default::default()
+    };
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+    })
+    .unwrap()
+    .expect("typed EdgeFlange definition");
 
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height,
@@ -260,12 +262,17 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &offset_parameters,
         owners: &owners,
         construction_groups: std::slice::from_ref(&group),
-..Default::default()
-};
-    let offset_definition =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, decode_ctx))
-            .unwrap()
-            .expect("typed signed-offset EdgeFlange definition");
+        ..Default::default()
+    };
+    let offset_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &offset_scope,
+            &offset_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("typed signed-offset EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         offset_definition
     else {
@@ -324,12 +331,13 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &parameters,
         owners: &owners,
         construction_groups: &multi_groups,
-..Default::default()
-};
-    let multi_definition =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx))
-            .unwrap()
-            .expect("typed multi-edge EdgeFlange definition");
+        ..Default::default()
+    };
+    let multi_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx)
+    })
+    .unwrap()
+    .expect("typed multi-edge EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
         multi_definition
     else {
@@ -395,12 +403,17 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &per_edge_parameters,
         owners: &owners,
         construction_groups: &multi_groups,
-..Default::default()
-};
-    let per_edge_definition =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, decode_ctx))
-            .unwrap()
-            .expect("equal per-edge symmetric widths project to one neutral width");
+        ..Default::default()
+    };
+    let per_edge_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &multi_scope,
+            &per_edge_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("equal per-edge symmetric widths project to one neutral width");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         per_edge_definition
     else {
@@ -418,12 +431,18 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &distinct_parameters,
         owners: &owners,
         construction_groups: &multi_groups,
-..Default::default()
-};
+        ..Default::default()
+    };
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, decode_ctx))
-            .unwrap()
-            .is_none(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_edge_flange(
+                &multi_scope,
+                &distinct_inputs,
+                decode_ctx,
+            )
+        })
+        .unwrap()
+        .is_none(),
         "distinct per-edge widths must remain source-native"
     );
 
@@ -469,12 +488,17 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         native: &two_sided_parameters,
         owners: &two_sided_owners,
         construction_groups: &multi_groups,
-..Default::default()
-};
-    let two_sided_definition =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, decode_ctx))
-            .unwrap()
-            .expect("independent two-sided per-edge widths project to a typed neutral law");
+        ..Default::default()
+    };
+    let two_sided_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(
+            &multi_scope,
+            &two_sided_inputs,
+            decode_ctx,
+        )
+    })
+    .unwrap()
+    .expect("independent two-sided per-edge widths project to a typed neutral law");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
         two_sided_definition
     else {
@@ -756,8 +780,8 @@ fn edge_flange_to_object_fixture(
         },
         construction_groups: &groups,
         entity_selection_operands: &target_selections,
-..Default::default()
-};
+        ..Default::default()
+    };
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
     Ok(definition.map(|definition| (definition, target_scope)))
 }
@@ -767,9 +791,11 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
-    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, true, false))
-        .unwrap()
-        .expect("typed to-object EdgeFlange definition");
+    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, true, false)
+    })
+    .unwrap()
+    .expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
         definition
     else {
@@ -793,9 +819,11 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
-    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, false, false))
-        .unwrap()
-        .expect("unresolved to-object EdgeFlange");
+    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        edge_flange_to_object_fixture(decode_ctx, false, false)
+    })
+    .unwrap()
+    .expect("unresolved to-object EdgeFlange");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
         height:
             SheetMetalFlangeHeight::ToObject {
@@ -825,9 +853,13 @@ fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    assert!(crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, true, true))
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(
+            decode_ctx, true, true
+        ))
         .unwrap()
-        .is_some());
+        .is_some()
+    );
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
@@ -893,13 +925,13 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     }
 
     let inputs = crate::design::feature_project::ProjectInputs {
-..Default::default()
-};
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
-            .unwrap()
-            .is_none()
-    );
+        ..Default::default()
+    };
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -934,8 +966,12 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(
-            crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, scope))
-                .unwrap(),
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::feature_project::surface_patch_boundary_continuities(
+                    decode_ctx, scope,
+                )
+            })
+            .unwrap(),
         )
         .ok()
         .map(|conditions| cadmpeg_ir::features::FilledSurfaceContinuity { conditions })
@@ -961,7 +997,10 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Connected),
     ]);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)
+        })
+        .unwrap(),
         vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
     );
     assert!(uniform_continuity(&mixed).is_none());
@@ -972,11 +1011,14 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         ))]))
         .is_none()
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))])))
-        .unwrap()
-        .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::surface_patch_boundary_continuities(
+            decode_ctx,
+            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))]),
+        )
+    })
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1110,7 +1152,13 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = crate::design::feature_project::project_surface_patch(&ctx, &scope, &shifted_groups, &[], &[])
+    let error = crate::design::feature_project::project_surface_patch(
+        &ctx,
+        &scope,
+        &shifted_groups,
+        &[],
+        &[],
+    )
     .expect_err("ten occupancy slots exceed the remaining collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -1302,11 +1350,13 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             native: &parameters,
             owners: &owners,
             construction_groups: &groups,
-..Default::default()
-};
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx))
-            .unwrap()
-            .expect("typed Hem definition")
+            ..Default::default()
+        };
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx)
+        })
+        .unwrap()
+        .expect("typed Hem definition")
     };
 
     let gap_length = project(

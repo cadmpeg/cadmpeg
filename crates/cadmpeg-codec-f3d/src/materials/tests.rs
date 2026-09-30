@@ -197,7 +197,8 @@ fn definition_catalog_uses_page_boundaries_when_payload_contains_a_start_marker(
     logical.extend_from_slice(&1_u32.to_le_bytes());
     lp_ascii(&mut logical, "");
 
-    let paged = super::page_logical(&logical).expect("page catalog record");
+    let paged = crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical))
+        .expect("page catalog record");
     let frames =
         cadmpeg_protein::framing::record_frames_for_edit(&paged).expect("frame catalog pages");
     let [frame] = frames.as_slice() else {
@@ -1130,17 +1131,23 @@ fn generated_act_native_validation_rejects_structural_drift() {
     update_f3d_native(&mut colliding_root, |native| {
         native.act_root_components[0].record_index = native.act_entities[0].record_index();
     });
-    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, &colliding_root).expect("service native validation"))
-        .iter()
-        .any(|finding| finding.message.contains("ACT root component")));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &colliding_root)
+            .expect("service native validation")
+    })
+    .iter()
+    .any(|finding| finding.message.contains("ACT root component")));
 
     let (mut wrong_registry, _, _) = decoded.into_parts();
     update_f3d_native(&mut wrong_registry, |native| {
         native.act_registry_channels[1].ordinal = 0;
     });
-    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, &wrong_registry).expect("service native validation"))
-        .iter()
-        .any(|finding| finding.message.contains("ACT channel-registry entry")));
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, &wrong_registry)
+            .expect("service native validation")
+    })
+    .iter()
+    .any(|finding| finding.message.contains("ACT channel-registry entry")));
 }
 
 #[test]
@@ -1706,7 +1713,8 @@ fn a_protein_appearance_record_truncated_past_its_guid_is_refused() {
     super::push_lp(&mut logical, "GenericSchema").unwrap();
     super::push_lp(&mut logical, guid).unwrap();
     logical.extend_from_slice(&u32::MAX.to_le_bytes());
-    let instance = super::page_logical(&logical).unwrap();
+    let instance =
+        crate::test_support::with_decode_context(|ctx| super::page_logical(ctx, &logical)).unwrap();
 
     let options = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));

@@ -296,8 +296,11 @@ pub(super) fn exact_component_insert_construction(
                     }
                     for transform_at in carrier_at + 11..at {
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
-
-                            if let Err(error) = ctx.reserve_vec(&mut placements, 1, "f3d component insert placements") {
+                            if let Err(error) = ctx.reserve_vec(
+                                &mut placements,
+                                1,
+                                "f3d component insert placements",
+                            ) {
                                 return Some(Err(error));
                             }
                             placements.push((role.clone(), at + 4, Some(transform_at)));
@@ -403,7 +406,9 @@ pub(super) fn exact_component_insert_construction(
                             Err(error) => return Some(Err(error)),
                         };
 
-                        if let Err(error) = ctx.reserve_vec(&mut placements, 1, "f3d component insert placements") {
+                        if let Err(error) =
+                            ctx.reserve_vec(&mut placements, 1, "f3d component insert placements")
+                        {
                             return Some(Err(error));
                         }
                         placements.push((role, at + 4, Some(transform_at)));
@@ -422,7 +427,11 @@ pub(super) fn exact_component_insert_construction(
                         Err(error) => return Some(Err(error)),
                     };
 
-                    if let Err(error) = ctx.reserve_vec(&mut placements, legacy.len(), "f3d component insert merged placements") {
+                    if let Err(error) = ctx.reserve_vec(
+                        &mut placements,
+                        legacy.len(),
+                        "f3d component insert merged placements",
+                    ) {
                         return Some(Err(error));
                     }
                     placements.extend(legacy);
@@ -943,7 +952,6 @@ fn legacy_component_insert_placements(
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
-
             ctx.reserve_vec(&mut placements, 1, "f3d legacy component insert placements")?;
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
@@ -1071,7 +1079,11 @@ pub(super) fn bind_component_pattern_occurrences(
             component_guid = Some(candidate.component_guid.as_str());
         }
 
-        ctx.reserve_vec(&mut generated, 1, "f3d component pattern generated instances")?;
+        ctx.reserve_vec(
+            &mut generated,
+            1,
+            "f3d component pattern generated instances",
+        )?;
         generated.push(patterns::DesignPatternComponentInstance {
             instance: *frame,
             occurrence_guid: candidate.occurrence_guid.clone(),

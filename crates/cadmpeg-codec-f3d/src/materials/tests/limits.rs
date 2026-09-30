@@ -103,7 +103,8 @@ fn material_definition_index_refuses_collection_limit() {
 fn material_body_id_copy_refuses_retained_limit() {
     let id = cadmpeg_ir::ids::BodyId::mint("f3d:design:body#one").unwrap();
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
-        id.try_clone_for_decode(ctx, "copy F3D material body ID").unwrap_err()
+        id.try_clone_for_decode(ctx, "copy F3D material body ID")
+            .unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -115,7 +116,8 @@ fn material_body_id_copy_refuses_retained_limit() {
 fn material_appearance_id_copy_refuses_retained_limit() {
     let id = cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance:asset#one").unwrap();
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
-        id.try_clone_for_decode(ctx, "copy F3D material appearance ID").unwrap_err()
+        id.try_clone_for_decode(ctx, "copy F3D material appearance ID")
+            .unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -287,7 +289,11 @@ fn material_library_id_refuses_retained_limit() {
 #[test]
 fn browser_node_candidate_fold_refuses_materialized_limit() {
     let marker = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
-    let strings = vec![(0, marker.to_owned()), (1, "node-a".to_owned()), (2, "visual".to_owned())];
+    let strings = vec![
+        (0, marker.to_owned()),
+        (1, "node-a".to_owned()),
+        (2, "visual".to_owned()),
+    ];
     let nodes = std::collections::HashMap::from([("node-a".to_owned(), 7)]);
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -295,8 +301,10 @@ fn browser_node_candidate_fold_refuses_materialized_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let error = super::super::body_node_candidate(&ctx, &strings, 2, &nodes).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.operation == "fold F3D browser node candidate"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "fold F3D browser node candidate")
+    );
 }
 
 fn fixed_appearance_error(asset_lib_id: &str, max_retained: u64) -> cadmpeg_core::CodecError {
@@ -385,8 +393,12 @@ fn material_note_format_refuses_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(note.len() - 1).unwrap();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = ctx.format_retained(format_args!("Protein {} record {} rejected: {}", "A", 1, "B"), "retain F3D protein rejection note")
-    .unwrap_err();
+    let error = ctx
+        .format_retained(
+            format_args!("Protein {} record {} rejected: {}", "A", 1, "B"),
+            "retain F3D protein rejection note",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D protein rejection note")
@@ -401,8 +413,13 @@ fn material_note_vector_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut notes = Vec::new();
-    let error = ctx.push_vec(&mut notes, "note".to_owned(), "collect F3D protein rejection notes")
-    .unwrap_err();
+    let error = ctx
+        .push_vec(
+            &mut notes,
+            "note".to_owned(),
+            "collect F3D protein rejection notes",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D protein rejection notes")
@@ -417,8 +434,13 @@ fn material_appearance_merge_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut merged = Vec::new();
-    let error = ctx.append_vec(&mut merged, &mut { vec![1, 2] }, "merge F3D fixed appearances")
-    .unwrap_err();
+    let error = ctx
+        .append_vec(
+            &mut merged,
+            &mut { vec![1, 2] },
+            "merge F3D fixed appearances",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "merge F3D fixed appearances")
@@ -433,8 +455,13 @@ fn material_asset_appearance_vector_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut appearances = Vec::new();
-    let error = ctx.append_vec(&mut appearances, &mut { vec![1, 2] }, "collect F3D asset appearances")
-    .unwrap_err();
+    let error = ctx
+        .append_vec(
+            &mut appearances,
+            &mut { vec![1, 2] },
+            "collect F3D asset appearances",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D asset appearances")
@@ -451,7 +478,12 @@ fn material_schema_id_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = ctx.collect_hash_set(appearances.iter().map(|appearance| appearance.id.as_str()), "index F3D schema appearance IDs").unwrap_err();
+    let error = ctx
+        .collect_hash_set(
+            appearances.iter().map(|appearance| appearance.id.as_str()),
+            "index F3D schema appearance IDs",
+        )
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D schema appearance IDs")

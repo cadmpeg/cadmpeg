@@ -48,8 +48,10 @@ fn fixture() -> (SpatialSketchId, Vec<SpatialSketchEntity>) {
 #[test]
 fn spatial_profile_closed_loop_and_circle_keep_order() {
     let (sketch, entities) = fixture();
-    let profiles =
-        crate::test_support::with_decode_context(|decode_ctx| closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE)).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_spatial_sketch_profiles(decode_ctx, &sketch, &entities, EPS_PROFILE_CLOSE)
+    })
+    .unwrap();
     assert_eq!(profiles.len(), 2);
     assert_eq!(profiles[0].boundary().len(), 1);
     assert_eq!(profiles[1].boundary().len(), 3);
@@ -67,8 +69,7 @@ fn assert_limit(operation: &'static str, dimension: ResourceDimension) {
             _ => panic!("unsupported test dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result =
-            closed_spatial_sketch_profiles(&ctx, &sketch, &entities, EPS_PROFILE_CLOSE);
+        let result = closed_spatial_sketch_profiles(&ctx, &sketch, &entities, EPS_PROFILE_CLOSE);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>

@@ -85,7 +85,11 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
     let (scope, group, operand) = body_recipe_limit_fixture();
     let operands = [operand];
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_body_recipe_selection(decode_ctx, &scope, &group, &operands))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::face_resolve::resolved_body_recipe_selection(
+                decode_ctx, &scope, &group, &operands,
+            )
+        })
         .unwrap(),
         Some(FaceSelection::Historical { .. })
     ));
@@ -277,7 +281,15 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         })
         .unwrap();
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[replacement_group.clone(), target_group.clone()], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_replace_face(
+            decode_ctx,
+            &scope,
+            &[replacement_group.clone(), target_group.clone()],
+            std::slice::from_ref(&target),
+            std::slice::from_ref(&replacement),
+        )
+    })
     .unwrap()
     .expect("typed ReplaceFace");
     assert!(matches!(
@@ -293,7 +305,15 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             && native.as_str() == target_group.id
             && replacement_native.as_str() == replacement_group.id)));
 
-    let reversed = crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[target_group.clone(), replacement_group.clone()], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
+    let reversed = crate::test_support::with_decode_context(|decode_ctx| {
+        project_replace_face(
+            decode_ctx,
+            &scope,
+            &[target_group.clone(), replacement_group.clone()],
+            std::slice::from_ref(&target),
+            std::slice::from_ref(&replacement),
+        )
+    })
     .unwrap();
     assert!(matches!(
         reversed,
@@ -301,13 +321,21 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             FeatureOperation::ReplaceFace { .. }
         ))
     ));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[
-            replacement_group.clone(),
-            target_group.clone(),
-            target_group.clone()
-        ], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| project_replace_face(
+            decode_ctx,
+            &scope,
+            &[
+                replacement_group.clone(),
+                target_group.clone(),
+                target_group.clone()
+            ],
+            std::slice::from_ref(&target),
+            std::slice::from_ref(&replacement)
+        ))
+        .unwrap()
+        .is_none()
+    );
 
     let mut invalid_scope = scope;
     invalid_scope
@@ -317,9 +345,17 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &invalid_scope, &[replacement_group, target_group], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| project_replace_face(
+            decode_ctx,
+            &invalid_scope,
+            &[replacement_group, target_group],
+            std::slice::from_ref(&target),
+            std::slice::from_ref(&replacement)
+        ))
+        .unwrap()
+        .is_none()
+    );
 }
 
 fn surface_trim_fixture() -> (
@@ -396,7 +432,14 @@ fn surface_trim_fixture() -> (
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
     let (scope, target_group, tool_group, body) = surface_trim_fixture();
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_surface_trim(decode_ctx, &scope, &[target_group.clone(), tool_group.clone()], std::slice::from_ref(&body)))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_surface_trim(
+            decode_ctx,
+            &scope,
+            &[target_group.clone(), tool_group.clone()],
+            std::slice::from_ref(&body),
+        )
+    })
     .unwrap()
     .expect("typed SurfaceTrim");
     assert!(matches!(
@@ -520,7 +563,14 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     )
     .unwrap();
 
-    crate::test_support::with_decode_context(|decode_ctx| bind_surface_trim_cell_selections(decode_ctx, std::slice::from_mut(&mut feature), std::slice::from_ref(&scope), std::slice::from_ref(&operation)))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_surface_trim_cell_selections(
+            decode_ctx,
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&operation),
+        )
+    })
     .unwrap();
 
     assert!(matches!(
@@ -611,7 +661,14 @@ fn surface_trim_selected_cells_refuse_collection_limit() {
     )
     .unwrap();
     let mut unchanged = [feature.clone()];
-    crate::test_support::with_decode_context(|decode_ctx| bind_surface_trim_cell_selections(decode_ctx, &mut unchanged, std::slice::from_ref(&scope), std::slice::from_ref(&operation)))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_surface_trim_cell_selections(
+            decode_ctx,
+            &mut unchanged,
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&operation),
+        )
+    })
     .unwrap();
     assert!(matches!(
         unchanged[0].evaluation.definition(),

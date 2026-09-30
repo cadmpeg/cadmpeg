@@ -72,9 +72,11 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        let definition = crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[&first, &axis_entity, &second], decode_ctx))
-            .unwrap()
-            .unwrap();
+        let definition = crate::test_support::with_decode_context(|decode_ctx| {
+            exact_atomic_constraint(kind, &[&first, &axis_entity, &second], decode_ctx)
+        })
+        .unwrap()
+        .unwrap();
         assert!(matches!(
             definition,
             SketchConstraintDefinitionInput::Symmetric {
@@ -95,9 +97,15 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         })
         .unwrap(),
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Concentric, &[&first, &off_axis, &second], decode_ctx))
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Concentric,
+            &[&first, &off_axis, &second],
+            decode_ctx
+        ))
+        .unwrap()
+        .is_none()
+    );
     let on_axis = entity(
         "generated:test:point#on-axis",
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -110,9 +118,13 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Symmetry,
     ] {
         assert!(
-            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis], decode_ctx))
-                .unwrap()
-                .is_none()
+            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+                kind,
+                &[&on_axis, &axis_entity, &on_axis],
+                decode_ctx
+            ))
+            .unwrap()
+            .is_none()
         );
     }
 }
@@ -166,11 +178,11 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched]))
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched])
+    })
+    .expect("resource allocation did not fail")
+    .is_none());
 }
 
 #[test]
@@ -228,11 +240,11 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
         end_angle: Angle::new(5.0 * std::f64::consts::FRAC_PI_4 + 0.1).unwrap(),
     })
     .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched]))
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched])
+    })
+    .expect("resource allocation did not fail")
+    .is_none());
 }
 
 #[test]
@@ -309,11 +321,11 @@ fn counted_dimension_groups_resolve_centered_entities() {
         end_angle: Angle::new(1.0).unwrap(),
     })
     .unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &displaced]))
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        exact_counted_dimension_relation(decode_ctx, &[&circle, &displaced])
+    })
+    .expect("resource allocation did not fail")
+    .is_none());
 }
 
 #[test]
@@ -341,7 +353,10 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         .unwrap(),
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&line, &point], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::dimensions::exact_coincident_loci(&[&line, &point], decode_ctx)
+        })
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(line.id().clone()),
@@ -358,20 +373,24 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         })
         .unwrap(),
     );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], decode_ctx)
+    })
+    .unwrap()
+    .is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::exact_coincident_loci(&[&line, &line], decode_ctx)
+    })
+    .unwrap()
+    .is_none());
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], decode_ctx))
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&line, &line], decode_ctx))
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line], decode_ctx))
-            .unwrap()
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Coincident,
+            &[&line, &line],
+            decode_ctx
+        ))
+        .unwrap()
+        .is_none()
     );
 }
 
@@ -416,7 +435,8 @@ fn assert_coincident_limit(
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::dimensions::exact_coincident_loci(&[&entities[0], &entities[1]], &ctx) {
+        match crate::design::dimensions::exact_coincident_loci(&[&entities[0], &entities[1]], &ctx)
+        {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>
             {
@@ -502,7 +522,11 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     let second = entity("generated:test:point#1");
     let third = entity("generated:test:point#2");
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third], decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Polygon,
+            &[&first, &second, &third],
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Polygon {
             polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
@@ -514,13 +538,23 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
         })
     );
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second], decode_ctx))
-            .unwrap()
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Polygon,
+            &[&first, &second],
+            decode_ctx
+        ))
+        .unwrap()
+        .is_none()
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first], decode_ctx))
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Polygon,
+            &[&first, &second, &first],
+            decode_ctx
+        ))
+        .unwrap()
+        .is_none()
+    );
 }
 
 #[test]
@@ -633,10 +667,12 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         (("native", 4), &result_vertical),
     ]);
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| exact_offset_constraint(decode_ctx, &relation, "native", &projected))
-        .transpose()
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        exact_offset_constraint(decode_ctx, &relation, "native", &projected)
+    })
+    .transpose()
+    .unwrap()
+    .unwrap();
     let SketchConstraintDefinitionInput::Offset {
         pairs,
         distance,
@@ -677,10 +713,15 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         })
         .unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_offset_constraint(decode_ctx, &repeated_pair, "native", &projected))
-            .transpose()
-            .unwrap()
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| exact_offset_constraint(
+            decode_ctx,
+            &repeated_pair,
+            "native",
+            &projected
+        ))
+        .transpose()
+        .unwrap()
+        .is_none()
     );
 }
 
@@ -756,52 +797,67 @@ fn single_curve_annotation_projects_parameterized_offset() {
         },
     )
     .unwrap();
-    let frame = crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
-            id: format!("{stream}:design-dimension-annotation-frame#14"),
-            companion_record_index: Some(15),
-            governing_companion_record_index: 15,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+    let frame = crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionAnnotationFrame::try_new_charged(
+            ctx,
+            crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+                id: format!("{stream}:design-dimension-annotation-frame#14"),
+                companion_record_index: Some(15),
+                governing_companion_record_index: 15,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                record_index: 14,
+                frame_length: 100,
+                operands: vec![
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(0),
+                        geometry_reference_offset: 25,
+                        role: 3,
+                        role_offset: 35,
+                    },
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(10),
+                        geometry_reference_offset: 40,
+                        role: 2,
+                        role_offset: 50,
+                    },
+                ],
+                entity_genesis: 0x80,
+                annotation_bytes: Vec::new(),
+                annotation_byte_offset: 111,
+                governing_owner_record_index: 13,
+                governing_owner_reference_offset: 112,
+                return_members: vec![crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(10).unwrap(),
+                    offset: 127,
+                }],
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "256".to_owned(),
+                )
                 .unwrap(),
-            record_index: 14,
-            frame_length: 100,
-            operands: vec![
-                DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(0),
-                    geometry_reference_offset: 25,
-                    role: 3,
-                    role_offset: 35,
-                },
-                DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(10),
-                    geometry_reference_offset: 40,
-                    role: 2,
-                    role_offset: 50,
-                },
-            ],
-            entity_genesis: 0x80,
-            annotation_bytes: Vec::new(),
-            annotation_byte_offset: 111,
-            governing_owner_record_index: 13,
-            governing_owner_reference_offset: 112,
-            return_members: vec![crate::records::identity::Located {
-                value: std::num::NonZeroU32::new(10).unwrap(),
-                offset: 127,
-            }],
-            paired_class_tag: crate::records::references::DesignClassTag::try_from(
-                "256".to_owned(),
-            )
-            .unwrap(),
-            paired_byte_offset: 100,
-            owner_reference: 100,
-            owner_reference_offset: 120,
-        }))
+                paired_byte_offset: 100,
+                owner_reference: 100,
+                owner_reference_offset: 120,
+            },
+        )
+    })
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &frame, (&parameter, &parameter_id), stream, &[source_curve.clone(), result_curve.clone()], &projected, 1.0e-6))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::annotation_offset_dimension_definition(
+            decode_ctx,
+            &frame,
+            (&parameter, &parameter_id),
+            stream,
+            &[source_curve.clone(), result_curve.clone()],
+            &projected,
+            1.0e-6,
+        )
+    })
     .transpose()
     .unwrap()
     .expect("single-curve annotation offset");
@@ -822,43 +878,58 @@ fn single_curve_annotation_projects_parameterized_offset() {
             && actual_parameter == parameter_id
     ));
 
-    let explicit_frame = crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
-            operands: vec![
-                DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(0),
-                    geometry_reference_offset: 25,
-                    role: 3,
-                    role_offset: 35,
-                },
-                DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(11),
-                    geometry_reference_offset: 40,
-                    role: 1,
-                    role_offset: 50,
-                },
-                DesignDimensionAnnotationOperand {
-                    geometry_record_index: std::num::NonZeroU32::new(10),
-                    geometry_reference_offset: 55,
-                    role: 2,
-                    role_offset: 65,
-                },
-            ],
-            return_members: vec![
-                crate::records::identity::Located {
-                    value: std::num::NonZeroU32::new(10).unwrap(),
-                    offset: 142,
-                },
-                crate::records::identity::Located {
-                    value: std::num::NonZeroU32::new(11).unwrap(),
-                    offset: 153,
-                },
-            ],
-            annotation_byte_offset: 126,
-            governing_owner_reference_offset: 127,
-            ..frame.clone().into_draft()
-        }))
+    let explicit_frame = crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionAnnotationFrame::try_new_charged(
+            ctx,
+            crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+                operands: vec![
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(0),
+                        geometry_reference_offset: 25,
+                        role: 3,
+                        role_offset: 35,
+                    },
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(11),
+                        geometry_reference_offset: 40,
+                        role: 1,
+                        role_offset: 50,
+                    },
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(10),
+                        geometry_reference_offset: 55,
+                        role: 2,
+                        role_offset: 65,
+                    },
+                ],
+                return_members: vec![
+                    crate::records::identity::Located {
+                        value: std::num::NonZeroU32::new(10).unwrap(),
+                        offset: 142,
+                    },
+                    crate::records::identity::Located {
+                        value: std::num::NonZeroU32::new(11).unwrap(),
+                        offset: 153,
+                    },
+                ],
+                annotation_byte_offset: 126,
+                governing_owner_reference_offset: 127,
+                ..frame.clone().into_draft()
+            },
+        )
+    })
     .unwrap();
-    let explicit_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &explicit_frame, (&parameter, &parameter_id), stream, &[source_curve.clone(), result_curve.clone()], &projected, 1.0e-6))
+    let explicit_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::annotation_offset_dimension_definition(
+            decode_ctx,
+            &explicit_frame,
+            (&parameter, &parameter_id),
+            stream,
+            &[source_curve.clone(), result_curve.clone()],
+            &projected,
+            1.0e-6,
+        )
+    })
     .transpose()
     .unwrap()
     .expect("explicit two-curve annotation offset");
@@ -891,16 +962,24 @@ fn single_curve_annotation_projects_parameterized_offset() {
         ((stream, 11), &result),
         ((stream, 12), &duplicate),
     ]);
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &frame, (&parameter, &parameter_id), stream, &[
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::annotation_offset_dimension_definition(
+            decode_ctx,
+            &frame,
+            (&parameter, &parameter_id),
+            stream,
+            &[
                 curve(format!("{stream}:sketch-curve#10"), 10, 20, 0),
                 curve(format!("{stream}:sketch-curve#11"), 11, 21, 7),
-                duplicate_curve
-            ], &projected_with_duplicate, 1.0e-6))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+                duplicate_curve,
+            ],
+            &projected_with_duplicate,
+            1.0e-6,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -989,11 +1068,27 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
     ]);
 
-    let lines = crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], std::f64::consts::FRAC_PI_4, &projected))
+    let lines = crate::test_support::with_decode_context(|decode_ctx| {
+        indirect_angular_lines(
+            decode_ctx,
+            "native",
+            &[&point, &explicit],
+            std::f64::consts::FRAC_PI_4,
+            &projected,
+        )
+    })
     .unwrap()
     .unwrap();
     assert_eq!(lines, (diagonal.id().clone(), explicit.id().clone()));
-    let supplementary = crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], 3.0 * std::f64::consts::FRAC_PI_4, &projected))
+    let supplementary = crate::test_support::with_decode_context(|decode_ctx| {
+        indirect_angular_lines(
+            decode_ctx,
+            "native",
+            &[&point, &explicit],
+            3.0 * std::f64::consts::FRAC_PI_4,
+            &projected,
+        )
+    })
     .unwrap()
     .unwrap();
     assert_eq!(supplementary, lines);
@@ -1012,9 +1107,17 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
         (("native", 5), &duplicate_diagonal),
     ]);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], std::f64::consts::FRAC_PI_4, &projected_with_duplicate))
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(
+            decode_ctx,
+            "native",
+            &[&point, &explicit],
+            std::f64::consts::FRAC_PI_4,
+            &projected_with_duplicate
+        ))
+        .unwrap()
+        .is_none()
+    );
 }
 
 #[test]
@@ -1293,18 +1396,28 @@ fn parallel_group_binds_one_common_axis_angle() {
             parameter,
         }) if entity == first.id().clone() && parameter == parameter_id
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::parallel_group_axis_angle_definition(decode_ctx, &[&first, &mismatch], &parameter, &parameter_id))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::parallel_group_axis_angle_definition(decode_ctx, &[&first, &crossed], &parameter, &parameter_id))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            decode_ctx,
+            &[&first, &mismatch],
+            &parameter,
+            &parameter_id,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            decode_ctx,
+            &[&first, &crossed],
+            &parameter,
+            &parameter_id,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 mod refusal_parallel_group_axis_angle;

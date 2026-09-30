@@ -74,7 +74,11 @@ fn assert_retained_refusal(
         &'a DecodeContext<'a>,
     ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>,
 ) {
-    assert!(crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx)).unwrap().is_some());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx))
+            .unwrap()
+            .is_some()
+    );
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();

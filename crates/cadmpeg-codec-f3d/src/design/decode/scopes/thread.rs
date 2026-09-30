@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact thread construction scopes and thread payloads.
 
-
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
 use crate::layout::thread_compact_legacy_construction_tail as thread_compact_legacy_tail;
@@ -44,7 +43,11 @@ pub(super) fn exact_thread_construction(
     };
 
     let mut face_group_record_indices = Vec::new();
-    ctx.reserve_vec(&mut face_group_record_indices, count, "f3d Thread face groups")?;
+    ctx.reserve_vec(
+        &mut face_group_record_indices,
+        count,
+        "f3d Thread face groups",
+    )?;
     match prefix_form {
         ThreadPrefix::Standard => {
             let Some(first) = scope.reference_members().values().next() else {

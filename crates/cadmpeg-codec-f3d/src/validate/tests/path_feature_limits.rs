@@ -1,38 +1,40 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use crate::records::feature::{
-        extrude::DesignExtrudeOperation, path_features::DesignPipeConstruction,
-        scope::DesignScopePayload, surface_ops::DesignPipeSectionShape,
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+fn path_error(max_items: u64, max_retained_bytes: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use crate::records::feature::{
+            extrude::DesignExtrudeOperation, path_features::DesignPipeConstruction,
+            scope::DesignScopePayload, surface_ops::DesignPipeSectionShape,
+        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut native = super::construction_group_limits::native(true, false);
-    native.design_parameter_scopes[0]
-        .try_edit(|draft| {
-            draft.payload = DesignScopePayload::Pipe(Some(DesignPipeConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 0,
-                section_shape: DesignPipeSectionShape::Circular,
-                section_shape_offset: 0,
-                filled: true,
-                filled_offset: 0,
-                values: crate::test_support::reals([0.0; 4]),
-                record_indexes: [100, 101, 102, 103],
-                value_offsets: [0; 4],
-            }));
-        })
-        .unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = super::construction_group_limits::native(true, false);
+        native.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload = DesignScopePayload::Pipe(Some(DesignPipeConstruction {
+                    operation: DesignExtrudeOperation::NewBody,
+                    operation_offset: 0,
+                    section_shape: DesignPipeSectionShape::Circular,
+                    section_shape_offset: 0,
+                    filled: true,
+                    filled_offset: 0,
+                    values: crate::test_support::reals([0.0; 4]),
+                    record_indexes: [100, 101, 102, 103],
+                    value_offsets: [0; 4],
+                }));
+            })
+            .unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_path_feature_operand_roles(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn path_feature_operand_group_refuses_collection_limit() {

@@ -20,7 +20,10 @@ fn scope_reference_property_refuses_collection_limit() {
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d scope reference property"));
 
-    let properties = crate::test_support::with_decode_context(|decode_ctx| scope_properties(decode_ctx, &scope, "f3d:Design/BulkStream.dat", &[])).unwrap();
+    let properties = crate::test_support::with_decode_context(|decode_ctx| {
+        scope_properties(decode_ctx, &scope, "f3d:Design/BulkStream.dat", &[])
+    })
+    .unwrap();
     assert_eq!(properties.len(), 1);
     assert_eq!(
         properties[&cadmpeg_core::nonblank_literal!("reference:0")],
@@ -83,7 +86,12 @@ fn scope_profile_property_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = scope_properties(&ctx, &scope, "f3d:Design/BulkStream.dat", std::slice::from_ref(&placement));
+    let result = scope_properties(
+        &ctx,
+        &scope,
+        "f3d:Design/BulkStream.dat",
+        std::slice::from_ref(&placement),
+    );
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d scope profile property"));
@@ -112,9 +120,7 @@ fn assert_reference_text_refusal(operation: &'static str, limit: usize) {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(limit).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(scope_properties(&ctx, &scope, "f3d:test", &[]),
+    assert!(matches!(scope_properties(&ctx, &scope, "f3d:test", &[]),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
-            && failure.dimension == ResourceDimension::RetainedBytes)
-    );
+            && failure.dimension == ResourceDimension::RetainedBytes));
 }

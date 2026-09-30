@@ -36,9 +36,9 @@ fn projection_set_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        ctx.collect_hash_set(["native:one"], "index projected F3D constraints")
-            .unwrap_err();
+    let error = ctx
+        .collect_hash_set(["native:one"], "index projected F3D constraints")
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index projected F3D constraints")
@@ -52,8 +52,9 @@ fn projection_map_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = ctx.collect_hash_map([("native:one", 1)], "index projected F3D feature records")
-    .unwrap_err();
+    let error = ctx
+        .collect_hash_map([("native:one", 1)], "index projected F3D feature records")
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index projected F3D feature records")
@@ -767,13 +768,17 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            decode_ctx,
+            &crate::design::feature_project::ProjectInputs {
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-..Default::default()
-}))
-        .expect("timeline projection through one internal scope");
+                ..Default::default()
+            },
+        )
+    })
+    .expect("timeline projection through one internal scope");
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
     native.design_feature_timelines = vec![timeline];

@@ -1184,13 +1184,18 @@ pub(super) fn fixed_kind_tail_operations(
         *slot = Some(operation);
     }
     let (features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&extend_scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&extend_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,
@@ -1249,13 +1254,18 @@ timelines: &timelines,
         *slot = Some(operation);
     }
     let (features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&extend_scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&extend_scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,

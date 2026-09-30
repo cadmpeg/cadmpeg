@@ -107,14 +107,20 @@ fn face_transition_requires_one_changed_surface_geometry() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &result)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &result)
+        })
+        .unwrap(),
         Some(10)
     );
 
     let mut ambiguous = result.clone();
     ambiguous.surface_planes[1] = plane(201, Vector3::new(0.0, 0.1, 0.995));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &ambiguous)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &ambiguous)
+        })
+        .unwrap(),
         None
     );
 
@@ -122,7 +128,10 @@ fn face_transition_requires_one_changed_surface_geometry() {
     exact.candidate_faces = vec![face(10), face(11)];
     exact.recipe_references = vec![reference(vec![face(10)], Vec::new())];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &exact, &preceding, &preceding)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            resolve_draft_face_by_surface_transition(decode_ctx, &exact, &preceding, &preceding)
+        })
+        .unwrap(),
         Some(10)
     );
 }

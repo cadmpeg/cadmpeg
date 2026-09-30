@@ -27,7 +27,15 @@ fn face_operand_recipe_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::history::bind_face_operand_history_candidates(&ctx, &mut [], &[], &[], &[recipe], &[], &std::collections::HashMap::new())
+    let error = crate::history::bind_face_operand_history_candidates(
+        &ctx,
+        &mut [],
+        &[],
+        &[],
+        &[recipe],
+        &[],
+        &std::collections::HashMap::new(),
+    )
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

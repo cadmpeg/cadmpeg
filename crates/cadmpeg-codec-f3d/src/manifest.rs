@@ -21,16 +21,15 @@ const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
 /// recovery row.
 pub(crate) const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
-
-
-
-
 fn parse_malformed(
     ctx: &DecodeContext<'_>,
     field: &str,
     message: impl std::fmt::Display,
 ) -> CodecError {
-    match ctx.format_retained(format_args!("F3D {field}: {message}"), "describe malformed F3D manifest") {
+    match ctx.format_retained(
+        format_args!("F3D {field}: {message}"),
+        "describe malformed F3D manifest",
+    ) {
         Ok(text) => crate::error::malformed(text),
         Err(refusal) => refusal,
     }
@@ -151,8 +150,10 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
                 "contains a non-printable ASCII byte",
             ));
         }
-        
-        let mut value = self.ctx.retained_string(raw.len(), "retain F3D manifest ASCII")?;
+
+        let mut value = self
+            .ctx
+            .retained_string(raw.len(), "retain F3D manifest ASCII")?;
         let text = std::str::from_utf8(raw)
             .map_err(|_| parse_malformed(self.ctx, field, "contains a non-printable ASCII byte"))?;
         value.push_str(text);
@@ -197,9 +198,10 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
                     .refuse_codec_limit("decode F3D manifest UTF-16", 0, u64::MAX)
             })?;
         }
-        
-        
-        let mut value = self.ctx.retained_string(utf8_len, "retain F3D manifest UTF-16")?;
+
+        let mut value = self
+            .ctx
+            .retained_string(utf8_len, "retain F3D manifest UTF-16")?;
         for decoded in char::decode_utf16(units()) {
             let character = decoded
                 .map_err(|_| parse_malformed(self.ctx, field, "contains invalid UTF-16LE"))?;
@@ -344,7 +346,11 @@ fn parse_top_level_body(
                 format_args!("empty or duplicate name {name:?}"),
             ));
         }
-        ctx.insert_btree_set(&mut registry_names, name, "index F3D manifest registry names")?;
+        ctx.insert_btree_set(
+            &mut registry_names,
+            name,
+            "index F3D manifest registry names",
+        )?;
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
@@ -471,7 +477,8 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
     let mut design_folders = Vec::new();
 
     for base in &manifest.asset_folder_bases {
-        let (active, _active_budget) = ctx.format_scoped(format_args!("{base}[Active]"), "name F3D active asset")?;
+        let (active, _active_budget) =
+            ctx.format_scoped(format_args!("{base}[Active]"), "name F3D active asset")?;
         let mut folder_matches = [base.as_str(), active.as_str()]
             .into_iter()
             .filter(|candidate| {
@@ -499,7 +506,10 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 ))
             }
         };
-        let (manifest_name, _manifest_name_budget) = ctx.format_scoped(format_args!("{folder}/Manifest.dat"), "name F3D asset manifest")?;
+        let (manifest_name, _manifest_name_budget) = ctx.format_scoped(
+            format_args!("{folder}/Manifest.dat"),
+            "name F3D asset manifest",
+        )?;
         let bytes = entry_bytes(&manifest_name).ok_or_else(|| {
             parse_malformed(
                 ctx,
@@ -525,7 +535,11 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             }
         ) {
             let name = ctx.copy_retained_text(folder, "retain F3D Design asset folder")?;
-            ctx.push_vec(&mut design_folders, name, "collect F3D Design asset folders")?;
+            ctx.push_vec(
+                &mut design_folders,
+                name,
+                "collect F3D Design asset folders",
+            )?;
         }
     }
 
@@ -609,7 +623,11 @@ fn parse_capability_registry(cursor: &mut Cursor<'_, '_, '_>) -> Result<(), Code
                 format_args!("empty or duplicate name {name:?}"),
             ));
         }
-        cursor.ctx.insert_btree_set(&mut capability_names, name, "index F3D asset capability names")?;
+        cursor.ctx.insert_btree_set(
+            &mut capability_names,
+            name,
+            "index F3D asset capability names",
+        )?;
         let _value = cursor.u32(&format!("Fusion asset manifest capability value {ordinal}"))?;
     }
     Ok(())

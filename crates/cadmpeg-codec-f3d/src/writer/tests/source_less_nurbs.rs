@@ -303,7 +303,11 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
         .pcurves
         .first()
         .is_some_and(|use_| use_.parameter_range.is_some()));
-    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, round_trip.ir()).expect("service native validation")).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
 }
 
 #[test]
@@ -820,7 +824,8 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .count()
             == 2
     }));
-    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 

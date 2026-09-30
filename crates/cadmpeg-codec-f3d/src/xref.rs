@@ -181,7 +181,10 @@ impl ReferenceJson {
             ))
         })?;
         Ok(XrefReference {
-            id: ctx.format_retained(format_args!("f3d:xref:reference#{ordinal}"), "retain F3D xref record ID")?,
+            id: ctx.format_retained(
+                format_args!("f3d:xref:reference#{ordinal}"),
+                "retain F3D xref record ID",
+            )?,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
             from,
@@ -192,8 +195,6 @@ impl ReferenceJson {
         })
     }
 }
-
-
 
 fn redirections_error(message: impl std::fmt::Display) -> CodecError {
     CodecError::malformed(format_args!("{REDIRECTIONS_ENTRY}: {message}"))
@@ -323,14 +324,16 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     }
     let mut designs = Vec::new();
     for (ordinal, design) in parsed.designs.into_iter().enumerate() {
-        
         ctx.reserve_vec(&mut designs, 1, "admit F3D xref designs")?;
         require_text(
             &design.target_file_name,
             format_args!("designs[{ordinal}].targetFileName"),
         )?;
         designs.push(XrefDesign {
-            id: ctx.format_retained(format_args!("f3d:xref:design#{ordinal}"), "retain F3D xref record ID")?,
+            id: ctx.format_retained(
+                format_args!("f3d:xref:design#{ordinal}"),
+                "retain F3D xref record ID",
+            )?,
             ordinal: ordinal_at(ordinal)?,
             file_version: design.file_version,
             target_file_name: design.target_file_name,
@@ -350,7 +353,6 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
     };
     let mut admitted_references = Vec::new();
     for (ordinal, reference) in references.into_iter().enumerate() {
-        
         ctx.reserve_vec(&mut admitted_references, 1, "admit F3D xref references")?;
         admitted_references.push(reference.into_record(ctx, ordinal)?);
     }
@@ -446,7 +448,6 @@ pub(crate) fn project_occurrences(
 ) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
     for (ordinal, reference) in table.references.iter().enumerate() {
-        
         ctx.reserve_vec(&mut occurrences, 1, "project F3D xref occurrence")?;
         let path = ctx.copy_retained_text(&reference.relative_path, "copy F3D xref path")?;
         let transform = reference.transform.map_or(
@@ -475,7 +476,9 @@ pub(crate) fn project_occurrences(
             name: None,
             visible: None,
             link: None,
-            native_ref: Some(ctx.copy_retained_text(&reference.id, "copy F3D xref native reference")?),
+            native_ref: Some(
+                ctx.copy_retained_text(&reference.id, "copy F3D xref native reference")?,
+            ),
         });
     }
     Ok(occurrences)
@@ -573,7 +576,7 @@ fn bind_occurrences(
             serializer_magic,
             placement_offsets.as_ref(),
         )?;
-        
+
         ctx.reserve_vec(&mut streams, 1, "collect F3D xref streams")?;
         streams.push((
             placements,
@@ -600,8 +603,11 @@ fn bind_occurrences(
             let structured_count =
                 superseded_placement_count(&direct, placements, &reference.neutron_role);
             if !direct.is_empty() && structured_count != 0 {
-                
-                ctx.reserve_vec(&mut placement_overrides, 1, "report F3D xref placement override")?;
+                ctx.reserve_vec(
+                    &mut placement_overrides,
+                    1,
+                    "report F3D xref placement override",
+                )?;
                 placement_overrides.push(PlacementOverride {
                     ordinal: reference.ordinal,
                     count: structured_count,
@@ -613,8 +619,12 @@ fn bind_occurrences(
                 placements,
                 &reference.neutron_role,
             )?;
-            
-            ctx.reserve_vec(&mut occurrences, selected.len(), "collect F3D xref occurrence transforms")?;
+
+            ctx.reserve_vec(
+                &mut occurrences,
+                selected.len(),
+                "collect F3D xref occurrence transforms",
+            )?;
             occurrences.extend(selected);
         }
         if occurrences.is_empty() {
@@ -637,22 +647,27 @@ fn bind_occurrences(
                             .any(|name| name == &reference.neutron_role)
                     })
             }) {
-                
-                ctx.reserve_vec(&mut placement_failures, 1, "report F3D xref placement failure")?;
+                ctx.reserve_vec(
+                    &mut placement_failures,
+                    1,
+                    "report F3D xref placement failure",
+                )?;
                 placement_failures.push(reference.ordinal);
             }
-            
+
             ctx.reserve_vec(&mut expanded, 1, "expand F3D xref references")?;
             expanded.push(copy_reference_charged(ctx, reference, None)?);
             continue;
         }
         for (occurrence_ordinal, transform) in occurrences.into_iter().enumerate() {
-            
             ctx.reserve_vec(&mut expanded, 1, "expand F3D xref references")?;
-            let occurrence_id = ctx.format_retained(format_args!(
+            let occurrence_id = ctx.format_retained(
+                format_args!(
                     "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
                     reference.ordinal
-                ), "retain F3D xref record ID")?;
+                ),
+                "retain F3D xref record ID",
+            )?;
             let mut occurrence = copy_reference_charged(ctx, reference, Some(occurrence_id))?;
             occurrence.occurrence_ordinal = ordinal_at(occurrence_ordinal)?;
             occurrence.transform = transform
@@ -667,8 +682,6 @@ fn bind_occurrences(
     table.placement_overrides = placement_overrides;
     Ok(())
 }
-
-
 
 fn copy_reference_charged(
     ctx: &DecodeContext<'_>,
@@ -704,15 +717,16 @@ fn select_component_insert_transforms<'a, I>(
 where
     I: IntoIterator<Item = (&'a str, &'a DesignComponentInsertConstruction)>,
 {
-    ctx.collect_vec(constructions
+    ctx.collect_vec(
+        constructions
             .into_iter()
             .filter(|(construction_stream, construction)| {
                 *construction_stream == stream && construction.neutron_role == role
             })
-            .map(|(_, construction)| construction.transform().rows()), "select F3D component insert transforms")
+            .map(|(_, construction)| construction.transform().rows()),
+        "select F3D component insert transforms",
+    )
 }
-
-
 
 /// Use scope-bound carriers when present. Placement records are the fallback
 /// for a stream with no exact carrier for this role.
@@ -725,7 +739,10 @@ fn occurrence_transforms_with_precedence(
     if direct.is_empty() {
         occurrence_transforms(ctx, placements, role)
     } else {
-        ctx.collect_vec(direct.into_iter().map(Some), "select F3D direct xref transforms")
+        ctx.collect_vec(
+            direct.into_iter().map(Some),
+            "select F3D direct xref transforms",
+        )
     }
 }
 
@@ -766,8 +783,11 @@ fn typed_occurrence_placement_offsets(
         .flat_map(|design_type| design_type.entities.values().copied())
     {
         if !placement_entities.contains(&entity) {
-            
-            ctx.reserve_set(&mut placement_entities, 1, "index F3D xref placement entities")?;
+            ctx.reserve_set(
+                &mut placement_entities,
+                1,
+                "index F3D xref placement entities",
+            )?;
             placement_entities.insert(entity);
         }
     }
@@ -780,7 +800,6 @@ fn typed_occurrence_placement_offsets(
             CodecError::Malformed("F3D occurrence-placement BulkStream offset exceeds usize".into())
         })?;
         if !offsets.contains(&offset) {
-            
             ctx.reserve_set(&mut offsets, 1, "index F3D xref placement offsets")?;
             offsets.insert(offset);
         }
@@ -801,10 +820,13 @@ fn occurrence_transforms(
     placements: &[OccurrencePlacement],
     role: &str,
 ) -> Result<Vec<Option<[[f64; 4]; 4]>>, CodecError> {
-    ctx.collect_vec(placements
+    ctx.collect_vec(
+        placements
             .iter()
             .filter(|placement| placement.link_names.iter().any(|name| name == role))
-            .map(|placement| placement.transform), "select F3D structured xref transforms")
+            .map(|placement| placement.transform),
+        "select F3D structured xref transforms",
+    )
 }
 
 fn indexed_records(
@@ -826,7 +848,7 @@ fn indexed_records(
         if let Some(previous) = records.last_mut() {
             previous.end = at;
         }
-        
+
         ctx.reserve_vec(&mut records, 1, "index F3D xref record frame")?;
         records.push(IndexedRecord {
             offset: at,
@@ -905,16 +927,14 @@ fn occurrence_placements_with_failures(
             continue;
         };
         if let Some(placement) = occurrence_placement(ctx, body, serializer_magic)? {
-            
             ctx.reserve_vec(&mut placements, 1, "collect F3D xref placements")?;
             placements.push(placement);
         } else if let Some((link_names, _)) = occurrence_path(ctx, body)? {
-            
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
         } else if let Some(link_name) = legacy_occurrence_role(body) {
             let link_names = ctx.collect_vec([link_name], "collect F3D legacy xref role")?;
-            
+
             ctx.reserve_vec(&mut failures, 1, "collect F3D xref placement failures")?;
             failures.push(OccurrencePlacementFailure { link_names });
         }
@@ -991,7 +1011,10 @@ fn xref_utf16(
     at: usize,
     bounds: std::ops::RangeInclusive<usize>,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    { let ctx = decode; lp_utf16_bounded_charged(ctx, body, at, bounds) }
+    {
+        let ctx = decode;
+        lp_utf16_bounded_charged(ctx, body, at, bounds)
+    }
 }
 
 fn xref_ascii(
@@ -1000,7 +1023,10 @@ fn xref_ascii(
     at: usize,
     bounds: std::ops::RangeInclusive<usize>,
 ) -> Result<Option<(String, usize)>, CodecError> {
-    { let ctx = decode; lp_ascii_strict_charged(ctx, body, at, bounds) }
+    {
+        let ctx = decode;
+        lp_ascii_strict_charged(ctx, body, at, bounds)
+    }
 }
 
 fn repeated_target_occurrence_placement_details(
@@ -1076,7 +1102,10 @@ fn repeated_target_occurrence_placement_details(
         return Ok(None);
     }
     at += 1;
-    let reference = { let ctx = decode; take_reference_charged(ctx, body, &mut at)? };
+    let reference = {
+        let ctx = decode;
+        take_reference_charged(ctx, body, &mut at)?
+    };
     xref_some!(reference);
     Ok(
         (at == body.len()).then_some(RepeatedTargetPlacementDetails {
@@ -1098,7 +1127,13 @@ pub(crate) fn repeated_target_component_insert(
     expected_transform: [[f64; 4]; 4],
 ) -> Option<(String, usize, Option<usize>)> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()) else { return None; };
+    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        bytes,
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    ) else {
+        return None;
+    };
     let decode_ctx = &decode_ctx;
 
     let body = bytes.get(carrier_at..relation_at)?;
@@ -1534,14 +1569,20 @@ fn occurrence_path(
 ) -> Result<Option<(Vec<String>, usize)>, CodecError> {
     // Header: the LP-ASCII decimal class tag, the u64 entity ID, and the
     // LP-ASCII record name.
-    let class_tag = { let ctx = decode; lp_ascii_strict_charged(ctx, body, 0, 3..=3)? };
+    let class_tag = {
+        let ctx = decode;
+        lp_ascii_strict_charged(ctx, body, 0, 3..=3)?
+    };
     let Some((_, after_tag)) = class_tag else {
         return Ok(None);
     };
     let Some(mut at) = after_tag.checked_add(8) else {
         return Ok(None);
     };
-    let name = { let ctx = decode; lp_ascii_strict_charged(ctx, body, at, 0..=256)? };
+    let name = {
+        let ctx = decode;
+        lp_ascii_strict_charged(ctx, body, at, 0..=256)?
+    };
     let Some((_, after_name)) = name else {
         return Ok(None);
     };
@@ -1560,16 +1601,23 @@ fn occurrence_path(
     at += 4;
     let mut link_names = Vec::new();
     for _ in 0..count {
-        let element = { let ctx = decode; take_reference_charged(ctx, body, &mut at)? };
+        let element = {
+            let ctx = decode;
+            take_reference_charged(ctx, body, &mut at)?
+        };
         let Some(element) = element else {
             return Ok(None);
         };
         if let Some(link_name) = element.link_name() {
-            let name = { let ctx = decode; {
+            let name = {
+                let ctx = decode;
+                {
                     ctx.copy_retained_text(link_name, "copy F3D xref placement link name")?
-                } };
-            { let ctx = decode;
-                
+                }
+            };
+            {
+                let ctx = decode;
+
                 ctx.reserve_vec(&mut link_names, 1, "collect F3D xref placement link names")?;
             }
             link_names.push(name);

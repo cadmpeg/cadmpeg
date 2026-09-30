@@ -113,8 +113,6 @@ pub(super) fn model_root(
     model_root_member(ctx, scan, &manifest.root)
 }
 
-
-
 /// Classifies all F3D members and attaches each nested layer to its archive path.
 pub(super) fn classify_members<'a>(
     ctx: &DecodeContext<'a>,
@@ -139,7 +137,10 @@ pub(super) fn classify_members<'a>(
             Ok(member_scan) => member_scan,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = ctx.format_retained(format_args!("{error}"), "retain F3Z unreadable member error")?;
+                let message = ctx.format_retained(
+                    format_args!("{error}"),
+                    "retain F3Z unreadable member error",
+                )?;
                 super::push_loss(
                     ctx,
                     &mut losses,
@@ -160,10 +161,21 @@ pub(super) fn classify_members<'a>(
         let (member_layers, mut member_losses) =
             crate::dialect::classify_layers(ctx, &member_scan)?;
         for loss in &mut member_losses {
-            loss.message = ctx.format_retained(format_args!("archive member {member_path}: {}", loss.message), "prefix F3Z member classification loss")?;
+            loss.message = ctx.format_retained(
+                format_args!("archive member {member_path}: {}", loss.message),
+                "prefix F3Z member classification loss",
+            )?;
         }
-        ctx.append_vec(&mut losses, &mut { member_losses }, "append F3Z report losses")?;
-        ctx.append_vec(&mut losses, &mut { merge_member_layers(ctx, &mut layers, &member_layers, member_path)? }, "append F3Z report losses")?;
+        ctx.append_vec(
+            &mut losses,
+            &mut { member_losses },
+            "append F3Z report losses",
+        )?;
+        ctx.append_vec(
+            &mut losses,
+            &mut { merge_member_layers(ctx, &mut layers, &member_layers, member_path)? },
+            "append F3Z report losses",
+        )?;
         ctx.charge_collection_items(1, "retain F3Z member scan")?;
         insert_member_charged(
             ctx,
@@ -172,7 +184,11 @@ pub(super) fn classify_members<'a>(
             ClassifiedMember::Scanned(Box::new(member_scan)),
         )?;
     }
-    ctx.append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &layers)? }, "append F3Z report losses")?;
+    ctx.append_vec(
+        &mut losses,
+        &mut { crate::dialect::dialect_losses(ctx, &layers)? },
+        "append F3Z report losses",
+    )?;
     Ok(ArchiveSession {
         members,
         layers,
@@ -191,7 +207,10 @@ pub(super) fn merge_member_layers(
     for matched in member.iter() {
         let matched = matched.try_clone_for_decode(ctx)?;
         let instance = match matched.instance() {
-            Some(nested) => ctx.format_retained(format_args!("{member_path}/{nested}"), "retain F3Z dialect layer instance")?,
+            Some(nested) => ctx.format_retained(
+                format_args!("{member_path}/{nested}"),
+                "retain F3Z dialect layer instance",
+            )?,
             None => ctx.copy_retained_text(member_path, "retain F3Z dialect layer instance")?,
         };
         let matched = matched
@@ -283,9 +302,11 @@ fn model_root_member(
                 }
             }
             if derived {
-                
                 ctx.reserve_vec(&mut candidates, 1, "collect F3Z model candidates")?;
-                candidates.push(ctx.copy_retained_text(&object.relative_path, "retain F3Z model candidate name")?);
+                candidates.push(ctx.copy_retained_text(
+                    &object.relative_path,
+                    "retain F3Z model candidate name",
+                )?);
             }
         }
     }

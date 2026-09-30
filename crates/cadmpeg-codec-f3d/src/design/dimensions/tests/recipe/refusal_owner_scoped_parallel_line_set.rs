@@ -116,8 +116,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Point2::new(22.0, 4.0),
     ));
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(ctx, &fragmented_entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
+            ctx,
+            &fragmented_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

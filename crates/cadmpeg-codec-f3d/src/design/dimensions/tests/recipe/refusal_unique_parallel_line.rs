@@ -89,8 +89,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     )
     .unwrap();
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::unique_parallel_line_dimension_definition(ctx, &entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), 0.0)
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            ctx,
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
         .transpose()
         .map(|_| ())
     });

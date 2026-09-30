@@ -194,7 +194,9 @@ pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8>
 }
 
 /// Build exact timeline frames for fixture scopes in their supplied order.
-pub(crate) fn synthetic_feature_timelines(scopes: &[crate::records::feature::scope::DesignParameterScope]) -> Vec<crate::records::entity_header::DesignFeatureTimeline> {
+pub(crate) fn synthetic_feature_timelines(
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
+) -> Vec<crate::records::entity_header::DesignFeatureTimeline> {
     let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
     for scope in scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);

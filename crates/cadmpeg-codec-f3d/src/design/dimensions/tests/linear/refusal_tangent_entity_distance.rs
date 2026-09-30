@@ -113,8 +113,16 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("synthetic tangent dimension");
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::presentation_dimension_definition(ctx, "stream", &frame(vec![operand(306), operand(331)]), &projected, &tangent_span, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4")
-                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
+        crate::design::dimensions::presentation_dimension_definition(
+            ctx,
+            "stream",
+            &frame(vec![operand(306), operand(331)]),
+            &projected,
+            &tangent_span,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

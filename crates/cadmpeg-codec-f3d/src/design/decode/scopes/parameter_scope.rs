@@ -101,7 +101,13 @@ pub(crate) fn decode_parameter_scopes(
             else {
                 continue;
             };
-            scope.id = design_record_id_charged(ctx, &entry.name, ":design-parameter-scope#", scope.byte_offset(), "f3d Design parameter scope ID")?;
+            scope.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-parameter-scope#",
+                scope.byte_offset(),
+                "f3d Design parameter scope ID",
+            )?;
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -510,7 +516,6 @@ fn first_marked_reference_offsets(
         if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
             if let Some(suffix) = View::u32_le_at(frame, at + 1) {
                 if !first_at.contains_key(&suffix) {
-
                     ctx.reserve_map(&mut first_at, 1, "f3d Sketch scope reference offsets")?;
                     first_at.insert(suffix, at);
                 }
@@ -547,7 +552,13 @@ pub(crate) fn admit_history_bound_scope_variants(
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
-        ctx.push_hash_group(&mut groups, key, index, "f3d scope admission groups", "f3d scope admission group indices")?;
+        ctx.push_hash_group(
+            &mut groups,
+            key,
+            index,
+            "f3d scope admission groups",
+            "f3d scope admission group indices",
+        )?;
     }
 
     for indices in groups.values() {
@@ -612,7 +623,11 @@ pub(crate) fn admit_history_bound_scope_variants(
     let retained_count = admitted.iter().filter(|selected| **selected).count();
 
     let mut retained = Vec::new();
-    ctx.reserve_vec(&mut retained, retained_count, "f3d scope admission retained output")?;
+    ctx.reserve_vec(
+        &mut retained,
+        retained_count,
+        "f3d scope admission retained output",
+    )?;
     for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
         if admitted[index] {
             retained.push(scope);
@@ -714,7 +729,10 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(serialized_length, "f3d scope variant JSON")?;
+    let bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        serialized_length,
+        "f3d scope variant JSON",
+    )?;
     let mut writer = ScopeJsonWriter {
         bytes,
         limit: serialized_length,
@@ -1045,12 +1063,16 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             let first = count_at.checked_add(4)?;
 
             let mut members = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut members, count, "f3d Design scope reference members") {
+            if let Err(error) =
+                ctx.reserve_vec(&mut members, count, "f3d Design scope reference members")
+            {
                 return Some(Err(error));
             }
 
             let mut offsets = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut offsets, count, "f3d Design scope reference offsets") {
+            if let Err(error) =
+                ctx.reserve_vec(&mut offsets, count, "f3d Design scope reference offsets")
+            {
                 return Some(Err(error));
             }
             for ordinal in 0..count {
@@ -1096,14 +1118,18 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             None
         };
         let edge_flange_operation = if kind == scope::DesignFeatureKind::EdgeFlange {
-            exact_edge_flange_operation(
+            match exact_edge_flange_operation(
+                ctx,
                 bytes,
                 start,
                 paired_at,
                 class_tag.as_str(),
                 paired_class_tag,
                 reference_members,
-            )
+            ) {
+                Ok(operation) => operation,
+                Err(error) => return Some(Err(error)),
+            }
         } else {
             None
         };
@@ -1211,7 +1237,11 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         };
 
         let mut located_references = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut located_references, reference_members.len(), "f3d Design scope located references") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut located_references,
+            reference_members.len(),
+            "f3d Design scope located references",
+        ) {
             return Some(Err(error));
         }
         located_references.extend(

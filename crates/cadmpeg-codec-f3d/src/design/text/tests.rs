@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{malformed_design};
+use super::malformed_design;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 

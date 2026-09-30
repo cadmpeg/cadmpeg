@@ -36,9 +36,7 @@ pub(in crate::design::decode) fn class_tag_from_view(
     crate::records::references::DesignClassTag::try_from(value.to_owned())
 }
 
-/// Copy an admitted ASCII field into retained text after charging its bytes.
-
-
+/// Compose a native scope and record suffix under the retained text budget.
 pub(in crate::design::decode) fn design_record_id_charged(
     ctx: &DecodeContext<'_>,
     stream: &str,
@@ -209,7 +207,12 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
     }
     let mut reservation = ctx.reserve_scoped(0, "f3d Design temporary UTF-16 text")?;
     let mut text = String::new();
-    ctx.reserve_scoped_string(&mut reservation, &mut text, utf8_len, "f3d Design temporary UTF-16 text")?;
+    ctx.reserve_scoped_string(
+        &mut reservation,
+        &mut text,
+        utf8_len,
+        "f3d Design temporary UTF-16 text",
+    )?;
     let mut view = View::over_retained(raw);
     for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
         let Ok(character) = decoded else {

@@ -11,8 +11,8 @@
 )]
 
 use crate::history::{
-    selection::bind_edge_identity_bounded_face_rules, cyclic_point_subsequence,
-    resolve_direct_face_recipe_clauses,
+    cyclic_point_subsequence, resolve_direct_face_recipe_clauses,
+    selection::bind_edge_identity_bounded_face_rules,
 };
 use crate::history_records::AsmHistoricalTopology;
 
@@ -51,11 +51,23 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| resolve_direct_face_recipe_clauses(decode_ctx, &references, &topology, &[2, 4].into_iter().collect()))
+        crate::test_support::with_decode_context(|decode_ctx| resolve_direct_face_recipe_clauses(
+            decode_ctx,
+            &references,
+            &topology,
+            &[2, 4].into_iter().collect()
+        ))
         .unwrap(),
         [2, 4]
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| resolve_direct_face_recipe_clauses(decode_ctx, &references, &topology, &[2].into_iter().collect()))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        resolve_direct_face_recipe_clauses(
+            decode_ctx,
+            &references,
+            &topology,
+            &[2].into_iter().collect(),
+        )
+    })
     .unwrap()
     .is_empty());
 }
@@ -299,8 +311,8 @@ fn bounded_face_rules_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_edge_identity_bounded_face_rules(&ctx, &mut identities, &[face.clone()])
-        .unwrap_err();
+    let error =
+        bind_edge_identity_bounded_face_rules(&ctx, &mut identities, &[face.clone()]).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D bounded treatment faces")
@@ -310,7 +322,10 @@ fn bounded_face_rules_refuse_collection_limit() {
 #[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     let (mut identities, face) = bounded_face_rule_fixture();
-    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[face.clone()])).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[face.clone()])
+    })
+    .unwrap();
     assert_eq!(identities[0].resolved_edge_slots, [8, 7]);
     assert_eq!(
         identities[0].resolution_identity_id.as_deref(),
@@ -321,6 +336,9 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     inconsistent.historical_support_contexts[0]
         .changed_preceding_face_slots
         .clear();
-    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[inconsistent])).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[inconsistent])
+    })
+    .unwrap();
     assert!(identities[0].resolved_edge_slots.is_empty());
 }

@@ -105,21 +105,23 @@ fn scope(case: Case) -> crate::records::feature::scope::DesignParameterScope {
     scope
 }
 
-fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = crate::native::F3dNative {
-        design_parameter_scopes: vec![scope(case)],
-        ..Default::default()
-    };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+fn scope_error(case: Case, max_items: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative {
+            design_parameter_scopes: vec![scope(case)],
+            ..Default::default()
+        };
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn standard_thread_group_refuses_collection_limit() {

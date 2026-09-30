@@ -12,19 +12,21 @@ fn native() -> crate::native::F3dNative {
     }
 }
 
-fn scope_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = native();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+fn scope_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_parameter_scopes(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn parameter_scope_index_refuses_collection_limit() {
@@ -54,15 +56,17 @@ fn parameter_scope_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn invalid_parameter_scope_preserves_finding() { crate::test_support::with_decode_context(|service_ctx| {
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = native();
-    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    let mut findings = Vec::new();
-    super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
-    assert_eq!(findings.len(), 1);
-    assert_eq!(
-        findings[0].message,
-        "Fusion Design parameter scope has an invalid paired frame"
-    );
-}) }
+fn invalid_parameter_scope_preserves_finding() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_parameter_scopes(&ctx, &mut findings).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design parameter scope has an invalid paired frame"
+        );
+    })
+}

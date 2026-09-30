@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact point-data levels and work-point constructions.
 
-
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;

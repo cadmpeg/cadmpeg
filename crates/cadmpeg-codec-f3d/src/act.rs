@@ -31,18 +31,6 @@ pub(crate) struct DecodedAct {
     pub(crate) non_root_component_links: usize,
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 struct RecordFrame {
     start: usize,
     end: usize,
@@ -74,7 +62,8 @@ fn decode_record_frames(
     }
 
     let mut record_indices = BTreeSet::new();
-    ctx.try_collect_vec(meta.records.iter().enumerate().map(|(ordinal, record)| {
+    ctx.try_collect_vec(
+        meta.records.iter().enumerate().map(|(ordinal, record)| {
             let start = usize::try_from(record.bulk_offset).map_err(|_| {
                 CodecError::malformed(format_args!(
                     "F3D ACT record offset exceeds usize: {stream}"
@@ -97,7 +86,11 @@ fn decode_record_frames(
             let expected_index = u32::try_from(record.entity_id).map_err(|_| {
                 CodecError::malformed(format_args!("F3D ACT record index exceeds u32: {stream}"))
             })?;
-            if !ctx.insert_btree_set(&mut record_indices, expected_index, "index F3D ACT records")? {
+            if !ctx.insert_btree_set(
+                &mut record_indices,
+                expected_index,
+                "index F3D ACT records",
+            )? {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D ACT primary record index {expected_index}: {stream}"
                 )));
@@ -140,12 +133,20 @@ fn decode_record_frames(
                 payload_offset,
                 class_tag,
             })
-        }), "frame F3D ACT records")
+        }),
+        "frame F3D ACT records",
+    )
 }
 
 fn sibling_meta_name(ctx: &DecodeContext<'_>, stream: &str) -> Result<Option<String>, CodecError> {
-    let Some(prefix) = stream.strip_suffix("BulkStream.dat") else { return Ok(None); };
-    ctx.format_retained(format_args!("{prefix}MetaStream.dat"), "name F3D ACT MetaStream").map(Some)
+    let Some(prefix) = stream.strip_suffix("BulkStream.dat") else {
+        return Ok(None);
+    };
+    ctx.format_retained(
+        format_args!("{prefix}MetaStream.dat"),
+        "name F3D ACT MetaStream",
+    )
+    .map(Some)
 }
 
 pub(crate) fn decode(
@@ -185,9 +186,12 @@ pub(crate) fn decode(
         let meta =
             crate::metastream::parse(ctx, scan.entry_bytes(&meta_entry.name)?, &meta_entry.name)?;
         let frames = decode_record_frames(ctx, bytes, &meta, &entry.name)?;
-        let table_frames = ctx.collect_vec(frames.iter().filter_map(|frame| {
+        let table_frames = ctx.collect_vec(
+            frames.iter().filter_map(|frame| {
                 table_payload_offset(bytes, frame).map(|payload| (frame, payload))
-            }), "select F3D ACT table frames")?;
+            }),
+            "select F3D ACT table frames",
+        )?;
         let [(table_frame, table_payload)] = table_frames.as_slice() else {
             return Err(CodecError::malformed(format_args!(
                 "F3D ACT segment must have exactly one indexed ACTTable record: {}",
@@ -202,7 +206,11 @@ pub(crate) fn decode(
         } = decode_table(ctx, bytes, table_frame, *table_payload, &entry.name)?;
         let mut frame_indices = BTreeSet::new();
         for frame in &frames {
-            ctx.insert_btree_set(&mut frame_indices, frame.record_index, "index F3D ACT frame records")?;
+            ctx.insert_btree_set(
+                &mut frame_indices,
+                frame.record_index,
+                "index F3D ACT frame records",
+            )?;
         }
         if let Some(reference) = stream_table_references
             .iter()
@@ -253,10 +261,18 @@ pub(crate) fn decode(
             ctx.push_vec(&mut guids, guid, "collect F3D ACT GUIDs")?;
         }
         for reference in stream_table_references {
-            ctx.push_vec(&mut table_references, reference, "collect F3D ACT table references")?;
+            ctx.push_vec(
+                &mut table_references,
+                reference,
+                "collect F3D ACT table references",
+            )?;
         }
         for channel in stream_registry_channels {
-            ctx.push_vec(&mut registry_channels, channel, "collect F3D ACT registry channels")?;
+            ctx.push_vec(
+                &mut registry_channels,
+                channel,
+                "collect F3D ACT registry channels",
+            )?;
         }
     }
     Ok(DecodedAct {
@@ -338,12 +354,16 @@ fn decode_table(
                 .filter(|(_, end)| *end <= frame.end)
                 .filter(|(entity_id, _)| is_entity_key(entity_id))
                 .ok_or_else(|| malformed("entity key"))?;
-        ctx.push_vec(&mut entries, TableEntry {
+        ctx.push_vec(
+            &mut entries,
+            TableEntry {
                 record_index,
                 row: ActTableRow::new(u64_from_index(index_offset))
                     .map_err(CodecError::malformed)?,
                 entity_id,
-            }, "collect F3D ACT table entries")?;
+            },
+            "collect F3D ACT table entries",
+        )?;
         cursor = end;
     }
 
@@ -353,13 +373,17 @@ fn decode_table(
     {
         let byte_offset = cursor;
         let ordinal = u32::try_from(guids.len()).map_err(|_| malformed("GUID ordinal"))?;
-        ctx.push_vec(&mut guids, ActGuid::new(
+        ctx.push_vec(
+            &mut guids,
+            ActGuid::new(
                 crate::ids::native_scoped_id_charged(ctx, stream, "act-guid", byte_offset)?,
                 u64_from_index(byte_offset),
                 ordinal,
                 guid,
             )
-            .map_err(|_| malformed("GUID offset"))?, "collect F3D ACT GUID run")?;
+            .map_err(|_| malformed("GUID offset"))?,
+            "collect F3D ACT GUID run",
+        )?;
         cursor = end;
     }
 
@@ -378,7 +402,9 @@ fn decode_table(
         let byte_offset = cursor;
         let (target_record, end) =
             marker_ref(bytes, cursor, 6, frame.end).ok_or_else(|| malformed("table reference"))?;
-        ctx.push_vec(&mut table_references, ActTableReference::new(
+        ctx.push_vec(
+            &mut table_references,
+            ActTableReference::new(
                 crate::ids::native_scoped_id_charged(
                     ctx,
                     stream,
@@ -389,7 +415,9 @@ fn decode_table(
                 u64_from_index(byte_offset),
                 target_record,
             )
-            .map_err(CodecError::malformed)?, "collect F3D ACT table references")?;
+            .map_err(CodecError::malformed)?,
+            "collect F3D ACT table references",
+        )?;
         cursor = end;
     }
 
@@ -413,11 +441,17 @@ fn decode_table(
         if registry_names.contains(&name) {
             return Err(malformed("duplicate channel-registry name"));
         }
-        ctx.insert_btree_set(&mut registry_names, ctx.copy_retained_text(&name, "index F3D ACT registry name")?, "index F3D ACT registry names")?;
+        ctx.insert_btree_set(
+            &mut registry_names,
+            ctx.copy_retained_text(&name, "index F3D ACT registry name")?,
+            "index F3D ACT registry names",
+        )?;
         let (guid, end) = lp_utf16_bounded_charged(ctx, bytes, after_name, 36..=36)?
             .filter(|(guid, end)| *end <= frame.end && is_guid_hyphenated(guid))
             .ok_or_else(|| malformed("channel-registry GUID"))?;
-        ctx.push_vec(&mut registry_channels, ActRegistryChannel::new(
+        ctx.push_vec(
+            &mut registry_channels,
+            ActRegistryChannel::new(
                 crate::ids::native_scoped_id_charged(
                     ctx,
                     stream,
@@ -429,7 +463,9 @@ fn decode_table(
                 name,
                 guid,
             )
-            .map_err(|_| malformed("channel-registry entry"))?, "collect F3D ACT registry channels")?;
+            .map_err(|_| malformed("channel-registry entry"))?,
+            "collect F3D ACT registry channels",
+        )?;
         cursor = end;
     }
     if cursor != frame.end {
@@ -461,8 +497,14 @@ fn merge_entities(
     let mut table_by_index = BTreeMap::new();
     for item in table {
         let record_index = item.record_index;
-        if ctx.insert_btree_map(&mut table_by_index, record_index, item, "index F3D ACT table entries")?
-        .is_some()
+        if ctx
+            .insert_btree_map(
+                &mut table_by_index,
+                record_index,
+                item,
+                "index F3D ACT table entries",
+            )?
+            .is_some()
         {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACTTable change-group reference {record_index}: {stream}"
@@ -510,7 +552,12 @@ fn merge_entities(
             channel_group,
         )
         .map_err(CodecError::malformed)?;
-        ctx.insert_btree_map(&mut by_index, record_index, entity, "index F3D ACT entities")?;
+        ctx.insert_btree_map(
+            &mut by_index,
+            record_index,
+            entity,
+            "index F3D ACT entities",
+        )?;
     }
     if let Some(record_index) = table_by_index.keys().next() {
         return Err(CodecError::malformed(format_args!(
@@ -555,11 +602,17 @@ fn decode_channel_group(
         else {
             return Ok(None);
         };
-        if ctx.insert_btree_map(&mut channels, ctx.copy_retained_text(&name, "retain F3D ACT channel name")?, Located {
-                value: guid.try_into().map_err(CodecError::malformed)?,
-                offset: u64_from_index(after_name + 4),
-            }, "index F3D ACT channels")?
-        .is_some()
+        if ctx
+            .insert_btree_map(
+                &mut channels,
+                ctx.copy_retained_text(&name, "retain F3D ACT channel name")?,
+                Located {
+                    value: guid.try_into().map_err(CodecError::malformed)?,
+                    offset: u64_from_index(after_name + 4),
+                },
+                "index F3D ACT channels",
+            )?
+            .is_some()
         {
             return Err(CodecError::malformed(format_args!(
                 "duplicate F3D ACT channel {name:?}: {stream}@{}",
@@ -743,8 +796,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error =
-            ctx.push_vec(&mut Vec::new(), 1, "collect F3D ACT test").unwrap_err();
+        let error = ctx
+            .push_vec(&mut Vec::new(), 1, "collect F3D ACT test")
+            .unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 
@@ -754,8 +808,13 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = ctx.insert_btree_set(&mut std::collections::BTreeSet::new(), 1, "index F3D ACT test set")
-        .unwrap_err();
+        let error = ctx
+            .insert_btree_set(
+                &mut std::collections::BTreeSet::new(),
+                1,
+                "index F3D ACT test set",
+            )
+            .unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 
@@ -765,9 +824,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error =
-            ctx.insert_btree_map(&mut BTreeMap::new(), 1, 2, "index F3D ACT test map")
-                .unwrap_err();
+        let error = ctx
+            .insert_btree_map(&mut BTreeMap::new(), 1, 2, "index F3D ACT test map")
+            .unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(_)));
     }
 

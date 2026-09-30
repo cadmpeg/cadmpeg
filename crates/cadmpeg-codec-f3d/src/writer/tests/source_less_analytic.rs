@@ -106,10 +106,23 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
             serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
         let mut order = configuration.variant_order();
         order.push("Narrow".into());
-        *configuration = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, configuration.entry_name().clone(), configuration.kind(), order, payload))
+        *configuration = crate::test_support::with_decode_context(|ctx| {
+            crate::records::configuration::DesignConfiguration::try_new_charged(
+                ctx,
+                configuration.entry_name().clone(),
+                configuration.kind(),
+                order,
+                payload,
+            )
+        })
         .unwrap();
     });
-    retained.model.configurations = crate::test_support::with_decode_context(|decode_ctx| crate::design::configurations::project_configurations(decode_ctx, &f3d_native(&retained).design_configurations))
+    retained.model.configurations = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::configurations::project_configurations(
+            decode_ctx,
+            &f3d_native(&retained).design_configurations,
+        )
+    })
     .expect("edited configuration order");
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
@@ -943,14 +956,19 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
         .unwrap(),
     );
     let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-let scopes = &[];
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &f3d_native(&source_less).design_parameters,
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &f3d_native(&source_less).design_parameters,
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     source_less.model.parameters = parameters;
 
     let mut encoded = Vec::new();

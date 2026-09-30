@@ -47,13 +47,15 @@ pub(crate) fn primary_record_frames(
     meta: &MetaStream,
     bulk_len: usize,
 ) -> Result<Vec<PrimaryRecordFrame>, CodecError> {
-    
-    
     let mut frames = Vec::new();
     ctx.reserve_vec(&mut frames, meta.records.len(), "frame F3D primary records")?;
-    
+
     let mut primary_by_entity = std::collections::HashMap::new();
-    ctx.reserve_map(&mut primary_by_entity, meta.records.len(), "index F3D primary entities")?;
+    ctx.reserve_map(
+        &mut primary_by_entity,
+        meta.records.len(),
+        "index F3D primary entities",
+    )?;
     for (ordinal, record) in meta.records.iter().enumerate() {
         if primary_by_entity
             .insert(record.entity_id, ordinal)
@@ -88,10 +90,13 @@ pub(crate) fn primary_record_frames(
     }
 
     let mut previous_secondary_offset = None;
-    
-    
+
     let mut secondary_entities = std::collections::HashSet::new();
-    ctx.reserve_set(&mut secondary_entities, meta.secondary_records.len(), "index F3D secondary entities")?;
+    ctx.reserve_set(
+        &mut secondary_entities,
+        meta.secondary_records.len(),
+        "index F3D secondary entities",
+    )?;
     for record in &meta.secondary_records {
         let secondary = usize::try_from(record.bulk_offset).map_err(|_| {
             CodecError::Malformed("F3D secondary record offset exceeds usize".into())
@@ -155,9 +160,13 @@ fn take_record_index(
     if bytes.get(records_at..records_end).is_none() {
         return Ok(None);
     }
-    
+
     let mut records = Vec::new();
-    ctx.reserve_vec(&mut records, count_usize, "parse F3D MetaStream record index")?;
+    ctx.reserve_vec(
+        &mut records,
+        count_usize,
+        "parse F3D MetaStream record index",
+    )?;
     let mut view = View::over_retained(bytes);
     if view.seek(records_at).is_none() {
         return Ok(None);
@@ -370,7 +379,13 @@ fn parse_error(ctx: &DecodeContext<'_>, issue: ParseIssue, stream: &str) -> Code
         ParseIssue::Malformed(failure) => failure,
         ParseIssue::Resource(error) => return error,
     };
-    match ctx.format_retained(format_args!("invalid F3D MetaStream {} at byte {}: {stream}", failure.field, failure.offset), "report F3D MetaStream parse error") {
+    match ctx.format_retained(
+        format_args!(
+            "invalid F3D MetaStream {} at byte {}: {stream}",
+            failure.field, failure.offset
+        ),
+        "report F3D MetaStream parse error",
+    ) {
         Ok(text) => CodecError::Malformed(text),
         Err(refusal) => refusal,
     }
@@ -407,7 +422,7 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
 
     let count = require(View::u32_le_at(bytes, at), "type count", at)?;
     at = require(at.checked_add(4), "type count", at)?;
-    
+
     let mut types = Vec::new();
     let count_usize = usize::try_from(count)
         .map_err(|_| ctx.refuse_codec_limit("parse F3D MetaStream types", 0, u64::from(count)))?;
@@ -467,10 +482,13 @@ fn parse_inner(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<MetaStream, Pars
             ids_at,
         )?;
         require(bytes.get(ids_at..ids_end), "type entity ids", ids_at)?;
-        
-        
+
         let mut entity_rows = Vec::new();
-        ctx.reserve_vec(&mut entity_rows, id_count, "parse F3D MetaStream type entity ids")?;
+        ctx.reserve_vec(
+            &mut entity_rows,
+            id_count,
+            "parse F3D MetaStream type entity ids",
+        )?;
         let mut id_view = View::over_retained(bytes);
         require(id_view.seek(ids_at), "type entity ids", ids_at)?;
         for index in 0..id_count {

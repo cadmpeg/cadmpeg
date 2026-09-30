@@ -129,7 +129,11 @@ fn exact_rectangular_pattern_instances(
         }
 
         let mut record_indices = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut record_indices, count, "f3d rectangular pattern record indices") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut record_indices,
+            count,
+            "f3d rectangular pattern record indices",
+        ) {
             return Some(Err(error));
         }
         record_indices.push(*scope.reference_members().values().next()?);
@@ -142,7 +146,11 @@ fn exact_rectangular_pattern_instances(
         let reference_count = scope.reference_members().len();
 
         let mut reference_starts = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut reference_starts, reference_count, "f3d rectangular pattern reference starts") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut reference_starts,
+            reference_count,
+            "f3d rectangular pattern reference starts",
+        ) {
             return Some(Err(error));
         }
         for record_index in scope.reference_members().values() {
@@ -150,7 +158,11 @@ fn exact_rectangular_pattern_instances(
         }
 
         let mut candidates = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut candidates, count, "f3d rectangular pattern candidate groups") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut candidates,
+            count,
+            "f3d rectangular pattern candidate groups",
+        ) {
             return Some(Err(error));
         }
         let mut scanned_bytes = 0_usize;
@@ -191,7 +203,9 @@ fn exact_rectangular_pattern_instances(
                 }
 
                 let mut run = Vec::new();
-                if let Err(error) = ctx.reserve_vec(&mut run, count, "f3d rectangular pattern candidate run") {
+                if let Err(error) =
+                    ctx.reserve_vec(&mut run, count, "f3d rectangular pattern candidate run")
+                {
                     return Some(Err(error));
                 }
                 run.push(*first);
@@ -221,7 +235,9 @@ fn exact_rectangular_pattern_instances(
                 if unique {
                     run.push(*final_candidate);
 
-                    if let Err(error) = ctx.reserve_vec(&mut runs, 1, "f3d rectangular pattern matching runs") {
+                    if let Err(error) =
+                        ctx.reserve_vec(&mut runs, 1, "f3d rectangular pattern matching runs")
+                    {
                         return Some(Err(error));
                     }
                     runs.push(run);
@@ -241,7 +257,9 @@ fn exact_rectangular_pattern_instances(
         };
 
         let mut instances = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut instances, count, "f3d rectangular pattern instances") {
+        if let Err(error) =
+            ctx.reserve_vec(&mut instances, count, "f3d rectangular pattern instances")
+        {
             return Some(Err(error));
         }
         for (record_index, (value, offset)) in record_indices.into_iter().zip(run) {
@@ -299,8 +317,11 @@ fn exact_rigid_transform_candidates(
             if let Ok(transform) =
                 crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform)
             {
-
-                if let Err(error) = ctx.reserve_vec(&mut candidates, 1, "f3d rectangular pattern transform candidates") {
+                if let Err(error) = ctx.reserve_vec(
+                    &mut candidates,
+                    1,
+                    "f3d rectangular pattern transform candidates",
+                ) {
                     return Some(Err(error));
                 }
                 candidates.push((transform, u64::try_from(offset).ok()?));
@@ -359,8 +380,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     *selection_record_index,
                     scope.record_index,
                 ) {
-
-                    if let Err(error) = ctx.reserve_vec(&mut axis_candidates, 1, "f3d circular pattern axis candidates") {
+                    if let Err(error) = ctx.reserve_vec(
+                        &mut axis_candidates,
+                        1,
+                        "f3d circular pattern axis candidates",
+                    ) {
                         return Some(Err(error));
                     }
                     axis_candidates.push(CircularPatternAxisCandidate {
@@ -386,8 +410,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     Err(error) => return Some(Err(error)),
                 };
                 if let Some((axis, selection_record_index)) = candidate {
-
-                    if let Err(error) = ctx.reserve_vec(&mut axis_candidates, 1, "f3d circular pattern axis candidates") {
+                    if let Err(error) = ctx.reserve_vec(
+                        &mut axis_candidates,
+                        1,
+                        "f3d circular pattern axis candidates",
+                    ) {
                         return Some(Err(error));
                     }
                     axis_candidates.push(CircularPatternAxisCandidate {
@@ -422,8 +449,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         });
         let mut count_candidates = Vec::new();
         for candidate in owner_count_candidates {
-
-            if let Err(error) = ctx.reserve_vec(&mut count_candidates, 1, "f3d circular pattern count candidates") {
+            if let Err(error) = ctx.reserve_vec(
+                &mut count_candidates,
+                1,
+                "f3d circular pattern count candidates",
+            ) {
                 return Some(Err(error));
             }
             count_candidates.push(candidate);
@@ -433,8 +463,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 if let Some((count, count_offset)) =
                     exact_fixed_pattern_count(bytes, records, *record_index, scope.record_index)
                 {
-
-                    if let Err(error) = ctx.reserve_vec(&mut count_candidates, 1, "f3d circular pattern count candidates") {
+                    if let Err(error) = ctx.reserve_vec(
+                        &mut count_candidates,
+                        1,
+                        "f3d circular pattern count candidates",
+                    ) {
                         return Some(Err(error));
                     }
                     count_candidates.push((count, *record_index, count_offset));
@@ -459,8 +492,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
         });
         let mut angle_candidates = Vec::new();
         for candidate in owner_angle_candidates {
-
-            if let Err(error) = ctx.reserve_vec(&mut angle_candidates, 1, "f3d circular pattern angle candidates") {
+            if let Err(error) = ctx.reserve_vec(
+                &mut angle_candidates,
+                1,
+                "f3d circular pattern angle candidates",
+            ) {
                 return Some(Err(error));
             }
             angle_candidates.push(candidate);
@@ -477,7 +513,11 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                     continue;
                 };
 
-                if let Err(error) = ctx.reserve_vec(&mut angle_candidates, 1, "f3d circular pattern angle candidates") {
+                if let Err(error) = ctx.reserve_vec(
+                    &mut angle_candidates,
+                    1,
+                    "f3d circular pattern angle candidates",
+                ) {
                     return Some(Err(error));
                 }
                 angle_candidates.push((angle, *record_index, scalar.value_offset));
@@ -666,7 +706,11 @@ fn exact_legacy_circular_pattern_axis(
         let count = wrappers.iter().flatten().count();
 
         let mut retained_wrappers = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut retained_wrappers, count, "f3d circular pattern historical axis wrappers") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut retained_wrappers,
+            count,
+            "f3d circular pattern historical axis wrappers",
+        ) {
             return Some(Err(error));
         }
         for (_, wrapper) in wrappers.into_iter().flatten() {

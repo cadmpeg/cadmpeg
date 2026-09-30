@@ -675,13 +675,16 @@ impl From<String> for AnnotationFrameBuildError {
     }
 }
 
-
-
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame with representable offsets and matching operand runs.
     pub(crate) fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(|error| error.to_string())?;
         Self::try_new_inner(&ctx, draft).map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => message,
             AnnotationFrameBuildError::Resource(error) => error.to_string(),
@@ -762,11 +765,21 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = ctx.collect_vec(draft
-                .operands
-                .iter()
-                .filter_map(|operand| operand.geometry_record_index), "index F3D annotation operands").map_err(AnnotationFrameBuildError::Resource)?;
-        let mut return_members = ctx.collect_vec(draft.return_members.iter().map(|member| member.value), "index F3D annotation return members").map_err(AnnotationFrameBuildError::Resource)?;
+        let mut operand_members = ctx
+            .collect_vec(
+                draft
+                    .operands
+                    .iter()
+                    .filter_map(|operand| operand.geometry_record_index),
+                "index F3D annotation operands",
+            )
+            .map_err(AnnotationFrameBuildError::Resource)?;
+        let mut return_members = ctx
+            .collect_vec(
+                draft.return_members.iter().map(|member| member.value),
+                "index F3D annotation return members",
+            )
+            .map_err(AnnotationFrameBuildError::Resource)?;
         operand_members.sort_unstable();
         return_members.sort_unstable();
         if operand_members != return_members {
@@ -780,17 +793,27 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: ctx.collect_vec(draft
-                    .operands
-                    .into_iter()
-                    .map(|operand| DesignDimensionAnnotationLocus {
-                        geometry_record_index: operand.geometry_record_index,
-                        role: operand.role,
-                    }), "retain F3D annotation operands").map_err(AnnotationFrameBuildError::Resource)?,
+            operands: ctx
+                .collect_vec(
+                    draft
+                        .operands
+                        .into_iter()
+                        .map(|operand| DesignDimensionAnnotationLocus {
+                            geometry_record_index: operand.geometry_record_index,
+                            role: operand.role,
+                        }),
+                    "retain F3D annotation operands",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: ctx.collect_vec(draft.return_members.into_iter().map(|member| member.value), "retain F3D annotation return members").map_err(AnnotationFrameBuildError::Resource)?,
+            return_members: ctx
+                .collect_vec(
+                    draft.return_members.into_iter().map(|member| member.value),
+                    "retain F3D annotation return members",
+                )
+                .map_err(AnnotationFrameBuildError::Resource)?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })

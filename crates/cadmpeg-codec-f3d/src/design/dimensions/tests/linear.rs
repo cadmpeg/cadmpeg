@@ -91,12 +91,28 @@ fn dimension_proofs_require_the_evaluated_measurement() {
     );
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#0")
         .expect("identity grammar");
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::directional_point_dimension(decode_ctx, &[&first, &second], 10.0, parameter.clone(), 0.0))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::directional_point_dimension(
+            decode_ctx,
+            &[&first, &second],
+            10.0,
+            parameter.clone(),
+            0.0,
+        )
+    })
     .transpose()
     .unwrap()
     .is_none());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::directional_point_dimension(decode_ctx, &[&first, &second], 40.0, parameter.clone(), 0.0))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::dimensions::directional_point_dimension(
+                decode_ctx,
+                &[&first, &second],
+                40.0,
+                parameter.clone(),
+                0.0,
+            )
+        })
         .transpose()
         .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
@@ -109,7 +125,15 @@ fn dimension_proofs_require_the_evaluated_measurement() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::directional_point_dimension(decode_ctx, &[&first, &rounded], 40.0, parameter, 1.0e-6))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::dimensions::directional_point_dimension(
+                decode_ctx,
+                &[&first, &rounded],
+                40.0,
+                parameter,
+                1.0e-6,
+            )
+        })
         .transpose()
         .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
@@ -427,13 +451,21 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         3.81,
     ))
     .expect("synthetic ambiguous tangent dimension");
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::presentation_dimension_definition(decode_ctx, "stream", &frame(vec![operand(782), operand(796)]), &projected, &ambiguous_tangent, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
-                .expect("identity grammar"), 1.0e-6))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            decode_ctx,
+            "stream",
+            &frame(vec![operand(782), operand(796)]),
+            &projected,
+            &ambiguous_tangent,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
+                .expect("identity grammar"),
+            1.0e-6,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 
     let point_distance = parse_design_parameter_record(&parameter_record(
         Some(46),
@@ -444,8 +476,18 @@ fn presentation_dimensions_use_direct_operands_with_measurement_proofs() {
         0.381,
     ))
     .expect("synthetic point distance dimension");
-    let point_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::presentation_dimension_definition(decode_ctx, "stream", &frame(vec![operand(1061), operand(1075)]), &projected, &point_distance, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
-            .expect("identity grammar"), 1.0e-6))
+    let point_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            decode_ctx,
+            "stream",
+            &frame(vec![operand(1061), operand(1075)]),
+            &projected,
+            &point_distance,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
+                .expect("identity grammar"),
+            1.0e-6,
+        )
+    })
     .transpose()
     .unwrap();
     assert!(matches!(
@@ -493,25 +535,41 @@ fn symmetric_parallel_line_dimension_uses_twice_the_carrier_gap() {
             .expect("identity grammar");
 
     assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::symmetric_parallel_line_dimension_definition(decode_ctx, &first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6)).transpose().unwrap(),
-            Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
-                if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
-        ));
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::symmetric_parallel_line_dimension_definition(decode_ctx, &first, &second, (1, 1), &parameter, parameter_id.clone(), 1.0e-6)).transpose().unwrap(),
+        Some(SketchConstraintDefinitionInput::Distance { entities, parameter: actual })
+            if entities == vec![first.id().clone(), second.id().clone()] && actual == parameter_id
+    ));
 
     let mut direct_parameter = parameter.clone();
     direct_parameter.try_set_evaluated_value(0.5).unwrap();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::symmetric_parallel_line_dimension_definition(decode_ctx, &first, &second, (1, 1), &direct_parameter, parameter_id.clone(), 1.0e-6))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::symmetric_parallel_line_dimension_definition(decode_ctx, &first, &second, (0, 1), &parameter, parameter_id, 1.0e-6))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            decode_ctx,
+            &first,
+            &second,
+            (1, 1),
+            &direct_parameter,
+            parameter_id.clone(),
+            1.0e-6,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
+            decode_ctx,
+            &first,
+            &second,
+            (0, 1),
+            &parameter,
+            parameter_id,
+            1.0e-6,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -528,11 +586,12 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
-    let definition =
-        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(decode_ctx, &[&first, &second], 2.0, parameter.clone(), 0.0))
-            .transpose()
-            .unwrap()
-            .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        directional_point_dimension(decode_ctx, &[&first, &second], 2.0, parameter.clone(), 0.0)
+    })
+    .transpose()
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::VerticalDistance {
@@ -542,26 +601,46 @@ fn counted_linear_graph_selects_one_parameter_backed_direction() {
         } if first_id == first.id() && second_id == second.id() && parameter_id == &parameter
     ));
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(decode_ctx, &[&first, &second], 3.0, parameter, 0.0))
-            .transpose()
-            .unwrap()
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(
+            decode_ctx,
+            &[&first, &second],
+            3.0,
+            parameter,
+            0.0
+        ))
+        .transpose()
+        .unwrap()
+        .is_none()
     );
 
     let diagonal = entity("generated:test:point#diagonal", Point2::new(7.0, 14.0));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(decode_ctx, &[&first, &diagonal], 3.0, cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
-                .expect("identity grammar"), 0.0))
+        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(
+            decode_ctx,
+            &[&first, &diagonal],
+            3.0,
+            cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#horizontal")
+                .expect("identity grammar"),
+            0.0
+        ))
         .transpose()
         .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     let square = entity("generated:test:point#square", Point2::new(6.0, 18.0));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(decode_ctx, &[&first, &square], 2.0, cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#ambiguous")
-            .expect("identity grammar"), 0.0))
-    .transpose()
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| directional_point_dimension(
+            decode_ctx,
+            &[&first, &square],
+            2.0,
+            cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#ambiguous")
+                .expect("identity grammar"),
+            0.0
+        ))
+        .transpose()
+        .unwrap()
+        .is_none()
+    );
 }
 
 #[test]
@@ -591,9 +670,11 @@ fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#distance")
         .expect("identity grammar");
 
-    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&point, &line]))
-        .expect("resource allocation did not fail")
-        .is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        exact_counted_dimension_relation(decode_ctx, &[&point, &line])
+    })
+    .expect("resource allocation did not fail")
+    .is_none());
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| two_locus_distance_dimension(decode_ctx, &[&point, &line], parameter.clone())).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
@@ -676,35 +757,50 @@ fn counted_linear_graph_projects_exact_auxiliary_relations() {
     );
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&horizontal, &vertical]))
-            .expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(
+            decode_ctx,
+            &[&horizontal, &vertical]
+        ))
+        .expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Perpendicular { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&horizontal, &parallel]))
-            .expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(
+            decode_ctx,
+            &[&horizontal, &parallel]
+        ))
+        .expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&horizontal, &point]))
-            .expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(
+            decode_ctx,
+            &[&horizontal, &point]
+        ))
+        .expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&point, &duplicate_point]))
-            .expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(
+            decode_ctx,
+            &[&point, &duplicate_point]
+        ))
+        .expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&arc_start, &arc]))
-            .expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(
+            decode_ctx,
+            &[&arc_start, &arc]
+        ))
+        .expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coincident { .. })
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&outside_arc, &arc]))
-            .expect("resource allocation did not fail")
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        exact_counted_dimension_relation(decode_ctx, &[&outside_arc, &arc])
+    })
+    .expect("resource allocation did not fail")
+    .is_none());
 }
 
 #[test]
@@ -1281,10 +1377,12 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     let Definition::RepeatedDistance {
         measurements,
         parameter: actual,
-    } = crate::test_support::with_decode_context(|decode_ctx| repeated_linear_dimension(decode_ctx, &candidates, parameter.clone()))
-        .transpose()
-        .unwrap()
-        .unwrap()
+    } = crate::test_support::with_decode_context(|decode_ctx| {
+        repeated_linear_dimension(decode_ctx, &candidates, parameter.clone())
+    })
+    .transpose()
+    .unwrap()
+    .unwrap()
     else {
         panic!("expected repeated distance")
     };
@@ -1298,10 +1396,14 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
     ));
 
     let ambiguous = vec![horizontal("a", "b"), horizontal("a", "c")];
-    assert!(crate::test_support::with_decode_context(|decode_ctx| repeated_linear_dimension(decode_ctx, &ambiguous, parameter))
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| repeated_linear_dimension(
+            decode_ctx, &ambiguous, parameter
+        ))
         .transpose()
         .unwrap()
-        .is_none());
+        .is_none()
+    );
 }
 
 mod refusal_directional_point_dimension;

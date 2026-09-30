@@ -8,8 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_entity};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
-use crate::design::decode::text::{  design_record_id_charged, lp_ascii_filtered_view,
-};
+use crate::design::decode::text::{design_record_id_charged, lp_ascii_filtered_view};
 use crate::ids::native_stream;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
@@ -84,7 +83,6 @@ fn dimension_companion_keys<'a>(
             .get(&(stream, owner.parameter_record_index()))
             .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         {
-
             ctx.reserve_set(&mut keys, 1, operation)?;
             keys.insert((stream, owner.companion_record_index()));
         }
@@ -110,7 +108,6 @@ fn dimension_geometry_indices(
                 .map(|curve| curve.record_index),
         )
     {
-
         ctx.reserve_set(&mut indices, 1, "f3d dimension geometry indices")?;
         indices.insert(index);
     }
@@ -127,7 +124,8 @@ pub(crate) fn decode_dimension_recipe_records(
     companions: &[DesignParameterCompanion],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
-    let parameter_index = dimension_parameter_index(ctx, parameters, "f3d dimension recipe parameter index")?;
+    let parameter_index =
+        dimension_parameter_index(ctx, parameters, "f3d dimension recipe parameter index")?;
     let mut dimension_owners = HashSet::new();
     for owner in owners {
         let Some(stream) = native_stream(owner.id()) else {
@@ -137,14 +135,12 @@ pub(crate) fn decode_dimension_recipe_records(
             .get(&(stream, owner.parameter_record_index()))
             .is_some_and(|parameter| parameter.kind() == DesignParameterKind::Dimension)
         {
-
             ctx.reserve_set(&mut dimension_owners, 1, "f3d dimension recipe owners")?;
             dimension_owners.insert((stream, owner.record_index()));
         }
     }
     let mut recipe_index = HashMap::new();
     for recipe in recipes {
-
         ctx.reserve_map(&mut recipe_index, 1, "f3d dimension recipe index")?;
         recipe_index.insert(recipe.id.as_str(), recipe);
     }
@@ -224,7 +220,13 @@ pub(crate) fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
-            let id = design_record_id_charged(ctx, &entry.name, ":design-dimension-recipe-record#", recipe.byte_offset, "f3d dimension recipe record ID")?;
+            let id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-dimension-recipe-record#",
+                recipe.byte_offset,
+                "f3d dimension recipe record ID",
+            )?;
             let recipe_id = ctx.copy_retained_text(&recipe.id, "f3d dimension recipe ID")?;
 
             ctx.reserve_vec(&mut out, 1, "f3d dimension recipe records")?;
@@ -269,9 +271,7 @@ pub(crate) fn decode_recipe_references_charged(
         Some(3) => decode_standard_recipe_references(ctx, prefix, prefix_offset),
         Some(group_count) if group_count >= 4 => usize::try_from(group_count).ok().map_or_else(
             || Ok(Vec::new()),
-            |group_count| {
-                decode_grouped_recipe_references(ctx, prefix, prefix_offset, group_count)
-            },
+            |group_count| decode_grouped_recipe_references(ctx, prefix, prefix_offset, group_count),
         ),
         _ => Ok(Vec::new()),
     }
@@ -663,7 +663,9 @@ fn decode_recipe_reference_operand(
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
         };
-        if let Err(error) = ctx.push_vec(&mut references, reference, "f3d recipe operand references") {
+        if let Err(error) =
+            ctx.push_vec(&mut references, reference, "f3d recipe operand references")
+        {
             return Some(Err(error));
         }
     }
@@ -722,8 +724,6 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
     Ok(())
 }
 
-
-
 pub(crate) fn bind_recipe_reference_candidates_charged(
     ctx: &DecodeContext<'_>,
     reference: &mut crate::records::dimensions::DesignRecipeReference,
@@ -743,10 +743,26 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
     }) {
         let matching_selector = tag.selector == reference.selector;
         match (&tag.target, matching_selector) {
-            (AttributeTarget::Face(face), true) => ctx.push_vec(&mut reference.candidate_faces, face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?, "f3d recipe reference candidate")?,
-            (AttributeTarget::Edge(edge), true) => ctx.push_vec(&mut reference.candidate_edges, edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?, "f3d recipe reference candidate")?,
-            (AttributeTarget::Face(face), false) => ctx.push_vec(&mut reference.alternate_selector_faces, face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?, "f3d recipe reference candidate")?,
-            (AttributeTarget::Edge(edge), false) => ctx.push_vec(&mut reference.alternate_selector_edges, edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?, "f3d recipe reference candidate")?,
+            (AttributeTarget::Face(face), true) => ctx.push_vec(
+                &mut reference.candidate_faces,
+                face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?,
+                "f3d recipe reference candidate",
+            )?,
+            (AttributeTarget::Edge(edge), true) => ctx.push_vec(
+                &mut reference.candidate_edges,
+                edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?,
+                "f3d recipe reference candidate",
+            )?,
+            (AttributeTarget::Face(face), false) => ctx.push_vec(
+                &mut reference.alternate_selector_faces,
+                face.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?,
+                "f3d recipe reference candidate",
+            )?,
+            (AttributeTarget::Edge(edge), false) => ctx.push_vec(
+                &mut reference.alternate_selector_edges,
+                edge.try_clone_for_decode(ctx, "f3d recipe reference candidate ID")?,
+                "f3d recipe reference candidate",
+            )?,
             _ => {}
         }
     }
@@ -758,14 +774,16 @@ pub(crate) fn bind_recipe_reference_candidates_charged(
         a.as_str().cmp(b.as_str())
     })?;
     reference.candidate_edges.dedup();
-    crate::design::sort::sort_by(ctx, &mut reference.alternate_selector_faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
+    crate::design::sort::sort_by(ctx, &mut reference.alternate_selector_faces[..], |a, b| {
+        a.as_str().cmp(b.as_str())
+    })?;
     reference.alternate_selector_faces.dedup();
-    crate::design::sort::sort_by(ctx, &mut reference.alternate_selector_edges[..], |a, b| a.as_str().cmp(b.as_str()))?;
+    crate::design::sort::sort_by(ctx, &mut reference.alternate_selector_edges[..], |a, b| {
+        a.as_str().cmp(b.as_str())
+    })?;
     reference.alternate_selector_edges.dedup();
     Ok(())
 }
-
-
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
 pub(crate) fn bind_dimension_recipe_edge_operands(
@@ -779,7 +797,12 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
             .iter()
             .filter(|operand| dimension_recipe_edge_matches(record, operand))
         {
-            ctx.push_formatted_retained(&mut ids, format_args!("{}", &operand.id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text")?;
+            ctx.push_formatted_retained(
+                &mut ids,
+                format_args!("{}", operand.id),
+                "f3d dimension recipe edge IDs",
+                "f3d dimension recipe edge ID text",
+            )?;
         }
         crate::design::sort::sort_by(ctx, &mut ids[..], Ord::cmp)?;
         ids.dedup();
@@ -788,16 +811,22 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
     Ok(())
 }
 
-
-
 pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ctx: &DecodeContext<'_>,
     record: &DesignDimensionRecipeRecord,
     operands: &[DesignEdgeOperand],
 ) -> Result<Vec<String>, CodecError> {
     let mut ids = Vec::new();
-    for operand in operands.iter().filter(|operand| dimension_recipe_edge_matches(record, operand)) {
-        ctx.push_formatted_retained(&mut ids, format_args!("{}", &operand.id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text")?;
+    for operand in operands
+        .iter()
+        .filter(|operand| dimension_recipe_edge_matches(record, operand))
+    {
+        ctx.push_formatted_retained(
+            &mut ids,
+            format_args!("{}", operand.id),
+            "f3d dimension recipe edge IDs",
+            "f3d dimension recipe edge ID text",
+        )?;
     }
     crate::design::sort::sort_by(ctx, &mut ids, Ord::cmp)?;
     ids.dedup();
@@ -877,7 +906,6 @@ pub(super) fn contiguous_i32_program(
         return None;
     }
     let count = view.remaining() / 4;
-    
 
     let mut program = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut program, count, "f3d recipe program words") {
@@ -906,8 +934,10 @@ pub(crate) fn decode_dimension_locus_pairs(
         curves,
         ..
     } = inputs;
-    let parameters = dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    let dimension_companions = dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
+    let parameters =
+        dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
+    let dimension_companions =
+        dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
@@ -942,7 +972,13 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = design_record_id_charged(ctx, &entry.name, ":design-dimension-locus-pair#", pair.byte_offset(), "f3d dimension locus pair ID")?;
+        pair.id = design_record_id_charged(
+            ctx,
+            &entry.name,
+            ":design-dimension-locus-pair#",
+            pair.byte_offset(),
+            "f3d dimension locus pair ID",
+        )?;
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1111,8 +1147,10 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         curves,
         ..
     } = inputs;
-    let parameters = dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    let dimension_companions = dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
+    let parameters =
+        dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
+    let dimension_companions =
+        dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut typed_companions = HashSet::new();
     for key in
         pairs
@@ -1122,7 +1160,6 @@ pub(crate) fn decode_dimension_null_locus_pairs(
                 Some((native_stream(&group.id)?, group.companion_record_index))
             }))
     {
-
         ctx.reserve_set(&mut typed_companions, 1, "f3d typed dimension companions")?;
         typed_companions.insert(key);
     }
@@ -1160,7 +1197,13 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
-        pair.id = design_record_id_charged(ctx, &entry.name, ":design-dimension-null-locus-pair#", pair.byte_offset(), "f3d dimension null locus pair ID")?;
+        pair.id = design_record_id_charged(
+            ctx,
+            &entry.name,
+            ":design-dimension-null-locus-pair#",
+            pair.byte_offset(),
+            "f3d dimension null locus pair ID",
+        )?;
         let Some(governing_companion_record_index) = following_dimension_companion_record_index(
             &pair.id,
             pair.paired_byte_offset(),
@@ -1289,8 +1332,14 @@ pub(crate) fn decode_dimension_annotation_frames(
         curves,
         ..
     } = inputs;
-    let parameters = dimension_parameter_index(ctx, parameters, "f3d dimension annotation parameter index")?;
-    let dimension_companions = dimension_companion_keys(ctx, owners, &parameters, "f3d dimension annotation companions")?;
+    let parameters =
+        dimension_parameter_index(ctx, parameters, "f3d dimension annotation parameter index")?;
+    let dimension_companions = dimension_companion_keys(
+        ctx,
+        owners,
+        &parameters,
+        "f3d dimension annotation companions",
+    )?;
     let mut out = Vec::new();
     let mut decoded_offsets = HashSet::new();
     for (companion_ordinal, companion) in companions.iter().enumerate() {
@@ -1320,7 +1369,11 @@ pub(crate) fn decode_dimension_annotation_frames(
                 continue;
             };
 
-            ctx.reserve_set(&mut sketch_entities, 1, "f3d dimension annotation sketch entities")?;
+            ctx.reserve_set(
+                &mut sketch_entities,
+                1,
+                "f3d dimension annotation sketch entities",
+            )?;
             sketch_entities.insert(index);
         }
         let mut governed_owners = HashMap::new();
@@ -1328,8 +1381,11 @@ pub(crate) fn decode_dimension_annotation_frames(
             native_stream(owner.id()) == Some(stream)
                 && dimension_companions.contains(&(stream, owner.companion_record_index()))
         }) {
-
-            ctx.reserve_map(&mut governed_owners, 1, "f3d dimension annotation governed owners")?;
+            ctx.reserve_map(
+                &mut governed_owners,
+                1,
+                "f3d dimension annotation governed owners",
+            )?;
             governed_owners.insert(owner.record_index(), owner.companion_record_index());
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1377,7 +1433,6 @@ pub(crate) fn decode_dimension_annotation_frames(
             let start = usize::try_from(scope.byte_offset()).ok()?;
             (start < end).then_some((start, end, None))
         }) {
-
             ctx.reserve_vec(&mut intervals, 1, "f3d dimension annotation intervals")?;
             intervals.push(interval);
         }
@@ -1402,14 +1457,23 @@ pub(crate) fn decode_dimension_annotation_frames(
                         position = at.saturating_add(1);
                         continue;
                     }
-                    frame.id = design_record_id_charged(ctx, &entry.name, ":design-dimension-annotation-frame#", frame.byte_offset(), "f3d dimension annotation frame ID")?;
+                    frame.id = design_record_id_charged(
+                        ctx,
+                        &entry.name,
+                        ":design-dimension-annotation-frame#",
+                        frame.byte_offset(),
+                        "f3d dimension annotation frame ID",
+                    )?;
                     position = usize::try_from(frame.paired_byte_offset())
                         .unwrap_or(at)
                         .saturating_add(1);
                     let key = (stream, frame.byte_offset());
                     if !decoded_offsets.contains(&key) {
-
-                        ctx.reserve_set(&mut decoded_offsets, 1, "f3d dimension annotation decoded offsets")?;
+                        ctx.reserve_set(
+                            &mut decoded_offsets,
+                            1,
+                            "f3d dimension annotation decoded offsets",
+                        )?;
                         decoded_offsets.insert(key);
 
                         ctx.reserve_vec(&mut out, 1, "f3d dimension annotation frames")?;
@@ -1448,7 +1512,6 @@ fn parse_dimension_annotation_frame(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    
 
     let mut operands = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut operands, count, "f3d dimension annotation operands") {
@@ -1519,10 +1582,13 @@ fn parse_dimension_annotation_frame(
             continue;
         }
         let mut cursor = tail + 15;
-        
 
         let mut return_members = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut return_members, return_count, "f3d dimension annotation return members") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut return_members,
+            return_count,
+            "f3d dimension annotation return members",
+        ) {
             return Some(Err(error));
         }
         let mut valid = true;
@@ -1662,7 +1728,11 @@ pub(crate) fn decode_dimension_presentation_frames(
         curves,
         ..
     } = inputs;
-    let parameter_kinds = dimension_parameter_index(ctx, parameters, "f3d dimension presentation parameter index")?;
+    let parameter_kinds = dimension_parameter_index(
+        ctx,
+        parameters,
+        "f3d dimension presentation parameter index",
+    )?;
     let mut sketch_scope_by_entity = HashMap::new();
     for placement in placements {
         let Some(stream) = native_stream(&placement.id) else {
@@ -1672,7 +1742,11 @@ pub(crate) fn decode_dimension_presentation_frames(
             continue;
         };
 
-        ctx.reserve_map(&mut sketch_scope_by_entity, 1, "f3d dimension presentation sketch scopes")?;
+        ctx.reserve_map(
+            &mut sketch_scope_by_entity,
+            1,
+            "f3d dimension presentation sketch scopes",
+        )?;
         sketch_scope_by_entity.insert((stream, placement.entity_id.suffix()), scope_record_index);
     }
     let types = decode_types(ctx, scan)?;
@@ -1688,8 +1762,11 @@ pub(crate) fn decode_dimension_presentation_frames(
         let mut presentation_classes = HashMap::new();
         for (class_tag, (type_guid, _version)) in &stream_types {
             if is_dimension_presentation_type(type_guid) {
-
-                ctx.reserve_map(&mut presentation_classes, 1, "f3d dimension presentation classes")?;
+                ctx.reserve_map(
+                    &mut presentation_classes,
+                    1,
+                    "f3d dimension presentation classes",
+                )?;
                 presentation_classes.insert(*class_tag, *type_guid);
             }
         }
@@ -1699,8 +1776,11 @@ pub(crate) fn decode_dimension_presentation_frames(
         let mut paired_classes = HashSet::new();
         for (class_tag, (type_guid, _version)) in &stream_types {
             if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
-
-                ctx.reserve_set(&mut paired_classes, 1, "f3d dimension presentation paired classes")?;
+                ctx.reserve_set(
+                    &mut paired_classes,
+                    1,
+                    "f3d dimension presentation paired classes",
+                )?;
                 paired_classes.insert(*class_tag);
             }
         }
@@ -1716,7 +1796,11 @@ pub(crate) fn decode_dimension_presentation_frames(
                 continue;
             };
 
-            ctx.reserve_set(&mut sketch_entities, 1, "f3d dimension presentation sketch entities")?;
+            ctx.reserve_set(
+                &mut sketch_entities,
+                1,
+                "f3d dimension presentation sketch entities",
+            )?;
             sketch_entities.insert(index);
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1759,7 +1843,13 @@ pub(crate) fn decode_dimension_presentation_frames(
             else {
                 continue;
             };
-            frame.id = design_record_id_charged(ctx, &entry.name, ":design-dimension-presentation-frame#", frame.byte_offset, "f3d dimension presentation frame ID")?;
+            frame.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-dimension-presentation-frame#",
+                frame.byte_offset,
+                "f3d dimension presentation frame ID",
+            )?;
             frame.governing_owner_record_index = owner.record_index();
             frame.governing_parameter_record_index = owner.parameter_record_index();
             frame.governing_companion_record_index = owner.companion_record_index();
@@ -1797,10 +1887,10 @@ fn parse_dimension_presentation_frame(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    
 
     let mut operands = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut operands, count, "f3d dimension presentation operands") {
+    if let Err(error) = ctx.reserve_vec(&mut operands, count, "f3d dimension presentation operands")
+    {
         return Some(Err(error));
     }
     for _ in 0..count {
@@ -1890,8 +1980,10 @@ pub(crate) fn decode_dimension_locus_groups(
         curves,
         ..
     } = inputs;
-    let parameters = dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
-    let dimension_companions = dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
+    let parameters =
+        dimension_parameter_index(ctx, parameters, "f3d dimension locus parameter index")?;
+    let dimension_companions =
+        dimension_companion_keys(ctx, owners, &parameters, "f3d dimension locus companions")?;
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
@@ -1913,7 +2005,11 @@ pub(crate) fn decode_dimension_locus_groups(
                 continue;
             };
 
-            ctx.reserve_set(&mut sketch_entities, 1, "f3d dimension locus sketch entities")?;
+            ctx.reserve_set(
+                &mut sketch_entities,
+                1,
+                "f3d dimension locus sketch entities",
+            )?;
             sketch_entities.insert(index);
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -1939,7 +2035,13 @@ pub(crate) fn decode_dimension_locus_groups(
             &sketch_entities,
         )?;
         for mut group in candidates {
-            group.id = design_record_id_charged(ctx, &entry.name, ":design-dimension-locus-group#", group.byte_offset, "f3d dimension locus group ID")?;
+            group.id = design_record_id_charged(
+                ctx,
+                &entry.name,
+                ":design-dimension-locus-group#",
+                group.byte_offset,
+                "f3d dimension locus group ID",
+            )?;
 
             ctx.reserve_vec(&mut out, 1, "f3d dimension locus groups")?;
             out.push(group);
@@ -2024,8 +2126,11 @@ pub(super) fn companion_owned_interval<'a>(
         .flat_map(|scope| scope.reference_members().values().copied())
     {
         if !foreign_scope_members.contains(&member) {
-
-            ctx.reserve_set(&mut foreign_scope_members, 1, "f3d companion foreign scope members")?;
+            ctx.reserve_set(
+                &mut foreign_scope_members,
+                1,
+                "f3d companion foreign scope members",
+            )?;
             foreign_scope_members.insert(member);
         }
     }
@@ -2097,7 +2202,6 @@ fn parse_dimension_locus_group(
         return None;
     }
     let mut position = start.checked_add(24)?;
-    
 
     let mut geometry = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut geometry, count, "f3d dimension locus geometry") {
@@ -2142,10 +2246,13 @@ fn parse_dimension_locus_group(
         return None;
     }
     position = position.checked_add(8)?;
-    
 
     let mut loci = Vec::new();
-    if let Err(error) = ctx.reserve_vec(&mut loci, return_count, "f3d dimension locus return members") {
+    if let Err(error) = ctx.reserve_vec(
+        &mut loci,
+        return_count,
+        "f3d dimension locus return members",
+    ) {
         return Some(Err(error));
     }
     for (geometry_record_index, geometry_reference_offset, role, role_offset) in geometry {

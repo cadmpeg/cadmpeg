@@ -60,15 +60,20 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
     let owners = [localized_fillet_owner(10, 11, 0)];
 
     let (refused, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &parameters,
-owners: &owners,
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &parameters,
+                owners: &owners,
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         refused[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -79,16 +84,21 @@ timelines: &timelines,
 
     let group = localized_fillet_group(100, 0, vec![200]);
     let (accepted, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &parameters,
-owners: &owners,
-scopes,
-construction_groups: std::slice::from_ref(&group),
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &parameters,
+                owners: &owners,
+                scopes,
+                construction_groups: std::slice::from_ref(&group),
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         accepted[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -107,8 +117,8 @@ fn assert_chamfer_collection_refusal(limit: u64, operation: &str) {
     let group = localized_fillet_group(100, 0, vec![200]);
     let inputs = crate::design::feature_project::ProjectInputs {
         construction_groups: std::slice::from_ref(&group),
-..Default::default()
-};
+        ..Default::default()
+    };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;

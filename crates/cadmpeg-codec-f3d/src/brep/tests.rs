@@ -491,7 +491,12 @@ fn brep_adjacent_ids_refuse_collection_limit() {
 #[test]
 fn brep_reachable_id_set_refuses_collection_limit() {
     let error = with_limits(0, u64::MAX, |ctx| {
-        ctx.insert_hash_set(&mut HashSet::new(), "f3d:brep:entity#1".to_owned(), "collect F3D reachable BREP IDs").map(|_| ())
+        ctx.insert_hash_set(
+            &mut HashSet::new(),
+            "f3d:brep:entity#1".to_owned(),
+            "collect F3D reachable BREP IDs",
+        )
+        .map(|_| ())
         .unwrap_err()
     });
     assert!(

@@ -131,11 +131,16 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![&tangent_circle, &rounded_tangent_arc]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::counted_role_relation_at_tolerance(ctx, &selected, if operation == "f3d counted role relation at tolerance entity id" {
+        crate::design::dimensions::counted_role_relation_at_tolerance(
+            ctx,
+            &selected,
+            if operation == "f3d counted role relation at tolerance entity id" {
                 &[crate::records::sketch_relations::SketchConstraintKind::Horizontal]
             } else {
                 &[crate::records::sketch_relations::SketchConstraintKind::Tangent]
-            }, TEST_LINEAR_TOLERANCE)
+            },
+            TEST_LINEAR_TOLERANCE,
+        )
         .transpose()
         .map(|_| ())
     });

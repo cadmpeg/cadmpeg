@@ -57,7 +57,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![&measured, &annotation]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        radial_locus_dimension_definition(ctx, &selected, &all, "Radial Dimension-2", 0.5, &parameter)
+        radial_locus_dimension_definition(
+            ctx,
+            &selected,
+            &all,
+            "Radial Dimension-2",
+            0.5,
+            &parameter,
+        )
         .transpose()
         .map(|_| ())
     });

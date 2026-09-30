@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::sketch::{  decode_headers_for_indices_from_stream, entity_meta_scope,
-      insert_entity_module, insert_legacy_candidate,
-    native_scope_scoped,  wanted_record_indices, IndexedRecordOffsets,
+use crate::design::decode::sketch::{
+    decode_headers_for_indices_from_stream, entity_meta_scope, insert_entity_module,
+    insert_legacy_candidate, native_scope_scoped, wanted_record_indices, IndexedRecordOffsets,
 };
 
 #[test]
@@ -13,7 +13,12 @@ fn sketch_stream_output_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut output = Vec::new();
-    let error = ctx.append_vec(&mut output, &mut { vec![17, 18] }, "f3d sketch stream output")
+    let error = ctx
+        .append_vec(
+            &mut output,
+            &mut { vec![17, 18] },
+            "f3d sketch stream output",
+        )
         .expect_err("collection limit must refuse per-stream output");
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::CollectionItems
@@ -22,7 +27,12 @@ fn sketch_stream_output_refuses_collection_limit() {
 
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    ctx.append_vec(&mut output, &mut { vec![17, 18] }, "f3d sketch stream output").expect("two output records");
+    ctx.append_vec(
+        &mut output,
+        &mut { vec![17, 18] },
+        "f3d sketch stream output",
+    )
+    .expect("two output records");
     assert_eq!(output, [17, 18]);
 }
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

@@ -97,9 +97,10 @@ fn sketch_container_visibility_projects_to_the_neutral_sketch() {
             .unwrap(),
     };
 
-    let (sketches, entities) =
-        crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement], &[], &[], &[], &[], 1.0e-6))
-            .expect("sketch lanes pair");
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(decode_ctx, &[placement], &[], &[], &[], &[], 1.0e-6)
+    })
+    .expect("sketch lanes pair");
     assert!(entities.is_empty());
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].visible, Some(false));
@@ -253,7 +254,17 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
     })
     .unwrap();
 
-    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement], &[point], &curves, &[relation], &[text], EPS_POINT_PROJECTION))
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &[placement],
+            &[point],
+            &curves,
+            &[relation],
+            &[text],
+            EPS_POINT_PROJECTION,
+        )
+    })
     .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
@@ -358,7 +369,17 @@ fn point_closure_does_not_mark_construction_geometry() {
         ),
     };
 
-    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement], &[point, standalone_point], &[curve], &[], &[], EPS_POINT_PROJECTION))
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &[placement],
+            &[point, standalone_point],
+            &[curve],
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
     .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert!(sketches[0].profiles.is_empty());
@@ -495,9 +516,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     let placements = vec![placement];
     let points = vec![point];
     let curves = vec![line, nonclamped_nurbs, clockwise_arc];
-    let (sketches, entities) =
-        crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &placements, &points, &curves, &[], &[], 1.0e-6))
-            .expect("sketch lanes pair");
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(decode_ctx, &placements, &points, &curves, &[], &[], 1.0e-6)
+    })
+    .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
         sketches[0]
@@ -532,17 +554,28 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
         .expect("non-clamped NURBS projects");
-    let endpoints = crate::test_support::with_decode_context(|decode_ctx| sketch_entity_endpoints(nurbs, decode_ctx))
-        .unwrap()
-        .expect("non-clamped NURBS endpoints");
+    let endpoints = crate::test_support::with_decode_context(|decode_ctx| {
+        sketch_entity_endpoints(nurbs, decode_ctx)
+    })
+    .unwrap()
+    .expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(2.0, 1.0), nurbs, EPS_CONTAINMENT_DISTANCE))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(2.0, 1.0),
+            nurbs,
+            EPS_CONTAINMENT_DISTANCE
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(decode_ctx, Point2::new(2.0, 1.0), &nurbs.geometry))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
+            decode_ctx,
+            Point2::new(2.0, 1.0),
+            &nurbs.geometry
+        ))
+        .expect("resource allocation did not fail")
     );
 
     let relation = |record_index, member| {
@@ -685,14 +718,23 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         horizontal_point.definition.pattern().cloned(),
     )
     .expect("valid relation definition");
-    let constraints = crate::test_support::with_decode_context(|decode_ctx| project_sketch_constraints(decode_ctx, &placements, &[], (&points, &curves, &[]), &[
-            relation(700, 217),
-            horizontal_point,
-            curve_point_coincidence,
-            midpoint,
-            curvature,
-            spline_group,
-        ], &entities))
+    let constraints = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_constraints(
+            decode_ctx,
+            &placements,
+            &[],
+            (&points, &curves, &[]),
+            &[
+                relation(700, 217),
+                horizontal_point,
+                curve_point_coincidence,
+                midpoint,
+                curvature,
+                spline_group,
+            ],
+            &entities,
+        )
+    })
     .unwrap();
     assert!(matches!(
         constraints[0].definition.kind(),
@@ -778,12 +820,21 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point], decode_ctx))
-            .unwrap()
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Horizontal,
+            &[point, point],
+            decode_ctx
+        ))
+        .unwrap()
+        .is_none()
     );
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Midpoint,
+            &[line, point],
+            decode_ctx
+        ))
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
@@ -791,9 +842,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[line, point], decode_ctx))
+        assert!(
+            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+                kind,
+                &[line, point],
+                decode_ctx
+            ))
             .unwrap()
-            .is_none());
+            .is_none()
+        );
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -805,16 +862,30 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(line.geometry_ref.clone())
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Tangent,
+            &[line, &other_line],
+            decode_ctx
+        ))
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line], decode_ctx))
-            .unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Curvature,
+            &[line, &other_line],
+            decode_ctx
+        ))
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line], decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+            SketchConstraintKind::Equal,
+            &[line, &other_line],
+            decode_ctx
+        ))
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
@@ -826,9 +897,15 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[line, line], decode_ctx))
+        assert!(
+            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(
+                kind,
+                &[line, line],
+                decode_ctx
+            ))
             .unwrap()
-            .is_none());
+            .is_none()
+        );
     }
 }
 
@@ -1149,12 +1226,33 @@ fn nonplanar_sketch_curves_project_in_model_space() {
         horizontal_relation,
         point_on_surface_relation,
     ];
-    let (planar_sketches, planar_entities) = crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement.clone()], &points, &curves, &[], &[], 1.0e-6))
-    .expect("sketch lanes pair");
+    let (planar_sketches, planar_entities) =
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_sketch_design(
+                decode_ctx,
+                &[placement.clone()],
+                &points,
+                &curves,
+                &[],
+                &[],
+                1.0e-6,
+            )
+        })
+        .expect("sketch lanes pair");
     assert!(planar_sketches.is_empty());
     assert!(planar_entities.is_empty());
     let surfaces = [surface];
-    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| project_spatial_sketch_design(decode_ctx, &[placement.clone()], &points, &curves, &surfaces, &relations, 1.0e-6))
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_spatial_sketch_design(
+            decode_ctx,
+            &[placement.clone()],
+            &points,
+            &curves,
+            &surfaces,
+            &relations,
+            1.0e-6,
+        )
+    })
     .unwrap();
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 8);
@@ -1179,7 +1277,17 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                 if start == Point3::new(10.0, 21.0, 32.0)
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
-    let constraints = crate::test_support::with_decode_context(|decode_ctx| project_spatial_sketch_constraints(decode_ctx, &[placement], &relations, &points, &curves, &surfaces, &entities))
+    let constraints = crate::test_support::with_decode_context(|decode_ctx| {
+        project_spatial_sketch_constraints(
+            decode_ctx,
+            &[placement],
+            &relations,
+            &points,
+            &curves,
+            &surfaces,
+            &entities,
+        )
+    })
     .unwrap();
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
@@ -1270,10 +1378,29 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
         .unwrap(),
     };
     let placements = [placement];
-    let (planar, planar_entities) =
-        crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &placements, &[], &[], &[], &[], EPS_POINT_PROJECTION))
-            .expect("sketch lanes pair");
-    let (spatial, spatial_entities) = crate::test_support::with_decode_context(|decode_ctx| project_spatial_sketch_design(decode_ctx, &placements, &[], &[], &[surface], &[], EPS_POINT_PROJECTION))
+    let (planar, planar_entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &placements,
+            &[],
+            &[],
+            &[],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("sketch lanes pair");
+    let (spatial, spatial_entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_spatial_sketch_design(
+            decode_ctx,
+            &placements,
+            &[],
+            &[],
+            &[surface],
+            &[],
+            EPS_POINT_PROJECTION,
+        )
+    })
     .expect("valid spatial surface fixture");
     assert_eq!(planar.len(), 1);
     assert!(planar_entities.is_empty());

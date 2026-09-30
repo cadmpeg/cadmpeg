@@ -112,7 +112,10 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
             scalar_offset,
             discriminator,
         );
-        let references = parse_face_source_carrier_prefix(&bytes, 0, 12, layout).unwrap();
+        let references = crate::test_support::with_decode_context(|ctx| {
+            parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).expect("service admission")
+        })
+        .unwrap();
         assert_eq!(
             references,
             (0..source_count)
@@ -135,12 +138,24 @@ fn face_source_carrier_prefix_rejects_wrong_count_and_discriminator() {
     let mut bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
 
     bytes[32..36].copy_from_slice(&3u32.to_le_bytes());
-    assert!(parse_face_source_carrier_prefix(&bytes, 0, 12, layout).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| parse_face_source_carrier_prefix(
+            ctx, &bytes, 0, 12, layout
+        )
+        .expect("service admission"))
+        .is_none()
+    );
 
     let layout = face_source_carrier_layout("398").unwrap();
     let mut bytes = source_carrier(b"398", 100, 12, 4, 80, 100);
     bytes[80..84].copy_from_slice(&101u32.to_le_bytes());
-    assert!(parse_face_source_carrier_prefix(&bytes, 0, 12, layout).is_none());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| parse_face_source_carrier_prefix(
+            ctx, &bytes, 0, 12, layout
+        )
+        .expect("service admission"))
+        .is_none()
+    );
 }
 
 #[test]
@@ -148,7 +163,10 @@ fn face_source_reference_storage_has_fixed_capacity() {
     for (tag, count, offset, discriminator) in [(b"398", 4, 80, 100), (b"394", 2, 58, 109)] {
         let layout = face_source_carrier_layout(class_tag_str(tag)).unwrap();
         let bytes = source_carrier(tag, 100, 12, count, offset, discriminator);
-        let references = parse_face_source_carrier_prefix(&bytes, 0, 12, layout).unwrap();
+        let references = crate::test_support::with_decode_context(|ctx| {
+            parse_face_source_carrier_prefix(ctx, &bytes, 0, 12, layout).expect("service admission")
+        })
+        .unwrap();
         assert_eq!(references.len(), count);
         assert_eq!(references.capacity(), 4);
     }

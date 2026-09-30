@@ -103,13 +103,27 @@ fn circular_region_keeps_admitted_selection() {
     };
     let entities = [entity];
     let points = [Point3::new(0.5, 0.0, 0.0)];
-    let expected = crate::test_support::with_decode_context(|decode_ctx| super::region_containing_points(&sketch, &entities, &points, REGION_LIMIT_TEST_TOLERANCE, decode_ctx))
+    let expected = crate::test_support::with_decode_context(|decode_ctx| {
+        super::region_containing_points(
+            &sketch,
+            &entities,
+            &points,
+            REGION_LIMIT_TEST_TOLERANCE,
+            decode_ctx,
+        )
+    })
     .unwrap();
     assert!(expected.is_some());
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let actual = super::region_containing_points(&sketch, &entities, &points, REGION_LIMIT_TEST_TOLERANCE, &ctx)
+    let actual = super::region_containing_points(
+        &sketch,
+        &entities,
+        &points,
+        REGION_LIMIT_TEST_TOLERANCE,
+        &ctx,
+    )
     .unwrap();
     assert_eq!(actual, expected);
 }

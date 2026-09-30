@@ -511,8 +511,6 @@ fn exact_coil_face_selection(
     .transpose()
 }
 
-
-
 fn valid_right_handed_coil_transform(
     transform: &crate::records::sketch_placement::SketchPlacementMatrix,
 ) -> bool {

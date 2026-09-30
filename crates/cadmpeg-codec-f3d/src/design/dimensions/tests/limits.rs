@@ -379,43 +379,51 @@ fn native_fallback_null_pair() -> DesignDimensionLocusPair {
 }
 
 fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
-    crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, DesignDimensionAnnotationFrameDraft {
-        id: "f3d:Design/BulkStream.dat:design-dimension-annotation-frame#34".into(),
-        companion_record_index: Some(22),
-        governing_companion_record_index: 22,
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: 34,
-        frame_length: 100,
-        operands: vec![
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: None,
-                geometry_reference_offset: 25,
-                role: 3,
-                role_offset: 35,
+    crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionAnnotationFrame::try_new_charged(
+            ctx,
+            DesignDimensionAnnotationFrameDraft {
+                id: "f3d:Design/BulkStream.dat:design-dimension-annotation-frame#34".into(),
+                companion_record_index: Some(22),
+                governing_companion_record_index: 22,
+                byte_offset: 0,
+                class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
+                    .unwrap(),
+                record_index: 34,
+                frame_length: 100,
+                operands: vec![
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: None,
+                        geometry_reference_offset: 25,
+                        role: 3,
+                        role_offset: 35,
+                    },
+                    DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(30),
+                        geometry_reference_offset: 40,
+                        role: 2,
+                        role_offset: 50,
+                    },
+                ],
+                entity_genesis: 0,
+                annotation_bytes: Vec::new(),
+                annotation_byte_offset: 111,
+                governing_owner_record_index: 21,
+                governing_owner_reference_offset: 112,
+                return_members: vec![crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(30).unwrap(),
+                    offset: 127,
+                }],
+                paired_class_tag: crate::records::references::DesignClassTag::try_from(
+                    "256".to_owned(),
+                )
+                .unwrap(),
+                paired_byte_offset: 100,
+                owner_reference: 7,
+                owner_reference_offset: 120,
             },
-            DesignDimensionAnnotationOperand {
-                geometry_record_index: std::num::NonZeroU32::new(30),
-                geometry_reference_offset: 40,
-                role: 2,
-                role_offset: 50,
-            },
-        ],
-        entity_genesis: 0,
-        annotation_bytes: Vec::new(),
-        annotation_byte_offset: 111,
-        governing_owner_record_index: 21,
-        governing_owner_reference_offset: 112,
-        return_members: vec![crate::records::identity::Located {
-            value: std::num::NonZeroU32::new(30).unwrap(),
-            offset: 127,
-        }],
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
-            .unwrap(),
-        paired_byte_offset: 100,
-        owner_reference: 7,
-        owner_reference_offset: 120,
-    }))
+        )
+    })
     .unwrap()
 }
 
@@ -1480,7 +1488,12 @@ fn assert_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(&ctx, &fixture.inputs(), std::slice::from_ref(&fixture.spatial), 1.0e-6) {
+        match project_dimension_constraints(
+            &ctx,
+            &fixture.inputs(),
+            std::slice::from_ref(&fixture.spatial),
+            1.0e-6,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension == ResourceDimension::CollectionItems =>
@@ -1600,13 +1613,15 @@ fn planar_dimension_output_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = retain_planar_dimension_constraints(&ctx, &[], &[], vec![constraint.clone()])
-        .unwrap_err();
+    let error =
+        retain_planar_dimension_constraints(&ctx, &[], &[], vec![constraint.clone()]).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.operation == "f3d planar dimension output"
             && failure.dimension == ResourceDimension::CollectionItems));
-    let output =
-        crate::test_support::with_decode_context(|decode_ctx| retain_planar_dimension_constraints(decode_ctx, &[], &[], vec![constraint.clone()])).unwrap();
+    let output = crate::test_support::with_decode_context(|decode_ctx| {
+        retain_planar_dimension_constraints(decode_ctx, &[], &[], vec![constraint.clone()])
+    })
+    .unwrap();
     assert_eq!(output, [constraint]);
 }
 

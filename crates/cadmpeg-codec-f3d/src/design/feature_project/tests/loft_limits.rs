@@ -57,7 +57,10 @@ fn assert_loft_limit_with_roles(
     has_point: bool,
 ) {
     let (scope, groups) = loft_input(roles);
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups)).unwrap().unwrap();
+    let definition =
+        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups))
+            .unwrap()
+            .unwrap();
     assert!(matches!(definition,
         FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
             if sections.len() == 2

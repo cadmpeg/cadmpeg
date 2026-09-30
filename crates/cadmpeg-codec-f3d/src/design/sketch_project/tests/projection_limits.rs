@@ -117,12 +117,36 @@ fn spline_segment_index_refuses_collection_limit() {
     ));
     assert!(segments.is_empty());
     let mut segments = std::collections::HashMap::new();
-    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, points))
-        .unwrap();
-    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, points))
-        .unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::sketch_project::record_spline_segment(
+            decode_ctx,
+            &mut segments,
+            "Design",
+            10,
+            points,
+        )
+    })
+    .unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::sketch_project::record_spline_segment(
+            decode_ctx,
+            &mut segments,
+            "Design",
+            10,
+            points,
+        )
+    })
+    .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&Some(points)));
-    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::sketch_project::record_spline_segment(
+            decode_ctx,
+            &mut segments,
+            "Design",
+            10,
+            [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        )
+    })
     .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&None));
 }
@@ -145,14 +169,18 @@ fn spatial_spline_member_index_refuses_collection_limit() {
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial spline member index"
     ));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &members)).unwrap());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &members)
+    })
+    .unwrap());
     let duplicates = [
         SketchRelationReturnMember::from_index(10),
         SketchRelationReturnMember::from_index(10),
     ];
-    assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &duplicates)).unwrap()
-    );
+    assert!(!crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &duplicates)
+    })
+    .unwrap());
 }
 
 #[test]
@@ -390,7 +418,15 @@ fn spatial_sketch_id_index_copy_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_sketch_design(&ctx, std::slice::from_ref(&placement), &[], &[], std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6) {
+        match project_spatial_sketch_design(
+            &ctx,
+            std::slice::from_ref(&placement),
+            &[],
+            &[],
+            std::slice::from_ref(&surface),
+            &[],
+            EPS_PROJECTION_LIMITS_E6,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial sketch id index copy" =>
             {

@@ -409,9 +409,11 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
         Point2::new(2.0, 0.0),
         Point2::new(0.0, 2.0),
     ];
-    let loop_ = crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, decode_ctx))
-        .unwrap()
-        .unwrap();
+    let loop_ = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, decode_ctx)
+    })
+    .unwrap()
+    .unwrap();
     assert!(loop_.contains_point(Point2::new(0.25, 0.25)));
     assert!(!loop_.contains_point(Point2::new(1.5, 1.5)));
     assert!(!loop_.contains_point(Point2::new(0.0, 0.0)));

@@ -189,7 +189,10 @@ fn configuration_numeric_scalar_text_refuses_retained_limit() {
                 && failure.operation == "f3d configuration scalar text")
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| super::super::configuration_scalar_text(decode_ctx, &scalar)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::configuration_scalar_text(decode_ctx, &scalar)
+        })
+        .unwrap(),
         "2.5"
     );
 }

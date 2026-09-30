@@ -146,13 +146,21 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         3.81,
     ))
     .expect("synthetic ambiguous tangent dimension");
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::presentation_dimension_definition(decode_ctx, "stream", &frame(vec![operand(782), operand(796)]), &projected, &ambiguous_tangent, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
-                .expect("identity grammar"), EPS_REFUSAL_LINEAR))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::presentation_dimension_definition(
+            decode_ctx,
+            "stream",
+            &frame(vec![operand(782), operand(796)]),
+            &projected,
+            &ambiguous_tangent,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16_ambiguous")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 
     let point_distance = parse_design_parameter_record(&parameter_record(
         Some(46),
@@ -164,8 +172,16 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("synthetic point distance dimension");
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::presentation_dimension_definition(ctx, "stream", &frame(vec![operand(1061), operand(1075)]), &projected, &point_distance, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
-                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
+        crate::design::dimensions::presentation_dimension_definition(
+            ctx,
+            "stream",
+            &frame(vec![operand(1061), operand(1075)]),
+            &projected,
+            &point_distance,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d32")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

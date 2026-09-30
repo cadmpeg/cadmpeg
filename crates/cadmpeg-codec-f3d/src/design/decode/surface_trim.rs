@@ -144,16 +144,27 @@ fn exact_surface_trim_operation(
         primary,
         paired,
     ) = parsed_prefix?;
-    
 
     let mut cell_entries = Vec::new();
-    ctx.reserve_vec(&mut cell_entries, cell_count_usize, "f3d surface-trim cell entries")?;
+    ctx.reserve_vec(
+        &mut cell_entries,
+        cell_count_usize,
+        "f3d surface-trim cell entries",
+    )?;
 
     let mut cell_record_indices = HashSet::new();
-    ctx.reserve_set(&mut cell_record_indices, cell_count_usize, "f3d surface-trim cell record indices")?;
+    ctx.reserve_set(
+        &mut cell_record_indices,
+        cell_count_usize,
+        "f3d surface-trim cell record indices",
+    )?;
 
     let mut cell_ordinals = HashSet::new();
-    ctx.reserve_set(&mut cell_ordinals, cell_count_usize, "f3d surface-trim cell ordinals")?;
+    ctx.reserve_set(
+        &mut cell_ordinals,
+        cell_count_usize,
+        "f3d surface-trim cell ordinals",
+    )?;
     let parsed = (|| {
         for ordinal in 0..cell_count_usize {
             let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
@@ -230,14 +241,18 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
-        operation.id = design_record_id_charged(ctx, &entry.name, ":design-surface-trim-operation#", scope.byte_offset(), "f3d surface-trim operation identifier")?;
+        operation.id = design_record_id_charged(
+            ctx,
+            &entry.name,
+            ":design-surface-trim-operation#",
+            scope.byte_offset(),
+            "f3d surface-trim operation identifier",
+        )?;
 
         ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
         out.push(operation);
     }
-    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| {
-        left.id.cmp(&right.id)
-    })?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| left.id.cmp(&right.id))?;
     Ok(out)
 }
 

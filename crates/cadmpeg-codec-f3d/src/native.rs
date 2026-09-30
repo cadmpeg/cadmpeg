@@ -72,8 +72,6 @@ use cadmpeg_asm::brep::records::{
     TransformHints, VertexOwnership, WireTopology,
 };
 
-
-
 fn owner_indices<'a>(
     ctx: &DecodeContext<'_>,
     ids: impl ExactSizeIterator<Item = &'a str>,
@@ -95,8 +93,8 @@ fn group_by_owner<T>(
     id: impl Fn(&T) -> &str,
     owner: impl Fn(&T) -> &str,
 ) -> Result<Vec<Vec<T>>, cadmpeg_ir::NativeConvertError> {
-    let mut grouped = ctx.collection_vec(owner_count, "group F3D native owners")?;
-    grouped.resize_with(owner_count, Vec::new);
+    let mut grouped =
+        ctx.collect_indexed_vec(owner_count, "group F3D native owners", |_| Ok(Vec::new()))?;
     for record in records {
         let parent = owner(&record);
         let ordinal = owners.get(parent).ok_or_else(|| {
@@ -105,7 +103,11 @@ fn group_by_owner<T>(
                 Err(error) => cadmpeg_ir::NativeConvertError::Resource(error),
             }
         })?;
-        ctx.push_vec(&mut grouped[*ordinal], record, "attach F3D native owner child")?;
+        ctx.push_vec(
+            &mut grouped[*ordinal],
+            record,
+            "attach F3D native owner child",
+        )?;
     }
     Ok(grouped)
 }
@@ -1412,9 +1414,14 @@ impl F3dNative {
     pub(crate) fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(cadmpeg_ir::NativeConvertError::Resource)?;
-    let decode_ctx = &decode_ctx;
+        let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &decode_arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(cadmpeg_ir::NativeConvertError::Resource)?;
+        let decode_ctx = &decode_ctx;
 
         Self::load_inner(decode_ctx, namespace)
     }
@@ -1436,25 +1443,22 @@ impl F3dNative {
             };
         }
         let sketch_relations = {
-                let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
-                
-                
-                let mut relations = Vec::new();
-                ctx.reserve_vec(&mut relations, wires.len(), "load sketch relations")?;
-                for wire in wires {
-                    relations.push(SketchRelation::from_wire_charged(ctx, wire).map_err(
-                        |error| match error {
-                            cadmpeg_core::CodecError::ResourceLimit(_) => {
-                                cadmpeg_ir::NativeConvertError::Resource(error)
-                            }
-                            _ => {
-                                cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string())
-                            }
-                        },
-                    )?);
-                }
-                relations
-            };
+            let wires: Vec<SketchRelationSerde> = read_arena!("sketch_relations");
+
+            let mut relations = Vec::new();
+            ctx.reserve_vec(&mut relations, wires.len(), "load sketch relations")?;
+            for wire in wires {
+                relations.push(
+                    SketchRelation::from_wire_charged(ctx, wire).map_err(|error| match error {
+                        cadmpeg_core::CodecError::ResourceLimit(_) => {
+                            cadmpeg_ir::NativeConvertError::Resource(error)
+                        }
+                        _ => cadmpeg_ir::NativeConvertError::InvalidCollection(error.to_string()),
+                    })?,
+                );
+            }
+            relations
+        };
         let null_locus_entries: Vec<crate::records::dimension_null_locus_wire::Entry> =
             read_arena!("design_dimension_null_locus_pairs");
         #[cfg(test)]
@@ -1485,8 +1489,8 @@ impl F3dNative {
             ))
             .map_err(<serde_json::Error as serde::de::Error>::custom)?,
             design_dimension_null_locus_pairs: {
-                    DesignDimensionNullLocusPairs::from_entries_charged(ctx, null_locus_entries)?
-                },
+                DesignDimensionNullLocusPairs::from_entries_charged(ctx, null_locus_entries)?
+            },
             design_dimension_recipe_records: read_arena!("design_dimension_recipe_records"),
             design_edge_operands: read_arena!("design_edge_operands"),
             design_edge_treatment_vertex_operands: read_arena!(
@@ -1562,9 +1566,11 @@ impl F3dNative {
         )?;
         let mut attached_boards = Vec::new();
         {
-            
-            
-            ctx.reserve_vec(&mut attached_boards, boards.len(), "attach F3D history boards")?;
+            ctx.reserve_vec(
+                &mut attached_boards,
+                boards.len(),
+                "attach F3D history boards",
+            )?;
         }
         for (mut board, changes) in boards.into_iter().zip(changes_by_board) {
             board.changes = changes;
@@ -1590,9 +1596,11 @@ impl F3dNative {
         )?;
         let mut attached_states = Vec::new();
         {
-            
-            
-            ctx.reserve_vec(&mut attached_states, states.len(), "attach F3D history states")?;
+            ctx.reserve_vec(
+                &mut attached_states,
+                states.len(),
+                "attach F3D history states",
+            )?;
         }
         for ((mut state, bulletin_boards), records) in states
             .into_iter()

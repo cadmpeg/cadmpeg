@@ -269,7 +269,12 @@ fn configuration_scalar_projection_preserves_exact_text() {
     let (_, variant) = &admitted.variants()[0];
     let actual: Vec<_> = variant
         .parameters()
-        .map(|(key, value)| (key.as_str(), value.text()))
+        .map(|(key, value)| {
+            (
+                key.as_str(),
+                crate::test_support::with_decode_context(|ctx| value.text_charged(ctx).unwrap()),
+            )
+        })
         .collect();
     assert_eq!(
         actual,

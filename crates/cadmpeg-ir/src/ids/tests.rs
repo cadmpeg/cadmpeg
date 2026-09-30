@@ -491,10 +491,14 @@ fn local_identity_copy_refuses_one_below_retained_need() {
     policy.limits.max_retained_bytes = u64::try_from(id.as_str().len()).expect("length") - 1;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
-    let error = id.try_clone_for_decode(&ctx, "local identity copy").expect_err("one below need");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+    let error = id
+        .try_clone_for_decode(&ctx, "local identity copy")
+        .expect_err("one below need");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
         if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-            && resource.operation == "local identity copy"));
+            && resource.operation == "local identity copy")
+    );
 }
 
 #[test]
@@ -506,7 +510,11 @@ fn local_identity_copy_succeeds_under_service_profile() {
     macro_rules! check_copy {
         ($id:ty) => {{
             let id = <$id>::mint("synthetic-local-42").expect("valid local identity");
-            assert_eq!(id.try_clone_for_decode(&ctx, "local identity copy").expect("service copy"), id);
+            assert_eq!(
+                id.try_clone_for_decode(&ctx, "local identity copy")
+                    .expect("service copy"),
+                id
+            );
         }};
     }
     check_copy!(super::HistoricalBodyId);

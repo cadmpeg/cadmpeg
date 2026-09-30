@@ -55,7 +55,11 @@ fn hole_fallback_face_id_refuses_retained_limit() {
         (1, &parameters[1]),
         (2, &parameters[2]),
     ];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_hole(decode_ctx, &scope, &indexed, &[])).unwrap().unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_hole(decode_ctx, &scope, &indexed, &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Hole {

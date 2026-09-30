@@ -67,8 +67,7 @@ fn planar(kind: &str) {
         _ => panic!("unknown source kind fixture"),
     };
     super::super::assert_dimension_refusal(operation, ResourceDimension::RetainedBytes, |ctx| {
-        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR)
-            .map(|_| ())
+        project_dimension_constraints(ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR).map(|_| ())
     });
 }
 
@@ -106,7 +105,13 @@ fn spatial_companion_source_kind_refuses_retained_limit() {
         "f3d spatial companion source kind",
         ResourceDimension::RetainedBytes,
         |ctx| {
-            project_spatial_dimension_constraints(ctx, &inputs, std::slice::from_ref(&fixture.spatial), &[], EPS_NATIVE_FALLBACK_LINEAR)
+            project_spatial_dimension_constraints(
+                ctx,
+                &inputs,
+                std::slice::from_ref(&fixture.spatial),
+                &[],
+                EPS_NATIVE_FALLBACK_LINEAR,
+            )
             .map(|_| ())
         },
     );

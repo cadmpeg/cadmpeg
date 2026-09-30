@@ -106,7 +106,18 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(&selection_group, std::slice::from_ref(&selection_group), std::slice::from_ref(&edge), &[], std::slice::from_ref(&corner), std::slice::from_ref(&history), Some(7), &feature_id, None, &ctx) {
+        match resolved_edge_treatment_group_with_corners(
+            &selection_group,
+            std::slice::from_ref(&selection_group),
+            std::slice::from_ref(&edge),
+            &[],
+            std::slice::from_ref(&corner),
+            std::slice::from_ref(&history),
+            Some(7),
+            &feature_id,
+            None,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected treatment refusal at {operation}: {other:?}"),

@@ -173,7 +173,13 @@ fn arrangement_admitted_route_keeps_two_faces() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let budget = super::local_arrangement_budget();
-    let faces = super::sketch_arrangement_faces(&sketch, &entities, ARRANGEMENT_FACE_TEST_TOLERANCE, &budget, &ctx)
+    let faces = super::sketch_arrangement_faces(
+        &sketch,
+        &entities,
+        ARRANGEMENT_FACE_TEST_TOLERANCE,
+        &budget,
+        &ctx,
+    )
     .unwrap()
     .unwrap();
     assert_eq!(faces.len(), 2);

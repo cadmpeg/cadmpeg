@@ -159,7 +159,11 @@ fn exact_surface_offset_face_groups(
                 return None;
             }
 
-            if let Err(error) = ctx.reserve_set(&mut covered_references, 1, "f3d surface offset covered reference") {
+            if let Err(error) = ctx.reserve_set(
+                &mut covered_references,
+                1,
+                "f3d surface offset covered reference",
+            ) {
                 return Some(Err(error));
             }
             covered_references.insert(group.record_index);
@@ -175,13 +179,21 @@ fn exact_surface_offset_face_groups(
                     return None;
                 }
 
-                if let Err(error) = ctx.reserve_set(&mut covered_references, 1, "f3d surface offset covered reference") {
+                if let Err(error) = ctx.reserve_set(
+                    &mut covered_references,
+                    1,
+                    "f3d surface offset covered reference",
+                ) {
                     return Some(Err(error));
                 }
                 covered_references.insert(*member);
             }
 
-            if let Err(error) = ctx.reserve_vec(&mut group_record_indices, 1, "f3d surface offset face group") {
+            if let Err(error) = ctx.reserve_vec(
+                &mut group_record_indices,
+                1,
+                "f3d surface offset face group",
+            ) {
                 return Some(Err(error));
             }
             group_record_indices.push(group.record_index);
@@ -405,7 +417,11 @@ fn exact_surface_boundary_operation(
     };
 
     let mut edges = Vec::new();
-    ctx.reserve_vec(&mut edges, edge_record_indices.len(), "f3d surface boundary edges")?;
+    ctx.reserve_vec(
+        &mut edges,
+        edge_record_indices.len(),
+        "f3d surface boundary edges",
+    )?;
     edges.extend(edge_record_indices.copied());
     Ok(Some(ExactSurfaceBoundaryOperation {
         distance: scalar.value,
@@ -495,7 +511,8 @@ pub(super) fn exact_ruled_surface_operation(
             cursor = cursor.checked_add(4)?;
 
             let mut records = Vec::new();
-            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references") {
+            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references")
+            {
                 return Some(Err(error));
             }
             for _ in 0..count {
@@ -531,7 +548,11 @@ pub(super) fn exact_ruled_surface_operation(
         };
         cursor = next;
 
-        if let Err(error) = ctx.reserve_vec(&mut edge_group_record_indices, trailing_edge_groups.len(), "f3d ruled surface merged edge groups") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut edge_group_record_indices,
+            trailing_edge_groups.len(),
+            "f3d ruled surface merged edge groups",
+        ) {
             return Some(Err(error));
         }
         edge_group_record_indices.extend(trailing_edge_groups);
