@@ -3166,10 +3166,17 @@ fn copy_planar_sketch_id(
     })
 }
 
+fn charge_relation_parameter_work(ctx: &DecodeContext<'_>, count: usize, units: u64, operation: &'static str) -> Result<(), cadmpeg_core::CodecError> {
+    let work = u64::try_from(count).ok().and_then(|count| count.checked_add(1)).and_then(|count| count.checked_mul(units))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
+
 fn copy_relation_parameter_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::features::ParameterId,
 ) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
+    charge_relation_parameter_work(ctx, id.as_str().len(), 4, "copy SLDPRT relation parameter identity")?;
     let text = ctx.format_retained(
         format_args!("{}", id.as_str()),
         "copy SLDPRT relation parameter identity",
@@ -3184,11 +3191,15 @@ fn claim_relation_parameter(
     claimed: &mut HashSet<cadmpeg_ir::features::ParameterId>,
     id: &cadmpeg_ir::features::ParameterId,
 ) -> Result<bool, cadmpeg_core::CodecError> {
+    let operation = "claim SLDPRT relation parameter";
+    charge_relation_parameter_work(ctx, id.as_str().len(), 4, operation)?;
     if claimed.contains(id) {
         return Ok(false);
     }
-    let operation = "claim SLDPRT relation parameter";
     ctx.charge_collection_items(1, operation)?;
+    if claimed.len() == claimed.capacity() {
+        for key in &*claimed { charge_relation_parameter_work(ctx, key.as_str().len(), 1, operation)?; }
+    }
     claimed.try_reserve(1).map_err(|_| {
         ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
     })?;
@@ -3202,8 +3213,12 @@ fn record_relation_parameter(
     parameter: Option<&cadmpeg_ir::features::ParameterId>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let operation = "index SLDPRT relation parameter ownership";
+    charge_relation_parameter_work(ctx, relation_id.len(), 4, operation)?;
     if !owned.contains_key(relation_id) {
         ctx.charge_collection_items(1, operation)?;
+        if owned.len() == owned.capacity() {
+            for key in owned.keys() { charge_relation_parameter_work(ctx, key.len(), 1, operation)?; }
+        }
         owned.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
         })?;
@@ -3225,18 +3240,22 @@ pub(crate) fn owned_relation_parameters<'a>(
 ) -> Result<HashMap<String, Option<cadmpeg_ir::features::ParameterId>>, cadmpeg_core::CodecError> {
     let mut lane_refs = Vec::new();
     for lane in lanes {
+        ctx.charge_work(4, "scan SLDPRT relation ownership")?;
         ctx.reserve_collection_vec(&mut lane_refs, 1, "collect SLDPRT relation lanes")?;
         lane_refs.push(lane);
     }
-    let mut parameters_by_scalar = HashMap::new();
+    let mut parameters_by_scalar = HashMap::<&str, _>::new();
     for parameter in parameters {
         let Some(native_ref) = parameter.native_ref.as_deref() else {
             continue;
         };
         let operation = "index SLDPRT relation scalars";
-        ctx.charge_work(1, operation)?;
+        charge_relation_parameter_work(ctx, native_ref.len(), 4, operation)?;
         if !parameters_by_scalar.contains_key(native_ref) {
             ctx.charge_collection_items(1, operation)?;
+            if parameters_by_scalar.len() == parameters_by_scalar.capacity() {
+                for key in parameters_by_scalar.keys() { charge_relation_parameter_work(ctx, key.len(), 1, operation)?; }
+            }
             parameters_by_scalar.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
             })?;
@@ -3251,6 +3270,7 @@ pub(crate) fn owned_relation_parameters<'a>(
             let Some(scalar) = relation.parameter_scalar_ref() else {
                 continue;
             };
+            charge_relation_parameter_work(ctx, scalar.len(), 4, "scan SLDPRT relation ownership")?;
             let parameter = if let Some(parameter) = parameters_by_scalar.get(scalar) {
                 Some(&parameter.id)
             } else {
@@ -3269,6 +3289,9 @@ pub(crate) fn owned_relation_parameters<'a>(
             if relation.parameter_scalar_ref().is_some() {
                 continue;
             }
+            for scalar in relation.scalar_refs() {
+                charge_relation_parameter_work(ctx, scalar.len(), 4, "scan SLDPRT relation ownership")?;
+            }
             let mut exact_matches = relation
                 .scalar_refs()
                 .iter()
@@ -3279,13 +3302,15 @@ pub(crate) fn owned_relation_parameters<'a>(
                 }
                 continue;
             }
-            let mut parameter = relation_parameter_by_relation_id(relation, parameters);
+            let mut parameter = relation_parameter_by_relation_id(ctx, relation, parameters)?;
             if parameter.is_none() {
                 parameter = relation_parameter_by_driving_name(ctx, relation, lane, features, parameters)?;
             }
             if parameter.is_none() {
-                parameter = circle_dimension_handle_driver(ctx, relation, lane)?
-                    .and_then(|scalar| parameters_by_scalar.get(scalar.id.as_str()).copied());
+                if let Some(scalar) = circle_dimension_handle_driver(ctx, relation, lane)? {
+                    charge_relation_parameter_work(ctx, scalar.id.len(), 4, "scan SLDPRT relation ownership")?;
+                    parameter = parameters_by_scalar.get(scalar.id.as_str()).copied();
+                }
             }
             if parameter.is_none() {
                 parameter = relation_parameter_by_display_name(ctx, relation, lane, features, parameters)?;
@@ -3393,19 +3418,20 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
 }
 
 fn relation_parameter_by_relation_id<'a>(
-    relation: &FeatureInputRelationInstance,
-    parameters: &'a [cadmpeg_ir::features::DesignParameter],
-) -> Option<&'a cadmpeg_ir::features::DesignParameter> {
-    let mut matches = parameters
-        .iter()
-        .filter(|parameter| {
-            parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) == Some(&relation.id)
-                && is_reference_relation_parameter(parameter)
-        });
-    let (Some(parameter), None) = (matches.next(), matches.next()) else {
-        return None;
-    };
-    Some(parameter)
+    ctx: &DecodeContext<'_>, relation: &FeatureInputRelationInstance, parameters: &'a [cadmpeg_ir::features::DesignParameter],
+) -> Result<Option<&'a cadmpeg_ir::features::DesignParameter>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "scan SLDPRT relation ownership";
+    let mut unique = None;
+    for parameter in parameters {
+        let levels = usize::try_from(parameter.properties.len().checked_ilog2().unwrap_or(0)).ok()
+            .and_then(|levels| levels.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        charge_relation_parameter_work(ctx, levels, 256, OPERATION)?;
+        charge_relation_parameter_work(ctx, relation.id.len(), 2, OPERATION)?;
+        if parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) != Some(&relation.id) || !is_reference_relation_parameter(parameter) { continue; }
+        if unique.is_some() { return Ok(None); }
+        unique = Some(parameter);
+    }
+    Ok(unique)
 }
 
 fn relation_parameter_matches_display_scalar(

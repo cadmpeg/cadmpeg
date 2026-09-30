@@ -781,8 +781,9 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut sketches_by_feature = HashMap::new();
+    let mut sketches_by_feature = HashMap::<&str, _>::new();
     for feature in features {
+        ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
         let FeatureDefinition::Operation(FeatureOperation::Sketch {
             sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch)),
         }) = feature.evaluation.definition()
@@ -792,9 +793,13 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
+        charge_dimensioned_carrier_work(ctx, native_ref.len(), 4)?;
         if !sketches_by_feature.contains_key(native_ref) {
             let operation = "index SLDPRT dimensioned point sketches";
             ctx.charge_collection_items(1, operation)?;
+            if sketches_by_feature.len() == sketches_by_feature.capacity() {
+                for key in sketches_by_feature.keys() { charge_dimensioned_carrier_work(ctx, key.len(), 1)?; }
+            }
             sketches_by_feature.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
             })?;
@@ -802,22 +807,30 @@ pub(crate) fn project_relation_point_dimensioned_circles(
         sketches_by_feature.insert(native_ref, sketch);
     }
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let mut parameters_by_id = HashMap::new();
+    let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     for parameter in parameters {
+        charge_dimensioned_carrier_work(ctx, parameter.id.as_str().len(), 4)?;
         if !parameters_by_id.contains_key(&parameter.id) {
             let operation = "index SLDPRT dimensioned point parameters";
             ctx.charge_collection_items(1, operation)?;
+            if parameters_by_id.len() == parameters_by_id.capacity() {
+                for key in parameters_by_id.keys() { charge_dimensioned_carrier_work(ctx, key.as_str().len(), 1)?; }
+            }
             parameters_by_id.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
             })?;
         }
         parameters_by_id.insert(&parameter.id, parameter);
     }
-    let mut markers_by_id = HashMap::new();
+    let mut markers_by_id = HashMap::<&str, _>::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+        charge_dimensioned_carrier_work(ctx, marker.id().len(), 4)?;
         if !markers_by_id.contains_key(marker.id()) {
             let operation = "index SLDPRT dimensioned point markers";
             ctx.charge_collection_items(1, operation)?;
+            if markers_by_id.len() == markers_by_id.capacity() {
+                for key in markers_by_id.keys() { charge_dimensioned_carrier_work(ctx, key.len(), 1)?; }
+            }
             markers_by_id.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
             })?;
@@ -826,11 +839,15 @@ pub(crate) fn project_relation_point_dimensioned_circles(
     }
 
     for lane in lanes {
+        charge_dimensioned_carrier_work(ctx, lane.id.len(), 1)?;
         let lane_key = lane
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
+            charge_dimensioned_carrier_work(ctx, relation.feature_ref.len(), 4)?;
+            charge_dimensioned_carrier_work(ctx, relation.id.len(), 4)?;
+            ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
             if relation.family != FeatureInputRelationFamily::CircleDiameter {
                 continue;
             }
@@ -840,13 +857,10 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let Some(parameter) = ownership
-                .get(&relation.id)
-                .and_then(Option::as_ref)
-                .and_then(|parameter| parameters_by_id.get(parameter))
-            else {
-                continue;
-            };
+            let Some(parameter_id) = ownership.get(&relation.id).and_then(Option::as_ref) else { continue; };
+            charge_dimensioned_carrier_work(ctx, parameter_id.as_str().len(), 4)?;
+            let Some(parameter) = parameters_by_id.get(parameter_id) else { continue; };
+            charge_dimensioned_carrier_work(ctx, parameter.id.as_str().len(), 1)?;
             let Some(radius) = radial_dimension_radius(parameter) else {
                 continue;
             };
@@ -863,6 +877,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let Some(marker_id) = marker_id else {
                 continue;
             };
+            charge_dimensioned_carrier_work(ctx, marker_id.len(), 4)?;
             let Some(marker) = markers_by_id.get(marker_id).copied() else {
                 continue;
             };
@@ -871,6 +886,13 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) {
                 continue;
+            }
+            for entity in &*entities {
+                charge_dimensioned_carrier_work(ctx, sketch.as_str().len(), 1)?;
+                charge_dimensioned_carrier_work(ctx, entity.sketch.as_str().len(), 1)?;
+                charge_dimensioned_carrier_work(ctx, marker_id.len(), 1)?;
+                charge_dimensioned_carrier_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 1)?;
+                ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
             }
             let mut centers = entities
                 .iter()
@@ -923,6 +945,11 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let Some(construction) = construction else {
                 continue;
             };
+            for entity in &*entities {
+                charge_dimensioned_carrier_work(ctx, sketch.as_str().len(), 1)?;
+                charge_dimensioned_carrier_work(ctx, entity.sketch.as_str().len(), 1)?;
+                ctx.charge_work(64, DIMENSIONED_CARRIER_OPERATION)?;
+            }
             if entities.iter().any(|entity| {
                 entity.sketch == **sketch
                     && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
@@ -931,6 +958,8 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }) {
                 continue;
             }
+            let formatted_len = lane_key.len().checked_add(128).ok_or_else(|| ctx.refuse_codec_limit(DIMENSIONED_CARRIER_OPERATION, u64::MAX - 1, u64::MAX))?;
+            charge_dimensioned_carrier_work(ctx, formatted_len, 4)?;
             let entity_id = ctx.format_retained(
                 format_args!(
                     "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
@@ -954,6 +983,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }) else {
                 continue;
             };
+            charge_dimensioned_carrier_work(ctx, sketch.as_str().len(), 4)?;
             let sketch_id = ctx.format_retained(
                 format_args!("{}", sketch.as_str()),
                 "copy SLDPRT dimensioned point sketch",
@@ -961,10 +991,12 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             let Ok(sketch_id) = cadmpeg_ir::sketches::SketchId::mint(sketch_id) else {
                 continue;
             };
+            charge_dimensioned_carrier_work(ctx, marker.id().len(), 4)?;
             let native_ref = ctx.format_retained(
                 format_args!("{}", marker.id()),
                 "copy SLDPRT dimensioned point marker reference",
             )?;
+            charge_dimensioned_carrier_work(ctx, relation.id.len(), 4)?;
             let geometry_ref = ctx.format_retained(
                 format_args!("{}", relation.id),
                 "copy SLDPRT dimensioned point relation reference",
