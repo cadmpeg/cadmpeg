@@ -1015,6 +1015,10 @@ impl SldprtNative {
             )?);
             }
         }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(self.feature_histories.len()),
+            "validate SLDPRT store features",
+        )?;
         let (features, _features_reservation) = collect_temporary_clones(
             ctx,
             self.feature_histories
