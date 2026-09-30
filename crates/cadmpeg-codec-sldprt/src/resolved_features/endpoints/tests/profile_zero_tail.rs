@@ -77,7 +77,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
                 .copy_from_slice(&native_kind.to_le_bytes());
             assert!(current_extended_zero_tail_92_profile_curve(&payload, 0));
             assert_eq!(
-                marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+                marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
                     .iter()
                     .map(|marker| marker.id())
                     .collect::<Vec<_>>(),
@@ -88,7 +88,7 @@ fn current_extended_zero_tail_92_profile_curve_uses_coordinate_roster() {
                 .copy_from_slice(&3u16.to_le_bytes());
             assert!(current_extended_zero_tail_92_profile_curve(&payload, 0));
             assert!(
-                marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+                marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
                     .is_empty()
             );
 

@@ -3835,7 +3835,7 @@ pub(super) fn profile_loci_by_marker(
         if marker.kind() != SketchInputKind::LineOrCircle || result.contains_key(marker.id()) {
             continue;
         }
-        let endpoints = line_endpoint_markers(marker, &markers_by_id);
+        let endpoints = line_endpoint_markers(ctx, marker, &markers_by_id)?;
         let (Some(feature), [first, second]) =
             (marker.feature_ref.as_deref(), endpoints.as_slice())
         else {

@@ -100,7 +100,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
-        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
+        output_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &[], &line, &markers_by_id, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -114,7 +114,7 @@ fn one_ended_line_uses_its_same_index_radius_relation_pair() {
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
-        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers).len(),
+        output_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &[], &line, &markers_by_id, &markers).unwrap().len(),
         2
     );
 }
@@ -203,7 +203,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
     let markers = [&first, &second, &third, &line, &radius];
 
     assert_eq!(
-        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers)
+        output_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &[], &line, &markers_by_id, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -217,7 +217,7 @@ fn one_ended_line_accepts_a_direct_radius_relation_link_only_when_unique() {
         .collect::<HashMap<_, _>>();
     let markers = [&first, &second, &third, &line, &radius, &competing];
     assert_ne!(
-        output_curve_endpoint_markers(&[], &line, &markers_by_id, &markers).len(),
+        output_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &[], &line, &markers_by_id, &markers).unwrap().len(),
         2
     );
 }
@@ -302,7 +302,7 @@ fn coordinate_profile_line_uses_its_own_coordinate_and_one_point_link() {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
 
         assert_eq!(
-            marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+            marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
                 .into_iter()
                 .map(crate::records::SketchInputEntity::id)
                 .collect::<Vec<_>>(),

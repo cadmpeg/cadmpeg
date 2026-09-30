@@ -874,12 +874,12 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
-            let mut endpoints = marker_curve_endpoint_markers(
+            let mut endpoints = marker_curve_endpoint_markers(ctx,
                 &lane.native_payload,
                 marker,
                 &markers_by_id,
                 &marker_roster,
-            );
+            )?;
             if endpoints.len() != 2 && linked_curve_handle {
                 endpoints = linked_coordinate_line_endpoints(marker, &markers_by_id)
                     .or_else(|| coordinate_line_endpoints_with_linked_point(marker, &markers_by_id))
@@ -1251,27 +1251,13 @@ pub(crate) fn project_relation_solved_line_geometry(
                 }
             }
             points.sort_by_key(|marker| marker.offset());
-            let endpoint_line_markers = |operand_index: usize| {
-                relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
-                    .and_then(|marker_id| {
-                        lane.sketch_entities
-                            .iter()
-                            .find(|marker| marker.id() == marker_id)
-                    })
-                    .map(|marker| {
-                        marker_curve_endpoint_markers(
-                            &lane.native_payload,
-                            marker,
-                            &markers_by_id,
-                            &marker_roster,
-                        )
-                    })
-                    .and_then(|endpoints| {
-                        let [first, second] = endpoints.as_slice() else {
-                            return None;
-                        };
-                        Some([*first, *second])
-                    })
+            let endpoint_line_markers = |operand_index: usize| -> Result<Option<[&SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+                let marker = relation_operand_marker(relation, operand_index, sketch, &markers_by_id)
+                    .and_then(|marker_id| lane.sketch_entities.iter().find(|marker| marker.id() == marker_id));
+                let Some(marker) = marker else { return Ok(None); };
+                let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &marker_roster)?;
+                let [first, second] = endpoints.as_slice() else { return Ok(None); };
+                Ok(Some([*first, *second]))
             };
             let fallback_line_markers = |index: u16| {
                 let pair = usize::from(index).checked_mul(2)?;
@@ -1467,7 +1453,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 let mut lines = Vec::with_capacity(line_operands.len());
                 for &(operand_index, operand) in &line_operands {
                     let markers = if prefer_marker_endpoints {
-                        endpoint_line_markers(operand_index)
+                        endpoint_line_markers(operand_index)?
                             .or_else(|| fallback_line_markers(operand.entity_index))
                     } else {
                         fallback_line_markers(operand.entity_index)

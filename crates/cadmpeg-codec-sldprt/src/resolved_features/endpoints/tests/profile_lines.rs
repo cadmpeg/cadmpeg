@@ -369,7 +369,7 @@ fn legacy_compact_140_relation_continuation_resolves_zero_based_roster() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -653,7 +653,7 @@ fn extended_shifted_construction_line_indexes_coordinate_roster() {
     payload.resize(110 + 84, 0);
     payload[110..110 + 84].copy_from_slice(&record);
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -705,7 +705,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &curve, &markers_by_id, &markers)
+        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers_by_id, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -719,7 +719,7 @@ fn compact_legacy_142_profile_curve_matches_unique_coordinate_endpoints() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert!(
-        marker_curve_endpoint_markers(&payload, &curve, &ambiguous_by_id, &ambiguous_markers,)
+        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &ambiguous_by_id, &ambiguous_markers,).unwrap()
             .is_empty()
     );
 }
