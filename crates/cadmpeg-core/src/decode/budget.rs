@@ -97,50 +97,48 @@ impl DecodeBudget {
     }
 
     fn charge(
-        &self,
-        dimension: ResourceDimension,
-        used: &Cell<u64>,
-        limit: u64,
-        amount: u64,
-        operation: &'static str,
+        &self, dimension: ResourceDimension, used: &Cell<u64>, limit: u64,
+        amount: u64, operation: &'static str,
     ) -> Result<(), CodecError> {
-        if let Some(resource) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(resource));
-        }
+        self.charge_resource(dimension, used, limit, amount, operation).map_err(Into::into)
+    }
+
+    fn charge_resource(
+        &self, dimension: ResourceDimension, used: &Cell<u64>, limit: u64,
+        amount: u64, operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
+        if let Some(resource) = self.fuse.get() { return Err(resource); }
         let before = used.get();
-        if amount > limit.saturating_sub(before) {
-            return Err(self.refuse(
-                dimension,
-                ResourceFailure::BudgetExceeded,
-                limit,
-                before,
-                amount,
-                operation,
-            ));
+        if before > limit || amount > limit - before {
+            return Err(self.refuse_resource(dimension, ResourceFailure::BudgetExceeded, limit,
+                before, amount, operation));
         }
         used.set(before + amount);
         Ok(())
     }
 
     pub(super) fn refuse(
-        &self,
-        dimension: ResourceDimension,
-        reason: ResourceFailure,
-        limit: u64,
-        used: u64,
-        additional: u64,
-        operation: &'static str,
+        &self, dimension: ResourceDimension, reason: ResourceFailure, limit: u64,
+        used: u64, additional: u64, operation: &'static str,
     ) -> CodecError {
-        let resource = ResourceLimit {
-            dimension,
-            reason,
-            limit,
-            used,
-            additional,
-            operation,
-        };
+        self.refuse_resource(dimension, reason, limit, used, additional, operation).into()
+    }
+
+    fn refuse_resource(
+        &self, dimension: ResourceDimension, reason: ResourceFailure, limit: u64,
+        used: u64, additional: u64, operation: &'static str,
+    ) -> ResourceLimit {
+        let resource = ResourceLimit { dimension, reason, limit, used, additional, operation };
         self.fuse.set(Some(resource));
-        CodecError::ResourceLimit(resource)
+        resource
+    }
+
+    pub(super) fn reserve_scoped_resource(
+        &self, bytes: u64, operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, ResourceLimit> {
+        self.charge_resource(ResourceDimension::MaterializedBytes, &self.materialized,
+            self.materialized_allowance(), bytes, operation)?;
+        Ok(ScopedReservation { budget: self, bytes, operation })
     }
 
     pub(super) fn reserve_scoped(
@@ -148,18 +146,7 @@ impl DecodeBudget {
         bytes: u64,
         operation: &'static str,
     ) -> Result<ScopedReservation<'_>, CodecError> {
-        self.charge(
-            ResourceDimension::MaterializedBytes,
-            &self.materialized,
-            self.materialized_allowance(),
-            bytes,
-            operation,
-        )?;
-        Ok(ScopedReservation {
-            budget: self,
-            bytes,
-            operation,
-        })
+        self.reserve_scoped_resource(bytes, operation).map_err(Into::into)
     }
 
     /// Report allocator refusal after a scoped-byte reservation was recorded.
@@ -314,17 +301,17 @@ pub struct ScopedReservation<'a> {
 }
 
 impl ScopedReservation<'_> {
+    pub(super) fn grow_resource(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
+        self.budget.charge_resource(ResourceDimension::MaterializedBytes,
+            &self.budget.materialized, self.budget.materialized_allowance(), bytes, self.operation)?;
+        // The total live materialized charge includes this reservation.
+        self.bytes += bytes;
+        Ok(())
+    }
+
     /// Increases the live temporary reservation.
     pub fn grow(&mut self, bytes: u64) -> Result<(), CodecError> {
-        self.budget.charge(
-            ResourceDimension::MaterializedBytes,
-            &self.budget.materialized,
-            self.budget.materialized_allowance(),
-            bytes,
-            self.operation,
-        )?;
-        self.bytes = self.bytes.saturating_add(bytes);
-        Ok(())
+        self.grow_resource(bytes).map_err(Into::into)
     }
 
     /// Converts the temporary reservation into session-retained bytes.
@@ -414,6 +401,14 @@ impl<'a> WorkBudget<'a> {
     pub fn with_session_work_scale(mut self, scale: NonZeroU64) -> Self {
         self.session_work_scale = scale;
         self
+    }
+
+    /// Reserve temporary evaluator storage in the attached decode session.
+    /// Independent slices retain fallible allocation without session charging.
+    pub fn reserve_scratch(
+        &self, bytes: u64, operation: &'static str,
+    ) -> Result<super::work_scratch::WorkScratch<'a>, ResourceLimit> {
+        super::work_scratch::WorkScratch::new(self.session, bytes, operation)
     }
 
     /// Charges one work unit, returning false after exhaustion.
