@@ -34,7 +34,7 @@ fn assert_contextual_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match contextual_deleted_edge_group_candidates(&[&first, &second], Some(&ctx)) {
+        match contextual_deleted_edge_group_candidates(&[&first, &second], &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected contextual deletion refusal at {operation}: {other:?}"),

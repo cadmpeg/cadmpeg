@@ -24,29 +24,19 @@ const EPS_EXTRUDE_START_ANGULAR: f64 = 1.0e-10;
 fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
     let (operand, group, faces) = start_geometry_fixture();
     assert_eq!(
-        extrude_start_plane_geometry_candidates(
-            None,
-            &group,
-            std::slice::from_ref(&operand),
-            &faces,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| extrude_start_plane_geometry_candidates(decode_ctx, &group, std::slice::from_ref(&operand), &faces))
         .unwrap(),
         Some(vec![face(10)])
     );
     let mut bound = operand.clone();
-    assert!(retain_face_operand_resolution(
-        None,
-        &group,
-        std::slice::from_mut(&mut bound),
-        &face(10)
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| retain_face_operand_resolution(decode_ctx, &group, std::slice::from_mut(&mut bound), &face(10)))
     .unwrap());
     assert_eq!(bound.resolved_active_face, Some(face(10)));
 
     let mut incomplete = operand;
     incomplete.recipe_nodes.clear();
     assert!(
-        extrude_start_plane_geometry_candidates(None, &group, &[incomplete], &faces)
+        crate::test_support::with_decode_context(|decode_ctx| extrude_start_plane_geometry_candidates(decode_ctx, &group, &[incomplete], &faces))
             .unwrap()
             .is_none()
     );
@@ -64,7 +54,7 @@ fn start_plane_candidate_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_start_plane_geometry_candidates(
-            Some(&ctx), &group, std::slice::from_ref(&operand), &faces),
+            &ctx, &group, std::slice::from_ref(&operand), &faces),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d start plane candidate ID"
                 && failure.dimension == ResourceDimension::RetainedBytes
@@ -83,7 +73,7 @@ fn start_plane_candidate_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_start_plane_geometry_candidates(
-            Some(&ctx), &group, std::slice::from_ref(&operand), &faces),
+            &ctx, &group, std::slice::from_ref(&operand), &faces),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d start plane candidate"
                 && failure.dimension == ResourceDimension::CollectionItems
@@ -102,7 +92,7 @@ fn retained_start_face_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         retain_face_operand_resolution(
-            Some(&ctx), &group, std::slice::from_mut(&mut operand), &face(10)),
+            &ctx, &group, std::slice::from_mut(&mut operand), &face(10)),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d retained operand active face"
                 && failure.dimension == ResourceDimension::RetainedBytes
@@ -209,7 +199,7 @@ fn assert_start_binder_refusal(
     use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation};
 
     let (feature, sketch, group, operand, faces, surfaces) = start_binder_fixture(nested);
-    let run = |ctx: Option<&DecodeContext<'_>>| {
+    let run = |ctx: &DecodeContext<'_>| {
         let mut features = [feature.clone()];
         let mut operands = [operand.clone()];
         let mut resolution = ExtrudeFaceResolution {
@@ -228,7 +218,7 @@ fn assert_start_binder_refusal(
         );
         (result, features)
     };
-    let (result, features) = run(None);
+    let (result, features) = crate::test_support::with_decode_context(|decode_ctx| run(decode_ctx));
     result.unwrap();
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -250,7 +240,7 @@ fn assert_start_binder_refusal(
             _ => unreachable!(),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(run(Some(&ctx)).0,
+        if matches!(run(&ctx).0,
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension)
         {
@@ -344,7 +334,7 @@ fn target_native_id_refuses_retained_limit() {
             };
         }
     });
-    let run = |ctx: Option<&DecodeContext<'_>>| {
+    let run = |ctx: &DecodeContext<'_>| {
         let mut features = [feature.clone()];
         let mut operands = [operand.clone()];
         let mut resolution = ExtrudeFaceResolution {
@@ -363,7 +353,7 @@ fn target_native_id_refuses_retained_limit() {
         );
         (result, features)
     };
-    let (result, features) = run(None);
+    let (result, features) = crate::test_support::with_decode_context(|decode_ctx| run(decode_ctx));
     result.unwrap();
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -386,7 +376,7 @@ fn target_native_id_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(run(Some(&ctx)).0,
+        if matches!(run(&ctx).0,
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d target face native ID"
                     && failure.dimension == ResourceDimension::RetainedBytes)
@@ -625,7 +615,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
             linear_tolerance: TARGET_LINEAR_TOLERANCE,
             angular_tolerance: TARGET_ANGULAR_TOLERANCE,
         };
-        extrude_target_plane_candidate(None, &group, &resolution, origin, sweep_direction).unwrap()
+        crate::test_support::with_decode_context(|decode_ctx| extrude_target_plane_candidate(decode_ctx, &group, &resolution, origin, sweep_direction)).unwrap()
     };
 
     assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
@@ -676,7 +666,7 @@ fn target_plane_face_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         extrude_target_plane_candidate(
-            Some(&ctx), &target_face_group(), &resolution,
+            &ctx, &target_face_group(), &resolution,
             Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d target plane face ID"
@@ -732,7 +722,7 @@ fn assert_extrude_root_collection_limit(operation: &'static str) {
     use cadmpeg_core::CodecError;
 
     let (scope, groups) = extrude_root_fixture();
-    let roots = crate::design::face_resolve::extrude_profile_group_roots(None, &scope, &groups)
+    let roots = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -747,7 +737,7 @@ fn assert_extrude_root_collection_limit(operation: &'static str) {
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::face_resolve::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+        if matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
@@ -794,7 +784,7 @@ fn extrude_profile_hierarchy_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+        matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RecursionDepth
                 && failure.operation == "f3d Extrude profile hierarchy")
@@ -812,7 +802,7 @@ fn extrude_profile_hierarchy_refuses_work_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_roots(Some(&ctx), &scope, &groups),
+        matches!(crate::design::face_resolve::extrude_profile_group_roots(&ctx, &scope, &groups),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::WorkUnits
                 && failure.operation == "f3d Extrude profile hierarchy")
@@ -873,9 +863,7 @@ fn assert_extrude_leaf_collection_limit(operation: &'static str) {
 
     let (root, groups, operands) = extrude_leaf_fixture();
     assert_eq!(
-        crate::design::face_resolve::extrude_profile_group_operand_indices(
-            None, &root, &groups, &operands
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_operand_indices(decode_ctx, &root, &groups, &operands))
         .unwrap()
         .unwrap(),
         [0]
@@ -885,8 +873,7 @@ fn assert_extrude_leaf_collection_limit(operation: &'static str) {
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(Some(&ctx), &root,
-            &groups, &operands), Err(CodecError::ResourceLimit(failure))
+        if matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root, &groups, &operands), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation)
         {
@@ -927,7 +914,7 @@ fn extrude_leaf_hierarchy_refuses_depth_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(Some(&ctx), &root,
+        matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root,
         &groups, &operands), Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RecursionDepth
                 && failure.operation == "f3d Extrude leaf hierarchy")
@@ -945,7 +932,7 @@ fn extrude_leaf_hierarchy_refuses_work_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(Some(&ctx), &root,
+        matches!(crate::design::face_resolve::extrude_profile_group_operand_indices(&ctx, &root,
         &groups, &operands), Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::WorkUnits
                 && failure.operation == "f3d Extrude leaf hierarchy")
@@ -959,7 +946,7 @@ fn extrude_active_face_id_refuses_retained_limit() {
 
     let (_, _, operands) = extrude_leaf_fixture();
     assert_eq!(
-        crate::design::face_resolve::resolved_extrude_profile_active_faces(None, &[0], &operands)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_extrude_profile_active_faces(decode_ctx, &[0], &operands))
             .unwrap()
             .unwrap(),
         [face(10)]
@@ -969,7 +956,7 @@ fn extrude_active_face_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(Some(&ctx), &[0], &operands),
+        matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(&ctx, &[0], &operands),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d Extrude active face id")
@@ -987,7 +974,7 @@ fn extrude_active_face_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(Some(&ctx), &[0], &operands),
+        matches!(crate::design::face_resolve::resolved_extrude_profile_active_faces(&ctx, &[0], &operands),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d Extrude active face")

@@ -22,15 +22,7 @@ fn assert_edge_flange_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_flange_group(
-            &group,
-            std::slice::from_ref(&group),
-            std::slice::from_ref(&operand),
-            &[],
-            Some(7),
-            &feature_id,
-            Some(&ctx),
-        ) {
+        match resolved_edge_flange_group(&group, std::slice::from_ref(&group), std::slice::from_ref(&operand), &[], Some(7), &feature_id, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected edge flange refusal at {operation}: {other:?}"),

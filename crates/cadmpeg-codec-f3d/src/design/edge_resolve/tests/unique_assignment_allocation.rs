@@ -19,15 +19,9 @@ fn assert_unique_refusal(operation: &'static str, group_route: bool) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if group_route {
-            crate::design::edge_resolve::unique_edge_group_assignment(
-                &[&first, &second],
-                Some(&ctx),
-            )
+            crate::design::edge_resolve::unique_edge_group_assignment(&[&first, &second], &ctx)
         } else {
-            crate::design::edge_resolve::unique_edge_assignment_with_context(
-                &candidate_sets,
-                Some(&ctx),
-            )
+            crate::design::edge_resolve::unique_edge_assignment_with_context(&candidate_sets, &ctx)
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,

@@ -30,7 +30,7 @@ fn historical_referenced_face_candidates_refuse_limits() {
         policy.limits.max_collection_items = items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            crate::design::face_resolve::historical_face_operand_candidates(Some(&ctx), &operand),
+            crate::design::face_resolve::historical_face_operand_candidates(&ctx, &operand),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ));
@@ -60,7 +60,7 @@ fn historical_fallback_face_candidates_refuse_limits() {
         policy.limits.max_collection_items = items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            crate::design::face_resolve::historical_face_operand_candidates(Some(&ctx), &operand),
+            crate::design::face_resolve::historical_face_operand_candidates(&ctx, &operand),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ));
@@ -94,7 +94,7 @@ fn nested_bounded_face_candidates_refuse_limits() {
         policy.limits.max_collection_items = items;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            crate::design::face_resolve::nested_bounded_face_history_candidates(Some(&ctx), &operand),
+            crate::design::face_resolve::nested_bounded_face_history_candidates(&ctx, &operand),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ));

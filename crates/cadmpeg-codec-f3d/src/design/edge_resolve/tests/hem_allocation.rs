@@ -10,7 +10,7 @@ fn assert_hem_candidate_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match unique_hem_transition_edge_candidate(&[63, 106, 110, 167], references, Some(&ctx)) {
+        match unique_hem_transition_edge_candidate(&[63, 106, 110, 167], references, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected Hem refusal at {operation}: {other:?}"),
@@ -61,15 +61,7 @@ fn hem_historical_group_id_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::resolved_hem_edge_group(
-            &selection_group,
-            std::slice::from_ref(&selection_group),
-            std::slice::from_ref(&operand),
-            &[],
-            Some(7),
-            &feature_id,
-            Some(&ctx),
-        ) {
+        match crate::design::edge_resolve::resolved_hem_edge_group(&selection_group, std::slice::from_ref(&selection_group), std::slice::from_ref(&operand), &[], Some(7), &feature_id, &ctx) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d hem historical group id" =>
             {

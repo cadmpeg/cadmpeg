@@ -15,14 +15,7 @@ fn assert_partial_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match partial_historical_edge_selection(
-            [("operand-a", Some(17)), ("operand-b", None)],
-            41,
-            cadmpeg_ir::identity_key!("feature").as_str(),
-            state.clone(),
-            "group",
-            Some(&ctx),
-        ) {
+        match partial_historical_edge_selection([("operand-a", Some(17)), ("operand-b", None)], 41, cadmpeg_ir::identity_key!("feature").as_str(), state.clone(), "group", &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected partial selection refusal at {operation}: {other:?}"),
