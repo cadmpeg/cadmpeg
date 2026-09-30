@@ -161,35 +161,39 @@ pub(super) fn linked_single_entities(
 }
 
 pub(super) fn relation_constraint_is_inactive(
+    ctx: &DecodeContext<'_>,
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
-) -> bool {
+) -> Result<bool, cadmpeg_core::CodecError> {
+    ctx.charge_work(256, "compare SLDPRT relation activity")?;
     let Some(parameter) = parameter else {
-        return false;
+        return Ok(false);
     };
-    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
-    match definition {
+    let entity = |id: &SketchEntityId| find_profile_entity(ctx, sketch_entities, id, "resolve SLDPRT relation activity entity");
+    Ok(match definition {
         SketchConstraintDefinitionInput::DistanceLoci { first, second, .. } => {
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             let measured = if let (Some(first), Some(second)) = (
-                profile_locus_point(first, sketch_entities),
-                profile_locus_point(second, sketch_entities),
+                profile_locus_point_charged(ctx, first, sketch_entities, "resolve SLDPRT profile locus")?,
+                profile_locus_point_charged(ctx, second, sketch_entities, "resolve SLDPRT profile locus")?,
             ) {
                 Some((second.u - first.u).hypot(second.v - first.v))
             } else {
-                let point_line = |point: &SketchLocus, line: &SketchLocus| {
-                    let point = profile_locus_point(point, sketch_entities)?;
-                    let SketchLocus::Entity(line) = line else {
-                        return None;
-                    };
-                    point_line_distance_value(point, entity(line)?)
+                let point_line = |point: &SketchLocus, line: &SketchLocus| -> Result<Option<f64>, cadmpeg_core::CodecError> {
+                    let Some(point) = profile_locus_point_charged(ctx, point, sketch_entities, "resolve SLDPRT relation activity locus")? else { return Ok(None); };
+                    let SketchLocus::Entity(line) = line else { return Ok(None); };
+                    let Some(line) = entity(line)? else { return Ok(None); };
+                    Ok(point_line_distance_value(point, line))
                 };
-                point_line(first, second).or_else(|| point_line(second, first))
+                match point_line(first, second)? {
+                    Some(value) => Some(value),
+                    None => point_line(second, first)?,
+                }
             };
             measured
                 .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
@@ -198,13 +202,13 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             let (Some(first), Some(second)) = (
-                profile_locus_point(first, sketch_entities),
-                profile_locus_point(second, sketch_entities),
+                profile_locus_point_charged(ctx, first, sketch_entities, "resolve SLDPRT profile locus")?,
+                profile_locus_point_charged(ctx, second, sketch_entities, "resolve SLDPRT profile locus")?,
             ) else {
-                return false;
+                return Ok(false);
             };
             !same_relation_dimension_length((second.u - first.u).abs(), expected.get())
         }
@@ -212,13 +216,13 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             let (Some(first), Some(second)) = (
-                profile_locus_point(first, sketch_entities),
-                profile_locus_point(second, sketch_entities),
+                profile_locus_point_charged(ctx, first, sketch_entities, "resolve SLDPRT profile locus")?,
+                profile_locus_point_charged(ctx, second, sketch_entities, "resolve SLDPRT profile locus")?,
             ) else {
-                return false;
+                return Ok(false);
             };
             !same_relation_dimension_length((second.v - first.v).abs(), expected.get())
         }
@@ -226,19 +230,19 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             let [first, second] = entities.as_slice() else {
-                return true;
+                return Ok(true);
             };
             line_line_distance(
-                match entity(first) {
+                match entity(first)? {
                     Some(entity) => entity,
-                    None => return false,
+                    None => return Ok(false),
                 },
-                match entity(second) {
+                match entity(second)? {
                     Some(entity) => entity,
-                    None => return false,
+                    None => return Ok(false),
                 },
             )
             .is_some_and(|measured| !same_relation_dimension_length(measured, expected.get()))
@@ -247,16 +251,16 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Angle(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             line_line_angle(
-                match entity(first) {
+                match entity(first)? {
                     Some(entity) => entity,
-                    None => return false,
+                    None => return Ok(false),
                 },
-                match entity(second) {
+                match entity(second)? {
                     Some(entity) => entity,
-                    None => return false,
+                    None => return Ok(false),
                 },
             )
             .is_some_and(|measured| !same_dimension_angle(measured, expected.get()))
@@ -266,15 +270,15 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
-            let Some(entity) = entity(id) else {
-                return false;
+            let Some(entity) = entity(id)? else {
+                return Ok(false);
             };
             let radius = match entity.geometry.definition() {
                 SketchGeometryDefinition::Circle { radius, .. }
                 | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
-                _ => return true,
+                _ => return Ok(true),
             };
             let measured = if matches!(definition, SketchConstraintDefinitionInput::Diameter { .. })
             {
@@ -289,34 +293,28 @@ pub(super) fn relation_constraint_is_inactive(
             let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) =
                 parameter.value.as_ref()
             else {
-                return true;
+                return Ok(true);
             };
             let diameter = matches!(
                 definition,
                 SketchConstraintDefinitionInput::RepeatedDiameter { .. }
             );
-            let Some(radii) = entities
-                .iter()
-                .map(entity)
-                .map(|entity| {
-                    let entity = entity?;
-                    match *entity.geometry.definition() {
-                        SketchGeometryDefinition::Circle { radius, .. }
-                        | SketchGeometryDefinition::Arc { radius, .. } => Some(radius.get()),
-                        _ => None,
-                    }
-                })
-                .collect::<Option<Vec<_>>>()
-            else {
-                return false;
-            };
-            !radii.into_iter().all(|radius| {
+            let mut inactive = false;
+            for id in entities {
+                let Some(entity) = entity(id)? else { return Ok(false); };
+                let radius = match *entity.geometry.definition() {
+                    SketchGeometryDefinition::Circle { radius, .. }
+                    | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
+                    _ => return Ok(false),
+                };
+                ctx.charge_work(64, "compare SLDPRT repeated-radius activity")?;
                 let measured = if diameter { radius * 2.0 } else { radius };
-                same_dimension_length(measured, expected.get())
-            })
+                inactive |= !same_dimension_length(measured, expected.get());
+            }
+            inactive
         }
         _ => false,
-    }
+    })
 }
 
 pub(super) fn typed_relation_definition(
@@ -730,8 +728,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 else {
                     return Ok(None);
                 };
-                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
-                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
+                let first_point = resolved_or_none!(profile_locus_point_charged(ctx, &first, sketch_entities, "resolve SLDPRT profile locus")?);
+                let second_point = resolved_or_none!(profile_locus_point_charged(ctx, &second, sketch_entities, "resolve SLDPRT profile locus")?);
                 if !same_relation_dimension_length(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.get(),
@@ -833,8 +831,8 @@ let partner = resolved_or_none!(unique_profile_axis_distance_locus(ctx,
                 else {
                     return Ok(None);
                 };
-                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
-                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
+                let first_point = resolved_or_none!(profile_locus_point_charged(ctx, &first, sketch_entities, "resolve SLDPRT profile locus")?);
+                let second_point = resolved_or_none!(profile_locus_point_charged(ctx, &second, sketch_entities, "resolve SLDPRT profile locus")?);
                 let measured = if axis == ProfileAxis::U {
                     (second_point.u - first_point.u).abs()
                 } else {
@@ -901,7 +899,7 @@ let partner = resolved_or_none!(unique_profile_point_line_entity(ctx,
             else {
                 return Ok(None);
             };
-            let point_position = resolved_or_none!(profile_locus_point(&point, sketch_entities));
+            let point_position = resolved_or_none!(profile_locus_point_charged(ctx, &point, sketch_entities, "resolve SLDPRT profile locus")?);
             let line_entity = resolved_or_none!(sketch_entities.iter().find(|entity| entity.id() == &line));
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
@@ -1706,7 +1704,7 @@ fn unique_marker_line_distance_entity(
     for entity in sketch_entities {
         charge_relation_identity_work(ctx, [entity.id().as_str(), locus_entity(&marker_locus).as_str()], 16, OPERATION)?;
     }
-    let Some(marker_point) = profile_locus_point(&marker_locus, sketch_entities) else { return Ok(None); };
+    let Some(marker_point) = profile_locus_point_charged(ctx, &marker_locus, sketch_entities, "resolve SLDPRT profile locus")? else { return Ok(None); };
     unique_profile_matched_entity(ctx, sketch, known, sketch_entities, |known, candidate| {
         matches!(candidate.geometry.definition(), SketchGeometryDefinition::Line { .. })
             && sketch_entity_contains_point(candidate, marker_point)
@@ -2164,7 +2162,7 @@ fn unique_point_line_candidate_pair(
         for entity in sketch_entities {
             charge_relation_identity_work(ctx, [entity.id().as_str(), locus_entity(point).as_str()], 16, OPERATION)?;
         }
-        let Some(point_position) = profile_locus_point(point, sketch_entities) else { return Ok(None); };
+        let Some(point_position) = profile_locus_point_charged(ctx, point, sketch_entities, "resolve SLDPRT profile locus")? else { return Ok(None); };
         for line in line_candidates {
             let (selected_point, selected_line) = selected.map_or(("", ""), |(point, line)| (locus_entity(point).as_str(), line.as_str()));
             charge_relation_identity_work(ctx, [locus_entity(point).as_str(), line.as_str(), selected_point, selected_line], 256, OPERATION)?;
@@ -2277,7 +2275,7 @@ fn dynamic_marker_point_candidates(
     if let Some(locus) = marker_point_locus(ctx, marker, markers_by_id, loci_by_marker)? {
         if let Some(entity) = find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)? {
             charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 16, OPERATION)?;
-            if entity.sketch == *sketch && profile_locus_point(&locus, sketch_entities).is_some() {
+            if entity.sketch == *sketch && profile_locus_point_charged(ctx, &locus, sketch_entities, "resolve SLDPRT profile locus")?.is_some() {
                 ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
                 candidates.push(locus);
             }
@@ -2639,18 +2637,6 @@ fn unique_repaired_profile_point_line_pair(
 }
 
 
-pub(super) fn profile_locus_point(
-    locus: &SketchLocus,
-    sketch_entities: &[SketchEntity],
-) -> Option<Point2> {
-    let entity = sketch_entities
-        .iter()
-        .find(|entity| entity.id() == locus_entity(locus))?;
-    sketch_entity_locus_points(entity)
-        .into_iter().flatten()
-        .find_map(|(point, role)| role.matches(locus).then_some(point))
-}
-
 pub(super) fn profile_locus_point_charged(
     ctx: &DecodeContext<'_>,
     locus: &SketchLocus,
@@ -2685,7 +2671,7 @@ fn canonicalize_physical_loci(
             .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(sketch_entities.len())))
             .and_then(|work| work.checked_add(64))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        let Some(point) = profile_locus_point(locus, sketch_entities) else { return Ok(()); };
+        let Some(point) = profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT profile locus")? else { return Ok(()); };
         let point = quantize(point, quantum);
         if let Some(first) = first_point {
             coincident &= point == first;

@@ -572,11 +572,11 @@ fn resolved_wrong_family_relation_is_inactive() {
         .unwrap(),
     )];
 
-    assert!(marker_relation_is_inactive(
+    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition,
         &entities
-    ));
+    ).unwrap());
 }
 
 #[test]
@@ -607,16 +607,16 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
     let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
 
-    assert!(!marker_relation_is_inactive(
+    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition,
         &[first.clone(), coincident],
-    ));
-    assert!(marker_relation_is_inactive(
+    ).unwrap());
+    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition,
         &[first, distinct],
-    ));
+    ).unwrap());
 }
 
 #[test]
@@ -655,17 +655,17 @@ fn horizontal_relation_requires_one_line_or_two_points() {
         .unwrap(),
     );
 
-    assert!(marker_relation_is_inactive(
+    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition(vec![point.id().clone()]),
         std::slice::from_ref(&point),
-    ));
-    assert!(!marker_relation_is_inactive(
+    ).unwrap());
+    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition(vec![line.id().clone()]),
         std::slice::from_ref(&line),
-    ));
-    assert!(!marker_relation_is_inactive(
+    ).unwrap());
+    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &definition(vec![
             point.id().clone(),
@@ -681,8 +681,8 @@ fn horizontal_relation_requires_one_line_or_two_points() {
                 .unwrap(),
             ),
         ],
-    ));
-    assert!(marker_relation_is_inactive(
+    ).unwrap());
+    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &relation,
         &SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")
@@ -710,7 +710,7 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             ],
         },
         &[],
-    ));
+    ).unwrap());
 }
 
 #[test]

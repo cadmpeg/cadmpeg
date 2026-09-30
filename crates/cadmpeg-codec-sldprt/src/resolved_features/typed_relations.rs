@@ -18,7 +18,7 @@ use super::markers::{
 use super::relation_loci::{
     canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
-    point_line_distance_value, profile_locus_point, profile_locus_point_charged, relation_operand_loci, same_dimension_angle,
+    point_line_distance_value, profile_locus_point_charged, relation_operand_loci, same_dimension_angle,
     same_dimension_length,
 };
 use super::scalars::operand_kind;
@@ -755,12 +755,12 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if loci.len() < 2 {
                 return Ok(Some(native()?));
             }
-            if !sketch_entities.is_empty()
-                && loci
-                    .iter()
-                    .any(|locus| profile_locus_point(locus, sketch_entities).is_none())
-            {
-                return Ok(Some(native()?));
+            if !sketch_entities.is_empty() {
+                for locus in &loci {
+                    if profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT coincidence locus")?.is_none() {
+                        return Ok(Some(native()?));
+                    }
+                }
             }
             SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
@@ -901,7 +901,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Ok(Some(native()?));
             };
             if !sketch_entities.is_empty() {
-                let Some(point_position) = profile_locus_point(&point, sketch_entities) else {
+                let Some(point_position) = profile_locus_point_charged(ctx, &point, sketch_entities, "resolve SLDPRT profile locus")? else {
                     return Ok(Some(native()?));
                 };
                 let Some(midpoint) = sketch_entities
@@ -1623,48 +1623,38 @@ pub(super) fn relation_link_is_geometric_operand(
 }
 
 fn typed_axis_relation_is_inactive(
-    definition: &SketchConstraintDefinitionInput,
+    ctx: &DecodeContext<'_>, definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
-) -> Option<bool> {
-    let entity = |id: &SketchEntityId| sketch_entities.iter().find(|entity| entity.id() == id);
-    match definition {
+) -> Result<Option<bool>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT axis relation activity";
+    ctx.charge_work(64, OPERATION)?;
+    Ok(match definition {
         SketchConstraintDefinitionInput::Horizontal { entity: id }
         | SketchConstraintDefinitionInput::Vertical { entity: id } => {
-            let SketchGeometryDefinition::Line { start, end } = entity(id)?.geometry.definition()
-            else {
-                return Some(true);
-            };
-            Some(
-                if matches!(
-                    definition,
-                    SketchConstraintDefinitionInput::Horizontal { .. }
-                ) {
-                    !same_dimension_length(start.v, end.v)
-                } else {
-                    !same_dimension_length(start.u, end.u)
-                },
-            )
+            let Some(entity) = find_profile_entity(ctx, sketch_entities, id, OPERATION)? else { return Ok(None); };
+            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else { return Ok(Some(true)); };
+            Some(if matches!(definition, SketchConstraintDefinitionInput::Horizontal { .. }) {
+                !same_dimension_length(start.v, end.v)
+            } else { !same_dimension_length(start.u, end.u) })
         }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
-            let first = relation.first();
-            let second = relation.second();
-            let axis = relation.axis();
-            let first = profile_locus_point(first, sketch_entities)?;
-            let second = profile_locus_point(second, sketch_entities)?;
-            Some(match axis {
+            let Some(first) = profile_locus_point_charged(ctx, relation.first(), sketch_entities, OPERATION)? else { return Ok(None); };
+            let Some(second) = profile_locus_point_charged(ctx, relation.second(), sketch_entities, OPERATION)? else { return Ok(None); };
+            Some(match relation.axis() {
                 SketchCoordinateAxis::V => !same_dimension_length(first.v, second.v),
                 SketchCoordinateAxis::U => !same_dimension_length(first.u, second.u),
             })
         }
         _ => None,
-    }
+    })
 }
 
 fn typed_binary_relation_is_inactive(
+    ctx: &DecodeContext<'_>,
     kind: crate::records::SketchRelationKind,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
-) -> Option<bool> {
+) -> Result<Option<bool>, CodecError> {
     use crate::records::SketchRelationKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
@@ -1676,22 +1666,23 @@ fn typed_binary_relation_is_inactive(
     | (Concentric, SketchConstraintDefinitionInput::Concentric { first, second })
     | (Coradial, SketchConstraintDefinitionInput::Coradial { first, second })) = (kind, definition)
     else {
-        return None;
+        return Ok(None);
     };
-    let first = sketch_entities.iter().find(|entity| entity.id() == first)?;
-    let second = sketch_entities
-        .iter()
-        .find(|entity| entity.id() == second)?;
-    Some(!binary_relation_matches_evaluated_geometry(
+    const OPERATION: &str = "resolve SLDPRT binary relation activity";
+    let Some(first) = find_profile_entity(ctx, sketch_entities, first, OPERATION)? else { return Ok(None); };
+    let Some(second) = find_profile_entity(ctx, sketch_entities, second, OPERATION)? else { return Ok(None); };
+    ctx.charge_work(256, OPERATION)?;
+    Ok(Some(!binary_relation_matches_evaluated_geometry(
         kind, first, second,
-    ))
+    )))
 }
 
 pub(super) fn marker_relation_is_inactive(
+    ctx: &DecodeContext<'_>,
     marker: &SketchInputEntity,
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
-) -> bool {
+) -> Result<bool, CodecError> {
     use crate::records::SketchRelationKind::{
         ArcAngle180, ArcAngle270, ArcAngle90, Collinear, Concentric, Coradial, EllipseAngle180,
         EllipseAngle270, EllipseAngle90, Equal, Horizontal, MergePoints, Parallel, Perpendicular,
@@ -1699,38 +1690,44 @@ pub(super) fn marker_relation_is_inactive(
     };
 
     let SketchInputKind::Relation(kind) = marker.kind() else {
-        return false;
+        return Ok(false);
     };
-    if let Some(inactive) = typed_axis_relation_is_inactive(definition, sketch_entities) {
-        return inactive;
+    if let Some(inactive) = typed_axis_relation_is_inactive(ctx, definition, sketch_entities)? {
+        return Ok(inactive);
     }
-    if let Some(inactive) = typed_binary_relation_is_inactive(kind, definition, sketch_entities) {
-        return inactive;
+    if let Some(inactive) = typed_binary_relation_is_inactive(ctx, kind, definition, sketch_entities)? {
+        return Ok(inactive);
     }
     if let SketchConstraintDefinitionInput::CoincidentLoci { loci } = definition {
-        let Some(points) = loci
-            .iter()
-            .map(|locus| profile_locus_point(locus, sketch_entities))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return false;
-        };
-        return points.iter().skip(1).any(|point| {
-            !same_dimension_length(point.u, points[0].u)
-                || !same_dimension_length(point.v, points[0].v)
-        });
+        let mut first = None;
+        let mut inactive = false;
+        for locus in loci {
+            let Some(point) = profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT coincidence activity")? else { return Ok(false); };
+            if let Some(first) = first {
+                let first: Point2 = first;
+                inactive |= !same_dimension_length(point.u, first.u) || !same_dimension_length(point.v, first.v);
+            } else { first = Some(point); }
+        }
+        return Ok(inactive);
     }
     let SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     } = definition
     else {
-        return false;
+        return Ok(false);
     };
-    let repeated_single_operand = operands.len() >= 2
-        && operands[0].native_ref.is_some()
-        && operands
-            .iter()
-            .all(|operand| operand.native_ref == operands[0].native_ref);
+    let mut repeated_single_operand = operands.len() >= 2 && operands[0].native_ref.is_some();
+    if repeated_single_operand {
+        for operand in operands {
+            let first_bytes = operands[0].native_ref.as_deref().map_or(0, str::len);
+            let bytes = operand.native_ref.as_deref().map_or(0, str::len);
+            let work = u64_from_index(first_bytes).checked_add(u64_from_index(bytes))
+                .and_then(|bytes| bytes.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT repeated relation operands", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, "compare SLDPRT repeated relation operands")?;
+            if operand.native_ref != operands[0].native_ref { repeated_single_operand = false; break; }
+        }
+    }
     if repeated_single_operand
         && matches!(
             kind,
@@ -1745,20 +1742,22 @@ pub(super) fn marker_relation_is_inactive(
                 | Coradial
         )
     {
-        return true;
+        return Ok(true);
     }
     if entities.is_empty() || sketch_entities.is_empty() {
-        return false;
+        return Ok(false);
     }
-    let resolved = entities
-        .iter()
-        .filter_map(|id| sketch_entities.iter().find(|entity| entity.id() == id))
-        .map(|entity| entity.geometry.definition())
-        .collect::<Vec<_>>();
-    if resolved.len() != entities.len() {
-        return false;
+    let mut resolved = Vec::new();
+    for id in entities {
+        if let Some(entity) = find_profile_entity(ctx, sketch_entities, id, "resolve SLDPRT native relation activity")? {
+            ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT native relation activity")?;
+            resolved.push(entity.geometry.definition());
+        }
     }
-    match kind {
+    if resolved.len() != entities.len() { return Ok(false); }
+    ctx.charge_work(u64_from_index(resolved.len()).checked_add(64)
+        .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT native relation activity", u64::MAX - 1, u64::MAX))?, "compare SLDPRT native relation activity")?;
+    Ok(match kind {
         ArcAngle90 | ArcAngle180 | ArcAngle270 => {
             !matches!(resolved.as_slice(), [SketchGeometryDefinition::Arc { .. }])
         }
@@ -1788,12 +1787,12 @@ pub(super) fn marker_relation_is_inactive(
             let [SketchGeometryDefinition::Point { position: first }, SketchGeometryDefinition::Point { position: second }] =
                 resolved.as_slice()
             else {
-                return false;
+                return Ok(false);
             };
             !same_dimension_length(first.u, second.u) || !same_dimension_length(first.v, second.v)
         }
         _ => false,
-    }
+    })
 }
 
 fn relation_owner_curve_entities(

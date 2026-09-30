@@ -737,16 +737,16 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         ),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(
+    assert!(!relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
-    ));
-    assert!(relation_constraint_is_inactive(
+    ).unwrap());
+    assert!(relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         Some(&rejected_parameter),
         &definition,
         &[first, second],
-    ));
+    ).unwrap());
 }
 
 #[test]
