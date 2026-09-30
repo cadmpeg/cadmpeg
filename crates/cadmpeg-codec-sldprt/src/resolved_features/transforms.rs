@@ -360,35 +360,44 @@ pub(super) fn dimensioned_circle_surface_transforms(
 }
 
 pub(super) fn dimensioned_circle_transform(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     candidates: &[MarkerTransform],
     circles: &[(impl Copy + Into<GridPoint>, GridCoordinate)],
-) -> Option<MarkerTransform> {
-    let signature = |transform: MarkerTransform| {
-        let mut transformed = circles
-            .iter()
-            .filter_map(|(center, radius)| {
-                let center = transform.apply(*center)?;
-                Some((center.0, center.1, *radius))
-            })
-            .collect::<Vec<_>>();
+) -> Result<Option<MarkerTransform>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT dimensioned circle transform";
+    let count = u64::try_from(circles.len()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let signature = |transform: MarkerTransform| -> Result<Option<Vec<_>>, cadmpeg_core::CodecError> {
+        let sort_depth = u64::from(circles.len().checked_ilog2().unwrap_or(0)) + 1;
+        let work = count.checked_add(1).and_then(|count| count.checked_mul(sort_depth))
+            .and_then(|work| work.checked_mul(32))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        let mut transformed = Vec::new();
+        ctx.reserve_collection_vec(&mut transformed, circles.len(), OPERATION)?;
+        for (center, radius) in circles {
+            let Some(center) = transform.apply(*center) else { continue; };
+            transformed.push((center.0, center.1, *radius));
+        }
         transformed.sort_unstable();
-        (transformed.len() == circles.len() && !transformed.is_empty()).then_some(transformed)
+        Ok((transformed.len() == circles.len() && !transformed.is_empty()).then_some(transformed))
     };
-    let first_signature = signature(*candidates.first()?)?;
-    if candidates
-        .iter()
-        .skip(1)
-        .any(|transform| signature(*transform).as_ref() != Some(&first_signature))
-    {
-        return None;
+    let Some(first) = candidates.first() else { return Ok(None); };
+    let Some(first_signature) = signature(*first)? else { return Ok(None); };
+    for transform in candidates.iter().skip(1) {
+        let other = signature(*transform)?;
+        ctx.charge_work(count.checked_add(1).and_then(|count| count.checked_mul(8))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if other.as_ref() != Some(&first_signature) { return Ok(None); }
     }
-    candidates.iter().copied().min_by_key(|transform| {
+    ctx.charge_work(u64::try_from(candidates.len()).ok().and_then(|count| count.checked_mul(32))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    Ok(candidates.iter().copied().min_by_key(|transform| {
         let (swap, u, v, matrix) = match transform.axes {
             Axes::Aligned { swap, u, v } => (swap, u.value(), v.value(), None),
             Axes::Affine(matrix) => (false, 1, 1, Some(matrix)),
         };
         (swap, u, v, matrix, transform.translation)
-    })
+    }))
 }
 
 #[cfg(test)]
