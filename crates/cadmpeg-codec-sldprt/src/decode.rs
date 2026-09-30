@@ -3526,11 +3526,8 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        annotation_builder
-            .derived(&id, "body")
-            .map_err(cadmpeg_core::CodecError::malformed)?
-            .derived(id, "faces")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
+        crate::annotations::builder_field(ctx, &mut annotation_builder, id.as_str(), "body", Exactness::Derived)?;
+        crate::annotations::builder_field(ctx, &mut annotation_builder, id.as_str(), "faces", Exactness::Derived)?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
