@@ -29,11 +29,9 @@ pub(super) fn merge_archive(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
-    ctx.charge_collection_items(1, "seed F3Z merge stack")?;
+    
     let mut stack = Vec::new();
-    stack
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("seed F3Z merge stack", 0, 1))?;
+    ctx.reserve_vec(&mut stack, 1, "seed F3Z merge stack")?;
     stack.push(model_root);
     MergeSession {
         ctx,
@@ -60,9 +58,8 @@ pub(super) fn make_sibling_ordinals_unique(
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => Some(occurrence),
         };
         if !used.contains_key(&parent) {
-            ctx.charge_collection_items(1, "index F3Z sibling parents")?;
-            used.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("index F3Z sibling parents", 0, 1))?;
+            
+            ctx.reserve_map(&mut used, 1, "index F3Z sibling parents")?;
         }
         let siblings = used.entry(parent).or_default();
         let ordinal = if siblings.contains(&occurrence.ordinal) {
@@ -82,11 +79,7 @@ pub(super) fn make_sibling_ordinals_unique(
         } else {
             occurrence.ordinal
         };
-        ctx.charge_collection_items(1, "index F3Z sibling ordinals")?;
-        siblings
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("index F3Z sibling ordinals", 0, 1))?;
-        siblings.insert(ordinal);
+        ctx.insert_hash_set(siblings, ordinal, "index F3Z sibling ordinals")?;
         occurrence.ordinal = ordinal;
     }
     Ok(())
@@ -215,12 +208,7 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.ctx
-                .charge_collection_items(1, "grow F3Z merge stack")?;
-            self.stack
-                .try_reserve(1)
-                .map_err(|_| self.ctx.refuse_codec_limit("grow F3Z merge stack", 0, 1))?;
-            self.stack.push(self.ctx.format_retained(format_args!("{}", reference.relative_path), "retain F3Z merge stack path")?);
+            self.ctx.push_formatted_retained(&mut self.stack, format_args!("{}", reference.relative_path), "grow F3Z merge stack", "retain F3Z merge stack path")?;
             let descendants = self.merge(
                 &mut component_ir,
                 &mut component_report,
@@ -265,20 +253,16 @@ impl MergeSession<'_, '_> {
             for loss in &mut component_report.losses {
                 loss.message = self.ctx.format_retained(format_args!("xref {label}: {}", loss.message), "prefix F3Z component loss")?;
             }
-            super::append_losses(self.ctx, &mut parent_report.losses, component_report.losses)?;
+            (self.ctx).append_vec(&mut parent_report.losses, &mut { component_report.losses }, "append F3Z report losses")?;
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
                 "identity placement"
             };
-            super::push_note(
-                self.ctx,
-                &mut parent_report.notes,
-                format_args!(
+            (self.ctx).push_formatted_retained(&mut parent_report.notes, format_args!(
                     "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested occurrence(s))",
                     reference.relative_path
-                ),
-            )?;
+                ), "collect F3Z report notes", "retain F3Z report note")?;
         }
         Ok(merged)
     }
@@ -552,13 +536,8 @@ fn extend_native(
         if records.is_empty() {
             continue;
         }
-        let count = u64::try_from(records.len())
-            .map_err(|_| ctx.refuse_codec_limit("append F3Z native records", 0, u64::MAX))?;
-        ctx.charge_collection_items(count, "append F3Z native records")?;
         let arena = target.arenas_mut().entry(name.to_string()).or_default();
-        arena
-            .try_reserve(records.len())
-            .map_err(|_| ctx.refuse_codec_limit("append F3Z native records", 0, count))?;
+        ctx.reserve_vec(arena, records.len(), "append F3Z native records")?;
         for record in records {
             arena.push(rescope_record(ctx, &record, name, occurrence)?);
         }

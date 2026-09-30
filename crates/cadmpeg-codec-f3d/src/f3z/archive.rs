@@ -92,9 +92,8 @@ fn insert_member_charged<'a>(
         *existing = member;
         return Ok(());
     }
-    ctx.charge_collection_items(1, "index F3Z archive members")?;
-    let key = copy_member_name(ctx, path, "retain F3Z member index path")?;
-    let previous = members.insert(key, member);
+    let key = (ctx).copy_retained_text(path, "retain F3Z member index path")?;
+    let previous = ctx.insert_btree_map(members, key, member, "index F3Z archive members")?;
     drop(previous);
     Ok(())
 }
@@ -114,20 +113,7 @@ pub(super) fn model_root(
     model_root_member(ctx, scan, &manifest.root)
 }
 
-fn copy_member_name(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length =
-        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length, operation)?;
-    let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-    copy.push_str(value);
-    Ok(copy)
-}
+
 
 /// Classifies all F3D members and attaches each nested layer to its archive path.
 pub(super) fn classify_members<'a>(
@@ -176,12 +162,8 @@ pub(super) fn classify_members<'a>(
         for loss in &mut member_losses {
             loss.message = ctx.format_retained(format_args!("archive member {member_path}: {}", loss.message), "prefix F3Z member classification loss")?;
         }
-        super::append_losses(ctx, &mut losses, member_losses)?;
-        super::append_losses(
-            ctx,
-            &mut losses,
-            merge_member_layers(ctx, &mut layers, &member_layers, member_path)?,
-        )?;
+        (ctx).append_vec(&mut losses, &mut { member_losses }, "append F3Z report losses")?;
+        (ctx).append_vec(&mut losses, &mut { merge_member_layers(ctx, &mut layers, &member_layers, member_path)? }, "append F3Z report losses")?;
         ctx.charge_collection_items(1, "retain F3Z member scan")?;
         insert_member_charged(
             ctx,
@@ -190,11 +172,7 @@ pub(super) fn classify_members<'a>(
             ClassifiedMember::Scanned(Box::new(member_scan)),
         )?;
     }
-    super::append_losses(
-        ctx,
-        &mut losses,
-        crate::dialect::dialect_losses(ctx, &layers)?,
-    )?;
+    (ctx).append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &layers)? }, "append F3Z report losses")?;
     Ok(ArchiveSession {
         members,
         layers,
@@ -214,7 +192,7 @@ pub(super) fn merge_member_layers(
         let matched = matched.try_clone_for_decode(ctx)?;
         let instance = match matched.instance() {
             Some(nested) => ctx.format_retained(format_args!("{member_path}/{nested}"), "retain F3Z dialect layer instance")?,
-            None => copy_member_name(ctx, member_path, "retain F3Z dialect layer instance")?,
+            None => (ctx).copy_retained_text(member_path, "retain F3Z dialect layer instance")?,
         };
         let matched = matched
             .with_declared_entry_charged(
@@ -249,7 +227,7 @@ fn model_root_member(
 ) -> Result<(String, Option<String>), CodecError> {
     if crate::container::is_f3d_name(archive_root) {
         return Ok((
-            copy_member_name(ctx, archive_root, "retain F3Z model root")?,
+            (ctx).copy_retained_text(archive_root, "retain F3Z model root")?,
             None,
         ));
     }
@@ -305,15 +283,9 @@ fn model_root_member(
                 }
             }
             if derived {
-                ctx.charge_collection_items(1, "collect F3Z model candidates")?;
-                candidates
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("collect F3Z model candidates", 0, 1))?;
-                candidates.push(copy_member_name(
-                    ctx,
-                    &object.relative_path,
-                    "retain F3Z model candidate name",
-                )?);
+                
+                ctx.reserve_vec(&mut candidates, 1, "collect F3Z model candidates")?;
+                candidates.push((ctx).copy_retained_text(&object.relative_path, "retain F3Z model candidate name")?);
             }
         }
     }
@@ -321,8 +293,8 @@ fn model_root_member(
     candidates.dedup();
     match candidates.as_slice() {
         [model_root] => Ok((
-            copy_member_name(ctx, model_root, "retain F3Z selected model root")?,
-            Some(copy_member_name(ctx, archive_root, "retain F3Z drawing root")?),
+            (ctx).copy_retained_text(model_root, "retain F3Z selected model root")?,
+            Some((ctx).copy_retained_text(archive_root, "retain F3Z drawing root")?),
         )),
         _ => Err(CodecError::malformed(format_args!(
             "f3z root member {archive_root} is not an f3d document and has {} unambiguous derived f3d model members",

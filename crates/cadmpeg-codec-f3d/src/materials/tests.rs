@@ -1130,7 +1130,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
     update_f3d_native(&mut colliding_root, |native| {
         native.act_root_components[0].record_index = native.act_entities[0].record_index();
     });
-    assert!(crate::validate::validate_native(&colliding_root)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, &colliding_root).expect("service native validation"))
         .iter()
         .any(|finding| finding.message.contains("ACT root component")));
 
@@ -1138,7 +1138,7 @@ fn generated_act_native_validation_rejects_structural_drift() {
     update_f3d_native(&mut wrong_registry, |native| {
         native.act_registry_channels[1].ordinal = 0;
     });
-    assert!(crate::validate::validate_native(&wrong_registry)
+    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, &wrong_registry).expect("service native validation"))
         .iter()
         .any(|finding| finding.message.contains("ACT channel-registry entry")));
 }

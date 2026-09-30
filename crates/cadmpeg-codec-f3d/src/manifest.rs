@@ -21,69 +21,19 @@ const DESIGN_ASSET_TYPE: &str = "FusionAssetType";
 /// recovery row.
 pub(crate) const TOP_LEVEL_MANIFEST_VERSION: &str = "3-2-0-0";
 
-fn push_charged<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    values.push(value);
-    Ok(())
-}
 
-fn copy_string_charged(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length =
-        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length, operation)?;
-    let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-    copy.push_str(value);
-    Ok(copy)
-}
+
+
 
 fn parse_malformed(
     ctx: &DecodeContext<'_>,
     field: &str,
     message: impl std::fmt::Display,
 ) -> CodecError {
-    struct Length(usize);
-
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, value: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
+    match ctx.format_retained(format_args!("F3D {field}: {message}"), "describe malformed F3D manifest") {
+        Ok(text) => crate::error::malformed(text),
+        Err(refusal) => refusal,
     }
-
-    let operation = "describe malformed F3D manifest";
-    let render = |out: &mut dyn std::fmt::Write| write!(out, "F3D {field}: {message}");
-    let mut length = Length(0);
-    if render(&mut length).is_err() {
-        return ctx.refuse_codec_limit(operation, 0, u64::MAX);
-    }
-    let Ok(bytes) = u64::try_from(length.0) else {
-        return ctx.refuse_codec_limit(operation, 0, u64::MAX);
-    };
-    if let Err(refusal) = ctx.charge_retained(bytes, operation) {
-        return refusal;
-    }
-    let mut text = String::new();
-    if text.try_reserve(length.0).is_err() {
-        return ctx.refuse_codec_limit(operation, 0, bytes);
-    }
-    if render(&mut text).is_err() {
-        return ctx.refuse_codec_limit(operation, 0, bytes);
-    }
-    crate::error::malformed(text)
 }
 
 const GENERATED_DESIGN_ASSET_BASE: &str = "FusionAssetName";
@@ -201,13 +151,8 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
                 "contains a non-printable ASCII byte",
             ));
         }
-        self.ctx
-            .charge_retained(u64_from_index(raw.len()), "retain F3D manifest ASCII")?;
-        let mut value = String::new();
-        value.try_reserve(raw.len()).map_err(|_| {
-            self.ctx
-                .refuse_codec_limit("retain F3D manifest ASCII", 0, u64_from_index(raw.len()))
-        })?;
+        
+        let mut value = self.ctx.retained_string(raw.len(), "retain F3D manifest ASCII")?;
         let text = std::str::from_utf8(raw)
             .map_err(|_| parse_malformed(self.ctx, field, "contains a non-printable ASCII byte"))?;
         value.push_str(text);
@@ -252,17 +197,9 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
                     .refuse_codec_limit("decode F3D manifest UTF-16", 0, u64::MAX)
             })?;
         }
-        let length = u64::try_from(utf8_len).map_err(|_| {
-            self.ctx
-                .refuse_codec_limit("retain F3D manifest UTF-16", 0, u64::MAX)
-        })?;
-        self.ctx
-            .charge_retained(length, "retain F3D manifest UTF-16")?;
-        let mut value = String::new();
-        value.try_reserve(utf8_len).map_err(|_| {
-            self.ctx
-                .refuse_codec_limit("retain F3D manifest UTF-16", 0, length)
-        })?;
+        
+        
+        let mut value = self.ctx.retained_string(utf8_len, "retain F3D manifest UTF-16")?;
         for decoded in char::decode_utf16(units()) {
             let character = decoded
                 .map_err(|_| parse_malformed(self.ctx, field, "contains invalid UTF-16LE"))?;
@@ -407,8 +344,7 @@ fn parse_top_level_body(
                 format_args!("empty or duplicate name {name:?}"),
             ));
         }
-        ctx.charge_collection_items(1, "index F3D manifest registry names")?;
-        registry_names.insert(name);
+        ctx.insert_btree_set(&mut registry_names, name, "index F3D manifest registry names")?;
         let _value = cursor.u32(&format!("top-level manifest registry value {ordinal}"))?;
     }
 
@@ -472,12 +408,7 @@ fn parse_asset_tail_at(
                 format_args!("duplicate base name {base:?}"),
             ));
         }
-        push_charged(
-            ctx,
-            &mut asset_folder_bases,
-            base,
-            "collect F3D asset folders",
-        )?;
+        (ctx).push_vec(&mut asset_folder_bases, base, "collect F3D asset folders")?;
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
     if cursor.exhausted() {
@@ -535,23 +466,12 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
 ) -> Result<String, CodecError> {
     let mut names = Vec::new();
     for name in entry_names {
-        push_charged(ctx, &mut names, name, "index F3D manifest entry names")?;
+        (ctx).push_vec(&mut names, name, "index F3D manifest entry names")?;
     }
     let mut design_folders = Vec::new();
 
     for base in &manifest.asset_folder_bases {
-        let active_len = base
-            .len()
-            .checked_add("[Active]".len())
-            .ok_or_else(|| ctx.refuse_codec_limit("name F3D active asset", 0, u64::MAX))?;
-        let _active_budget =
-            ctx.reserve_scoped(u64_from_index(active_len), "name F3D active asset")?;
-        let mut active = String::new();
-        active.try_reserve(active_len).map_err(|_| {
-            ctx.refuse_codec_limit("name F3D active asset", 0, u64_from_index(active_len))
-        })?;
-        active.push_str(base);
-        active.push_str("[Active]");
+        let (active, _active_budget) = ctx.format_scoped(format_args!("{base}[Active]"), "name F3D active asset")?;
         let mut folder_matches = [base.as_str(), active.as_str()]
             .into_iter()
             .filter(|candidate| {
@@ -579,22 +499,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 ))
             }
         };
-        let manifest_name_len = folder
-            .len()
-            .checked_add("/Manifest.dat".len())
-            .ok_or_else(|| ctx.refuse_codec_limit("name F3D asset manifest", 0, u64::MAX))?;
-        let _manifest_name_budget =
-            ctx.reserve_scoped(u64_from_index(manifest_name_len), "name F3D asset manifest")?;
-        let mut manifest_name = String::new();
-        manifest_name.try_reserve(manifest_name_len).map_err(|_| {
-            ctx.refuse_codec_limit(
-                "name F3D asset manifest",
-                0,
-                u64_from_index(manifest_name_len),
-            )
-        })?;
-        manifest_name.push_str(folder);
-        manifest_name.push_str("/Manifest.dat");
+        let (manifest_name, _manifest_name_budget) = ctx.format_scoped(format_args!("{folder}/Manifest.dat"), "name F3D asset manifest")?;
         let bytes = entry_bytes(&manifest_name).ok_or_else(|| {
             parse_malformed(
                 ctx,
@@ -619,13 +524,8 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 fusion_subtype: None
             }
         ) {
-            let name = copy_string_charged(ctx, folder, "retain F3D Design asset folder")?;
-            push_charged(
-                ctx,
-                &mut design_folders,
-                name,
-                "collect F3D Design asset folders",
-            )?;
+            let name = (ctx).copy_retained_text(folder, "retain F3D Design asset folder")?;
+            (ctx).push_vec(&mut design_folders, name, "collect F3D Design asset folders")?;
         }
     }
 
@@ -709,10 +609,7 @@ fn parse_capability_registry(cursor: &mut Cursor<'_, '_, '_>) -> Result<(), Code
                 format_args!("empty or duplicate name {name:?}"),
             ));
         }
-        cursor
-            .ctx
-            .charge_collection_items(1, "index F3D asset capability names")?;
-        capability_names.insert(name);
+        cursor.ctx.insert_btree_set(&mut capability_names, name, "index F3D asset capability names")?;
         let _value = cursor.u32(&format!("Fusion asset manifest capability value {ordinal}"))?;
     }
     Ok(())
