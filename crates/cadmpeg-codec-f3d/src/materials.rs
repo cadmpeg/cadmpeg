@@ -8,6 +8,9 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use cadmpeg_core::convert::f32_from_f64;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
@@ -358,7 +361,11 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
 
 fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(PAGE_SIZE)
+            .map_err(|_| CodecError::malformed("Protein page size exceeds u32"))?
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     let first = logical.len().min(PAGE_SIZE - 4);
@@ -646,7 +653,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
         } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
             (8, PAGE_SIZE - 8)
         } else if page.get(0..4) == Some(TERMINAL_MARKER) {
-            (8, View::u16_le_at(page, 4)? as usize)
+            (8, usize::from(View::u16_le_at(page, 4)?))
         } else {
             return None;
         };
@@ -1085,10 +1092,10 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
         .then(|| {
             Color::new(
-                values[0] as f32,
-                values[1] as f32,
-                values[2] as f32,
-                values[3] as f32,
+                f32_from_f64(values[0])?,
+                f32_from_f64(values[1])?,
+                f32_from_f64(values[2])?,
+                f32_from_f64(values[3])?,
             )
         })
         .flatten()
@@ -1137,9 +1144,9 @@ pub(crate) fn decode_design_assignments(
                     presentation.byte_offset,
                 )?,
                 asm_body_key: body_binding.asm_key,
-                asm_body_key_offset: body_binding.asm_key_offset as u64,
+                asm_body_key_offset: u64_from_index(body_binding.asm_key_offset),
 
-                entity_suffix_offset: body_binding.entity_suffix_offset() as u64,
+                entity_suffix_offset: u64_from_index(body_binding.entity_suffix_offset()),
                 entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
@@ -1228,9 +1235,9 @@ fn decode_body_appearance_overrides(
                 body_bindings,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
-                map_pair.asm_key_offset as u64,
+                u64_from_index(map_pair.asm_key_offset),
                 map_pair.entity_suffix,
-                map_pair.entity_suffix_offset() as u64,
+                u64_from_index(map_pair.entity_suffix_offset()),
             )?
             else {
                 continue;
@@ -1676,7 +1683,8 @@ fn body_node_candidate(
     const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
     let Some(marker) = strings[..=visual_index]
         .iter()
-        .rposition(|(_, value)| value == APPEARANCE_MARKER) else {
+        .rposition(|(_, value)| value == APPEARANCE_MARKER)
+    else {
         return Ok(None);
     };
     // The marker is preceded by at most three candidate strings; a marker
@@ -1694,7 +1702,11 @@ fn body_node_candidate(
         folded
             .try_reserve(candidate.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-        folded.extend(candidate.chars().map(|character| character.to_ascii_lowercase()));
+        folded.extend(
+            candidate
+                .chars()
+                .map(|character| character.to_ascii_lowercase()),
+        );
         let Some(&entity) = nodes.get(&folded) else {
             continue;
         };
@@ -2428,13 +2440,13 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
     match record.get(slot) {
         Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
-            let count = View::u32_le_at(record, slot + 2)? as usize;
+            let count = index_from_u32(View::u32_le_at(record, slot + 2)?);
             if count > 8 {
                 return None;
             }
             let mut position = slot + 6;
             for _ in 0..count {
-                let length = View::u32_le_at(record, position)? as usize;
+                let length = index_from_u32(View::u32_le_at(record, position)?);
                 position += 4;
                 record.get(position..position + length)?;
                 position += length;

@@ -5,50 +5,637 @@ use crate::feature::definitions::decode_variable_scalar;
 use crate::feature::definitions::definitions;
 use crate::feature::definitions::definitions_in_ranges;
 use crate::feature::definitions::depdb_definitions;
-use crate::feature::definitions::dimension_table;
-use crate::feature::definitions::entity_intersection;
-use crate::feature::definitions::equation_table;
-use crate::feature::definitions::feature_relation_triples;
-use crate::feature::definitions::feature_skamps;
+use crate::feature::definitions::dimension_table as parse_dimension_table;
+use crate::feature::definitions::entity_intersection as parse_entity_intersection;
+use crate::feature::definitions::equation_table as parse_equation_table;
+use crate::feature::definitions::feature_relation_triples as parse_feature_relation_triples;
+use crate::feature::definitions::feature_skamps as parse_feature_skamps;
 use crate::feature::definitions::named_solver_table_header;
-use crate::feature::definitions::order_table;
-use crate::feature::definitions::positional_dimension;
-use crate::feature::definitions::positional_dimension_table;
-use crate::feature::definitions::positional_feature_skamps;
-use crate::feature::definitions::positional_order_table;
-use crate::feature::definitions::positional_relation_table;
-use crate::feature::definitions::positional_relation_triples;
-use crate::feature::definitions::positional_section_3d;
-use crate::feature::definitions::positional_trim_entity_table;
-use crate::feature::definitions::positional_trim_vertex_table;
-use crate::feature::definitions::positional_variable_table;
-use crate::feature::definitions::relation_table;
-use crate::feature::definitions::self_described_positional_dimension_table;
+
+use crate::feature::definitions::positional_dimension as parse_positional_dimension;
+use crate::feature::definitions::positional_dimension_table as parse_positional_dimension_table;
+use crate::feature::definitions::positional_feature_skamps as parse_positional_feature_skamps;
+
+use crate::feature::definitions::positional_relation_table as parse_positional_relation_table;
+use crate::feature::definitions::positional_relation_triples as parse_positional_relation_triples;
+use crate::feature::definitions::positional_section_3d as parse_positional_section_3d;
+
+use crate::feature::definitions::positional_variable_table as parse_positional_variable_table;
+use crate::feature::definitions::relation_table as parse_relation_table;
+use crate::feature::definitions::section_3d as parse_section_3d;
+use crate::feature::definitions::self_described_positional_dimension_table as parse_self_described_positional_dimension_table;
 use crate::feature::definitions::test_support::with_points;
-use crate::feature::definitions::trim_buckets;
-use crate::feature::definitions::trim_table_header;
-use crate::feature::definitions::trim_vertex_entry;
-use crate::feature::definitions::variable_table;
+
+use crate::feature::definitions::variable_table as parse_variable_table;
 use crate::feature::definitions::BinaryFlag;
 use crate::feature::definitions::FeatureDimensionReference;
-use crate::feature::definitions::FeatureOrderRow;
+
 use crate::feature::definitions::FeatureSectionOrientation;
 use crate::feature::definitions::FeatureSectionPoint;
-use crate::feature::definitions::FeatureSegment;
-use crate::feature::definitions::FeatureSegmentKind;
+
 use crate::feature::definitions::FeatureSegmentTable;
 use crate::feature::definitions::FeatureSkampItem;
 use crate::feature::definitions::FeatureVariableRow;
 use crate::feature::definitions::FeatureVariableTable;
 use crate::feature::definitions::ReferencePlanes;
 use crate::feature::definitions::ScalarLane;
-use crate::feature::definitions::TrimEntityKind;
-use crate::feature::definitions::TrimEntryKind;
-use crate::feature::definitions::TrimTableClasses;
-use crate::feature::definitions::TrimTableHeader;
-use crate::feature::definitions::VariableType;
+
 use crate::psb;
 use crate::scalar;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
+
+fn entity_intersection(
+    entity_ids: &[u32],
+    segments: Option<&FeatureSegmentTable>,
+    variables: Option<&FeatureVariableTable>,
+) -> Option<[f64; 2]> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_entity_intersection(ctx, entity_ids, segments, variables)
+    })
+    .expect("test trim intersection")
+}
+
+fn reconciled_points(
+    variables: &FeatureVariableTable,
+) -> (
+    std::collections::BTreeMap<u32, [Option<f64>; 2]>,
+    std::collections::BTreeSet<u32>,
+) {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        variables
+            .reconciled_points(ctx)
+            .map(|result| (result.points, result.ambiguous))
+    })
+    .expect("test point reconciliation")
+}
+
+const NAMED_DIMENSION_LIMIT_INPUT: &[u8] = b"dimtab_ptr\0\xf3\xf8\x01\xf7\x58\xfb\xe2\
+    \xe0\x01type\0\x02\xe0\x02value\0\x18\xe0\x01direct\0\x00\
+    \xe0\x02aux_value\0\x18\xe0\x01ext_id\0\x02\
+    dim_ref\0\xf1\xf8\x02\xf7\x60\xfb\xe2\
+    \xe0\x01item_id\0\x0d\xe0\x01sense\0\x00\
+    \xe0\x01point\0\xf8\x02\x03\xe4\
+    \xf1\xf7\x60\xe2\x02\x02\x14\xe4\xf3\xf7\x58\xe2";
+
+fn with_dimension_limits<T>(
+    payload: &[u8],
+    collection_limit: u64,
+    retained_limit: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
+) -> Result<T, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)
+        .expect("dimension input fits root policy");
+    run(&ctx)
+}
+
+fn named_dimension_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
+    with_dimension_limits(
+        NAMED_DIMENSION_LIMIT_INPUT,
+        collection_limit,
+        retained_limit,
+        |ctx| {
+            parse_dimension_table(
+                ctx,
+                NAMED_DIMENSION_LIMIT_INPUT,
+                0,
+                NAMED_DIMENSION_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+            )
+        },
+    )
+}
+
+macro_rules! named_dimension_collection_limit_test {
+    ($name:ident, $limit:expr, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert!(matches!(named_dimension_with_limits($limit, u64::MAX),
+                Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == $operation));
+            let table = named_dimension_with_limits(3, 2)
+                .expect("dimension admitted").expect("dimension present");
+            assert_eq!(table.rows[0].references.as_ref().expect("references").rows.len(), 2);
+        }
+    };
+}
+
+named_dimension_collection_limit_test!(
+    dimension_reference_prototype_refuses_before_row_append,
+    0,
+    "creo dimension reference rows"
+);
+named_dimension_collection_limit_test!(
+    dimension_reference_replay_refuses_before_row_append,
+    1,
+    "creo dimension reference rows"
+);
+named_dimension_collection_limit_test!(
+    named_dimension_row_refuses_before_append,
+    2,
+    "creo dimension rows"
+);
+
+#[test]
+fn named_dimension_value_body_refuses_before_copy() {
+    assert!(
+        matches!(named_dimension_with_limits(3, 0), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension value body")
+    );
+    assert_eq!(
+        named_dimension_with_limits(3, 2)
+            .expect("dimension admitted")
+            .expect("dimension present")
+            .rows
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn named_dimension_auxiliary_body_refuses_before_copy() {
+    assert!(
+        matches!(named_dimension_with_limits(3, 1), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension auxiliary body")
+    );
+    assert_eq!(
+        named_dimension_with_limits(3, 2)
+            .expect("dimension admitted")
+            .expect("dimension present")
+            .rows
+            .len(),
+        1
+    );
+}
+
+const POSITIONAL_DIMENSION_LIMIT_INPUT: &[u8] = &[1, 0x00, 0x04, 0xa6, 0, 0x18, 44];
+
+#[test]
+fn positional_dimension_unresolved_token_refuses_before_copy() {
+    let run = |limit| {
+        with_dimension_limits(POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, limit, |ctx| {
+            parse_positional_dimension(
+                ctx,
+                POSITIONAL_DIMENSION_LIMIT_INPUT,
+                0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(),
+                &scalar::ScalarCache::default(),
+            )
+        })
+    };
+    assert!(matches!(run(5), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension unresolved token"));
+    assert_eq!(
+        run(7)
+            .expect("dimension admitted")
+            .expect("row present")
+            .value
+            .unresolved_token(),
+        Some(&[0x00, 0x04, 0xa6][..])
+    );
+}
+
+const POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT: &[u8] = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+    \x02\xe4\x00\x18\x2b\xf3\xf7\x58\xe2\x02\xe4\x00\x18\x2c";
+
+fn positional_dimension_table_with_limit(
+    collection_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureDimensionTable>, CodecError> {
+    with_dimension_limits(
+        POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
+        collection_limit,
+        u64::MAX,
+        |ctx| {
+            parse_positional_dimension_table(
+                ctx,
+                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT,
+                0,
+                POSITIONAL_DIMENSION_TABLE_LIMIT_INPUT.len(),
+                88,
+                &scalar::ScalarCache::default(),
+            )
+        },
+    )
+}
+
+#[test]
+fn positional_dimension_rows_refuse_before_each_append() {
+    for limit in [0, 1] {
+        assert!(matches!(positional_dimension_table_with_limit(limit),
+            Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo dimension rows"));
+    }
+    let table = positional_dimension_table_with_limit(2)
+        .expect("dimension table admitted")
+        .expect("table present");
+    assert_eq!(table.rows.len(), 2);
+    assert_eq!(table.rows[0].external_id, 43);
+    assert_eq!(table.rows[1].external_id, 44);
+}
+
+#[test]
+fn positional_dimension_value_body_refuses_before_copy() {
+    assert!(matches!(with_dimension_limits(
+        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 2, |ctx| {
+            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
+        }), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension value body"));
+}
+
+#[test]
+fn positional_dimension_auxiliary_body_refuses_before_copy() {
+    assert!(matches!(with_dimension_limits(
+        POSITIONAL_DIMENSION_LIMIT_INPUT, u64::MAX, 6, |ctx| {
+            parse_positional_dimension(ctx, POSITIONAL_DIMENSION_LIMIT_INPUT, 0,
+                POSITIONAL_DIMENSION_LIMIT_INPUT.len(), &scalar::ScalarCache::default())
+        }), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo dimension auxiliary body"));
+}
+
+fn dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_dimension_table(ctx, payload, start, end, cache)
+    })
+    .expect("dimension table admitted")
+}
+
+fn positional_dimension(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimension> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_dimension(ctx, payload, start, end, cache)
+    })
+    .expect("positional dimension admitted")
+}
+
+fn positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_dimension_table(ctx, payload, start, end, table_class, cache)
+    })
+    .expect("positional dimension table admitted")
+}
+
+fn self_described_positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<crate::feature::definitions::FeatureDimensionTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_self_described_positional_dimension_table(ctx, payload, start, end, cache)
+    })
+    .expect("self-described dimension table admitted")
+}
+
+fn positional_section_3d(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<crate::feature::definitions::FeatureSection3d> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_positional_section_3d(ctx, payload, start, end))
+        .expect("positional section admitted")
+}
+
+fn equation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<crate::feature::definitions::FeatureEquationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_equation_table(ctx, payload, start, end))
+        .expect("equation table admitted")
+}
+
+fn feature_skamps(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Vec<crate::feature::definitions::FeatureSkamp> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_feature_skamps(ctx, payload, start, end))
+        .expect("skamps admitted")
+}
+
+fn positional_feature_skamps(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Vec<crate::feature::definitions::FeatureSkamp> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_feature_skamps(ctx, payload, start, end, table_class)
+    })
+    .expect("positional skamps admitted")
+}
+
+fn feature_relation_triples(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_feature_relation_triples(ctx, payload, start, end)
+    })
+    .expect("triples admitted")
+}
+
+fn positional_relation_triples(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Vec<crate::feature::definitions::FeatureRelationTriple> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_relation_triples(ctx, payload, start, end, table_class)
+    })
+    .expect("positional triples admitted")
+}
+
+fn relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<crate::feature::definitions::FeatureRelationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_relation_table(ctx, payload, start, end))
+        .expect("relation table admitted")
+}
+
+fn positional_relation_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<crate::feature::definitions::FeatureRelationTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_relation_table(ctx, payload, start, end, table_class)
+    })
+    .expect("positional relation table admitted")
+}
+
+const POSITIONAL_RELATION_LIMIT_INPUT: &[u8] = b"prefix\xf8\x03\xf7\x64\xfb\xe2\xf7\x65\
+    prototype\xf1\xf7\x64\xe2\
+    \x08\x00\x03\x0f\xf6\xe4\x01\xe4\x00\xe4\x0f\x10\x0f\x18\x00\xf6\x00\xe2";
+
+fn positional_relation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureRelationTable>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(POSITIONAL_RELATION_LIMIT_INPUT, &arena, &policy)
+        .expect("relation input fits root policy");
+    parse_positional_relation_table(
+        &ctx,
+        POSITIONAL_RELATION_LIMIT_INPUT,
+        0,
+        POSITIONAL_RELATION_LIMIT_INPUT.len(),
+        100,
+    )
+}
+
+#[test]
+fn relation_operands_refuse_before_retained_copy() {
+    assert!(
+        matches!(positional_relation_with_limits(1, 11), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo relation operands")
+    );
+    let table = positional_relation_with_limits(1, 29)
+        .expect("relation admitted")
+        .expect("table present");
+    assert_eq!(table.rows[0].operands.len(), 12);
+}
+
+#[test]
+fn relation_row_body_refuses_before_retained_copy() {
+    assert!(
+        matches!(positional_relation_with_limits(1, 28), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo relation row body")
+    );
+    let table = positional_relation_with_limits(1, 29)
+        .expect("relation admitted")
+        .expect("table present");
+    assert_eq!(table.rows[0].body.len(), 17);
+}
+
+#[test]
+fn relation_row_refuses_before_vec_growth() {
+    assert!(
+        matches!(positional_relation_with_limits(0, 29), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation rows")
+    );
+    assert_eq!(
+        positional_relation_with_limits(1, 29)
+            .expect("relation admitted")
+            .expect("table present")
+            .rows
+            .len(),
+        1
+    );
+}
+
+const POSITIONAL_SECTION_LIMIT_INPUT: &[u8] = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
+    \xf8\x02\xf7\x39\xfb\xe2\xf7\x3a\
+    \x06\x05\xf6\x03\xf6\x00\xe3tail\xf2\xf7\x39\xe2\
+    \x07\x05\xf6\x04\xf6\x01";
+
+#[test]
+fn positional_section_reference_planes_refuse_before_each_row() {
+    let run = |limit| {
+        with_trim_limits(limit, u64::MAX, |ctx| {
+            parse_positional_section_3d(
+                ctx,
+                POSITIONAL_SECTION_LIMIT_INPUT,
+                0,
+                POSITIONAL_SECTION_LIMIT_INPUT.len(),
+            )
+        })
+    };
+    for limit in [0, 1] {
+        assert!(matches!(run(limit), Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "creo positional section reference planes"));
+    }
+    let section = run(2).expect("section admitted").expect("section present");
+    assert_eq!(
+        section.reference_planes.entity_ids().collect::<Vec<_>>(),
+        [6, 7]
+    );
+}
+
+const NAMED_SECTION_LIMIT_INPUT: &[u8] = b"\xe0\x00gsec3d_ptr\0\
+    \xe0\x00ref_planes\0\xf8\x01\xf7\x01\xfb\xe2\
+    dim_id_tab\0\xf8\x01\x2a";
+
+#[test]
+fn named_section_reference_plane_refuses_before_vec_growth() {
+    let run = |limit| {
+        with_trim_limits(limit, u64::MAX, |ctx| {
+            parse_section_3d(
+                ctx,
+                NAMED_SECTION_LIMIT_INPUT,
+                0,
+                NAMED_SECTION_LIMIT_INPUT.len(),
+            )
+        })
+    };
+    assert!(matches!(run(0), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo named section reference planes"));
+    assert_eq!(
+        run(2)
+            .expect("section admitted")
+            .expect("section present")
+            .reference_planes
+            .entity_ids()
+            .collect::<Vec<_>>(),
+        [1]
+    );
+}
+
+#[test]
+fn named_section_dimension_id_refuses_before_vec_growth() {
+    let run = |limit| {
+        with_trim_limits(limit, u64::MAX, |ctx| {
+            parse_section_3d(
+                ctx,
+                NAMED_SECTION_LIMIT_INPUT,
+                0,
+                NAMED_SECTION_LIMIT_INPUT.len(),
+            )
+        })
+    };
+    assert!(matches!(run(1), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == ResourceDimension::CollectionItems
+            && refusal.operation == "creo section dimension IDs"));
+    assert_eq!(
+        run(2)
+            .expect("section admitted")
+            .expect("section present")
+            .dimension_ids,
+        [42]
+    );
+}
+
+fn variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
+    crate::decode::with_test_decode_ctx(|ctx| parse_variable_table(ctx, payload, start, end, cache))
+        .expect("variable table admitted")
+}
+
+fn positional_variable_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureVariableTable> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        parse_positional_variable_table(ctx, payload, start, end, table_class, cache)
+    })
+    .expect("variable table admitted")
+}
+
+fn positional_variable_rows_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<FeatureVariableTable, cadmpeg_core::CodecError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let payload = b"prefix\xf8\x02\xf7\x77\xfb\xe2\xf7\x78\
+            \x01\x07\x18\x18\x01\x00\x09\xf1\xf7\x77\xe2\
+            \x02\x07\x18\x18\x01\x00\x0a";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy)?;
+    Ok(parse_positional_variable_table(
+        &ctx,
+        payload,
+        0,
+        payload.len(),
+        119,
+        &scalar::ScalarCache::default(),
+    )?
+    .expect("complete positional variable table"))
+}
+
+#[test]
+fn positional_variable_row_capacity_refuses_before_reservation() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    assert_eq!(
+        positional_variable_rows_with_limits(2, u64::MAX)
+            .expect("two rows admitted")
+            .rows
+            .len(),
+        2
+    );
+    let error =
+        positional_variable_rows_with_limits(1, u64::MAX).expect_err("two slots need two items");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo variable rows"));
+}
+
+#[test]
+fn positional_variable_value_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = positional_variable_rows_with_limits(2, 0).expect_err("value needs one byte");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable value body"));
+}
+
+#[test]
+fn positional_variable_guess_body_refuses_before_retention() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_core::CodecError;
+
+    let error = positional_variable_rows_with_limits(2, 1).expect_err("guess needs one byte");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo variable guess body"));
+}
 
 #[test]
 fn positional_dimension_table_uses_the_inherited_table_class() {
@@ -270,7 +857,8 @@ fn positional_definition_inherits_the_labeled_dimension_table_class() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = definitions(&payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| definitions(ctx, &payload))
+        .expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded[1].identity.owner_feature_id(), Some(42));
@@ -289,7 +877,8 @@ fn depdb_gsec2d_definition_anchors_positional_table_replay() {
         .to_vec();
     payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
 
-    let decoded = depdb_definitions(&payload);
+    let decoded = crate::decode::with_test_decode_ctx(|ctx| depdb_definitions(ctx, &payload))
+        .expect("definitions admitted");
     let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
 
     assert_eq!(decoded.len(), 2);
@@ -454,10 +1043,36 @@ fn radius_variables_do_not_create_section_points() {
 
     assert_eq!(table.points().len(), 1);
     assert_eq!(table.points()[0].point_id, 7);
-    let (points, ambiguous) = table.reconciled_points();
+    let (points, ambiguous) = reconciled_points(&table);
     assert_eq!(points.get(&7), Some(&[Some(2.0), Some(3.0)]));
     assert!(!points.contains_key(&99));
     assert!(ambiguous.is_empty());
+}
+
+#[test]
+fn reconciled_points_refuses_before_point_id_node() {
+    let table = with_points(
+        FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            offset: 0,
+        },
+        vec![FeatureSectionPoint {
+            point_id: 7,
+            u: Some(2.0),
+            v: Some(3.0),
+        }],
+    );
+    assert!(matches!(with_dimension_limits(&[0], 0, u64::MAX,
+        |ctx| table.reconciled_points(ctx)),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo reconciled point ID nodes"));
+    assert_eq!(
+        reconciled_points(&table).0.get(&7),
+        Some(&[Some(2.0), Some(3.0)])
+    );
 }
 
 #[test]
@@ -569,10 +1184,19 @@ fn named_gsec3d_uses_the_outer_plane_id_before_reference_rows() {
             \xe0\x01flip_flag\0\x00\
             \xe0\x00p_saved_result\0";
 
-    let definitions = definitions_in_ranges(
-        &payload[..],
-        &[(0, std::num::NonZeroU32::new(1), None, false)],
-    );
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+        definitions_in_ranges(
+            ctx,
+            &payload[..],
+            &[crate::feature::definitions::DefinitionStart {
+                offset: 0,
+                id: std::num::NonZeroU32::new(1),
+                owner_override: None,
+                positional: false,
+            }],
+        )
+    })
+    .expect("definitions admitted");
     let section = definitions[0].section_3d.as_ref().expect("named gsec3d");
 
     assert_eq!(section.sketch_plane_entity_id, Some(42));
@@ -647,6 +1271,81 @@ fn equation_table_accepts_final_row_at_table_separator() {
     assert_eq!(table.rows.len(), 1);
     assert_eq!(table.rows[0].equation_id, 1);
     assert_eq!(table.rows[0].body, [1, 4, 0x11, 0x12, 0xf6]);
+}
+
+const EQUATION_LIMIT_INPUT: &[u8] = b"eqtn_arr\0\xf2\xf8\x02\xf7\x80\x9f\xfb\xe2\
+    \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2\
+    \x01\x04\x11\x12\xf6\xe2";
+
+fn equation_with_limits(
+    collection_limit: u64,
+    retained_limit: u64,
+) -> Result<Option<crate::feature::definitions::FeatureEquationTable>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_retained_bytes = retained_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(EQUATION_LIMIT_INPUT, &arena, &policy)
+        .expect("equation root admitted");
+    parse_equation_table(&ctx, EQUATION_LIMIT_INPUT, 0, EQUATION_LIMIT_INPUT.len())
+}
+
+#[test]
+fn equation_prototype_body_refuses_before_retained_copy() {
+    assert!(
+        matches!(equation_with_limits(3, 10), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation prototype body")
+    );
+}
+
+#[test]
+fn equation_arguments_refuse_before_vec_growth() {
+    assert!(
+        matches!(equation_with_limits(1, 20), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo equation arguments")
+    );
+}
+
+#[test]
+fn equation_argument_body_refuses_before_retained_copy() {
+    assert!(
+        matches!(equation_with_limits(3, 12), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation argument body")
+    );
+}
+
+#[test]
+fn equation_auxiliary_body_refuses_before_retained_copy() {
+    assert!(
+        matches!(equation_with_limits(3, 13), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation auxiliary body")
+    );
+}
+
+#[test]
+fn equation_row_body_refuses_before_retained_copy() {
+    assert!(
+        matches!(equation_with_limits(3, 19), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "creo equation row body")
+    );
+}
+
+#[test]
+fn equation_row_refuses_before_vec_growth() {
+    assert!(
+        matches!(equation_with_limits(2, 20), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo equation rows")
+    );
+    let table = equation_with_limits(3, 20)
+        .expect("equation admitted")
+        .expect("table present");
+    assert_eq!(table.rows[0].arguments, [Some(17), Some(18)]);
 }
 
 #[test]
@@ -855,6 +1554,106 @@ fn positional_solver_tables_retain_complete_prefix_rows() {
 }
 
 #[test]
+fn positional_skamp_items_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp items")
+    );
+}
+
+#[test]
+fn positional_skamp_rows_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x01\xf7\x60\xfb\xe2\xf7\x61\x06\x00";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_positional_feature_skamps(&ctx, payload, 0, payload.len(), 88),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp rows")
+    );
+    assert_eq!(
+        positional_feature_skamps(payload, 0, payload.len(), 88).len(),
+        1
+    );
+}
+
+#[test]
+fn named_skamp_prototype_items_refuse_before_vec_growth() {
+    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp prototype items")
+    );
+}
+
+#[test]
+fn named_skamp_rows_refuse_before_vec_growth() {
+    let payload = b"skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_feature_skamps(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo skamp rows")
+    );
+}
+
+#[test]
+fn named_relation_triples_refuse_before_vec_growth() {
+    let payload = b"triples_ptr\0\xf4\x04\xf8\x01\xf7\x6d\xfb\xe2\
+            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
+            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_feature_relation_triples(&ctx, payload, 0, payload.len()),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation triples")
+    );
+}
+
+#[test]
+fn positional_relation_triples_refuse_before_vec_growth() {
+    let payload = b"\xf8\x01\xf7\x64\xfb\xe2\xf7\x65\x01\xf6\x04";
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).expect("root admitted");
+    assert!(
+        matches!(parse_positional_relation_triples(&ctx, payload, 0, payload.len(), 100),
+        Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems
+            && limit.operation == "creo relation triples")
+    );
+}
+
+#[test]
 fn solver_header_does_not_adopt_a_later_array() {
     let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
 
@@ -938,13 +1737,27 @@ fn positional_definition_preserves_its_named_solver_tables() {
     ]);
     payload.extend_from_slice(b"\xf1\xf7\x6a\xe2");
 
-    let definitions = definitions_in_ranges(
-        &payload,
-        &[
-            (0, std::num::NonZeroU32::new(1), None, false),
-            (positional_start, std::num::NonZeroU32::new(2), None, true),
-        ],
-    );
+    let definitions = crate::decode::with_test_decode_ctx(|ctx| {
+        definitions_in_ranges(
+            ctx,
+            &payload,
+            &[
+                crate::feature::definitions::DefinitionStart {
+                    offset: 0,
+                    id: std::num::NonZeroU32::new(1),
+                    owner_override: None,
+                    positional: false,
+                },
+                crate::feature::definitions::DefinitionStart {
+                    offset: positional_start,
+                    id: std::num::NonZeroU32::new(2),
+                    owner_override: None,
+                    positional: true,
+                },
+            ],
+        )
+    })
+    .expect("definitions admitted");
     let relations = definitions[1].relations.as_ref().expect("relations");
 
     assert_eq!(relations.skamps().len(), 1);
@@ -988,716 +1801,18 @@ fn positional_triples_replay_nullable_relation_joins() {
     assert_eq!(triples[1].skamp_id, Some(5));
 }
 
-#[test]
-fn positional_trim_entity_table_decodes_without_segments() {
-    let payload = b"prefix\xf8\x07\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\
-            \x09\x00\x03\x04\xf6\x00\
-            \xf4\x04\xf7\x42\xe2\x01\xf8\x13\xf7\x44\xfb\xe2";
-    let entities = positional_trim_entity_table(
-        payload,
-        0,
-        payload.len(),
-        TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 67,
-        },
-        Some(68),
-    )
-    .expect("positional ent_tab");
-
-    assert_eq!(entities.declared_count, Some(7));
-    assert_eq!(entities.entity_ref, Some(66));
-    assert_eq!(entities.entry_ref, Some(67));
-    assert_eq!(entities.solved_external_ids, vec![9]);
-    assert_eq!(entities.rows[0].vertices, [3, 4]);
-    assert_eq!(entities.rows[0].kind, TrimEntityKind::Line);
+fn with_trim_limits<T>(
+    collection_limit: u64,
+    work_limit: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    policy.limits.max_work_units = work_limit;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root fits the trim policy");
+    run(&ctx)
 }
 
-#[test]
-fn positional_trim_entity_table_retains_an_empty_extent() {
-    let payload = b"prefix\xf8\x00\xf7\x42\xfb\xe2\
-            \xf8\x01\xf7\x44\xfb\xe2";
-
-    let entities = positional_trim_entity_table(
-        payload,
-        0,
-        payload.len(),
-        TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 67,
-        },
-        Some(68),
-    )
-    .expect("empty positional ent_tab");
-
-    assert_eq!(entities.declared_count, Some(0));
-    assert_eq!(entities.entity_ref, Some(66));
-    assert_eq!(entities.entry_ref, Some(67));
-    assert!(entities.rows.is_empty());
-    assert!(entities.solved_external_ids.is_empty());
-}
-
-#[test]
-fn positional_trim_entity_table_withholds_rows_without_the_entry_class() {
-    let payload = b"prefix\xf8\x01\xf7\x42\xfb\xe2\
-            \x00\xe3\x09\x00\x03\x04\xf6\x00";
-
-    let entities = positional_trim_entity_table(
-        payload,
-        0,
-        payload.len(),
-        TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 67,
-        },
-        None,
-    )
-    .expect("positional ent_tab header");
-
-    assert_eq!(entities.declared_count, Some(1));
-    assert!(entities.rows.is_empty());
-    assert!(entities.solved_external_ids.is_empty());
-}
-
-#[test]
-fn positional_order_table_replays_prototype_and_following_rows() {
-    let payload = b"prefix\xf8\x03\xf7\x42\xfb\xe2\xf7\x43\
-            \x09\x01\x00\xf1\xf7\x42\xe2\
-            \x0a\x02\x01\xe2\x0b\x03\x00";
-
-    let order =
-        positional_order_table(payload, 0, payload.len(), 66).expect("positional order_table");
-
-    assert_eq!(order.declared_count, 3);
-    assert!(order.has_prototype);
-    assert!(order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert_eq!(order.rows.len(), 2);
-    assert_eq!(order.rows[0].external_id, 10);
-    assert_eq!(order.rows[0].internal_id, 2);
-    assert_eq!(order.rows[0].bitmask, 1);
-    assert_eq!(order.rows[1].external_id, 11);
-    assert_eq!(order.internal_id(10), Some(2));
-    assert_eq!(order.external_id(2), Some(10));
-
-    let mut duplicate_external = order.clone();
-    duplicate_external.declared_count += 1;
-    duplicate_external.rows.push(FeatureOrderRow {
-        external_id: 10,
-        internal_id: 4,
-        bitmask: 0,
-        offset: 20,
-    });
-    assert_eq!(duplicate_external.internal_id(10), None);
-    assert_eq!(duplicate_external.external_id(2), None);
-    let mut duplicate_internal = order;
-    duplicate_internal.declared_count += 1;
-    duplicate_internal.rows.push(FeatureOrderRow {
-        external_id: 12,
-        internal_id: 2,
-        bitmask: 0,
-        offset: 21,
-    });
-    assert_eq!(duplicate_internal.external_id(2), None);
-    assert_eq!(duplicate_internal.internal_id(10), None);
-}
-
-#[test]
-fn named_order_table_replays_prototype_and_following_rows() {
-    let payload = b"order_table\0\xf8\x03\xf7\x42\xfb\xe2\
-            \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
-            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2\
-            \x0a\x02\x01\xe2\x0b\x03\x00";
-
-    let order = order_table(payload, 0, payload.len()).expect("named order_table");
-
-    assert_eq!(order.declared_count, 3);
-    assert!(order.has_prototype);
-    assert!(order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert_eq!(order.rows.len(), 2);
-    assert_eq!(order.external_id(2), Some(10));
-    assert_eq!(order.internal_id(11), Some(3));
-}
-
-#[test]
-fn order_tables_retain_extents_without_decoded_rows() {
-    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\xf1\xf7\x42\xe2";
-    let order = order_table(named, 0, named.len()).expect("named order_table header");
-    assert_eq!(order.declared_count, 2);
-    assert!(!order.has_prototype);
-    assert!(!order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert!(order.rows.is_empty());
-
-    let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
-    let order = positional_order_table(positional, 0, positional.len(), 66)
-        .expect("positional order_table header");
-    assert_eq!(order.declared_count, 2);
-    assert!(!order.has_prototype);
-    assert!(!order.is_complete());
-    assert_eq!(order.entity_ref, Some(66));
-    assert!(order.rows.is_empty());
-}
-
-#[test]
-fn incomplete_order_tables_do_not_resolve_identifiers() {
-    let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\
-            \xf1\xf7\x42\xe2\x0a\x02\x00";
-    let order = order_table(named, 0, named.len()).expect("named order_table");
-    assert_eq!(order.rows.len(), 1);
-    assert!(!order.is_complete());
-    assert_eq!(order.internal_id(10), None);
-    assert_eq!(order.external_id(2), None);
-
-    let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
-    let order = positional_order_table(positional, 0, positional.len(), 66)
-        .expect("positional order_table");
-    assert!(!order.is_complete());
-    assert_eq!(order.internal_id(10), None);
-}
-
-#[test]
-fn positional_trim_vertex_table_is_independent_of_entity_rows() {
-    let payload = b"prefix\xf8\x13\xf7\x44\xfb\xe2\xf7\x45\
-            \x01\x02\x03\x00\xe2";
-    let vertices = positional_trim_vertex_table(
-        payload,
-        0,
-        payload.len(),
-        TrimTableClasses {
-            table: 68,
-            bucket: 69,
-            entry: 69,
-        },
-        None,
-        None,
-    )
-    .expect("positional vert_tab");
-
-    assert_eq!(vertices.declared_count, Some(19));
-    assert_eq!(vertices.entity_ref, Some(68));
-    assert_eq!(vertices.entry_ref, Some(69));
-    assert_eq!(vertices.rows.len(), 1);
-    assert_eq!(vertices.rows[0].vertex_id, 3);
-    assert_eq!(vertices.rows[0].entities, [1, 2]);
-}
-
-#[test]
-fn positional_trim_vertex_table_retains_an_empty_extent() {
-    let payload = b"prefix\xf8\x00\xf7\x44\xfb\xe2";
-
-    let vertices = positional_trim_vertex_table(
-        payload,
-        0,
-        payload.len(),
-        TrimTableClasses {
-            table: 68,
-            bucket: 69,
-            entry: 69,
-        },
-        None,
-        None,
-    )
-    .expect("empty positional vert_tab");
-
-    assert_eq!(vertices.declared_count, Some(0));
-    assert_eq!(vertices.entity_ref, Some(68));
-    assert_eq!(vertices.entry_ref, Some(69));
-    assert!(vertices.rows.is_empty());
-}
-
-#[test]
-fn trim_vertex_uses_unique_shared_point_for_mixed_curves() {
-    let segment = |kind, external_id| FeatureSegment {
-        kind,
-        directions: [None; 3],
-        center_id: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(4),
-        arc_orientation: matches!(kind, FeatureSegmentKind::Arc(_)).then_some(0),
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id,
-        body: Vec::new(),
-        offset: 0,
-    };
-    let segments = FeatureSegmentTable {
-        declared_count: 2,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (vec![
-            segment(FeatureSegmentKind::Line([1, 2]), 9),
-            segment(FeatureSegmentKind::Arc([2, 3]), 10),
-        ])
-        .into_iter()
-        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-        .collect(),
-        offset: 0,
-    };
-    let variables = with_points(
-        FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            offset: 0,
-        },
-        vec![FeatureSectionPoint {
-            point_id: 2,
-            u: Some(3.0),
-            v: Some(4.0),
-        }],
-    );
-
-    assert_eq!(
-        entity_intersection(&[9, 10], Some(&segments), Some(&variables)),
-        Some([3.0, 4.0])
-    );
-
-    let mut incomplete_segments = segments.clone();
-    incomplete_segments.declared_count += 1;
-    assert!(!incomplete_segments.is_complete());
-    assert!(incomplete_segments.segment(9).is_none());
-    assert_eq!(
-        incomplete_segments.unique_segment(9),
-        Some(&segments.rows.ordinary().cloned().collect::<Vec<_>>()[0])
-    );
-    assert_eq!(
-        entity_intersection(&[9, 10], Some(&incomplete_segments), Some(&variables)),
-        Some([3.0, 4.0])
-    );
-
-    let mut duplicate_segments = segments.clone();
-    duplicate_segments
-        .rows
-        .insert(crate::feature::segment_rows::SegmentRow::Ordinary(
-            segments.rows.ordinary().cloned().collect::<Vec<_>>()[0].clone(),
-        ));
-    assert!(duplicate_segments.segment(9).is_none());
-    assert!(entity_intersection(&[9, 10], Some(&duplicate_segments), Some(&variables)).is_none());
-
-    let mut duplicate_points = variables.clone();
-    duplicate_points.rows.extend(variables.rows.clone());
-    duplicate_points.declared_count += variables.declared_count;
-    assert_eq!(
-        duplicate_points.reconciled_points().0.get(&2),
-        Some(&[Some(3.0), Some(4.0)])
-    );
-    assert_eq!(
-        entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)),
-        Some([3.0, 4.0])
-    );
-    duplicate_points.rows[2].value = ScalarLane::Value(5.0);
-    assert!(duplicate_points.reconciled_points().1.contains(&2));
-    assert!(entity_intersection(&[9, 10], Some(&segments), Some(&duplicate_points)).is_none());
-    let row = |variable_type, value, offset| FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::from(variable_type),
-        key: 2,
-        value: ScalarLane::Value(value),
-        value_body: Vec::new(),
-        guess: ScalarLane::Undefined,
-        guess_body: Vec::new(),
-        known: None,
-        homogeneity: None,
-        uvar_id: None,
-        offset,
-    };
-    let mut repeated_raw = variables.clone();
-    repeated_raw.rows = vec![row(1, 3.0, 30), row(1, 3.0, 31), row(2, 4.0, 32)];
-    assert_eq!(
-        repeated_raw.reconciled_points().0.get(&2),
-        Some(&[Some(3.0), Some(4.0)])
-    );
-    repeated_raw.rows[1].value = ScalarLane::Value(5.0);
-    assert!(repeated_raw.reconciled_points().1.contains(&2));
-}
-
-#[test]
-fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
-    let segment = |kind, center_id, radius_ref, external_id| FeatureSegment {
-        kind,
-        directions: [None; 3],
-        center_id,
-        arc_orientation: center_id.map(|_| 0),
-        vertical_horizontal: None,
-        radius_ref,
-        radius2_ref: None,
-        external_id,
-        body: Vec::new(),
-        offset: 0,
-    };
-    let segment_table = |rows: Vec<FeatureSegment>| FeatureSegmentTable {
-        declared_count: rows.len() as u32,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (rows)
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 0,
-    };
-    let point = |point_id, u, v| FeatureSectionPoint {
-        point_id,
-        u: Some(u),
-        v: Some(v),
-    };
-    let radius = |key, value| FeatureVariableRow {
-        variable_type: crate::feature::definitions::VariableType::Radius,
-        key,
-        value: ScalarLane::Value(value),
-        value_body: Vec::new(),
-        guess: ScalarLane::Undefined,
-        guess_body: Vec::new(),
-        known: None,
-        homogeneity: None,
-        uvar_id: None,
-        offset: 0,
-    };
-    let variables = |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| {
-        with_points(
-            FeatureVariableTable {
-                declared_count: rows.len() as u32,
-                entity_ref: None,
-                rows,
-                offset: 0,
-            },
-            points,
-        )
-    };
-
-    let bounded_unique = segment_table(vec![
-        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
-        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
-    ]);
-    let bounded_unique_variables = variables(
-        vec![
-            point(1, 0.0, 0.0),
-            point(2, 2.0, 0.0),
-            point(3, 0.0, 1.0),
-            point(4, 0.0, -1.0),
-            point(5, 0.0, 0.0),
-        ],
-        vec![radius(6, 1.0)],
-    );
-    assert_eq!(
-        entity_intersection(
-            &[9, 10],
-            Some(&bounded_unique),
-            Some(&bounded_unique_variables),
-        ),
-        Some([1.0, 0.0])
-    );
-    let mut incomplete_bounded_unique = bounded_unique.clone();
-    incomplete_bounded_unique.declared_count += 1;
-    assert_eq!(
-        entity_intersection(
-            &[9, 10],
-            Some(&incomplete_bounded_unique),
-            Some(&bounded_unique_variables),
-        ),
-        Some([1.0, 0.0])
-    );
-    let mut derived_radius = bounded_unique_variables.clone();
-    derived_radius
-        .rows
-        .retain(|row| row.variable_type != VariableType::Radius);
-    derived_radius.declared_count = derived_radius.rows.len() as u32;
-    assert_eq!(
-        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
-        Some([1.0, 0.0])
-    );
-    let conflicting_radius = variables(bounded_unique_variables.points(), vec![radius(6, 2.0)]);
-    assert!(
-        entity_intersection(&[9, 10], Some(&bounded_unique), Some(&conflicting_radius),).is_none()
-    );
-
-    let secant = segment_table(vec![
-        segment(FeatureSegmentKind::Line([1, 2]), None, None, 9),
-        segment(FeatureSegmentKind::Arc([3, 4]), Some(5), Some(6), 10),
-    ]);
-    let secant_variables = variables(
-        vec![
-            point(1, -2.0, 0.0),
-            point(2, 2.0, 0.0),
-            point(3, 0.0, 1.0),
-            point(4, 0.0, -1.0),
-            point(5, 0.0, 0.0),
-        ],
-        vec![radius(6, 1.0)],
-    );
-    assert!(entity_intersection(&[9, 10], Some(&secant), Some(&secant_variables)).is_none());
-
-    let tangent_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
-    ]);
-    let tangent_circle_variables = variables(
-        vec![
-            point(1, 1.0, 0.0),
-            point(2, -1.0, 0.0),
-            point(3, 3.0, 0.0),
-            point(4, 1.0, 0.0),
-            point(5, 0.0, 0.0),
-            point(7, 2.0, 0.0),
-        ],
-        vec![radius(6, 1.0), radius(8, 1.0)],
-    );
-    assert_eq!(
-        entity_intersection(
-            &[9, 10],
-            Some(&tangent_circles),
-            Some(&tangent_circle_variables),
-        ),
-        Some([1.0, 0.0])
-    );
-
-    let secant_circles = segment_table(vec![
-        segment(FeatureSegmentKind::Arc([1, 2]), Some(5), Some(6), 9),
-        segment(FeatureSegmentKind::Arc([3, 4]), Some(7), Some(8), 10),
-    ]);
-    let secant_circle_variables = variables(
-        vec![
-            point(1, 1.0, 0.0),
-            point(2, -1.0, 0.0),
-            point(3, 1.0, 1.0),
-            point(4, 1.0, -1.0),
-            point(5, 0.0, 0.0),
-            point(7, 1.0, 0.0),
-        ],
-        vec![radius(6, 1.0), radius(8, 1.0)],
-    );
-    assert!(entity_intersection(
-        &[9, 10],
-        Some(&secant_circles),
-        Some(&secant_circle_variables),
-    )
-    .is_none());
-}
-
-#[test]
-fn trim_vertex_intersection_requires_complete_pairwise_junctions() {
-    let segment = |point_ids, external_id| FeatureSegment {
-        kind: FeatureSegmentKind::Line(point_ids),
-        directions: [None; 3],
-        center_id: None,
-        arc_orientation: None,
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id,
-        body: Vec::new(),
-        offset: 0,
-    };
-    let segments = FeatureSegmentTable {
-        declared_count: 3,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (vec![segment([1, 2], 9), segment([3, 4], 10), segment([5, 6], 11)])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 0,
-    };
-    let variables = with_points(
-        FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            offset: 0,
-        },
-        vec![
-            FeatureSectionPoint {
-                point_id: 1,
-                u: Some(-1.0),
-                v: Some(-1.0),
-            },
-            FeatureSectionPoint {
-                point_id: 2,
-                u: Some(1.0),
-                v: Some(1.0),
-            },
-            FeatureSectionPoint {
-                point_id: 3,
-                u: Some(-1.0),
-                v: Some(1.0),
-            },
-            FeatureSectionPoint {
-                point_id: 4,
-                u: Some(1.0),
-                v: Some(-1.0),
-            },
-            FeatureSectionPoint {
-                point_id: 5,
-                u: Some(0.0),
-                v: Some(-2.0),
-            },
-            FeatureSectionPoint {
-                point_id: 6,
-                u: Some(0.0),
-                v: Some(2.0),
-            },
-        ],
-    );
-    assert_eq!(
-        entity_intersection(&[9, 10, 11], Some(&segments), Some(&variables)),
-        Some([0.0, 0.0])
-    );
-
-    let mut incomplete = variables.clone();
-    incomplete.declared_count = 1;
-    assert!(entity_intersection(&[9, 10, 11], Some(&segments), Some(&incomplete)).is_none());
-}
-
-#[test]
-fn trim_vertex_template_identifies_table_and_entry_classes() {
-    let payload = b"vert_tab\0\xf8\x13\xf7\x44\xfb\xe2\
-            attrs\0\xf1\xf7\x46\xe3bucket_xar\0\xf8\x01\xf7\x46\xfb\xe3\
-            \xf7\x45\x09\x0a\x03\x00";
-
-    assert_eq!(
-        trim_table_header(payload, b"vert_tab\0", 0, payload.len()),
-        Some(TrimTableHeader {
-            declared_count: 19,
-            classes: TrimTableClasses {
-                table: 68,
-                bucket: 70,
-                entry: 69,
-            },
-        })
-    );
-}
-
-#[test]
-fn trim_buckets_require_the_complete_declared_sequence_and_counts() {
-    let payload = b"bucket_index\0\x00bucket_xar\0\xf8\x01\xf7\x43\xfb\xe3\
-            \xf7\x44\x09\x0a\x03\x00\xe2\x01\xf8\x01\xf7\x43\xfb\xe3\
-            \xf7\x44\x09\x0a\x03\x00\xe2\x02\xf1\xf7\x42\xe2\x03\xe2\
-            \x04\xf0\xf7\x43\xf8\x01\xf7\x43\xfb\xe3\xf7\x44\x0b\x0c\
-            \x05\x00\xe2\x05\xf8\x01\xf7\x43\xfb\xe3\xf7\x44\x0d\x0e\
-            \x06\x00\xe2\x06\xe0\x00next\0";
-    let header = TrimTableHeader {
-        declared_count: 7,
-        classes: TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 68,
-        },
-    };
-
-    assert_eq!(
-        trim_buckets(payload, 0, payload.len(), header, TrimEntryKind::Vertex)
-            .iter()
-            .map(|bucket| (
-                bucket.index,
-                bucket.declared_entry_count,
-                bucket.decoded_entry_count
-            ))
-            .collect::<Vec<_>>(),
-        (0..7)
-            .zip([1, 1, 0, 0, 1, 1, 0])
-            .map(|(index, count)| (index, count, Some(count)))
-            .collect::<Vec<_>>()
-    );
-    let truncated = payload
-        .windows(2)
-        .position(|bytes| bytes == [0xe2, 0x06])
-        .expect("last bucket index");
-    assert_eq!(
-        trim_buckets(payload, 0, truncated, header, TrimEntryKind::Vertex)
-            .iter()
-            .map(|bucket| bucket.index)
-            .collect::<Vec<_>>(),
-        (0..6).collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn trim_bucket_completeness_rejects_missing_and_extra_vertex_entries() {
-    let header = TrimTableHeader {
-        declared_count: 1,
-        classes: TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 68,
-        },
-    };
-    let missing = b"bucket_index\0\x00bucket_xar\0\xf8\x02\xf7\x43\xfb\xe3\
-            \xf7\x44\x01\x02\x03\x00\xe0";
-    let buckets = trim_buckets(missing, 0, missing.len(), header, TrimEntryKind::Vertex);
-    assert_eq!(buckets[0].declared_entry_count, 2);
-    assert_eq!(buckets[0].decoded_entry_count, Some(1));
-    assert!(!buckets[0].is_complete());
-
-    let extra = b"bucket_index\0\x00bucket_xar\0\xf8\x01\xf7\x43\xfb\xe3\
-            \xf7\x44\x01\x02\x03\x00\xe3\x04\x05\x06\x00\xe0";
-    let buckets = trim_buckets(extra, 0, extra.len(), header, TrimEntryKind::Vertex);
-    assert_eq!(buckets[0].declared_entry_count, 1);
-    assert_eq!(buckets[0].decoded_entry_count, Some(2));
-    assert!(!buckets[0].is_complete());
-}
-
-#[test]
-fn trim_vertex_entries_retain_variable_incident_entity_counts() {
-    let counted = b"\xf8\x03\x0a\x0b\x0c\x07\x00";
-    assert_eq!(
-        trim_vertex_entry(counted, 0, counted.len()),
-        Some((vec![10, 11, 12], 7, counted.len()))
-    );
-    let direct = b"\x0a\x0b\x0c\x07\x00";
-    assert_eq!(
-        trim_vertex_entry(direct, 0, direct.len()),
-        Some((vec![10, 11, 12], 7, direct.len()))
-    );
-}
-
-#[test]
-fn trim_entity_bucket_counts_the_named_prototype_and_complete_bodies() {
-    let payload = b"bucket_index\0\x00bucket_xar\0\xf8\x02\xf7\x43\xfb\xe3\
-            entry_ptr(entity_entry)\0\xe3xid\0\x00ent_mode\0\x00start_vtx\0\xf6\
-            end_vtx\0\xf6center_vtx\0\xf6pers_attribs\0\x00\
-            \xf4\x04\xf7\x42\xe2\xe3\
-            \x09\x00\x03\x04\xf6\x00\xe0";
-    let header = TrimTableHeader {
-        declared_count: 1,
-        classes: TrimTableClasses {
-            table: 66,
-            bucket: 67,
-            entry: 68,
-        },
-    };
-    let buckets = trim_buckets(payload, 0, payload.len(), header, TrimEntryKind::Entity);
-    assert_eq!(buckets[0].decoded_entry_count, Some(2));
-    assert!(buckets[0].is_complete());
-
-    let truncated = payload.len() - 2;
-    let buckets = trim_buckets(payload, 0, truncated, header, TrimEntryKind::Entity);
-    assert_eq!(buckets[0].decoded_entry_count, Some(1));
-    assert!(!buckets[0].is_complete());
-}
-
-#[test]
-fn a_bucket_that_states_no_decoded_entry_count_is_not_complete() {
-    // `None` states that the scan decoded more entries than the stored `u32`
-    // count can be compared against, so the bucket states no completeness.
-    let unstatable = crate::feature::definitions::FeatureTrimBucket {
-        index: 0,
-        declared_entry_count: 2,
-        decoded_entry_count: None,
-        offset: 0,
-    };
-    assert!(!unstatable.is_complete());
-
-    let complete = crate::feature::definitions::FeatureTrimBucket {
-        decoded_entry_count: Some(2),
-        ..unstatable.clone()
-    };
-    assert!(complete.is_complete());
-
-    let short = crate::feature::definitions::FeatureTrimBucket {
-        decoded_entry_count: Some(1),
-        ..unstatable
-    };
-    assert!(!short.is_complete());
-}
+mod trim_tables;

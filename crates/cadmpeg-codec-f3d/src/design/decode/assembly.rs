@@ -483,6 +483,8 @@ fn exact_legacy_as_built_face_selection(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::u64_from_index;
+
     use super::exact_legacy_as_built_face_selection;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -500,7 +502,7 @@ mod tests {
         );
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = scope.id.len() as u64 - 1;
+        policy.limits.max_retained_bytes = u64_from_index(scope.id.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = exact_legacy_as_built_face_selection(
             &ctx,

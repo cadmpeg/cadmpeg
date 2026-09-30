@@ -72,7 +72,11 @@ fn class_338_two_sided_distance_requires_its_null_scope_scalar_lane() {
     put_marked_reference(&mut bytes, 192, 6);
 
     let guid = "00000000-0000-0000-0000-000000000000";
-    put_u32(&mut bytes, 203, guid.encode_utf16().count() as u32);
+    put_u32(
+        &mut bytes,
+        203,
+        u32::try_from(guid.encode_utf16().count()).expect("fixture value fits u32"),
+    );
     for (ordinal, code_unit) in guid.encode_utf16().enumerate() {
         bytes[207 + ordinal * 2..209 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }

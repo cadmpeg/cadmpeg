@@ -2225,7 +2225,8 @@ offset: 30,
             offset: 95,
         }];
     assert_eq!(
-        solver_only_section_entities(&solver_only),
+        crate::decode::with_test_decode_ctx(|ctx| solver_only_section_entities(ctx, &solver_only))
+            .expect("service solver-only entities"),
         BTreeMap::from([(99, 95)])
     );
     let mut whole_entity_tangent = definition.clone();
@@ -2391,7 +2392,8 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Ordinary(duplicate_line));
-    let unique_ids = unique_section_segment_external_ids(&duplicate_entity);
+    let unique_ids = crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &duplicate_entity))
+        .expect("service unique identities");
     assert!(!unique_ids.contains(&12));
     assert_eq!(
         section_segment_identity_suffix(
@@ -2434,8 +2436,10 @@ offset: 30,
         .as_mut()
         .expect("segments")
         .rows.insert(crate::feature::segment_rows::SegmentRow::Opaque(opaque_segment.clone()));
-    assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
-    assert!(section_entity_external_ids(&opaque_entity).contains(&99));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &opaque_entity))
+        .expect("service unique identities").contains(&99));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_entity))
+        .expect("service section identities").contains(&99));
 
     let mut opaque_point = definition.clone();
     opaque_point
@@ -2467,18 +2471,20 @@ offset: 30,
     );
     assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
     assert!(matches!(
-        section_skamp_locus(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 sense: 4,
                 ..opaque_point_item.clone()
             },
-        ),
+        )),
         Some(SketchLocus::Entity(entity)) if entity.as_str().ends_with(":99")
     ));
     assert!(matches!(
-        section_skamp_midpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
@@ -2487,12 +2493,13 @@ offset: 30,
             },
             &opaque_point_item,
             None,
-        ),
+        )),
         Some((SketchLocus::Entity(entity), target))
             if entity.as_str().ends_with(":99") && target.as_str().ends_with(":12")
     ));
     assert_eq!(
-        section_skamp_midpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_midpoint(
+            ctx, refusal,
             &opaque_point,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &opaque_point_item,
@@ -2506,7 +2513,7 @@ offset: 30,
                     native_kind: cadmpeg_core::text::NonBlankString::new("point").expect("nonempty source identity"),
                 }).expect("valid test fixture"),
             )])),
-        ),
+        )),
         None
     );
     let centered_line = crate::feature::definitions::FeatureCenteredLineSegment {
@@ -2690,14 +2697,15 @@ offset: 30,
     };
     assert!(section_skamp_is_line(&opaque_line, &opaque_line_item));
     assert!(matches!(
-        section_skamp_locus(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_locus(
+            ctx, refusal,
             &opaque_line,
             &SketchId::mint("creo:model:sketch#917").expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 sense: 2,
                 ..opaque_line_item
             },
-        ),
+        )),
         Some(SketchLocus::Start(entity)) if entity.as_str().ends_with(":100")
     ));
     let mut solver_only_point_midpoint = opaque_line.clone();
@@ -2948,9 +2956,12 @@ offset: 30,
             external_id: 12,
             ..opaque_segment
         }));
-    assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
-    assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
-    assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| unique_section_segment_external_ids(ctx, &opaque_collision))
+        .expect("service unique identities").contains(&12));
+    assert!(crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(ctx, &opaque_collision))
+        .expect("service ambiguous identities").contains(&12));
+    assert!(!crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &opaque_collision))
+        .expect("service section identities").contains(&12));
     let mut equivalent_skamp = definition.clone();
     let mut redundant = equivalent_skamp
         .relations
@@ -5268,7 +5279,8 @@ offset: 30,
     conflicting.u = Some(30.0);
     append_points(conflicting_definition.variables.as_mut().expect("variables"), vec![conflicting]);
     assert!(!crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(ctx, &conflicting_definition)).expect("test section solve").contains_key(&2));
-    let conflicting_record = sketch_section_point_records(&conflicting_definition)
+    let conflicting_record = crate::decode::with_test_decode_ctx(|ctx| sketch_section_point_records(ctx, &conflicting_definition))
+        .expect("section point records admitted")
         .into_iter()
         .find(|point| point.point_id == 2)
         .expect("conflicting point record");
@@ -5367,14 +5379,15 @@ offset: 30,
         offset: 82,
     });
     assert_eq!(
-        section_skamp_endpoint(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| section_skamp_endpoint(
+            ctx, refusal,
             &saved_definition,
             &SketchId::mint("creo:model:sketch#917".to_string()).expect("valid test fixture"),
             &crate::feature::definitions::FeatureSkampItem {
                 entity_id: 14,
                 sense: 3,
             },
-        ),
+        )),
         Some(SketchLocus::End(SketchEntityId::mint(
             "creo:featdefs:sketch_entity#917:14".to_string()
         ).expect("valid test fixture")))

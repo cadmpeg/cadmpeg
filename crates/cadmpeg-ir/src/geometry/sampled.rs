@@ -708,5 +708,80 @@ impl PolylineCurve {
     }
 }
 
+fn scale_admitted_points<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    points: impl Iterator<Item = &'a mut FinitePoint3>,
+    scale: PositiveReal,
+    message: &'static str,
+) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+    for point in points {
+        ctx.charge_work(1, "IR sampled unit scaling work")?;
+        let Some(scaled) = point.scaled(scale) else {
+            return Ok(Err(GeometryLayoutError::Layout(
+                ctx.copy_retained_text(message, "IR sampled refusal text")?,
+            )));
+        };
+        *point = scaled;
+    }
+    Ok(Ok(()))
+}
+
+fn scale_admitted_deflection(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    deflection: &mut NonNegativeReal,
+    scale: PositiveReal,
+) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+    let Some(scaled) = deflection.scaled(scale) else {
+        return Ok(Err(GeometryLayoutError::Layout(ctx.copy_retained_text(
+            "chordal_deflection must be finite and non-negative",
+            "IR sampled refusal text",
+        )?)));
+    };
+    *deflection = scaled;
+    Ok(Ok(()))
+}
+
+impl PolygonalSurface {
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+        if let Err(error) = scale_admitted_points(
+            ctx,
+            self.vertices.iter_mut(),
+            scale,
+            "vertices must be finite",
+        )? {
+            return Ok(Err(error));
+        }
+        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
+    }
+}
+
+impl PolylineCurve {
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), GeometryLayoutError>, cadmpeg_core::CodecError> {
+        let result = match &mut self.samples {
+            PolylineSamples::Unparameterized { points } => {
+                scale_admitted_points(ctx, points.iter_mut(), scale, "points must be finite")
+            }
+            PolylineSamples::Parameterized { vertices } => scale_admitted_points(
+                ctx,
+                vertices.iter_mut().map(|vertex| &mut vertex.point),
+                scale,
+                "points must be finite",
+            ),
+        }?;
+        if let Err(error) = result {
+            return Ok(Err(error));
+        }
+        scale_admitted_deflection(ctx, &mut self.chordal_deflection, scale)
+    }
+}
+
 #[cfg(test)]
 mod tests;

@@ -19,6 +19,29 @@ use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
 use crate::loss::CreoLossCode;
 use crate::CreoCodec;
 
+fn section_linear_distance_coordinate(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    segments: &[&crate::feature::definitions::FeatureSegment],
+    first: u32,
+    second: u32,
+    coordinates: &BTreeMap<u32, [Option<f64>; 2]>,
+    saved_segment_points: &[(u32, [f64; 2])],
+    ambiguous_point_ids: &BTreeSet<u32>,
+) -> Option<crate::decode::sketch::axis::SectionAxis> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        crate::decode::sketch::coordinates::section_linear_distance_coordinate(
+            ctx,
+            definition,
+            segments,
+            [first, second],
+            coordinates,
+            saved_segment_points,
+            ambiguous_point_ids,
+        )
+    })
+    .expect("test linear distance coordinate")
+}
+
 #[test]
 fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
     let mut definition =
@@ -509,7 +532,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         .collect::<Vec<_>>();
     let valid = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(2.0), Some(3.0)])]);
     assert_eq!(
-        crate::decode::sketch::coordinates::section_linear_distance_coordinate(
+        section_linear_distance_coordinate(
             &definition,
             &segments,
             1,
@@ -522,7 +545,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
     );
     let conflicting = BTreeMap::from([(1, [Some(2.0), Some(0.0)]), (2, [Some(4.0), Some(3.0)])]);
     assert_eq!(
-        crate::decode::sketch::coordinates::section_linear_distance_coordinate(
+        section_linear_distance_coordinate(
             &definition,
             &segments,
             1,
@@ -534,7 +557,7 @@ fn signed_distance_with_spanning_line_rejects_conflicting_fixed_coordinate() {
         None
     );
     assert_eq!(
-        crate::decode::sketch::coordinates::section_linear_distance_coordinate(
+        section_linear_distance_coordinate(
             &definition,
             &segments,
             1,

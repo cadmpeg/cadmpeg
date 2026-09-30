@@ -171,18 +171,16 @@ pub(in crate::decode) fn surface_of_revolution_parallel_pcurve(
             ((conic_radii[0] - conic_radii[1]).abs()
                 <= EPS_AGREE * conic_radii.into_iter().fold(1.0, f64::max))
             .then_some(())?;
-            let candidates = [conic_radii[0], -conic_radii[0]]
-                .into_iter()
-                .filter_map(|ring| {
-                    let sine = axial / minor_radius;
-                    let cosine = (ring - major_radius) / minor_radius;
-                    ((sine.mul_add(sine, cosine * cosine) - 1.0).abs() <= EPS_AGREE)
-                        .then_some((sine.atan2(cosine), ring))
-                })
-                .collect::<Vec<_>>();
-            let [candidate] = candidates.as_slice() else {
-                return None;
-            };
+            let candidate = crate::decode::uniqueness::exactly_one(
+                [conic_radii[0], -conic_radii[0]]
+                    .into_iter()
+                    .filter_map(|ring| {
+                        let sine = axial / minor_radius;
+                        let cosine = (ring - major_radius) / minor_radius;
+                        ((sine.mul_add(sine, cosine * cosine) - 1.0).abs() <= EPS_AGREE)
+                            .then_some((sine.atan2(cosine), ring))
+                    }),
+            )?;
             (candidate.0, [candidate.1, candidate.1])
         }
     };

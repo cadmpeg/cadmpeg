@@ -12,6 +12,15 @@ pub(crate) enum DesignBaseFeatureCompactMode {
     One = 1,
 }
 
+impl From<DesignBaseFeatureCompactMode> for u8 {
+    fn from(value: DesignBaseFeatureCompactMode) -> Self {
+        match value {
+            DesignBaseFeatureCompactMode::Zero => 0,
+            DesignBaseFeatureCompactMode::One => 1,
+        }
+    }
+}
+
 impl TryFrom<u8> for DesignBaseFeatureCompactMode {
     type Error = &'static str;
 
@@ -377,7 +386,7 @@ impl Serialize for DesignBaseFeatureConstruction {
                 let (wire_form, mode, mode_offset) = match form {
                     DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (
                         DesignBaseFeatureBodyReferenceFormWire::CompactOneBody,
-                        Some(mode.value as u8),
+                        Some(u8::from(mode.value)),
                         Some(mode.offset),
                     ),
                     DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (
@@ -979,7 +988,7 @@ impl From<DesignBaseFeatureConstruction> for DesignBaseFeatureConstructionWire {
                 let (form, mode, mode_offset) = match form {
                     DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } => (
                         DesignBaseFeatureBodyReferenceFormWire::CompactOneBody,
-                        Some(mode.value as u8),
+                        Some(u8::from(mode.value)),
                         Some(mode.offset),
                     ),
                     DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { .. } => (

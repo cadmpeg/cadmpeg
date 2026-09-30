@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::history::{bind_body_recipe_operand_history_candidates, complete_body_face_slots};
 use crate::history_records::{
     AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalRelation,
@@ -667,10 +669,12 @@ fn external_body_candidate_requires_one_displayed_body_across_every_clause() {
         .retain(|face| !face.as_str().contains("/cache/"));
     let mut draft = operand.into_draft();
     let mut added = reference(&["f3d:brep/cache/brep:face#1"]);
-    added.design_reference_offset = draft.byte_offset + 25 + draft.references.len() as u64 * 12;
+    added.design_reference_offset =
+        draft.byte_offset + 25 + u64_from_index(draft.references.len()) * 12;
     added.form_offset = added.design_reference_offset + 8;
     draft.references.push(added);
-    draft.nested_record_index_offset = draft.byte_offset + 26 + draft.references.len() as u64 * 12;
+    draft.nested_record_index_offset =
+        draft.byte_offset + 26 + u64_from_index(draft.references.len()) * 12;
     draft.asset_id_offset = draft.nested_record_index_offset + 18;
     operand =
         crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap();

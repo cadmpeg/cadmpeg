@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse the legacy class-397 symmetric-distance Extrude grammar.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::bytes::f64s_at;
 use crate::design::decode::text::fixed_guid_end;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as symmetric;
@@ -24,10 +26,10 @@ impl Class397SymmetricFrame {
     ) -> Option<Self> {
         (class_tag == "397"
             && paired_class_tag == "262"
-            && frame_length == symmetric::LEN as u64
-            && reference_count_offset == symmetric::REFERENCE_COUNT as u64
-            && reference_count == symmetric::REFERENCE_COUNT_VALUE as usize)
-            .then_some(Self(()))
+            && frame_length == u64_from_index(symmetric::LEN)
+            && reference_count_offset == u64_from_index(symmetric::REFERENCE_COUNT)
+            && reference_count == index_from_u32(symmetric::REFERENCE_COUNT_VALUE))
+        .then_some(Self(()))
     }
 
     /// The symmetric-distance extent admitted by this frame grammar.

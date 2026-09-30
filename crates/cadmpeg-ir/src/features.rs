@@ -2038,11 +2038,31 @@ impl FeatureResultTopology {
             edges,
             vertices,
         };
-        let members = NonEmptyMembers::try_from(Vec::<SelectionMember>::from(members))?;
+        if members.bodies.is_empty()
+            && members.faces.is_empty()
+            && members.edges.is_empty()
+            && members.vertices.is_empty()
+        {
+            return Err(BodySelectionError::Empty.into());
+        }
+        for (error, values) in [
+            (FeatureResultMemberError::RepeatedBody, &members.bodies),
+            (FeatureResultMemberError::RepeatedFace, &members.faces),
+            (FeatureResultMemberError::RepeatedEdge, &members.edges),
+            (FeatureResultMemberError::RepeatedVertex, &members.vertices),
+        ] {
+            if values
+                .iter()
+                .enumerate()
+                .any(|(index, value)| values[..index].contains(value))
+            {
+                return Err(error);
+            }
+        }
         Ok(Self {
             id,
             output_of,
-            members: FeatureResultMembers::try_from(members)?,
+            members,
             native_ref,
         })
     }
@@ -2099,6 +2119,14 @@ impl FeatureContent {
         }
         self.0.push(value);
         Ok(())
+    }
+
+    /// Reserves capacity for additional ordered source-content entries.
+    pub fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.0.try_reserve(additional)
     }
 
     /// Whether the sequence has no content.
@@ -6498,6 +6526,16 @@ impl<T: PartialEq> DistinctMembers<T> {
         self.0.push(value);
         true
     }
+
+    /// Fallibly reserves and inserts a member unless it is already present.
+    pub fn try_insert(&mut self, value: T) -> Result<bool, std::collections::TryReserveError> {
+        if self.0.contains(&value) {
+            return Ok(false);
+        }
+        self.0.try_reserve(1)?;
+        self.0.push(value);
+        Ok(true)
+    }
 }
 
 impl<T> DistinctMembers<T> {
@@ -8029,19 +8067,20 @@ impl SweepShape {
     /// Generated cross-sections, mutable, the primary cross-section first.
     ///
     /// Only a solid result generates geometry.
-    pub fn generated_sections_mut(&mut self) -> Vec<&mut GeneratedSweepSection> {
-        match self {
-            Self::Unresolved { .. } | Self::Surface { .. } => Vec::new(),
+    pub fn generated_sections_mut(&mut self) -> impl Iterator<Item = &mut GeneratedSweepSection> {
+        let (section, sections) = match self {
+            Self::Unresolved { .. } | Self::Surface { .. } => (None, &mut [][..]),
             Self::Solid {
                 section, sections, ..
-            } => std::iter::once(section)
-                .chain(sections)
-                .filter_map(|section| match section {
-                    SweepSection::Generated(generated) => Some(generated),
-                    SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
-                })
-                .collect(),
-        }
+            } => (Some(section), sections.as_mut_slice()),
+        };
+        section
+            .into_iter()
+            .chain(sections.iter_mut())
+            .filter_map(|section| match section {
+                SweepSection::Generated(generated) => Some(generated),
+                SweepSection::Unresolved(_) | SweepSection::Profile(_) => None,
+            })
     }
 
     /// The generated region of the primary cross-section, when the sweep owns it.

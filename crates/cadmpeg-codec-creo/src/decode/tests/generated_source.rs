@@ -22,34 +22,50 @@ use crate::decode::holes::drilled::{
     simple_drilled_axis_placement_from_frames, simple_drilled_hole_dimension_values,
     simple_drilled_hole_recipe, stepped_hole_form, SimpleDrilledDimensionFamily,
 };
-use crate::decode::holes::placement::ExtrusionSpan;
+
 use crate::decode::sketch::equations_coordinate::approximately_equal;
 use crate::decode::surfaces::cylinders::rowless_round_cylinder_pairs;
-use crate::decode::sweep::nurbs::extruded_nurbs_surface;
-use crate::decode::sweep::profiles::ProfileEntity;
-use crate::decode::sweep::profiles::{
-    circular_pcurve, extrusion_cap_pcurve, extrusion_profile_signed_area, extrusion_side_uvs,
-    ordered_extrusion_profiles, oriented_arc_parameterization, oriented_full_turn_angles,
-    point_on_profile_arc, profile_arc, resolved_sketch_profiles,
-};
+
 use crate::feature::schema::SchemaClass;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{
-    holes::{HoleForm, HoleKind},
-    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-    LinearTermination,
-};
-use cadmpeg_ir::geometry::{nurbs::NurbsCurve, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::features::holes::{HoleForm, HoleKind};
+use cadmpeg_ir::features::FeatureDefinition as IrFeatureDefinition;
+use cadmpeg_ir::features::FeatureOperation as IrFeatureOperation;
+use cadmpeg_ir::features::LinearTermination;
+use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchGeometryDefinition, SketchId,
-};
+use cadmpeg_ir::scalar::{Length, PositiveLength};
+use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::{BTreeMap, BTreeSet};
 
 const EPS_GENERATED_CYLINDER_RADIUS: f64 = 1.0e-12;
+
+fn service_counterbore_cylinder_sources(
+    scan: &crate::container::ContainerScan<'_>,
+    feature_id: u32,
+) -> Option<Vec<Vec<u32>>> {
+    crate::decode::with_test_decode_ctx(|ctx| counterbore_cylinder_sources(ctx, scan, feature_id))
+        .expect("service resources")
+}
+
+fn service_counterbore_source_patch_geometries(
+    sources: &[Vec<u32>],
+    existing: &BTreeMap<u32, SurfaceGeometry>,
+    bore_diameter: f64,
+    counterbore_diameter: f64,
+) -> Option<Vec<(u32, cadmpeg_ir::geometry::analytic::CylinderSurface)>> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        counterbore_source_patch_geometries(
+            ctx,
+            sources,
+            existing,
+            bore_diameter,
+            counterbore_diameter,
+        )
+    })
+    .expect("service resources")
+}
 
 fn admitted_spans(raw: [[Option<f64>; 2]; 3]) -> [[Option<PositiveLength>; 2]; 3] {
     raw.map(|axis| {
@@ -230,14 +246,16 @@ fn generated_source_ids_bind_carriers_independently_of_table_position() {
         Some(43)
     );
     assert_eq!(
-        ordered_family_surface_bindings_for_feature(
+        crate::decode::with_test_decode_ctx(|ctx| ordered_family_surface_bindings_for_feature(
+            ctx,
             &rows,
             17,
             std::slice::from_ref(&table),
             &order,
             [9],
             crate::surface::SurfaceKind::TorusOrSphere,
-        ),
+        ))
+        .expect("service profile admits one ordered generated surface binding"),
         BTreeMap::from([(9, 43)])
     );
     assert_eq!(
@@ -357,23 +375,43 @@ fn paired_cylinder_sources_and_planar_support_identify_counterbore_form() {
     ];
 
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service stepped form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        ))
+        .expect("service stepped ambiguity"),
         None
     );
 
     rows[4].kind = crate::surface::SurfaceKind::Cone;
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service stepped form"),
         None
     );
 }
 
-#[test]
-fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
+fn split_patch_counterbore_fixture() -> (
+    crate::feature::entity::FeatureEntityTable,
+    Vec<crate::surface::SurfaceRow>,
+) {
     let entry =
         |entity_id, class_id, source_entity_id| crate::feature::entity::FeatureEntityTableEntry {
             payload: crate::feature::entity::entry_payload(class_id, source_entity_id, None, None),
@@ -416,7 +454,7 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         next_surface: 0,
         offset: 0,
     };
-    let mut rows = vec![
+    let rows = vec![
         row(15, crate::surface::SurfaceKind::Cylinder),
         row(16, crate::surface::SurfaceKind::Cylinder),
         row(30, crate::surface::SurfaceKind::Plane),
@@ -424,12 +462,31 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         row(33, crate::surface::SurfaceKind::Cylinder),
     ];
 
+    (table, rows)
+}
+
+#[test]
+fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
+    let (table, mut rows) = split_patch_counterbore_fixture();
+
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service split-patch form"),
         Some(HoleForm::Counterbore)
     );
     assert_eq!(
-        stepped_hole_form(9, &[table.clone(), table.clone()], &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        ))
+        .expect("service split-patch ambiguity"),
         None
     );
 
@@ -438,16 +495,149 @@ fn split_patch_cylinder_sources_and_planar_support_identify_counterbore_form() {
         .entries
         .retain(|entry| entry.entity_id != 32);
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&missing_plane_companion), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&missing_plane_companion),
+            &rows
+        ))
+        .expect("service missing companion"),
         None
     );
 
     rows[2].kind = crate::surface::SurfaceKind::Cylinder;
     assert_eq!(
-        stepped_hole_form(9, std::slice::from_ref(&table), &rows),
+        crate::decode::with_test_decode_ctx(|ctx| stepped_hole_form(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service nonplanar form"),
         None
     );
 }
+
+fn assert_split_patch_collection_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (table, rows) = split_patch_counterbore_fixture();
+    let run = |policy: DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        stepped_hole_form(&ctx, 9, std::slice::from_ref(&table), &rows)
+    };
+    assert_eq!(
+        run(DecodePolicy::service()).expect("service split-patch form"),
+        Some(HoleForm::Counterbore)
+    );
+    let refusal = (0..256)
+        .find_map(|limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            match run(policy) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation =>
+                {
+                    Some(refusal)
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                other => panic!("{operation} was not reached before {other:?}"),
+            }
+        })
+        .expect("named split-patch allocation reached");
+    assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(refusal.limit, refusal.used);
+}
+
+macro_rules! split_patch_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_split_patch_collection_refusal($operation);
+        }
+    };
+}
+
+split_patch_collection_test!(
+    split_patch_materialized_ids_refuse_limit,
+    "creo split-patch materialized surface ID nodes"
+);
+split_patch_collection_test!(
+    split_patch_cylinder_sources_refuse_limit,
+    "creo split-patch cylinder source nodes"
+);
+split_patch_collection_test!(
+    split_patch_cylinder_ids_refuse_limit,
+    "creo split-patch cylinder IDs"
+);
+split_patch_collection_test!(
+    split_patch_plane_sources_refuse_limit,
+    "creo split-patch plane source nodes"
+);
+split_patch_collection_test!(
+    split_patch_plane_ids_refuse_limit,
+    "creo split-patch plane IDs"
+);
+split_patch_collection_test!(
+    split_patch_rowless_sources_refuse_limit,
+    "creo split-patch rowless source nodes"
+);
+
+fn assert_paired_hole_collection_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let table = simple_drilled_recipe_table(9);
+    let rows = simple_drilled_recipe_surface_rows(9);
+    let run = |policy: DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        simple_drilled_hole_recipe(&ctx, 9, std::slice::from_ref(&table), &rows)
+            .map(|recipe| recipe.map(|recipe| recipe.dimension_family))
+    };
+    assert_eq!(
+        run(DecodePolicy::service()).expect("service drilled recipe"),
+        Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
+    );
+    let refusal = (0..256)
+        .find_map(|limit| {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            match run(policy) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation =>
+                {
+                    Some(refusal)
+                }
+                Err(cadmpeg_core::CodecError::ResourceLimit(_)) => None,
+                other => panic!("{operation} was not reached before {other:?}"),
+            }
+        })
+        .expect("named paired-hole allocation reached");
+    assert_eq!(refusal.dimension, ResourceDimension::CollectionItems);
+    assert_eq!(refusal.limit, refusal.used);
+}
+
+macro_rules! paired_hole_collection_test {
+    ($name:ident, $operation:literal) => {
+        #[test]
+        fn $name() {
+            assert_paired_hole_collection_refusal($operation);
+        }
+    };
+}
+
+paired_hole_collection_test!(
+    paired_hole_run_sources_refuse_limit,
+    "creo paired-hole run source nodes"
+);
+paired_hole_collection_test!(paired_hole_runs_refuse_limit, "creo paired-hole runs");
+paired_hole_collection_test!(
+    paired_hole_result_sources_refuse_limit,
+    "creo paired-hole result source nodes"
+);
 
 #[test]
 fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
@@ -455,11 +645,26 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     let mut rows = simple_drilled_recipe_surface_rows(9);
 
     assert_eq!(
-        simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows)
-            .map(|recipe| recipe.dimension_family),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service drilled recipe")
+        .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId2Depth)
     );
-    assert!(simple_drilled_hole_recipe(9, &[table.clone(), table.clone()], &rows,).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            &[table.clone(), table.clone()],
+            &rows
+        )
+        .map(|recipe| recipe.is_none()))
+        .expect("service drilled ambiguity")
+    );
 
     let mut extended = table.clone();
     let mut extra = extended.entries[3].clone();
@@ -471,8 +676,14 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     extra.entity_id = 27;
     extended.entries.insert(14, extra);
     assert_eq!(
-        simple_drilled_hole_recipe(9, std::slice::from_ref(&extended), &rows)
-            .map(|recipe| recipe.dimension_family),
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&extended),
+            &rows
+        ))
+        .expect("service extended recipe")
+        .map(|recipe| recipe.dimension_family),
         Some(SimpleDrilledDimensionFamily::ExternalId4Depth)
     );
     let mut unknown_family = extended;
@@ -482,20 +693,56 @@ fn paired_cone_and_cylinder_sources_identify_simple_drilled_recipe() {
     unknown_family.entries.insert(8, extra.clone());
     extra.entity_id = 29;
     unknown_family.entries.insert(16, extra);
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&unknown_family), &rows).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&unknown_family),
+            &rows
+        ))
+        .expect("service unknown family")
+        .is_none()
+    );
 
     let mut bottom = table.entries[2].clone();
     bottom.entity_id = 20;
     bottom.payload = crate::feature::entity::EntryPayload::Source { entity: Some(0) };
     table.entries.insert(2, bottom.clone());
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_some());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service source-zero recipe")
+        .is_some()
+    );
     bottom.entity_id = 25;
     table.entries.insert(3, bottom);
-    assert!(simple_drilled_hole_recipe(9, std::slice::from_ref(&table), &rows).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            std::slice::from_ref(&table),
+            &rows
+        ))
+        .expect("service duplicate source-zero recipe")
+        .is_none()
+    );
 
     let table = simple_drilled_recipe_table(9);
     rows[1].kind = crate::surface::SurfaceKind::Cylinder;
-    assert!(simple_drilled_hole_recipe(9, &[table], &rows).is_none());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| simple_drilled_hole_recipe(
+            ctx,
+            9,
+            &[table],
+            &rows
+        )
+        .map(|recipe| recipe.is_none()))
+        .expect("service missing cone recipe")
+    );
 }
 
 #[test]
@@ -984,11 +1231,11 @@ fn counterbore_sources_require_materialized_table_membership() {
         .extend([row(11), row(12), row(15), row(16)]);
 
     assert_eq!(
-        counterbore_cylinder_sources(&scan, 9),
+        service_counterbore_cylinder_sources(&scan, 9),
         Some(vec![vec![15, 16]])
     );
     scan.features.entity_tables.push(duplicate_productive_table);
-    assert!(counterbore_cylinder_sources(&scan, 9).is_none());
+    assert!(service_counterbore_cylinder_sources(&scan, 9).is_none());
 }
 
 #[test]
@@ -1228,7 +1475,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     let mut existing = BTreeMap::from([(30, carrier.clone()), (31, carrier.clone())]);
     let sources = vec![vec![10, 11], vec![30, 31]];
 
-    let patches = counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625)
+    let patches = service_counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625)
         .expect("coaxial patches");
 
     assert_eq!(patches.len(), 4);
@@ -1273,7 +1520,7 @@ fn counterbore_bore_patches_inherit_the_unique_larger_cylinder_frame() {
     );
     existing.insert(10, carrier);
     assert_eq!(
-        counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
+        service_counterbore_source_patch_geometries(&sources, &existing, 0.196, 0.625),
         None
     );
     let duplicate = existing[&30].clone();
@@ -1501,316 +1748,60 @@ fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
     )
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows,),
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::from([23]),
+            std::slice::from_ref(&table),
+            &rows,
+        ))
+        .expect("service pair admitted"),
         vec![(12, 13, 47)]
     );
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::new(), std::slice::from_ref(&table), &rows,)
-            .is_empty()
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::new(),
+            std::slice::from_ref(&table),
+            &rows,
+        ))
+        .expect("service empty pair admitted")
+        .is_empty()
     );
     rows[2].reversed = true;
     assert_eq!(
-        rowless_round_face_orientations(
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
+            ctx,
             &BTreeSet::from([23]),
             std::slice::from_ref(&table),
             &rows,
             &BTreeSet::from([12]),
-        ),
+        ))
+        .expect("service rowless orientation admitted"),
         BTreeMap::from([(12, true)])
     );
-    assert!(rowless_round_face_orientations(
-        &BTreeSet::from([23]),
-        std::slice::from_ref(&table),
-        &rows,
-        &BTreeSet::new(),
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_face_orientations(
+            ctx,
+            &BTreeSet::from([23]),
+            std::slice::from_ref(&table),
+            &rows,
+            &BTreeSet::new(),
+        ))
+        .expect("service absent orientation admitted")
+        .is_empty()
+    );
     let mut materialized_rowless = rows;
     materialized_rowless.push(row(12, crate::surface::SurfaceKind::Cylinder));
     assert!(
-        rowless_round_cylinder_pairs(&BTreeSet::from([23]), &[table], &materialized_rowless,)
-            .is_empty()
+        crate::decode::with_test_decode_ctx(|ctx| rowless_round_cylinder_pairs(
+            ctx,
+            &BTreeSet::from([23]),
+            &[table],
+            &materialized_rowless,
+        ))
+        .expect("service materialized row admitted")
+        .is_empty()
     );
 }
 
-#[test]
-fn spline_extrusion_preserves_directrix_basis_and_weights() {
-    let directrix = NurbsCurve::from_lanes(
-        2,
-        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-        vec![
-            Point3::new(1.0, 2.0, 3.0),
-            Point3::new(4.0, 5.0, 6.0),
-            Point3::new(7.0, 8.0, 9.0),
-        ],
-        Some(vec![1.0, 0.5, 1.0]),
-        false,
-    )
-    .expect("valid directrix");
-    let surface = extruded_nurbs_surface(
-        &directrix,
-        [0.0, 0.0, 4.0],
-        &"extrusion directrix fixture",
-        &mut crate::lane_refusal::LaneRefusals::new(),
-    )
-    .expect("valid extrusion surface");
-
-    assert_eq!((surface.u_degree(), surface.v_degree()), (2, 1));
-    assert_eq!((surface.u_count(), surface.v_count()), (3, 2));
-    assert_eq!(surface.u_knots(), directrix.knots());
-    assert_eq!(surface.v_knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
-    assert_eq!(
-        surface.poles(),
-        [
-            Point3::new(1.0, 2.0, 3.0),
-            Point3::new(1.0, 2.0, 7.0),
-            Point3::new(4.0, 5.0, 6.0),
-            Point3::new(4.0, 5.0, 10.0),
-            Point3::new(7.0, 8.0, 9.0),
-            Point3::new(7.0, 8.0, 13.0),
-        ]
-    );
-    assert_eq!(
-        surface.pole_grid().weights().map(|rows| rows.concat()),
-        Some([1.0, 1.0, 0.5, 0.5, 1.0, 1.0].to_vec())
-    );
-}
-
-#[test]
-fn reversed_arc_uses_opposite_axis_and_canonical_increasing_domain() {
-    let (axis_sign, range) = oriented_arc_parameterization(
-        true,
-        -std::f64::consts::FRAC_PI_2,
-        std::f64::consts::FRAC_PI_2,
-    );
-
-    assert_eq!(axis_sign, -1.0);
-    assert_eq!(
-        range,
-        [
-            3.0 * std::f64::consts::FRAC_PI_2,
-            5.0 * std::f64::consts::FRAC_PI_2
-        ]
-    );
-}
-
-#[test]
-fn extrusion_arc_pcurve_is_exact_in_both_directions() {
-    for (start, end, expected_middle) in [
-        (0.0, std::f64::consts::PI, Point2::new(2.0, 5.0)),
-        (std::f64::consts::PI, 0.0, Point2::new(2.0, 5.0)),
-    ] {
-        let pcurve = circular_pcurve(
-            [2.0, 2.0],
-            3.0,
-            start,
-            end,
-            &"circular pcurve fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect("circular pcurve fixture");
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("first endpoint");
-        let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("arc midpoint");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("last endpoint");
-        assert!((first.u - (2.0 + 3.0 * start.cos())).abs() < 1.0e-12);
-        assert!((first.v - (2.0 + 3.0 * start.sin())).abs() < 1.0e-12);
-        assert!((middle.u - expected_middle.u).abs() < 1.0e-12);
-        assert!((middle.v - expected_middle.v).abs() < 1.0e-12);
-        assert!((last.u - (2.0 + 3.0 * end.cos())).abs() < 1.0e-12);
-        assert!((last.v - (2.0 + 3.0 * end.sin())).abs() < 1.0e-12);
-    }
-}
-
-#[test]
-fn extrusion_profile_area_includes_oriented_arc_sector() {
-    let arc = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-        center: Point2::new(0.0, 0.0),
-        radius: Length::new(1.0).expect("finite length fixture"),
-        start_angle: Angle::new(0.0).expect("finite angle fixture"),
-        end_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
-    })
-    .expect("valid test fixture");
-    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-        start: Point2::new(-1.0, 0.0),
-        end: Point2::new(1.0, 0.0),
-    })
-    .expect("valid test fixture");
-    let counterclockwise = vec![
-        ProfileEntity::new(arc.clone(), false).expect("valid profile entity"),
-        ProfileEntity::new(line.clone(), false).expect("valid profile entity"),
-    ];
-    let clockwise = vec![
-        ProfileEntity::new(arc, true).expect("valid profile entity"),
-        ProfileEntity::new(line, true).expect("valid profile entity"),
-    ];
-    assert!(
-        (extrusion_profile_signed_area(&counterclockwise)
-            .expect("positive area")
-            .get()
-            - std::f64::consts::FRAC_PI_2)
-            .abs()
-            < 1.0e-12
-    );
-    assert!(
-        (extrusion_profile_signed_area(&clockwise)
-            .expect("negative area")
-            .get()
-            + std::f64::consts::FRAC_PI_2)
-            .abs()
-            < 1.0e-12
-    );
-}
-
-#[test]
-fn full_turn_arc_remains_a_closed_extrusion_profile() {
-    let profile = vec![ProfileEntity::new(
-        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-            center: Point2::new(0.0, 0.0),
-            radius: Length::new(2.0).expect("finite length fixture"),
-            start_angle: Angle::new(0.0).expect("finite angle fixture"),
-            end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
-        })
-        .expect("valid test fixture"),
-        false,
-    )
-    .expect("valid profile entity")];
-    let profiles = ordered_extrusion_profiles(vec![profile.clone()])
-        .expect("a full-turn arc is a closed profile");
-    let area = profiles[0].area();
-    assert_eq!(
-        profiles
-            .iter()
-            .map(|profile| profile.entities().clone())
-            .collect::<Vec<_>>(),
-        vec![profile]
-    );
-    assert!((area - 4.0 * std::f64::consts::PI).abs() < 1.0e-12);
-    assert_eq!(
-        oriented_arc_parameterization(false, 0.0, std::f64::consts::TAU).1,
-        [0.0, std::f64::consts::TAU]
-    );
-    assert_eq!(
-        oriented_arc_parameterization(true, 0.0, std::f64::consts::TAU).1,
-        [0.0, std::f64::consts::TAU]
-    );
-}
-
-#[test]
-fn circle_remains_a_closed_extrusion_profile() {
-    let sketch_id =
-        SketchId::mint("creo:model:sketch#circle".to_string()).expect("valid test fixture");
-    let entity_id = SketchEntityId::mint("creo:model:sketch_entity#circle".to_string())
-        .expect("valid test fixture");
-    let circle = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-        center: Point2::new(1.0, -2.0),
-        radius: Length::new(3.0).expect("finite length fixture"),
-    })
-    .expect("valid test fixture");
-    let seam = [4.0, -2.0];
-    let mut ir = CadIr::empty();
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: None,
-        configuration: None,
-        visible: None,
-        placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
-        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(vec![vec![SketchEntityUse {
-            entity: entity_id.clone(),
-            reversed: false,
-        }]])
-        .expect("valid test fixture"),
-        native_ref: None,
-    });
-    ir.model.sketch_entities.push(SketchEntity::new(
-        entity_id,
-        sketch_id.clone(),
-        circle.clone(),
-    ));
-
-    let profiles = resolved_sketch_profiles(
-        &ir,
-        &crate::decode::source_carriers::SourceUnitCarriers::default(),
-        &sketch_id,
-        1,
-    )
-    .expect("one circle profile");
-    assert_eq!(
-        profiles,
-        vec![vec![
-            ProfileEntity::new(circle.clone(), false).expect("valid profile entity")
-        ]]
-    );
-    let ordered = ordered_extrusion_profiles(profiles.clone()).expect("closed circle");
-    let area = ordered[0].area();
-    assert_eq!(
-        ordered
-            .iter()
-            .map(|profile| profile.entities().clone())
-            .collect::<Vec<_>>(),
-        profiles
-    );
-    assert!((area - 9.0 * std::f64::consts::PI).abs() < 1.0e-12);
-
-    for reversed in [false, true] {
-        let pcurve = extrusion_cap_pcurve(
-            &circle,
-            reversed,
-            seam,
-            seam,
-            &"extrusion cap fixture",
-            &mut crate::lane_refusal::LaneRefusals::new(),
-        )
-        .expect("extrusion cap pcurve fixture");
-        let first = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.0).expect("circle seam");
-        let middle = cadmpeg_ir::eval::pcurve_uv(&pcurve, 0.5).expect("circle midpoint");
-        let last = cadmpeg_ir::eval::pcurve_uv(&pcurve, 1.0).expect("circle seam");
-        assert!((first.u - seam[0]).abs() < 1.0e-12);
-        assert!((first.v - seam[1]).abs() < 1.0e-12);
-        assert!((middle.u - (1.0 - 3.0)).abs() < 1.0e-12);
-        assert!((middle.v + 2.0).abs() < 1.0e-12);
-        assert!((last.u - seam[0]).abs() < 1.0e-12);
-        assert!((last.v - seam[1]).abs() < 1.0e-12);
-        assert_eq!(
-            extrusion_side_uvs(
-                &circle,
-                reversed,
-                seam,
-                seam,
-                ExtrusionSpan::new(-1.0, 2.0).expect("valid span fixture"),
-            )[0],
-            [
-                [oriented_full_turn_angles(reversed)[0], -1.0],
-                [oriented_full_turn_angles(reversed)[1], -1.0],
-            ]
-        );
-        assert_eq!(
-            profile_arc(
-                &ProfileEntity::new(circle.clone(), reversed).expect("valid profile entity")
-            ),
-            Some((
-                [1.0, -2.0],
-                3.0,
-                0.0,
-                if reversed {
-                    -std::f64::consts::TAU
-                } else {
-                    std::f64::consts::TAU
-                },
-            ))
-        );
-    }
-    assert!(point_on_profile_arc(
-        seam,
-        profile_arc(&ProfileEntity::new(circle, false).expect("valid profile entity"))
-            .expect("circle arc"),
-        1.0e-9,
-    ));
-    assert_eq!(
-        oriented_full_turn_angles(false),
-        [0.0, std::f64::consts::TAU]
-    );
-    assert_eq!(
-        oriented_full_turn_angles(true),
-        [std::f64::consts::TAU, 0.0]
-    );
-}
+mod extrusion_profiles;

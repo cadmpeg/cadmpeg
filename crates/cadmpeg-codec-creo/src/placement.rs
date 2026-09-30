@@ -15,6 +15,8 @@ use crate::surface::{
     SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
 use crate::vecmath::{add, cross, dot, local_system_lanes, normalize, scale, unit_length};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::BTreeSet;
@@ -151,25 +153,38 @@ struct SectionFrameCandidate {
 }
 
 fn generated_cylinder_section_transform(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    definition.segments.as_ref()?.is_complete().then_some(())?;
-    let points = definition.variables.as_ref()?.reconciled_points();
-    points.1.is_empty().then_some(())?;
+) -> Result<Option<FeatureSectionTransform>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else {
+        return Ok(None);
+    };
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
+    };
+    if !segments.is_complete() {
+        return Ok(None);
+    }
+    let Some(variables) = definition.variables.as_ref() else {
+        return Ok(None);
+    };
+    let points = variables.reconciled_points(ctx)?;
+    if !points.ambiguous.is_empty() {
+        return Ok(None);
+    }
     let mut correspondences = Vec::<([f64; 2], [f64; 3], UnitVector3, usize)>::new();
     for (_, entry) in entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .flat_map(|table| table.entries.iter().map(move |entry| (table, entry)))
-        .filter(|(table, entry)| table.surface_ids().contains(&entry.entity_id))
+        .filter(|(table, entry)| table.contains_surface_id(entry.entity_id))
     {
         let Some(external_id) = entry.source_entity_id() else {
             continue;
         };
-        let Some(segment) = definition.segments.as_ref()?.segment(external_id) else {
+        let Some(segment) = segments.segment(external_id) else {
             continue;
         };
         if !matches!(segment.kind, FeatureSegmentKind::Arc(_)) {
@@ -178,7 +193,7 @@ fn generated_cylinder_section_transform(
         let Some(center_id) = segment.center_id else {
             continue;
         };
-        let Some([Some(u), Some(v)]) = points.0.get(&center_id).copied() else {
+        let Some([Some(u), Some(v)]) = points.points.get(&center_id).copied() else {
             continue;
         };
         let Some(row) = unique_surface_row(sources.surface_rows, entry.entity_id)
@@ -186,17 +201,23 @@ fn generated_cylinder_section_transform(
         else {
             continue;
         };
-        let parameters = sources
-            .surface_parameters
-            .iter()
-            .filter(|record| record.surface_id == row.id)
-            .collect::<Vec<_>>();
-        let [parameters] = parameters.as_slice() else {
+        let parameters = exactly_one(
+            sources
+                .surface_parameters
+                .iter()
+                .filter(|record| record.surface_id == row.id),
+        );
+        let Some(parameters) = parameters else {
             continue;
         };
         let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
+        ctx.reserve_vec(
+            &mut correspondences,
+            1,
+            "creo cylinder placement correspondences",
+        )?;
         correspondences.push((
             [u, v],
             frame.frame().origin(),
@@ -204,54 +225,51 @@ fn generated_cylinder_section_transform(
             parameters.offset,
         ));
     }
-    let first = correspondences.first()?;
-    let normal = unit_length(first.2);
-    let scale = correspondences
-        .iter()
-        .flat_map(|(local, model, _, _)| local.iter().chain(model))
-        .map(|value| value.abs())
-        .fold(1.0, f64::max);
-    let close = |left: f64, right: f64| {
-        (left - right).abs() <= EPS_PLACEMENT_GEOMETRY * left.abs().max(right.abs()).max(1.0)
-    };
-    correspondences
-        .iter()
-        .all(|(_, _, axis, _)| {
-            unit_length(*axis)
-                .iter()
-                .zip(normal)
-                .all(|(left, right)| close(*left, right))
-        })
-        .then_some(())?;
-
-    let mut frames = Vec::new();
-    for second in correspondences.iter().skip(1) {
-        let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
-        let model = std::array::from_fn::<_, 3, _>(|index| second.1[index] - first.1[index]);
-        let local_squared = dot([local[0], local[1], 0.0], [local[0], local[1], 0.0]);
-        if local_squared <= 1e-24 * scale * scale
-            || !close(dot(model, model), local_squared)
-            || !close(dot(model, normal), 0.0)
-        {
-            continue;
-        }
-        let normal_cross_model = cross(normal, model);
-        let u_axis = std::array::from_fn(|index| {
-            (local[0] * model[index] - local[1] * normal_cross_model[index]) / local_squared
-        });
-        let Some(u_axis) = normalize(u_axis) else {
-            continue;
+    let result = (|| {
+        let first = correspondences.first()?;
+        let normal = unit_length(first.2);
+        let scale = correspondences
+            .iter()
+            .flat_map(|(local, model, _, _)| local.iter().chain(model))
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        let close = |left: f64, right: f64| {
+            (left - right).abs() <= EPS_PLACEMENT_GEOMETRY * left.abs().max(right.abs()).max(1.0)
         };
-        let v_axis = cross(normal, u_axis);
-        let origin = std::array::from_fn(|index| {
-            first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
-        });
-        frames.push((origin, u_axis, v_axis));
-    }
-    let valid = frames
-        .iter()
-        .filter(|candidate| {
-            correspondences.iter().all(|(local, model, _, _)| {
+        correspondences
+            .iter()
+            .all(|(_, _, axis, _)| {
+                unit_length(*axis)
+                    .iter()
+                    .zip(normal)
+                    .all(|(left, right)| close(*left, right))
+            })
+            .then_some(())?;
+
+        let mut frame = None::<([f64; 3], [f64; 3], [f64; 3])>;
+        for second in correspondences.iter().skip(1) {
+            let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
+            let model = std::array::from_fn::<_, 3, _>(|index| second.1[index] - first.1[index]);
+            let local_squared = dot([local[0], local[1], 0.0], [local[0], local[1], 0.0]);
+            if local_squared <= 1e-24 * scale * scale
+                || !close(dot(model, model), local_squared)
+                || !close(dot(model, normal), 0.0)
+            {
+                continue;
+            }
+            let normal_cross_model = cross(normal, model);
+            let u_axis = std::array::from_fn(|index| {
+                (local[0] * model[index] - local[1] * normal_cross_model[index]) / local_squared
+            });
+            let Some(u_axis) = normalize(u_axis) else {
+                continue;
+            };
+            let v_axis = cross(normal, u_axis);
+            let origin = std::array::from_fn(|index| {
+                first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
+            });
+            let candidate = (origin, u_axis, v_axis);
+            if !correspondences.iter().all(|(local, model, _, _)| {
                 (0..3).all(|index| {
                     close(
                         candidate.0[index]
@@ -260,53 +278,86 @@ fn generated_cylinder_section_transform(
                         model[index],
                     )
                 })
-            })
-        })
-        .collect::<Vec<_>>();
-    let frame = *valid.first()?;
-    valid
-        .iter()
-        .all(|candidate| {
-            candidate
-                .0
-                .iter()
-                .chain(candidate.1.iter())
-                .chain(candidate.2.iter())
-                .zip(frame.0.iter().chain(frame.1.iter()).chain(frame.2.iter()))
-                .all(|(left, right)| close(*left, *right))
-        })
-        .then_some(())?;
-    let offset = definition.section_3d.as_ref().map_or_else(
-        || correspondences.iter().map(|item| item.3).min(),
-        |section| Some(section.offset),
-    )?;
-    FeatureSectionTransform::new(
-        definition.identity.id(),
-        Some(feature_id),
-        frame.0,
-        frame.1,
-        frame.2,
-        offset,
-    )
+            }) {
+                continue;
+            }
+            if let Some(previous) = frame {
+                if !candidate
+                    .0
+                    .iter()
+                    .chain(candidate.1.iter())
+                    .chain(candidate.2.iter())
+                    .zip(
+                        previous
+                            .0
+                            .iter()
+                            .chain(previous.1.iter())
+                            .chain(previous.2.iter()),
+                    )
+                    .all(|(left, right)| close(*left, *right))
+                {
+                    return None;
+                }
+            } else {
+                frame = Some(candidate);
+            }
+        }
+        let frame = frame?;
+        let offset = definition.section_3d.as_ref().map_or_else(
+            || correspondences.iter().map(|item| item.3).min(),
+            |section| Some(section.offset),
+        )?;
+        FeatureSectionTransform::new(
+            definition.identity.id(),
+            Some(feature_id),
+            frame.0,
+            frame.1,
+            frame.2,
+            offset,
+        )
+    })();
+    Ok(result)
 }
 
 fn generated_planar_section_transform(
+    ctx: &DecodeContext<'_>,
     definition: &FeatureDefinition,
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Option<FeatureSectionTransform> {
-    let feature_id = definition.identity.owner_feature_id()?;
-    let segments = definition.segments.as_ref()?;
-    segments.is_complete().then_some(())?;
-    let (points, conflicting_points) = definition.variables.as_ref()?.reconciled_points();
-    conflicting_points.is_empty().then_some(())?;
-    let tables = entity_tables
+) -> Result<Option<FeatureSectionTransform>, CodecError> {
+    let Some(feature_id) = definition.identity.owner_feature_id() else {
+        return Ok(None);
+    };
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
+    };
+    if !segments.is_complete() {
+        return Ok(None);
+    }
+    let Some(variables) = definition.variables.as_ref() else {
+        return Ok(None);
+    };
+    let crate::feature::definitions::ReconciledPoints {
+        points,
+        ambiguous: conflicting_points,
+    } = variables.reconciled_points(ctx)?;
+    if !conflicting_points.is_empty() {
+        return Ok(None);
+    }
+    let mut table = None;
+    for candidate in entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
-        .filter(|table| generated_planar_table_shape(table))
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
+    {
+        if generated_planar_table_shape(ctx, candidate)? {
+            if table.is_some() {
+                return Ok(None);
+            }
+            table = Some(candidate);
+        }
+    }
+    let Some(table) = table else {
+        return Ok(None);
     };
     let offset = definition
         .section_3d
@@ -339,14 +390,17 @@ fn generated_planar_section_transform(
         normal[axis] = 1.0;
         Some((normal, coordinate))
     };
-    let caps = [
-        generated_plane_equation(&table.entries[0])?,
-        generated_plane_equation(&table.entries[1])?,
-    ];
+    let (Some(first_cap), Some(second_cap)) = (
+        generated_plane_equation(&table.entries[0]),
+        generated_plane_equation(&table.entries[1]),
+    ) else {
+        return Ok(None);
+    };
+    let caps = [first_cap, second_cap];
     let mut sides = Vec::new();
     for entry in table.entries[2..]
         .iter()
-        .filter(|entry| table.surface_ids().contains(&entry.entity_id))
+        .filter(|entry| table.contains_surface_id(entry.entity_id))
     {
         let Some(model_plane) = generated_plane_equation(entry) else {
             continue;
@@ -354,21 +408,32 @@ fn generated_planar_section_transform(
         let Some(segment) = entry.source_entity_id().and_then(|id| segments.segment(id)) else {
             continue;
         };
-        matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
+        if !matches!(segment.kind, FeatureSegmentKind::Line(_)) {
+            return Ok(None);
+        }
         let point = |point_id| {
             let point = points.get(&point_id)?;
             Some([point[0]?, point[1]?])
         };
-        let start = point(segment.point_ids()[0])?;
-        let end = point(segment.point_ids()[1])?;
+        let Some(start) = point(segment.point_ids()[0]) else {
+            return Ok(None);
+        };
+        let Some(end) = point(segment.point_ids()[1]) else {
+            return Ok(None);
+        };
         let direction = [end[0] - start[0], end[1] - start[1]];
         let length = direction[0].hypot(direction[1]);
-        (length.is_finite() && length > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        if !length.is_finite() || length <= EPS_PLACEMENT_EXACT_GEOMETRY {
+            return Ok(None);
+        }
         let local_normal = [direction[1] / length, -direction[0] / length];
         let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
         let (model_normal, model_offset) = model_plane;
         let magnitude = dot(model_normal, model_normal).sqrt();
-        (magnitude.is_finite() && magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        if !magnitude.is_finite() || magnitude <= EPS_PLACEMENT_EXACT_GEOMETRY {
+            return Ok(None);
+        }
+        ctx.reserve_vec(&mut sides, 1, "creo planar placement sides")?;
         sides.push((
             local_normal,
             local_offset,
@@ -479,6 +544,7 @@ fn generated_planar_section_transform(
                             && vectors_close(existing.v_axis(), candidate.v_axis())
                             && vectors_close(existing.normal(), candidate.normal())
                     }) {
+                        ctx.reserve_vec(&mut candidates, 1, "creo planar placement candidates")?;
                         candidates.push(candidate);
                     }
                 }
@@ -486,54 +552,34 @@ fn generated_planar_section_transform(
         }
     }
     let [transform] = candidates.as_slice() else {
-        return None;
+        return Ok(None);
     };
-    Some(transform.clone())
+    Ok(Some(transform.clone()))
 }
 
-fn generated_planar_table_shape(table: &FeatureEntityTable) -> bool {
+fn generated_planar_table_shape(
+    ctx: &DecodeContext<'_>,
+    table: &FeatureEntityTable,
+) -> Result<bool, CodecError> {
     let [first, second, rest @ ..] = table.entries.as_slice() else {
-        return false;
+        return Ok(false);
     };
     if first.class_id() != 204
         || second.class_id() != 203
         || rest.is_empty()
         || !rest.iter().all(|entry| entry.source_entity_id().is_some())
     {
-        return false;
+        return Ok(false);
     }
-    let entry_ids = table
-        .entries
-        .iter()
-        .map(|entry| entry.entity_id)
-        .collect::<BTreeSet<_>>();
-    let roster = table
-        .surface_ids()
-        .iter()
-        .chain(&table.non_surface_entity_ids())
-        .copied()
-        .collect::<BTreeSet<_>>();
-    table.entry_ids().len() == entry_ids.len()
-        && table.entry_ids().iter().copied().collect::<BTreeSet<_>>() == entry_ids
-        && roster == entry_ids
-        && table.surface_ids().iter().all(|id| {
-            !table.non_surface_entity_ids().contains(id)
-                && table
-                    .surface_ids()
-                    .iter()
-                    .filter(|candidate| *candidate == id)
-                    .count()
-                    == 1
-        })
-        && table.non_surface_entity_ids().iter().all(|id| {
-            !table.surface_ids().contains(id)
-                && table
-                    .non_surface_entity_ids()
-                    .iter()
-                    .filter(|candidate| *candidate == id)
-                    .count()
-                    == 1
-        })
+    let mut entry_ids = BTreeSet::new();
+    for entry in &table.entries {
+        if entry_ids.contains(&entry.entity_id) {
+            return Ok(false);
+        }
+        ctx.charge_collection_items(1, "creo generated planar table entry nodes")?;
+        entry_ids.insert(entry.entity_id);
+    }
+    Ok(true)
 }
 
 fn plane_equation(
@@ -542,16 +588,14 @@ fn plane_equation(
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
 ) -> Option<SignedPlaneEquation> {
-    let datums = datums
-        .iter()
-        .filter(|datum| datum.id == id)
-        .collect::<Vec<_>>();
-    let model_planes = model_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let model_equation = match model_planes.as_slice() {
-        [plane] => {
+    let mut matching_datums = datums.iter().filter(|datum| datum.id == id);
+    let datum = matching_datums.next();
+    let duplicate_datums = matching_datums.next().is_some();
+    let mut matching_model_planes = model_planes.iter().filter(|plane| plane.surface_id == id);
+    let model_plane = matching_model_planes.next();
+    let duplicate_model_planes = matching_model_planes.next().is_some();
+    let model_equation = match (model_plane, duplicate_model_planes) {
+        (Some(plane), false) => {
             let frame = plane.frame();
             frame
                 .normal()
@@ -563,35 +607,34 @@ fn plane_equation(
         }
         _ => None,
     };
-    let outline_planes = outline_planes
-        .iter()
-        .filter(|plane| plane.surface_id == id)
-        .collect::<Vec<_>>();
-    let outline_equation = match outline_planes.as_slice() {
-        [plane] => Some(SignedPlaneEquation {
-            normal: plane.normal(),
-            offset: dot(plane.normal(), plane.origin),
-        }),
-        _ => None,
-    };
+    let outline_equation =
+        exactly_one(outline_planes.iter().filter(|plane| plane.surface_id == id)).map(|plane| {
+            SignedPlaneEquation {
+                normal: plane.normal(),
+                offset: dot(plane.normal(), plane.origin),
+            }
+        });
     // The datum-geometry and model-surface identifiers are separate namespaces;
     // a numeric collision supplies no rule for choosing between their equations.
-    if datums.len() == 1 && (model_equation.is_some() || outline_equation.is_some()) {
+    if datum.is_some()
+        && !duplicate_datums
+        && (model_equation.is_some() || outline_equation.is_some())
+    {
         return None;
     }
-    if let [datum] = datums.as_slice() {
+    if duplicate_datums {
+        return None;
+    }
+    if let Some(datum) = datum {
         return Some(SignedPlaneEquation {
             normal: datum.plane.normal(),
             offset: datum.plane.offset,
         });
     }
-    if !datums.is_empty() {
-        return None;
-    }
     if let Some(equation) = model_equation {
         return Some(equation);
     }
-    if model_planes.len() > 1 {
+    if duplicate_model_planes {
         return None;
     }
     outline_equation
@@ -711,167 +754,174 @@ fn generated_datum_plane_equation(
         .filter(|id| **id == sketch_id)
         .count();
     (datum_ids == 1).then_some(())?;
-    let datums = sources
+    let mut datums = sources
         .datums
         .iter()
-        .filter(|datum| datum.id == reference_id)
-        .collect::<Vec<_>>();
-    let reference_feature = match datums.as_slice() {
-        [datum] => Some(datum.feature_id),
-        [] => unique_surface_row(sources.surface_rows, reference_id)
+        .filter(|datum| datum.id == reference_id);
+    let reference_feature = match (datums.next(), datums.next()) {
+        (Some(datum), None) => Some(datum.feature_id),
+        (None, None) => unique_surface_row(sources.surface_rows, reference_id)
             .filter(|row| row.kind == SurfaceKind::Plane)
             .map(|row| row.feature_id),
         _ => None,
     }?;
-    let candidates = sources
-        .affected_ids
-        .iter()
-        .filter(|record| {
-            record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
-        })
-        .filter_map(|parents| {
-            let other = parents
-                .ids
-                .iter()
-                .filter(|parent| **parent != reference_feature)
-                .collect::<Vec<_>>();
-            let [other] = other.as_slice() else {
-                return None;
-            };
-            let equations = sources
-                .datums
-                .iter()
-                .filter(|datum| datum.feature_id == **other)
-                .map(|datum| SignedPlaneEquation {
-                    normal: datum.plane.normal(),
-                    offset: datum.plane.offset,
-                })
-                .chain(
-                    sources
-                        .surface_rows
+    exactly_one(
+        sources
+            .affected_ids
+            .iter()
+            .filter(|record| {
+                record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
+            })
+            .filter_map(|parents| {
+                let other = exactly_one(
+                    parents
+                        .ids
                         .iter()
-                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
-                        .filter_map(|row| {
-                            plane_equation(
-                                row.id,
-                                sources.datums,
-                                sources.model_planes,
-                                sources.outline_planes,
-                            )
-                        }),
-                )
-                .chain(
-                    sources
-                        .surface_rows
-                        .iter()
-                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
-                        .flat_map(|row| {
-                            sources
-                                .plane_envelopes
-                                .iter()
-                                .filter(move |record| record.surface_id == row.id)
-                        })
-                        .flat_map(|record| {
-                            let corners = match &record.envelope {
-                                PlaneEnvelope::Standard { corners_3d, .. }
-                                | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
-                            };
-                            (0..3).filter_map(move |axis| {
-                                if record.corner_coordinate_equal[axis] != Some(true) {
-                                    return None;
-                                }
-                                let coordinate = corners[0][axis]?;
-                                let mut normal = [0.0; 3];
-                                normal[axis] = 1.0;
-                                Some(SignedPlaneEquation {
-                                    normal,
-                                    offset: coordinate,
-                                })
+                        .filter(|parent| **parent != reference_feature),
+                )?;
+                let (equation, ambiguous) = sources
+                    .datums
+                    .iter()
+                    .filter(|datum| datum.feature_id == *other)
+                    .map(|datum| SignedPlaneEquation {
+                        normal: datum.plane.normal(),
+                        offset: datum.plane.offset,
+                    })
+                    .chain(
+                        sources
+                            .surface_rows
+                            .iter()
+                            .filter(|row| {
+                                row.feature_id == *other && row.kind == SurfaceKind::Plane
                             })
-                        }),
-                )
-                .filter(|equation| {
-                    dot(equation.normal, reference_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
-                })
-                .fold(Vec::<SignedPlaneEquation>::new(), |mut unique, equation| {
-                    if !unique.contains(&equation) {
-                        unique.push(equation);
-                    }
-                    unique
-                });
-            let [equation] = equations.as_slice() else {
-                return None;
-            };
-            Some(*equation)
-        })
-        .collect::<Vec<_>>();
-    let [equation] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*equation)
+                            .filter_map(|row| {
+                                plane_equation(
+                                    row.id,
+                                    sources.datums,
+                                    sources.model_planes,
+                                    sources.outline_planes,
+                                )
+                            }),
+                    )
+                    .chain(
+                        sources
+                            .surface_rows
+                            .iter()
+                            .filter(|row| {
+                                row.feature_id == *other && row.kind == SurfaceKind::Plane
+                            })
+                            .flat_map(|row| {
+                                sources
+                                    .plane_envelopes
+                                    .iter()
+                                    .filter(move |record| record.surface_id == row.id)
+                            })
+                            .flat_map(|record| {
+                                let corners = match &record.envelope {
+                                    PlaneEnvelope::Standard { corners_3d, .. }
+                                    | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+                                };
+                                (0..3).filter_map(move |axis| {
+                                    if record.corner_coordinate_equal[axis] != Some(true) {
+                                        return None;
+                                    }
+                                    let coordinate = corners[0][axis]?;
+                                    let mut normal = [0.0; 3];
+                                    normal[axis] = 1.0;
+                                    Some(SignedPlaneEquation {
+                                        normal,
+                                        offset: coordinate,
+                                    })
+                                })
+                            }),
+                    )
+                    .filter(|equation| {
+                        dot(equation.normal, reference_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
+                    })
+                    .fold((None, false), |(first, ambiguous), candidate| match first {
+                        None => (Some(candidate), ambiguous),
+                        Some(first) if first == candidate => (Some(first), ambiguous),
+                        Some(first) => (Some(first), true),
+                    });
+                (!ambiguous).then_some(equation?)
+            }),
+    )
 }
 
 fn feature_generated_plane_equation(
+    ctx: &DecodeContext<'_>,
     id: u32,
     definitions: &[FeatureDefinition],
     transforms: &[FeatureSectionTransform],
     sources: &PlacementSources<'_>,
-) -> Option<SignedPlaneEquation> {
-    let surface_rows = sources
-        .surface_rows
-        .iter()
-        .filter(|row| row.id == id && row.kind == SurfaceKind::Plane)
-        .collect::<Vec<_>>();
-    let [surface_row] = surface_rows.as_slice() else {
-        return None;
+) -> Result<Option<SignedPlaneEquation>, CodecError> {
+    let Some(surface_row) = exactly_one(
+        sources
+            .surface_rows
+            .iter()
+            .filter(|row| row.id == id && row.kind == SurfaceKind::Plane),
+    ) else {
+        return Ok(None);
     };
     let feature_id = surface_row.feature_id;
-    let transforms = transforms
-        .iter()
-        .filter(|transform| transform.feature_id == Some(feature_id))
-        .collect::<Vec<_>>();
-    let [transform] = transforms.as_slice() else {
-        return None;
+    let Some(transform) = exactly_one(
+        transforms
+            .iter()
+            .filter(|transform| transform.feature_id == Some(feature_id)),
+    ) else {
+        return Ok(None);
     };
-    let definitions = definitions
-        .iter()
-        .filter(|definition| definition.identity.id() == transform.definition_id)
-        .collect::<Vec<_>>();
-    let [definition] = definitions.as_slice() else {
-        return None;
+    let Some(definition) = exactly_one(
+        definitions
+            .iter()
+            .filter(|definition| definition.identity.id() == transform.definition_id),
+    ) else {
+        return Ok(None);
     };
-    let segments = definition.segments.as_ref()?;
-    let segment = segments.segment(id)?;
-    matches!(segment.kind, FeatureSegmentKind::Line(_)).then_some(())?;
-    let variables = definition.variables.as_ref()?;
-    let (points, _) = variables.reconciled_points();
-    let point = |point_id| {
-        let point = points.get(&point_id)?;
-        Some([point[0]?, point[1]?])
+    let Some(segments) = definition.segments.as_ref() else {
+        return Ok(None);
     };
-    let start = point(segment.point_ids()[0])?;
-    let end = point(segment.point_ids()[1])?;
-    let place = |point: [f64; 2]| {
-        std::array::from_fn(|axis| {
-            transform.origin[axis]
-                + point[0] * transform.u_axis[axis]
-                + point[1] * transform.v_axis[axis]
+    let Some(segment) = segments.segment(id) else {
+        return Ok(None);
+    };
+    if !matches!(segment.kind, FeatureSegmentKind::Line(_)) {
+        return Ok(None);
+    }
+    let Some(variables) = definition.variables.as_ref() else {
+        return Ok(None);
+    };
+    let crate::feature::definitions::ReconciledPoints { points, .. } =
+        variables.reconciled_points(ctx)?;
+    let result = (|| {
+        let point = |point_id| {
+            let point = points.get(&point_id)?;
+            Some([point[0]?, point[1]?])
+        };
+        let start = point(segment.point_ids()[0])?;
+        let end = point(segment.point_ids()[1])?;
+        let place = |point: [f64; 2]| {
+            std::array::from_fn(|axis| {
+                transform.origin[axis]
+                    + point[0] * transform.u_axis[axis]
+                    + point[1] * transform.v_axis[axis]
+            })
+        };
+        let start = place(start);
+        let end = place(end);
+        let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
+        let magnitude = dot(direction, direction).sqrt();
+        (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        let direction = scale(direction, magnitude.recip());
+        let normal = cross(direction, transform.normal());
+        let magnitude = dot(normal, normal).sqrt();
+        (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
+        let normal = scale(normal, magnitude.recip());
+        Some(SignedPlaneEquation {
+            normal,
+            offset: dot(normal, start),
         })
-    };
-    let start = place(start);
-    let end = place(end);
-    let direction = std::array::from_fn(|axis| end[axis] - start[axis]);
-    let magnitude = dot(direction, direction).sqrt();
-    (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
-    let direction = scale(direction, magnitude.recip());
-    let normal = cross(direction, transform.normal());
-    let magnitude = dot(normal, normal).sqrt();
-    (magnitude > EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
-    let normal = scale(normal, magnitude.recip());
-    Some(SignedPlaneEquation {
-        normal,
-        offset: dot(normal, start),
-    })
+    })();
+    Ok(result)
 }
 
 fn generated_cap_pair_plane_equation(
@@ -915,25 +965,15 @@ fn generated_section_cap_plane_equation(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<SignedPlaneEquation> {
-    let datum_tables = sources
-        .geometry_tables
-        .iter()
-        .filter(|table| {
-            table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
-        })
-        .collect::<Vec<_>>();
-    let [_] = datum_tables.as_slice() else {
-        return None;
-    };
-    let equations = entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .filter_map(|table| generated_cap_pair_plane_equation(table, sources))
-        .collect::<Vec<_>>();
-    let [equation] = equations.as_slice() else {
-        return None;
-    };
-    Some(*equation)
+    exactly_one(sources.geometry_tables.iter().filter(|table| {
+        table.feature_id == feature_id && table.kind.datum_ids() == Some(&[sketch_id])
+    }))?;
+    exactly_one(
+        entity_tables
+            .iter()
+            .filter(|table| table.feature_id == feature_id)
+            .filter_map(|table| generated_cap_pair_plane_equation(table, sources)),
+    )
 }
 
 fn zero_offset_standard_section_plane_equation(
@@ -946,10 +986,9 @@ fn zero_offset_standard_section_plane_equation(
 ) -> Option<SignedPlaneEquation> {
     let feature_id = definition.identity.owner_feature_id()?;
     let sketch_id = section.sketch_plane_entity_id?;
-    let instructions = placement_instructions(definition);
-    let instruction = instructions.first()?;
+    let mut instructions = placement_instructions(definition);
+    let instruction = instructions.next()?;
     instructions
-        .iter()
         .all(|candidate| {
             candidate.kind == instruction.kind
                 && candidate.zero_offset == instruction.zero_offset
@@ -978,7 +1017,7 @@ fn zero_offset_standard_section_plane_equation(
         })
         .count();
     (datum_tables == 1).then_some(())?;
-    let tables = entity_tables
+    let mut tables = entity_tables
         .iter()
         .filter(|table| table.feature_id == feature_id)
         .filter(|table| {
@@ -987,11 +1026,9 @@ fn zero_offset_standard_section_plane_equation(
                 .iter()
                 .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
                 .eq([204, 203, 200, 200])
-        })
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+        });
+    let table = tables.next()?;
+    tables.next().is_none().then_some(())?;
     let cap_id = table.entries[1].entity_id;
     let cap = plane_equation(
         cap_id,
@@ -999,24 +1036,19 @@ fn zero_offset_standard_section_plane_equation(
         sources.model_planes,
         sources.outline_planes,
     )?;
-    let candidates = sources
-        .datums
-        .iter()
-        .filter_map(|datum| {
-            let equation = SignedPlaneEquation {
-                normal: datum.plane.normal(),
-                offset: datum.plane.offset,
-            };
-            let cap_alignment = dot(equation.normal, cap.normal).abs();
-            let reference_alignment = dot(equation.normal, reference.normal).abs();
-            ((cap_alignment - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
-                && reference_alignment <= EPS_PLACEMENT_EXACT_GEOMETRY)
-                .then_some(equation)
-        })
-        .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
+    let mut candidates = sources.datums.iter().filter_map(|datum| {
+        let equation = SignedPlaneEquation {
+            normal: datum.plane.normal(),
+            offset: datum.plane.offset,
+        };
+        let cap_alignment = dot(equation.normal, cap.normal).abs();
+        let reference_alignment = dot(equation.normal, reference.normal).abs();
+        ((cap_alignment - 1.0).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY
+            && reference_alignment <= EPS_PLACEMENT_EXACT_GEOMETRY)
+            .then_some(equation)
+    });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(())?;
     let aligned_cap_offset = if dot(candidate.normal, cap.normal).is_sign_negative() {
         -cap.offset
     } else {
@@ -1024,7 +1056,7 @@ fn zero_offset_standard_section_plane_equation(
     };
     let separation = (candidate.offset - aligned_cap_offset).abs();
     let scale = candidate.offset.abs().max(cap.offset.abs()).max(1.0);
-    (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(*candidate)
+    (separation > EPS_PLACEMENT_EXACT_GEOMETRY * scale).then_some(candidate)
 }
 
 fn circular_profile_aligned_origin(
@@ -1036,41 +1068,37 @@ fn circular_profile_aligned_origin(
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
 ) -> Option<[f64; 3]> {
-    let tables = entity_tables
-        .iter()
-        .filter(|table| table.feature_id == feature_id)
-        .filter(|table| {
-            table
-                .entries
-                .iter()
-                .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
-                .eq([204, 203, 200, 200])
-        })
-        .collect::<Vec<_>>();
-    let [table] = tables.as_slice() else {
-        return None;
-    };
+    let table = exactly_one(
+        entity_tables
+            .iter()
+            .filter(|table| table.feature_id == feature_id)
+            .filter(|table| {
+                table
+                    .entries
+                    .iter()
+                    .map(crate::feature::entity::FeatureEntityTableEntry::class_id)
+                    .eq([204, 203, 200, 200])
+            }),
+    )?;
     let profile_external_id = table.entries[2].source_entity_id()?;
     let profile_internal_id = definition
         .order_table
         .as_ref()?
         .internal_id(profile_external_id)?;
-    let circles = definition
-        .saved_section
-        .iter()
-        .flat_map(|section| &section.entities)
-        .filter_map(|entity| match entity {
-            crate::feature::definitions::FeatureSavedEntity::Circle(circle)
-                if circle.entity_id == profile_internal_id =>
-            {
-                Some(circle)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [circle] = circles.as_slice() else {
-        return None;
-    };
+    let circle = exactly_one(
+        definition
+            .saved_section
+            .iter()
+            .flat_map(|section| &section.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::definitions::FeatureSavedEntity::Circle(circle)
+                    if circle.entity_id == profile_internal_id =>
+                {
+                    Some(circle)
+                }
+                _ => None,
+            }),
+    )?;
     let [Some(center_u), Some(center_v), _] = circle.center else {
         return None;
     };
@@ -1078,39 +1106,34 @@ fn circular_profile_aligned_origin(
         .radius
         .filter(|radius| *radius > EPS_PLACEMENT_EXACT_GEOMETRY)?;
     let cap_id = table.entries[1].entity_id;
-    let envelopes = sources
-        .plane_envelopes
-        .iter()
-        .filter(|record| record.surface_id == cap_id)
-        .collect::<Vec<_>>();
-    let [envelope] = envelopes.as_slice() else {
-        return None;
-    };
+    let envelope = exactly_one(
+        sources
+            .plane_envelopes
+            .iter()
+            .filter(|record| record.surface_id == cap_id),
+    )?;
     let corners = match &envelope.envelope {
         PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
             corners_3d
         }
     };
-    let corners = corners
-        .iter()
-        .map(|corner| Some([corner[0]?, corner[1]?, corner[2]?]))
-        .collect::<Option<Vec<_>>>()?;
-    let [first, second] = corners.as_slice() else {
-        return None;
-    };
+    let decode_corner = |corner: &[Option<f64>; 3]| Some([corner[0]?, corner[1]?, corner[2]?]);
+    let first = decode_corner(&corners[0])?;
+    let second = decode_corner(&corners[1])?;
     let axis = (0..3).find(|axis| envelope.corner_coordinate_equal[*axis] == Some(true))?;
-    let radial = (0..3).filter(|index| *index != axis).collect::<Vec<_>>();
-    let spans = radial
-        .iter()
-        .map(|index| (second[*index] - first[*index]).abs())
-        .collect::<Vec<_>>();
+    let radial = match axis {
+        0 => [1, 2],
+        1 => [0, 2],
+        2 => [0, 1],
+        _ => return None,
+    };
+    let spans = radial.map(|index| (second[index] - first[index]).abs());
     let tolerance_scale = spans
         .iter()
         .chain(std::iter::once(&radius))
         .copied()
         .fold(1.0, f64::max);
-    (spans.len() == 2
-        && spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
+    (spans[0] > EPS_PLACEMENT_EXACT_GEOMETRY
         && (spans[0] - spans[1]).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale
         && (0.5 * spans[0] - radius).abs() <= EPS_PLACEMENT_GEOMETRY * tolerance_scale)
         .then_some(())?;
@@ -1126,10 +1149,11 @@ fn circular_profile_aligned_origin(
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
 pub(crate) fn resolve(
+    ctx: &DecodeContext<'_>,
     definitions: &[FeatureDefinition],
     sources: &PlacementSources<'_>,
     entity_tables: &[FeatureEntityTable],
-) -> Vec<FeatureSectionTransform> {
+) -> Result<Vec<FeatureSectionTransform>, CodecError> {
     let mut result = Vec::new();
     for definition in definitions {
         let Some(section) = &definition.section_3d else {
@@ -1139,13 +1163,23 @@ pub(crate) fn resolve(
             continue;
         };
         let carrier_transform =
-            generated_cylinder_section_transform(definition, sources, entity_tables)
-                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
-                .map(|transform| apply_section_orientation(transform, section));
-        let mut reference_ids = section.reference_plane_datum_geometry_id.map_or_else(
-            || section.reference_planes.entity_ids().collect(),
-            |id| vec![id],
-        );
+            match generated_cylinder_section_transform(ctx, definition, sources, entity_tables)? {
+                Some(transform) => Some(transform),
+                None => {
+                    generated_planar_section_transform(ctx, definition, sources, entity_tables)?
+                }
+            }
+            .map(|transform| apply_section_orientation(transform, section));
+        let mut reference_ids = Vec::new();
+        if let Some(id) = section.reference_plane_datum_geometry_id {
+            ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")?;
+            reference_ids.push(id);
+        } else {
+            for id in section.reference_planes.entity_ids() {
+                ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")?;
+                reference_ids.push(id);
+            }
+        }
         reference_ids.sort_unstable();
         reference_ids.dedup();
         let direct_sketch = plane_equation(
@@ -1172,23 +1206,18 @@ pub(crate) fn resolve(
                 sources.outline_planes,
             );
             if let Some(sketch) = direct_sketch {
-                let reference = direct_reference
-                    .or_else(|| {
-                        generated_datum_plane_equation(
-                            reference_id,
-                            sketch_id,
-                            sketch.normal,
-                            sources,
-                        )
-                    })
-                    .or_else(|| {
-                        feature_generated_plane_equation(
-                            reference_id,
-                            definitions,
-                            &result,
-                            sources,
-                        )
-                    });
+                let mut reference = direct_reference.or_else(|| {
+                    generated_datum_plane_equation(reference_id, sketch_id, sketch.normal, sources)
+                });
+                if reference.is_none() {
+                    reference = feature_generated_plane_equation(
+                        ctx,
+                        reference_id,
+                        definitions,
+                        &result,
+                        sources,
+                    )?;
+                }
                 if let Some(reference) = reference {
                     if dot(sketch.normal, reference.normal).abs()
                         < 1.0 - EPS_PLACEMENT_EXACT_GEOMETRY
@@ -1196,6 +1225,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
+                        ctx.reserve_vec(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1226,6 +1256,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
+                        ctx.reserve_vec(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1237,8 +1268,10 @@ pub(crate) fn resolve(
         }
         if candidates.len() != 1 {
             if let Some(transform) = carrier_transform {
+                ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             } else if let Some(transform) = definition_local_frame_transform(definition, section) {
+                ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             }
             continue;
@@ -1323,6 +1356,7 @@ pub(crate) fn resolve(
             section.offset,
         );
         if let Some(transform) = carrier_transform.or(direct_transform) {
+            ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }
@@ -1333,15 +1367,25 @@ pub(crate) fn resolve(
         {
             continue;
         }
-        if let Some(transform) =
-            generated_cylinder_section_transform(definition, sources, entity_tables)
-                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
-        {
+        let transform =
+            match generated_cylinder_section_transform(ctx, definition, sources, entity_tables)? {
+                Some(transform) => Some(transform),
+                None => {
+                    generated_planar_section_transform(ctx, definition, sources, entity_tables)?
+                }
+            };
+        if let Some(transform) = transform {
+            ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }
-    result.sort_by_key(|transform| transform.offset);
-    result
+    crate::sort::stable_sort_by_key(
+        ctx,
+        result.as_mut_slice(),
+        |transform| transform.offset,
+        "creo resolve result ordering",
+    )?;
+    Ok(result)
 }
 
 #[cfg(test)]

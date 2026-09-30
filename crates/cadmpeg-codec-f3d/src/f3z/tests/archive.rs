@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::{assembly, wire, EditableDecodeResult};
 
 use crate::test_support::assembly_test::{
@@ -177,7 +179,7 @@ fn f3z_model_root_name_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = ("model.f3d".len() - 1) as u64;
+    policy.limits.max_retained_bytes = u64_from_index("model.f3d".len() - 1);
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
     assert!(
@@ -234,7 +236,8 @@ fn f3z_drawing_root_copy_refuses_retained_limit() {
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
     let scan = crate::container::scan(&scan_context, root).unwrap();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = ("model.f3d".len() * 2 + "drawing.f2d".len() - 1) as u64;
+    policy.limits.max_retained_bytes =
+        u64_from_index("model.f3d".len() * 2 + "drawing.f2d".len() - 1);
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::f3z::archive::model_root(&limited, &scan).unwrap_err();
     assert!(

@@ -121,7 +121,9 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         let append_guid = |bytes: &mut Vec<u8>| {
             let encoded = guid.encode_utf16().collect::<Vec<_>>();
-            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
         };
         append_guid(bytes);
@@ -145,7 +147,9 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         bytes[start + 7..start + 11].copy_from_slice(&record_index.to_le_bytes());
         bytes[start + path_wrapper::CONSTANT_ONE_BYTE] = 1;
         bytes[start + path_wrapper::CONSTANT_ONE_WORD..start + path_wrapper::CONSTANT_ONE_WORD + 4]
-            .copy_from_slice(&(paths.len() as u32).to_le_bytes());
+            .copy_from_slice(
+                &(u32::try_from(paths.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
         write_reference(bytes, start + path_wrapper::PATH_REFERENCE, paths[0]);
         for (ordinal, path) in paths.iter().copied().enumerate().skip(1) {
             write_reference(bytes, start + path_wrapper::LEN + (ordinal - 1) * 11, path);

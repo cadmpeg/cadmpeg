@@ -494,15 +494,6 @@ impl DecodeContext<'_> {
         Self::reserve_admitted_string(text, additional, operation)
     }
 
-    fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            self.policy().limits.max_collection_items,
-            u64_from_index(count),
-            operation,
-        ))
-    }
-
     fn allocation_failed(
         &self,
         dimension: ResourceDimension,

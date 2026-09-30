@@ -1947,6 +1947,40 @@ mod tests {
     }
 
     #[test]
+    fn admitted_loop_ring_refuses_distinct_node_limit_and_keeps_order() {
+        let first = super::CoedgeId::mint("test:model:coedge#0").unwrap();
+        let second = super::CoedgeId::mint("test:model:coedge#1").unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::LoopRing::try_new_for_decode(
+            &ctx,
+            vec![first.clone(), second.clone()],
+            Vec::new(),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && resource.operation == "loop ring members")
+        );
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let ring = super::LoopRing::try_new_for_decode(
+            &ctx,
+            vec![first.clone(), second.clone()],
+            Vec::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(ring.coedges(), &[first, second]);
+    }
+
+    #[test]
     fn admitted_loop_ring_refuses_validation_index_before_allocation() {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         let coedge = super::CoedgeId::mint("test:model:coedge#0").unwrap();

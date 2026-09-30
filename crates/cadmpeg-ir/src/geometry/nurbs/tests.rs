@@ -6,6 +6,128 @@ use crate::{
 };
 
 #[test]
+fn admitted_nurbs_curve_mapping_refuses_knot_and_pole_limits() {
+    use crate::geometry::nurbs::NurbsCurve;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let curve = NurbsCurve::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+        Some(vec![1.0, 0.5]),
+        false,
+    )
+    .expect("rational curve");
+    for limit in [0, 4] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+        let error = curve
+            .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+                Point3::new(point.x + 2.0, point.y, point.z)
+            })
+            .expect_err("knot or pole limit refuses the map");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+            if resource.operation == "mapped NURBS fixture"
+                && resource.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root admitted");
+    let mapped = curve
+        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |point| {
+            Point3::new(point.x + 2.0, point.y, point.z)
+        })
+        .expect("mapping resources")
+        .expect("finite mapped curve");
+    assert_eq!(mapped.knots(), curve.knots());
+    assert_eq!(mapped.weights(), curve.weights());
+    assert_eq!(
+        mapped.control_points(),
+        vec![Point3::new(3.0, 2.0, 3.0), Point3::new(6.0, 5.0, 6.0),]
+    );
+    assert!(curve
+        .map_control_points_admitted(&ctx, "mapped NURBS fixture", |_| Point3::new(
+            f64::INFINITY,
+            0.0,
+            0.0
+        ),)
+        .expect("mapping resources")
+        .is_none());
+    assert_eq!(curve.control_points()[0], Point3::new(1.0, 2.0, 3.0));
+}
+
+#[test]
+fn admitted_nurbs_surface_grid_preserves_constructor_wire_and_errors() {
+    use crate::features::FinitePoint3;
+    use crate::geometry::nurbs::{KnotVector, NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).expect("finite point");
+    let rows = vec![
+        vec![point(0.0, 0.0), point(0.0, 1.0)],
+        vec![point(1.0, 0.0), point(1.0, 1.0)],
+    ];
+    let axis = || {
+        NurbsSurfaceAxis::new(
+            1,
+            KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("finite knots"),
+            false,
+        )
+    };
+    let old = NurbsSurface::new(
+        axis(),
+        axis(),
+        NurbsPoleGrid::Polynomial { rows: rows.clone() },
+        false,
+    )
+    .expect("old surface");
+    let admitted =
+        NurbsSurface::from_admitted_grid(axis(), axis(), NurbsPoleGrid::Polynomial { rows }, false)
+            .expect("admitted surface");
+    assert_eq!(admitted, old);
+    assert_eq!(
+        serde_json::to_vec(&admitted).expect("wire"),
+        serde_json::to_vec(&old).expect("wire")
+    );
+    let short = NurbsSurface::from_admitted_grid(
+        NurbsSurfaceAxis::new(
+            1,
+            KnotVector::new(vec![0.0, 1.0]).expect("finite knots"),
+            false,
+        ),
+        axis(),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0), point(1.0, 1.0)],
+            ],
+        },
+        false,
+    )
+    .expect_err("short knot axis");
+    assert_eq!(short.to_string(), "u_knots must contain 4 values, found 2");
+    let ragged = NurbsSurface::from_admitted_grid(
+        axis(),
+        axis(),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0)],
+            ],
+        },
+        false,
+    )
+    .expect_err("ragged pole grid");
+    assert_eq!(
+        ragged.to_string(),
+        "control_points row must contain 2 values, found 1"
+    );
+}
+
+#[test]
 fn knot_copy_refuses_collection_limit_before_allocation() {
     let knots = super::KnotVector::new(vec![0.0, 0.0, 1.0, 1.0]).expect("valid knots");
     let arena = cadmpeg_core::decode::DecodeArena::new();

@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::convert::f64_from_index;
+
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -593,7 +595,11 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
             .expect("explicit sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    2.0,
+                    -1.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0)
                     .unit()
                     .unwrap(),
@@ -756,7 +762,11 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
             .expect("explicit guide sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(ordinal as f64, -2.0, 1.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    -2.0,
+                    1.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(2.0, 4.0, -3.0)
                     .unit()
                     .unwrap(),
@@ -850,7 +860,11 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
             .expect("explicit surface sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(ordinal as f64, 1.0, -2.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    1.0,
+                    -2.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0)
                     .unit()
                     .unwrap(),
@@ -945,7 +959,11 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
             .expect("law-driven sweep curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    -1.0,
+                    2.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0)
                     .unit()
                     .unwrap(),

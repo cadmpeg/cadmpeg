@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Low-level native record byte writers for source-less generation.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::transform::Transform;
@@ -71,7 +73,7 @@ pub(super) fn native_length_prefixed_string(
         bytes.extend_from_slice(value.as_bytes());
         Ok(())
     } else {
-        let length = value.len() as u64;
+        let length = u64_from_index(value.len());
         bytes.push(0x09);
         bytes.extend_from_slice(&length.to_le_bytes());
         bytes.extend_from_slice(value.as_bytes());

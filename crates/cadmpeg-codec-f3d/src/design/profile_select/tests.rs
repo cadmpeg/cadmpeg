@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::edit;
 
 use super::{
@@ -893,7 +895,7 @@ fn entity_selection_profile_retains_an_open_curve_as_ordered_entities() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )

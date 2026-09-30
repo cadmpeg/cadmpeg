@@ -4,7 +4,8 @@
 use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
-use cadmpeg_core::decode::{index_from_u32, View};
+use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
 use crate::decode::axis::Axis;
@@ -147,8 +148,10 @@ impl DoubleXarSlot {
 }
 
 /// Decode every complete counted `double_xar` dictionary in one expanded section.
-#[must_use]
-pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
+pub(crate) fn double_xar_tables(
+    ctx: &DecodeContext<'_>,
+    data: &[u8],
+) -> Result<Vec<DoubleXarTable>, CodecError> {
     const LABEL: &[u8] = b"double_xar\0";
     let mut tables = Vec::new();
     let mut search = 0;
@@ -188,7 +191,7 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                         (
                             DoubleXarSlot::Literal {
                                 value,
-                                raw: raw.to_vec(),
+                                raw: ctx.copy_retained(raw, "creo double_xar literal bytes")?,
                             },
                             end,
                         )
@@ -199,6 +202,7 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                     }
                 },
             };
+            ctx.reserve_vec(&mut entries, 1, "creo double_xar slots")?;
             entries.push(slot);
             cursor = end;
         }
@@ -207,11 +211,12 @@ pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
+            ctx.reserve_vec(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
         search = count_offset + 1;
     }
-    tables
+    Ok(tables)
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
@@ -226,6 +231,7 @@ pub(crate) struct ScalarCache {
 impl ScalarCache {
     /// Build the dictionary in first-appearance order from every complete
     /// eight-byte sequence beginning with `0x46` in one section.
+    #[cfg(test)]
     pub(crate) fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<f64>::new();
         let mut seen = HashSet::<[u8; 8]>::new();
@@ -254,13 +260,60 @@ impl ScalarCache {
                     *paired_byte_1 = None;
                 }
             }
-            // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }
         Self {
             entries,
             paired_byte_1_by_tail,
         }
+    }
+
+    /// Build a scalar dictionary under the caller's decode budget.
+    pub(crate) fn from_section_checked(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        section: &[u8],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let mut entries = Vec::<f64>::new();
+        let mut seen = HashSet::<[u8; 8]>::new();
+        let mut paired_byte_1_by_tail = BTreeMap::new();
+        for offset in 0..section.len() {
+            if section[offset] != 0x46 {
+                continue;
+            }
+            let Some(&[byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7]) =
+                section.get(offset..offset + 8)
+            else {
+                continue;
+            };
+            let raw = [
+                byte_0, byte_1, byte_2, byte_3, byte_4, byte_5, byte_6, byte_7,
+            ];
+            if seen.contains(&raw) {
+                continue;
+            }
+            ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")?;
+            let mut ieee = raw;
+            ieee[0] = 0x40;
+            let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
+            match paired_byte_1_by_tail.entry(tail) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo scalar cache paired tails")?;
+                    entry.insert(Some(raw[1]));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    if (*entry.get()).is_some_and(|existing| existing != raw[1]) {
+                        *entry.get_mut() = None;
+                    }
+                }
+            }
+            ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")?;
+            // endian-exception: reconstructed-scalar
+            entries.push(f64::from_be_bytes(ieee));
+        }
+        Ok(Self {
+            entries,
+            paired_byte_1_by_tail,
+        })
     }
 
     fn value(&self, index: u32) -> Option<f64> {
@@ -848,40 +901,58 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
 /// images name only an axis coordinate; explicit frames use the three
 /// component lanes and the four-slot `18 e5 0f` fill.
 pub(crate) fn decode_inline_non_plane_local_system_prefix(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Vec<InlineNonPlaneLocalSystemPrefix> {
-    let mut prefixes = Vec::new();
-    if let Some((axes, reference_sign, axis_sign, cursor)) = decode_inline_compact_image(body) {
-        if let Some(values) =
-            FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))
-        {
-            prefixes.push(InlineNonPlaneLocalSystemPrefix::Compact(
+) -> Result<impl Iterator<Item = InlineNonPlaneLocalSystemPrefix>, CodecError> {
+    let compact =
+        decode_inline_compact_image(body).and_then(|(axes, reference_sign, axis_sign, cursor)| {
+            let values = FiniteVector::new(compact_inline_frame(axes, reference_sign, axis_sign))?;
+            Some(InlineNonPlaneLocalSystemPrefix::Compact(
                 InlineLocalSystemFrame { values, cursor },
-            ));
-        }
-    }
+            ))
+        });
 
-    let mut explicit = Vec::new();
+    let mut explicit = [None; 16];
+    let mut count = 0;
     let mut values = [0.0; 12];
-    walk_inline_explicit_local_system(body, cache, 0, 0, &mut values, &mut explicit);
-    prefixes.extend(explicit.into_iter().map(|(values, cursor)| {
-        InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
-    }));
-    prefixes
+    walk_inline_explicit_local_system(
+        ctx,
+        body,
+        cache,
+        (0, 0),
+        &mut values,
+        &mut explicit,
+        &mut count,
+    )?;
+    Ok(compact
+        .into_iter()
+        .chain(explicit.into_iter().flatten().map(|(values, cursor)| {
+            InlineNonPlaneLocalSystemPrefix::Explicit(InlineLocalSystemFrame { values, cursor })
+        })))
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
 /// image.
 pub(crate) fn decode_inline_non_plane_origin_prefix(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
     cache: &ScalarCache,
-) -> Vec<([f64; 3], usize)> {
+) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
     let mut values = [0.0; 3];
-    let mut results = Vec::new();
-    walk_inline_origin(body, cache, 0, cursor, &mut values, &mut results);
-    results
+    let mut results = [None; 8];
+    let mut count = 0;
+    walk_inline_origin(
+        ctx,
+        body,
+        cache,
+        (0, cursor),
+        &mut values,
+        &mut results,
+        &mut count,
+    )?;
+    Ok(results.into_iter().flatten())
 }
 
 /// Decode one inline family suffix scalar. The suffix has its own compact
@@ -1004,61 +1075,107 @@ fn compact_inline_frame(axes: CompactFrameAxes, reference_sign: f64, axis_sign: 
 }
 
 fn walk_inline_explicit_local_system(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-    slot: usize,
-    cursor: usize,
+    position: (usize, usize),
     values: &mut [f64; 12],
-    results: &mut Vec<(FiniteVector<12>, usize)>,
-) {
-    if results.len() >= 16 {
-        return;
+    results: &mut [Option<(FiniteVector<12>, usize)>; 16],
+    count: &mut usize,
+) -> Result<(), CodecError> {
+    let (slot, cursor) = position;
+
+    let _depth = ctx.enter_nested("creo inline explicit frame depth")?;
+    ctx.charge_work(1, "creo inline explicit frame work")?;
+    if *count >= results.len() {
+        return Ok(());
     }
     if slot == 12 {
         if let Some(values) = finite_local_system_slots(*values) {
-            results.push((values, cursor));
+            results[*count] = Some((values, cursor));
+            *count += 1;
         }
-        return;
+        return Ok(());
     }
 
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x0f]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, 1.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+        walk_inline_explicit_local_system(
+            ctx,
+            body,
+            cache,
+            (slot + 4, cursor + 3),
+            values,
+            results,
+            count,
+        )?;
     }
     if slot == 5 && body.get(cursor..cursor + 3) == Some(&[0x18, 0xe5, 0x10]) {
         values[slot..slot + 4].copy_from_slice(&[0.0, 0.0, 0.0, -1.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 4, cursor + 3, values, results);
+        walk_inline_explicit_local_system(
+            ctx,
+            body,
+            cache,
+            (slot + 4, cursor + 3),
+            values,
+            results,
+            count,
+        )?;
     }
     if slot <= 9 && body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
         values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
-        walk_inline_explicit_local_system(body, cache, slot + 3, cursor + 2, values, results);
+        walk_inline_explicit_local_system(
+            ctx,
+            body,
+            cache,
+            (slot + 3, cursor + 2),
+            values,
+            results,
+            count,
+        )?;
     }
 
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot, cache) {
         values[slot] = value;
-        walk_inline_explicit_local_system(body, cache, slot + 1, next, values, results);
+        walk_inline_explicit_local_system(
+            ctx,
+            body,
+            cache,
+            (slot + 1, next),
+            values,
+            results,
+            count,
+        )?;
     }
+    Ok(())
 }
 
 fn walk_inline_origin(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-    slot: usize,
-    cursor: usize,
+    position: (usize, usize),
     values: &mut [f64; 3],
-    results: &mut Vec<([f64; 3], usize)>,
-) {
-    if results.len() >= 8 {
-        return;
+    results: &mut [Option<([f64; 3], usize)>; 8],
+    count: &mut usize,
+) -> Result<(), CodecError> {
+    let (slot, cursor) = position;
+
+    let _depth = ctx.enter_nested("creo inline origin depth")?;
+    ctx.charge_work(1, "creo inline origin work")?;
+    if *count >= results.len() {
+        return Ok(());
     }
     if slot == 3 {
-        results.push((*values, cursor));
-        return;
+        results[*count] = Some((*values, cursor));
+        *count += 1;
+        return Ok(());
     }
     for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
         values[slot] = value;
-        walk_inline_origin(body, cache, slot + 1, next, values, results);
+        walk_inline_origin(ctx, body, cache, (slot + 1, next), values, results, count)?;
     }
+    Ok(())
 }
 
 fn decode_inline_local_system_coordinates(
@@ -1066,28 +1183,34 @@ fn decode_inline_local_system_coordinates(
     cursor: usize,
     slot: usize,
     cache: &ScalarCache,
-) -> Vec<(f64, usize)> {
-    let mut candidates: Vec<(f64, usize)> = Vec::new();
+) -> impl Iterator<Item = (f64, usize)> {
+    // Four special forms and three scalar lanes are the complete candidate set.
+    let mut candidates = [None; 7];
+    let mut count = 0;
     // The inline local-system lane assigns the signed IEEE form to `0x28`.
     // The same byte is positive in the generic directrix lanes, so this
     // interpretation must be selected before those lane decoders run.
     if body.get(cursor) == Some(&0x28) {
         if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
-            candidates.push((value, next));
+            candidates[count] = Some((value, next));
+            count += 1;
         }
     }
     // Named local-system records use the reflected sign for this third-frame
     // coordinate. Keep the same slot-specific rule for positional frames.
     if slot == 6 && body.get(cursor) == Some(&0x41) {
         if let Some((value, next)) = ieee8(body, cursor, 0xbf) {
-            candidates.push((value, next));
+            candidates[count] = Some((value, next));
+            count += 1;
         }
     }
     if matches!(body.get(cursor), Some(0x0f | 0x10 | 0xe6)) {
-        candidates.push((0.0, cursor + 1));
+        candidates[count] = Some((0.0, cursor + 1));
+        count += 1;
     }
     if body.get(cursor) == Some(&0x18) {
-        candidates.push((0.0, cursor + 1));
+        candidates[count] = Some((0.0, cursor + 1));
+        count += 1;
     }
     // Keep the candidate set within the slot's coordinate lane. A prefix can
     // still be ambiguous with the generic positional row lane (for example,
@@ -1104,14 +1227,15 @@ fn decode_inline_local_system_coordinates(
     .chain(decode_in_row_lane(body, cursor, cache));
     for candidate in decoded {
         if candidate.0.is_finite()
-            && !candidates.iter().any(|existing| {
+            && !candidates[..count].iter().flatten().any(|existing| {
                 existing.1 == candidate.1 && existing.0.to_bits() == candidate.0.to_bits()
             })
         {
-            candidates.push(candidate);
+            candidates[count] = Some(candidate);
+            count += 1;
         }
     }
-    candidates
+    candidates.into_iter().flatten()
 }
 
 /// Storage layout of a complete positional plane support frame.
@@ -1176,22 +1300,33 @@ fn plane_support_layout(values: &[f64; 12], saw_zero_slot_prefix: bool) -> Plane
 
 /// Decode a positional plane support frame and retain its storage layout.
 pub(crate) fn decode_plane_support_local_system(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Option<(FiniteVector<12>, PlaneSupportFrameLayout)> {
+) -> Result<Option<(FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
     if let Some((values, cursor)) = decode_diagonal_z_plane_support(body, cache) {
-        (cursor == body.len()).then_some(())?;
-        return Some((
-            finite_local_system_slots(values)?,
+        if cursor != body.len() {
+            return Ok(None);
+        }
+        return Ok(Some((
+            match finite_local_system_slots(values) {
+                Some(value) => value,
+                None => return Ok(None),
+            },
             PlaneSupportFrameLayout::DirectNormalTriples,
-        ));
+        )));
     }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
-        (cursor == body.len()).then_some(())?;
-        return Some((
-            finite_local_system_slots(values)?,
+        if cursor != body.len() {
+            return Ok(None);
+        }
+        return Ok(Some((
+            match finite_local_system_slots(values) {
+                Some(value) => value,
+                None => return Ok(None),
+            },
             PlaneSupportFrameLayout::SupportTriples,
-        ));
+        )));
     }
     let primary = decode_local_system_slot_prefix(body, cache, LocalSystemVariant::PlaneSupport)
         .map(|prefix| {
@@ -1205,11 +1340,13 @@ pub(crate) fn decode_plane_support_local_system(
             };
             (prefix.values, prefix.cursor, layout)
         });
-    let (values, cursor, layout) = primary?;
+    let Some((values, cursor, layout)) = primary else {
+        return Ok(None);
+    };
     let primary_frame = finite_local_system_slots(values)
         .filter(|frame| plane_support_values_have_valid_frame(frame.as_raw(), layout));
     if let Some(frame) = primary_frame {
-        return (cursor == body.len()).then_some((frame, layout));
+        return Ok((cursor == body.len()).then_some((frame, layout)));
     }
     // Compact image bodies have a distinct token grammar.  Their numeric
     // values can accidentally form another orthogonal frame when replayed as
@@ -1217,19 +1354,35 @@ pub(crate) fn decode_plane_support_local_system(
     // the stored body.  Lane arbitration applies only to the raw generic
     // support-frame form; the compact forms remain governed by their primary
     // grammar above.
-    let variants = if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
-        Vec::new()
-    } else {
-        decode_plane_support_lane_variants(body, cache)
-    };
-    match variants.as_slice() {
-        [variant] => Some(*variant),
-        [] => {
-            (cursor == body.len()).then_some(())?;
-            Some((finite_local_system_slots(values)?, layout))
+    if matches!(body.first(), Some(0x0e | 0x0f | 0x10 | 0x18)) {
+        if cursor != body.len() {
+            return Ok(None);
+        }
+        return Ok(Some((
+            match finite_local_system_slots(values) {
+                Some(value) => value,
+                None => return Ok(None),
+            },
+            layout,
+        )));
+    }
+    let mut variants = decode_plane_support_lane_variants(ctx, body, cache)?;
+    Ok(match (variants.next(), variants.next()) {
+        (Some(variant), None) => Some(variant),
+        (None, None) => {
+            if cursor != body.len() {
+                return Ok(None);
+            }
+            Some((
+                match finite_local_system_slots(values) {
+                    Some(value) => value,
+                    None => return Ok(None),
+                },
+                layout,
+            ))
         }
         _ => None,
-    }
+    })
 }
 
 const MAX_PLANE_SUPPORT_LANE_VARIANTS: usize = 64;
@@ -1262,18 +1415,20 @@ fn plane_support_coordinate_variants(
     offset: usize,
     slot: usize,
     cache: &ScalarCache,
-) -> Vec<(f64, usize)> {
+) -> [Option<(f64, usize)>; 2] {
     if slot == 6 && body.get(offset) == Some(&0x4e) {
-        return decode_plane_support_coordinate(body, offset, slot, cache)
-            .into_iter()
-            .collect();
+        return [
+            decode_plane_support_coordinate(body, offset, slot, cache),
+            None,
+        ];
     }
     if slot == 8 && body.get(offset) == Some(&0x50) {
-        return decode_plane_support_coordinate(body, offset, slot, cache)
-            .into_iter()
-            .collect();
+        return [
+            decode_plane_support_coordinate(body, offset, slot, cache),
+            None,
+        ];
     }
-    let mut candidates = Vec::<(f64, usize)>::new();
+    let mut candidates: [Option<(f64, usize)>; 2] = [None; 2];
     for candidate in [
         decode_tabulated_cylinder_first_coordinate(body, offset, cache),
         decode_tabulated_cylinder_second_coordinate(body, offset, cache),
@@ -1284,139 +1439,193 @@ fn plane_support_coordinate_variants(
         if candidate.0.is_finite()
             && !candidates
                 .iter()
+                .flatten()
                 .any(|known| known.1 == candidate.1 && known.0.to_bits() == candidate.0.to_bits())
         {
-            candidates.push(candidate);
+            if let Some(slot) = candidates.iter_mut().find(|slot| slot.is_none()) {
+                *slot = Some(candidate);
+            }
         }
     }
     candidates
 }
 
 fn decode_plane_support_lane_variants(
+    ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-) -> Vec<(FiniteVector<12>, PlaneSupportFrameLayout)> {
+) -> Result<impl Iterator<Item = (FiniteVector<12>, PlaneSupportFrameLayout)>, CodecError> {
     fn walk(
+        ctx: &DecodeContext<'_>,
         body: &[u8],
         cache: &ScalarCache,
-        values: &mut Vec<f64>,
-        cursor: usize,
-        saw_zero_slot_prefix: bool,
-        results: &mut Vec<(FiniteVector<12>, PlaneSupportFrameLayout)>,
-    ) {
-        if results.len() >= MAX_PLANE_SUPPORT_LANE_VARIANTS {
-            return;
+        values: &mut [f64; 12],
+        position: (usize, usize, bool),
+        results: &mut [Option<(FiniteVector<12>, PlaneSupportFrameLayout)>;
+                 MAX_PLANE_SUPPORT_LANE_VARIANTS],
+        count: &mut usize,
+    ) -> Result<(), CodecError> {
+        let (slot, cursor, saw_zero_slot_prefix) = position;
+
+        let _depth = ctx.enter_nested("creo plane support variants depth")?;
+        ctx.charge_work(1, "creo plane support variants work")?;
+        if *count >= results.len() {
+            return Ok(());
         }
-        if values.len() == 12 {
+        if slot == values.len() {
             if cursor != body.len() {
-                return;
+                return Ok(());
             }
-            let Ok(values) = <[f64; 12]>::try_from(values.as_slice()) else {
-                return;
+            let Some(frame) = finite_local_system_slots(*values) else {
+                return Ok(());
             };
-            let Some(frame) = finite_local_system_slots(values) else {
-                return;
-            };
-            let layout = plane_support_layout(&values, saw_zero_slot_prefix);
+            let layout = plane_support_layout(values, saw_zero_slot_prefix);
             if matches!(layout, PlaneSupportFrameLayout::DirectNormalTriples)
-                && plane_support_values_have_valid_frame(&values, layout)
-                && !results.iter().any(|(known, known_layout)| {
-                    *known_layout == layout
-                        && known
-                            .as_raw()
-                            .iter()
-                            .zip(values)
-                            .all(|(known, value)| known.to_bits() == value.to_bits())
-                })
+                && plane_support_values_have_valid_frame(values, layout)
+                && !results[..*count]
+                    .iter()
+                    .flatten()
+                    .any(|(known, known_layout)| {
+                        *known_layout == layout
+                            && known
+                                .as_raw()
+                                .iter()
+                                .zip(*values)
+                                .all(|(known, value)| known.to_bits() == value.to_bits())
+                    })
             {
-                results.push((frame, layout));
+                results[*count] = Some((frame, layout));
+                *count += 1;
             }
-            return;
+            return Ok(());
         }
 
-        let slot = values.len();
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) && slot + 3 <= 12 {
-            values.extend([0.0, 1.0, 0.0]);
+            values[slot..slot + 3].copy_from_slice(&[0.0, 1.0, 0.0]);
             walk(
+                ctx,
                 body,
                 cache,
                 values,
-                cursor + 2,
-                saw_zero_slot_prefix,
+                (slot + 3, cursor + 2, saw_zero_slot_prefix),
                 results,
-            );
-            values.truncate(slot);
+                count,
+            )?;
         }
         if body.get(cursor) == Some(&0x18)
             && body
                 .get(cursor + 1)
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
         {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
-        }
-        if body.get(cursor) == Some(&0x18)
-            && slot < 11
-            && !plane_support_coordinate_variants(body, cursor + 1, slot + 1, cache).is_empty()
-        {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
-        }
-        if body.get(cursor) == Some(&0x10) {
-            values.push(0.0);
+            values[slot] = 0.0;
             walk(
+                ctx,
                 body,
                 cache,
                 values,
-                cursor + 1,
-                saw_zero_slot_prefix,
+                (slot + 1, cursor + 1, true),
                 results,
-            );
-            values.pop();
+                count,
+            )?;
+        }
+        if body.get(cursor) == Some(&0x18)
+            && slot < 11
+            && plane_support_coordinate_variants(body, cursor + 1, slot + 1, cache)
+                .iter()
+                .any(Option::is_some)
+        {
+            values[slot] = 0.0;
+            walk(
+                ctx,
+                body,
+                cache,
+                values,
+                (slot + 1, cursor + 1, true),
+                results,
+                count,
+            )?;
+        }
+        if body.get(cursor) == Some(&0x10) {
+            values[slot] = 0.0;
+            walk(
+                ctx,
+                body,
+                cache,
+                values,
+                (slot + 1, cursor + 1, saw_zero_slot_prefix),
+                results,
+                count,
+            )?;
         }
         if body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
-            values.push(0.0);
-            walk(body, cache, values, cursor + 1, true, results);
-            values.pop();
+            values[slot] = 0.0;
+            walk(
+                ctx,
+                body,
+                cache,
+                values,
+                (slot + 1, cursor + 1, true),
+                results,
+                count,
+            )?;
         }
 
         let candidates = if slot < 9 {
             plane_support_coordinate_variants(body, cursor, slot, cache)
         } else if body.get(cursor) == Some(&0x0e) {
-            vec![(0.5, cursor + 1)]
+            [Some((0.5, cursor + 1)), None]
         } else if matches!(body.get(cursor), Some(0x0f | 0x10 | 0x18 | 0xe6)) {
-            vec![(0.0, cursor + 1)]
+            [Some((0.0, cursor + 1)), None]
         } else if slot == 9 {
-            decode_in_row_lane(body, cursor, cache)
-                .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
-                .into_iter()
-                .collect()
+            [
+                decode_in_row_lane(body, cursor, cache)
+                    .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache)),
+                None,
+            ]
         } else {
-            decode_in_row_lane(body, cursor, cache)
-                .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))
-                .into_iter()
-                .collect()
+            [
+                decode_in_row_lane(body, cursor, cache)
+                    .or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache)),
+                None,
+            ]
         };
-        for (value, next) in candidates {
-            values.push(value);
-            walk(body, cache, values, next, saw_zero_slot_prefix, results);
-            values.pop();
+        for (value, next) in candidates.into_iter().flatten() {
+            values[slot] = value;
+            walk(
+                ctx,
+                body,
+                cache,
+                values,
+                (slot + 1, next, saw_zero_slot_prefix),
+                results,
+                count,
+            )?;
         }
+        Ok(())
     }
 
-    let mut values = Vec::with_capacity(12);
-    let mut results = Vec::new();
-    walk(body, cache, &mut values, 0, false, &mut results);
-    results
+    let mut values = [0.0; 12];
+    let mut results = [None; MAX_PLANE_SUPPORT_LANE_VARIANTS];
+    let mut count = 0;
+    walk(
+        ctx,
+        body,
+        cache,
+        &mut values,
+        (0, 0, false),
+        &mut results,
+        &mut count,
+    )?;
+    Ok(results.into_iter().flatten())
 }
 
 /// Decode a positional plane support frame whose origin uses the named
 /// local-system sign for compact one-half coordinates.
 #[cfg(test)]
 fn decode_plane_support_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_plane_support_local_system(body, cache).map(|(values, _)| values.get())
+    crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(ctx, body, cache))
+        .expect("service scalar admission")
+        .map(|(values, _)| values.get())
 }
 
 #[derive(Clone, Copy)]
@@ -1478,15 +1687,22 @@ fn decode_local_system_slot_prefix(
             saw_zero_slot_prefix: false,
         });
     }
-    let mut values = Vec::with_capacity(12);
+    let mut values = [0.0; 12];
+    let mut count = 0;
     let mut cursor = 0;
     let mut saw_zero_slot_prefix = false;
-    while cursor < body.len() && values.len() < 12 {
+    while cursor < body.len() && count < values.len() {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            if matches!(variant, LocalSystemVariant::Feature) && values.len() == 4 {
-                values.extend([0.0, 0.0, 1.0, 0.0, 0.0]);
+            if matches!(variant, LocalSystemVariant::Feature) && count == 4 {
+                values
+                    .get_mut(count..count + 5)?
+                    .copy_from_slice(&[0.0, 0.0, 1.0, 0.0, 0.0]);
+                count += 5;
             } else {
-                values.extend([0.0, 1.0, 0.0]);
+                values
+                    .get_mut(count..count + 3)?
+                    .copy_from_slice(&[0.0, 1.0, 0.0]);
+                count += 3;
             }
             cursor += 2;
             continue;
@@ -1497,38 +1713,37 @@ fn decode_local_system_slot_prefix(
                 .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if matches!(variant, LocalSystemVariant::PlaneSupport)
             && body.get(cursor) == Some(&0x18)
-            && values.len() < 11
-            && decode_plane_support_coordinate(body, cursor + 1, values.len() + 1, cache).is_some()
+            && count < 11
+            && decode_plane_support_coordinate(body, cursor + 1, count + 1, cache).is_some()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if matches!(variant, LocalSystemVariant::PositionalCylinder)
             && body.get(cursor) == Some(&0x18)
-            && values.len() < 11
-            && decode_positional_cylinder_support_coordinate(
-                body,
-                cursor + 1,
-                values.len() + 1,
-                cache,
-            )
-            .is_some()
+            && count < 11
+            && decode_positional_cylinder_support_coordinate(body, cursor + 1, count + 1, cache)
+                .is_some()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         if body.get(cursor) == Some(&0x10) {
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
@@ -1537,14 +1752,15 @@ fn decode_local_system_slot_prefix(
             && cursor + 1 == body.len()
         {
             saw_zero_slot_prefix = true;
-            values.push(0.0);
+            values[count] = 0.0;
+            count += 1;
             cursor += 1;
             continue;
         }
         let row = decode_in_row_lane(body, cursor, cache);
-        let (value, next) = match (variant, values.len()) {
+        let (value, next) = match (variant, count) {
             (LocalSystemVariant::PlaneSupport, 0..=8) => {
-                decode_plane_support_coordinate(body, cursor, values.len(), cache)?
+                decode_plane_support_coordinate(body, cursor, count, cache)?
             }
             (LocalSystemVariant::PlaneSupport, 9..=11) if body.get(cursor) == Some(&0x0e) => {
                 (0.5, cursor + 1)
@@ -1556,7 +1772,7 @@ fn decode_local_system_slot_prefix(
                 row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
             }
             (LocalSystemVariant::PositionalCylinder, 0..=8) => {
-                decode_positional_cylinder_support_coordinate(body, cursor, values.len(), cache)?
+                decode_positional_cylinder_support_coordinate(body, cursor, count, cache)?
             }
             (LocalSystemVariant::PositionalCylinder, 9..=11) => {
                 decode_tabulated_cylinder_first_coordinate(body, cursor, cache).or(row)?
@@ -1572,22 +1788,15 @@ fn decode_local_system_slot_prefix(
             }
             _ => row?,
         };
-        values.push(value);
+        values[count] = value;
+        count += 1;
         cursor = next;
     }
-    if values.len() != 12 {
+    if count != values.len() {
         return None;
     }
-    let [value_0, value_1, value_2, value_3, value_4, value_5, value_6, value_7, value_8, value_9, value_10, value_11] =
-        values.as_slice()
-    else {
-        return None;
-    };
     Some(LocalSystemSlotPrefix {
-        values: [
-            *value_0, *value_1, *value_2, *value_3, *value_4, *value_5, *value_6, *value_7,
-            *value_8, *value_9, *value_10, *value_11,
-        ],
+        values,
         cursor,
         saw_zero_slot_prefix,
     })
@@ -2149,6 +2358,327 @@ mod tests {
     use cadmpeg_ir::units::FiniteVector;
     use std::collections::BTreeMap;
 
+    fn with_recursive_limits<T>(
+        bytes: &[u8],
+        depth: u64,
+        work: u64,
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+    ) -> Result<T, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_recursion_depth = depth;
+        policy.limits.max_work_units = work;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("recursive fixture fits the input limit");
+        f(&ctx)
+    }
+
+    #[test]
+    fn inline_explicit_frame_refuses_recursive_depth_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0xe4];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "creo inline explicit frame depth");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn inline_explicit_frame_refuses_recursive_work_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0xe4];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_inline_non_plane_local_system_prefix(ctx, &bytes, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "creo inline explicit frame work");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0x18];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "creo inline origin depth");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn inline_origin_refuses_recursive_work_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0x18];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "creo inline origin work");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn plane_support_variants_refuses_recursive_depth_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0xe4];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, 1, u64::MAX, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+        assert_eq!(limit.operation, "creo plane support variants depth");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    #[test]
+    fn plane_support_variants_refuses_recursive_work_before_absent_candidate() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = [0xe4];
+        let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::decode_plane_support_lane_variants(ctx, &bytes, &ScalarCache::default())
+                .map(std::iter::Iterator::count)
+        };
+        assert_eq!(
+            with_recursive_limits(&bytes, 2, 2, decode).expect("two recursive steps admitted"),
+            0
+        );
+        assert_eq!(
+            with_context(&bytes, decode).expect("service profile admits the absent candidate"),
+            0
+        );
+        let error =
+            with_recursive_limits(&bytes, u64::MAX, 1, decode).expect_err("need minus one refuses");
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("recursive resource refusal expected");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+        assert_eq!(limit.operation, "creo plane support variants work");
+        assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+    }
+
+    fn checked_cache_with_collection_limit(
+        limit: u64,
+    ) -> Result<ScalarCache, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let bytes = [0x46, 0x08, 1, 2, 3, 4, 5, 6];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
+            .expect("the scalar image fits the root limit");
+        ScalarCache::from_section_checked(&ctx, &bytes)
+    }
+
+    fn with_context<T>(
+        bytes: &[u8],
+        f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
+    ) -> T {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the scalar fixture fits the root limit");
+        f(&ctx)
+    }
+
+    fn double_xar_with_limits(
+        bytes: &[u8],
+        items: u64,
+        retained: u64,
+    ) -> Result<Vec<super::DoubleXarTable>, cadmpeg_core::CodecError> {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = retained;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy)
+            .expect("the dictionary fixture fits the root limit");
+        double_xar_tables(&ctx, bytes)
+    }
+
+    #[test]
+    fn double_xar_slots_refuse_before_counted_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        assert_eq!(
+            double_xar_with_limits(bytes, 3, u64::MAX)
+                .expect("table admitted")
+                .len(),
+            1
+        );
+        let error =
+            double_xar_with_limits(bytes, 1, u64::MAX).expect_err("second slot needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo double_xar slots")
+        );
+    }
+
+    #[test]
+    fn double_xar_table_refuses_before_result_growth() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x10\xe0";
+        let error = double_xar_with_limits(bytes, 2, u64::MAX).expect_err("table needs admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo double_xar tables")
+        );
+    }
+
+    #[test]
+    fn double_xar_literal_refuses_before_retained_copy() {
+        use cadmpeg_core::decode::ResourceDimension;
+        let bytes = b"double_xar\0\xf8\x02\x46\x08\x00\x00\x00\x00\x00\x00\xe0";
+        assert_eq!(
+            double_xar_with_limits(bytes, 3, 8)
+                .expect("literal admitted")
+                .len(),
+            1
+        );
+        let error = double_xar_with_limits(bytes, 3, 7).expect_err("literal bytes need admission");
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo double_xar literal bytes")
+        );
+    }
+
+    #[test]
+    fn scalar_cache_unique_image_refuses_before_hash_growth() {
+        let cache = checked_cache_with_collection_limit(3)
+            .expect("service-sized collection budget admits one scalar");
+        assert_eq!(cache.entries.len(), 1);
+        assert_eq!(cache.paired_byte_1(&[1, 2, 3, 4, 5, 6]), Some(0x08));
+        let error = checked_cache_with_collection_limit(0)
+            .expect_err("the unique image needs one collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache unique images"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_paired_tail_refuses_before_tree_insert() {
+        let error = checked_cache_with_collection_limit(1)
+            .expect_err("the paired tail follows the unique image");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache paired tails"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_entry_refuses_before_vector_growth() {
+        let error = checked_cache_with_collection_limit(2)
+            .expect_err("the scalar entry follows the hash and tree nodes");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.operation == "creo scalar cache entries"
+        ));
+    }
+
+    #[test]
+    fn scalar_cache_checked_preserves_first_image_order_and_tail_conflicts() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+        let bytes = [
+            0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x09, 1, 2, 3, 4, 5, 6, 0x46, 0x08, 1, 2, 3, 4, 5,
+            6,
+        ];
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("root input is admitted");
+        let checked =
+            ScalarCache::from_section_checked(&ctx, &bytes).expect("service profile admits cache");
+        let original = ScalarCache::from_section(&bytes);
+        assert_eq!(checked.entries, original.entries);
+        assert_eq!(
+            checked.paired_byte_1_by_tail,
+            original.paired_byte_1_by_tail
+        );
+        assert_eq!(checked.entries.len(), 2);
+        assert_eq!(checked.paired_byte_1(&[1, 2, 3, 4, 5, 6]), None);
+    }
     /// Every arm of the surface-row lane reads the bytes it reports: a decode
     /// that states a value advances the cursor and stops inside the body. The
     /// slot readers rest on that, so no caller tests the token for emptiness.
@@ -2391,17 +2921,20 @@ mod tests {
         ];
         let cache = ScalarCache::default();
         for (body, axis, expected) in cases {
-            let frame = decode_inline_non_plane_local_system_prefix(&body, &cache)
-                .into_iter()
-                .find_map(|prefix| match prefix {
-                    InlineNonPlaneLocalSystemPrefix::Compact(frame)
-                        if frame.values.get()[6 + axis] != 0.0 =>
-                    {
-                        Some(frame)
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
+            let frame = crate::decode::with_test_decode_ctx(|ctx| {
+                decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
+            })
+            .expect("service scalar admission")
+            .into_iter()
+            .find_map(|prefix| match prefix {
+                InlineNonPlaneLocalSystemPrefix::Compact(frame)
+                    if frame.values.get()[6 + axis] != 0.0 =>
+                {
+                    Some(frame)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("compact inline local-system image {body:02x?}"));
             assert_eq!(frame.cursor, body.len());
             assert_eq!(frame.values, expected);
         }
@@ -2467,8 +3000,13 @@ mod tests {
         body.extend([0x18, 0x18, 0x18]);
 
         assert_eq!(
-            decode_plane_support_local_system(&body, &ScalarCache::default())
-                .map(|(values, layout)| (values.get(), layout)),
+            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+                ctx,
+                &body,
+                &ScalarCache::default()
+            ))
+            .expect("service scalar admission")
+            .map(|(values, layout)| (values.get(), layout)),
             Some((
                 [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,],
                 PlaneSupportFrameLayout::SupportTriples,
@@ -2485,13 +3023,16 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
-            .into_iter()
-            .any(|prefix| matches!(
-                prefix,
-                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                    if frame.cursor == body.len() && frame.values == expected
-            )));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
+        })
+        .expect("service scalar admission")
+        .into_iter()
+        .any(|prefix| matches!(
+            prefix,
+            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                if frame.cursor == body.len() && frame.values == expected
+        )));
     }
 
     #[test]
@@ -2503,13 +3044,16 @@ mod tests {
         let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 2.0, 2.0, 4.0];
         let cache = ScalarCache::default();
 
-        assert!(decode_inline_non_plane_local_system_prefix(&body, &cache)
-            .into_iter()
-            .any(|prefix| matches!(
-                prefix,
-                InlineNonPlaneLocalSystemPrefix::Explicit(frame)
-                    if frame.cursor == body.len() && frame.values == expected
-            )));
+        assert!(crate::decode::with_test_decode_ctx(|ctx| {
+            decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
+        })
+        .expect("service scalar admission")
+        .into_iter()
+        .any(|prefix| matches!(
+            prefix,
+            InlineNonPlaneLocalSystemPrefix::Explicit(frame)
+                if frame.cursor == body.len() && frame.values == expected
+        )));
     }
 
     #[test]
@@ -2564,12 +3108,21 @@ mod tests {
         body.push(0x18);
 
         assert_eq!(
-            decode_plane_support_local_system(&body, &cache).map(|(_, layout)| layout),
+            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+                ctx, &body, &cache
+            ))
+            .expect("service scalar admission")
+            .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
-            decode_plane_support_local_system(&[0x10; 12], &ScalarCache::default())
-                .map(|(_, layout)| layout),
+            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+                ctx,
+                &[0x10; 12],
+                &ScalarCache::default()
+            ))
+            .expect("service scalar admission")
+            .map(|(_, layout)| layout),
             Some(PlaneSupportFrameLayout::SupportTriples)
         );
         assert_eq!(
@@ -2698,8 +3251,11 @@ mod tests {
     fn diagonal_compact_plane_support_names_the_z_normal() {
         let body = [0x0f, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x18, 0x18];
 
-        let (slots, layout) = decode_plane_support_local_system(&body, &ScalarCache::default())
-            .expect("complete diagonal support image");
+        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
+            decode_plane_support_local_system(ctx, &body, &ScalarCache::default())
+        })
+        .expect("service scalar admission")
+        .expect("complete diagonal support image");
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert_eq!(
             slots,
@@ -2746,8 +3302,11 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first_z));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        let (slots, layout) = decode_plane_support_local_system(&body, &cache)
-            .expect("lane-ambiguous frame has one valid orthogonal interpretation");
+        let (slots, layout) = crate::decode::with_test_decode_ctx(|ctx| {
+            decode_plane_support_local_system(ctx, &body, &cache)
+        })
+        .expect("service scalar admission")
+        .expect("lane-ambiguous frame has one valid orthogonal interpretation");
         let slots = slots.get();
         assert_eq!(layout, PlaneSupportFrameLayout::DirectNormalTriples);
         assert!((slots[6] - alternate).abs() <= EPS_PLANE_SUPPORT_LANE_TEST);
@@ -2775,8 +3334,21 @@ mod tests {
         body.extend_from_slice(&positive_subunit_coordinate(first));
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
 
-        assert_eq!(decode_plane_support_lane_variants(&body, &cache).len(), 1);
-        assert!(decode_plane_support_local_system(&body, &cache).is_none());
+        assert_eq!(
+            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_lane_variants(
+                ctx, &body, &cache
+            ))
+            .expect("service scalar admission")
+            .count(),
+            1
+        );
+        assert!(
+            crate::decode::with_test_decode_ctx(|ctx| decode_plane_support_local_system(
+                ctx, &body, &cache
+            ))
+            .expect("service scalar admission")
+            .is_none()
+        );
     }
 
     #[test]
@@ -2987,7 +3559,8 @@ mod tests {
             0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46,
             0x08, 0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
         ]);
-        let tables = double_xar_tables(&data);
+        let tables = with_context(&data, |ctx| double_xar_tables(ctx, &data))
+            .expect("the scalar fixture fits the service limits");
         let [table] = tables.as_slice() else {
             panic!("complete dictionary");
         };
@@ -3012,8 +3585,14 @@ mod tests {
 
     #[test]
     fn withholds_incomplete_double_xar_dictionary() {
-        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10").is_empty());
-        assert!(double_xar_tables(b"double_xar\0\xf8\x02\x10\x0b").is_empty());
+        let first = b"double_xar\0\xf8\x02\x10";
+        assert!(with_context(first, |ctx| double_xar_tables(ctx, first))
+            .expect("the scalar fixture fits the service limits")
+            .is_empty());
+        let second = b"double_xar\0\xf8\x02\x10\x0b";
+        assert!(with_context(second, |ctx| double_xar_tables(ctx, second))
+            .expect("the scalar fixture fits the service limits")
+            .is_empty());
     }
 
     #[test]

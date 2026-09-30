@@ -186,6 +186,33 @@ fn scoped_reservations_release_and_commit_without_double_counting() {
 }
 
 #[test]
+fn lossy_utf8_copy_charges_replacement_bytes_before_retention() {
+    let source = b"A\xffB\xe2\x82";
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_retained_bytes = 7);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
+        .expect_err("two replacements need eight bytes");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::RetainedBytes
+            && resource.operation == "lossy UTF-8 fixture"));
+
+    let policy = policy_with(|limits| limits.max_retained_bytes = 8);
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert_eq!(
+        ctx.copy_retained_lossy_utf8(source, "lossy UTF-8 fixture")
+            .expect("eight retained bytes fit"),
+        String::from_utf8_lossy(source)
+    );
+    assert_eq!(
+        ctx.copy_retained_lossy_utf8(&[], "empty UTF-8 fixture")
+            .expect("empty text needs no bytes"),
+        ""
+    );
+}
+
+#[test]
 fn every_session_dimension_refuses_and_fuses() {
     fn assert_dimension(
         edit: impl FnMut(&mut ResourceLimits),

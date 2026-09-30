@@ -6,6 +6,8 @@
     clippy::uninlined_format_args
 )]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::primitives::DesignSolidPrimitive;
@@ -79,7 +81,7 @@ fn named_solid_primitives_bind_ordered_parameter_owners() {
     );
     box_scope
         .try_edit(|draft| {
-            draft.frame_length = bytes.len() as u64;
+            draft.frame_length = u64_from_index(bytes.len());
             draft.reference_members =
                 crate::records::identity::ReferenceRun::unlocated(vec![20, 21, 22, 23, 24]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
@@ -223,8 +225,8 @@ fn shifted_cylinder_primitives_bind_exact_generation_frames() {
                 .unwrap();
         scope
             .try_edit(|draft| {
-                draft.paired_byte_offset = frame_length as u64;
-                draft.frame_length = frame_length as u64;
+                draft.paired_byte_offset = u64_from_index(frame_length);
+                draft.frame_length = u64_from_index(frame_length);
                 draft.reference_members =
                     crate::records::identity::ReferenceRun::unlocated(reference_members);
                 draft.layout_fixture_references();
