@@ -381,13 +381,13 @@ pub(crate) fn project_configuration_design_states(
                                 histories,
                                 scoped_lanes,
                             );
-                        let mut definition = feature.evaluation.definition().clone();
-                        inherit_configuration_hole_semantics(
-                            &mut definition,
-                            base_definition,
-                            inherit_placements,
-                        )?;
-                        feature.evaluation.set_definition(definition);
+                        let mut result = Ok(());
+                        feature.evaluation.edit(|definition, _| {
+                            result = inherit_configuration_hole_semantics(
+                                definition, base_definition, inherit_placements,
+                            );
+                        });
+                        result?;
                     }
                 }
             let (id, state) = configuration_feature_state(feature);
@@ -853,7 +853,7 @@ pub(crate) fn project_configuration_sketch_states(
                     ..
                 }) = &state.definition
                 {
-                    state.dependencies.insert(reference.clone());
+                    insert_configuration_dependency(ctx, &mut state.dependencies, reference)?;
                 }
             }
         }
@@ -1145,6 +1145,29 @@ fn copy_configuration_plane_reference(
     }
 }
 
+fn insert_configuration_dependency(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
+    feature: &FeatureId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "retain SLDPRT configuration datum dependency";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependencies.len()), OPERATION)?;
+    let bytes = dependencies.iter().try_fold(feature.as_str().len(), |bytes, id| {
+        bytes.checked_add(id.as_str().len())
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+    })?;
+    let work = dependencies.len().checked_add(1)
+        .and_then(|count| count.checked_mul(std::mem::size_of::<FeatureId>()))
+        .and_then(|slots| bytes.checked_mul(4).and_then(|bytes| bytes.checked_add(slots)))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+    if !dependencies.contains(feature) {
+        let id = copy_configuration_feature_id(ctx, feature, OPERATION)?;
+        dependencies.try_insert_charged(id, ctx, OPERATION)?;
+    }
+    Ok(())
+}
+
 fn inherit_configuration_reference_plane_definition(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     id: &FeatureId,
@@ -1172,21 +1195,7 @@ fn inherit_configuration_reference_plane_definition(
     }
     let replacement = copy_configuration_plane_reference(ctx, base_reference)?;
     if let DatumPlaneReference::Feature { feature } = &replacement {
-        const OPERATION: &str = "retain SLDPRT configuration datum dependency";
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependencies.len()), OPERATION)?;
-        let bytes = dependencies.iter().try_fold(feature.as_str().len(), |bytes, id| {
-            bytes.checked_add(id.as_str().len())
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
-        })?;
-        let work = dependencies.len().checked_add(1)
-            .and_then(|count| count.checked_mul(std::mem::size_of::<FeatureId>()))
-            .and_then(|slots| bytes.checked_mul(4).and_then(|bytes| bytes.checked_add(slots)))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-        if !dependencies.contains(feature) {
-            let id = copy_configuration_feature_id(ctx, feature, OPERATION)?;
-            dependencies.try_insert_charged(id, ctx, OPERATION)?;
-        }
+        insert_configuration_dependency(ctx, dependencies, feature)?;
     }
     if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) = definition {
         *reference = Some(replacement);
