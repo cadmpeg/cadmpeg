@@ -3413,8 +3413,16 @@ fn parse_construction_tracking_path(
     let selector = View::i32_le_at(bytes, carrier_at + 57)?;
     let kind = View::u32_le_at(bytes, carrier_at + 61)?;
     let mut cursor = carrier_at.checked_add(73)?;
-    let first_related_identity = take_optional_tracking_identity(bytes, &mut cursor)?;
-    let second_related_identity = take_optional_tracking_identity(bytes, &mut cursor)?;
+    let first_related_identity = match take_optional_tracking_identity(bytes, &mut cursor) {
+        TrackingIdentityField::Invalid => return None,
+        TrackingIdentityField::Absent => None,
+        TrackingIdentityField::Present(value) => Some(value),
+    };
+    let second_related_identity = match take_optional_tracking_identity(bytes, &mut cursor) {
+        TrackingIdentityField::Invalid => return None,
+        TrackingIdentityField::Absent => None,
+        TrackingIdentityField::Present(value) => Some(value),
+    };
     let following_at = cursor;
     let (following_class_tag, after_following_tag) =
         lp_ascii_filtered_view(bytes, following_at, 3..=3, u8::is_ascii_digit)?;
@@ -3450,27 +3458,28 @@ fn parse_construction_tracking_path(
     .ok()
 }
 
-// Outer absence is a parse failure; inner absence is the encoded null identity.
-#[allow(clippy::option_option)]
-fn take_optional_tracking_identity(
-    bytes: &[u8],
-    cursor: &mut usize,
-) -> Option<Option<crate::records::identity::Located<u64>>> {
-    match View::u32_le_at(bytes, *cursor)? {
-        0 => {
-            *cursor = (*cursor).checked_add(4)?;
-            Some(None)
+enum TrackingIdentityField {
+    Invalid,
+    Absent,
+    Present(crate::records::identity::Located<u64>),
+}
+
+fn take_optional_tracking_identity(bytes: &[u8], cursor: &mut usize) -> TrackingIdentityField {
+    match View::u32_le_at(bytes, *cursor) {
+        Some(0) => {
+            let Some(next) = (*cursor).checked_add(4) else { return TrackingIdentityField::Invalid; };
+            *cursor = next;
+            TrackingIdentityField::Absent
         }
-        1 => {
-            let value_at = (*cursor).checked_add(4)?;
-            let value = View::u64_le_at(bytes, value_at)?;
-            *cursor = value_at.checked_add(8)?;
-            Some(Some(crate::records::identity::Located {
-                value,
-                offset: u64::try_from(value_at).ok()?,
-            }))
+        Some(1) => {
+            let Some(value_at) = (*cursor).checked_add(4) else { return TrackingIdentityField::Invalid; };
+            let Some(value) = View::u64_le_at(bytes, value_at) else { return TrackingIdentityField::Invalid; };
+            let Some(next) = value_at.checked_add(8) else { return TrackingIdentityField::Invalid; };
+            *cursor = next;
+            let Ok(offset) = u64::try_from(value_at) else { return TrackingIdentityField::Invalid; };
+            TrackingIdentityField::Present(crate::records::identity::Located { value, offset })
         }
-        _ => None,
+        _ => TrackingIdentityField::Invalid,
     }
 }
 

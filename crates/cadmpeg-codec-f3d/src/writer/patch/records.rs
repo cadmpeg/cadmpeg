@@ -14,7 +14,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use super::edits::{
-    BodyMemberEdit, ConstructionRecipeEdit, DesignTypeEdit, Edit, EntityHeaderEdit, HistoryEdits,
+    BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit, HistoryEdits,
     PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
@@ -116,7 +116,7 @@ pub(super) fn patch_act_entities(bytes: &mut [u8], edits: &[ActEntity]) -> Resul
     Ok(())
 }
 
-pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[Edit<Vec<u8>>]) -> Result<(), CodecError> {
+pub(super) fn patch_act_guids(bytes: &mut [u8], edits: &[ByteEdit]) -> Result<(), CodecError> {
     for edit in edits {
         patch_bytes_at(bytes, edit.offset, &edit.value, "ACT GUID")?;
     }
@@ -774,7 +774,7 @@ fn patch_sketch_nurbs(
 
 pub(super) fn patch_sketch_relations(
     bytes: &mut [u8],
-    edits: &[Vec<Edit<Vec<u8>>>],
+    edits: &[Vec<ByteEdit>],
 ) -> Result<(), CodecError> {
     for edit in edits {
         for member in edit {

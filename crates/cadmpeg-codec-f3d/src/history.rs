@@ -3191,8 +3191,8 @@ fn bind_entity_face_selection(
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
 
     let group_id = match selection {
         FaceSelection::Native(group_id) => group_id.as_str(),
@@ -3298,8 +3298,8 @@ fn bind_entity_face_groups(
     groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
 
     if groups.is_empty() {
         return Ok(());
@@ -3403,8 +3403,8 @@ fn bind_hole_face_selection(
     selection: &mut cadmpeg_ir::features::FaceSelection,
     input: FaceSelectionBinding<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
 
     let FaceSelection::Native(native_id) = selection else {
         return Ok(());
