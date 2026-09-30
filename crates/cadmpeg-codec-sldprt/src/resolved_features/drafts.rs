@@ -91,7 +91,7 @@ fn declared_draft_operands(
         if lane.native_payload.get(offset..offset + 2) != Some(token.as_slice()) {
             continue;
         }
-        if let Some(record) = draft_plane_reference_at(&lane.native_payload, offset, end) {
+        if let Some(record) = draft_plane_reference_at(ctx, &lane.native_payload, offset, end)? {
             ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
             records.push(record);
         }
@@ -152,7 +152,7 @@ fn compact_parting_line_draft_operands(
             continue;
         }
         if let Some((role, paths, selection_end)) =
-            compact_draft_selection_at(ctx, &lane.native_payload, marker)?
+            compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)?
         {
             ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
             records.push((marker, role, paths, selection_end));
@@ -219,6 +219,7 @@ fn compact_draft_selection_at(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
+    reserve_operation: &'static str,
 ) -> Result<Option<(
     CompactDraftSelectionRole,
     Vec<Vec<FeatureInputComponentPathEntry>>,
@@ -260,16 +261,18 @@ fn compact_draft_selection_at(
     })?;
     loop {
         ctx.charge_work(candidate_trials, "scan SLDPRT compact draft path lengths")?;
-        let candidate = (1..=MAX_PATH_CELLS)
-            .filter_map(|length| compact_mixed_component_path(payload, cursor, length, false))
-            .filter(|(_, path_end)| {
-                payload.get(*path_end..path_end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
-            })
-            .min_by_key(|(_, path_end)| *path_end);
+        let mut candidate = None;
+        for length in 1..=MAX_PATH_CELLS {
+            let Some((path, path_end)) = compact_mixed_component_path(ctx, payload, cursor, length, false, reserve_operation)? else { continue; };
+            if payload.get(path_end..path_end + 8) != Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]) { continue; }
+            if candidate.as_ref().is_none_or(|(_, previous_end)| path_end < *previous_end) {
+                candidate = Some((path, path_end));
+            }
+        }
         let Some((path, path_end)) = candidate else {
             return Ok((!paths.is_empty()).then_some((role, paths, cursor)));
         };
-        ctx.reserve_collection_vec(&mut paths, 1, "collect SLDPRT compact draft paths")?;
+        ctx.reserve_collection_vec(&mut paths, 1, reserve_operation)?;
         paths.push(path);
         cursor = path_end + 8;
     }
@@ -318,10 +321,12 @@ fn unique_declared_plane_reference_token(lane: &FeatureInputLane) -> Option<[u8;
 }
 
 fn draft_plane_reference_at(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     offset: usize,
     object_end: usize,
-) -> Option<(usize, Vec<FeatureInputComponentPathEntry>, usize)> {
+) -> Result<Option<(usize, Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
+    ctx.charge_work(256, "decode SLDPRT draft plane reference")?;
+    let header = (|| {
     let header = payload.get(offset..offset.checked_add(draft_plane::COMPONENT_MARKER)?)?;
     if offset + draft_plane::COMPONENT_MARKER > object_end
         || !View::u16_le_at(header, draft_plane::CHILD_TOKEN).is_some_and(is_class_token)
@@ -352,9 +357,12 @@ fn draft_plane_reference_at(
     {
         return None;
     }
-    let components = component_vector_path_at(payload, marker)?;
-    let path_start = offset.checked_add(draft_plane::LEN)?;
-    (path_start <= object_end).then_some((offset, components, path_start))
+    Some(marker)
+    })();
+    let Some(marker) = header else { return Ok(None); };
+    let Some(components) = component_vector_path_at(ctx, payload, marker, "collect SLDPRT declared draft references")? else { return Ok(None); };
+    let Some(path_start) = offset.checked_add(draft_plane::LEN) else { return Ok(None); };
+    Ok((path_start <= object_end).then_some((offset, components, path_start)))
 }
 
 fn unique_draft_direction(payload: &[u8], start: usize, end: usize) -> Option<FeatureDirection3> {
@@ -688,7 +696,7 @@ mod tests {
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
             .expect("test context");
-        let error = compact_draft_selection_at(&ctx, &payload, marker)
+        let error = compact_draft_selection_at(&ctx, &payload, marker, "collect SLDPRT compact draft paths")
             .expect_err("compact draft path exceeds collection limit");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -707,7 +715,7 @@ mod tests {
         policy.limits.max_work_units = 64;
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
             .expect("test context");
-        let error = compact_draft_selection_at(&ctx, &payload, marker)
+        let error = compact_draft_selection_at(&ctx, &payload, marker, "collect SLDPRT compact draft paths")
             .expect_err("compact draft path scan exceeds work limit");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
@@ -867,7 +875,7 @@ mod tests {
         )
         .expect("test decode context");
         let (_, parting_paths, parsed_parting_end) =
-            compact_draft_selection_at(&ctx, &lane.native_payload, object_start + 12)
+            compact_draft_selection_at(&ctx, &lane.native_payload, object_start + 12, "collect SLDPRT compact draft paths")
                 .expect("compact selection parse")
                 .expect("compact parting-tool selection");
         assert_eq!(parting_paths.len(), 2);
@@ -877,7 +885,7 @@ mod tests {
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
-            compact_draft_selection_at(&ctx, &lane.native_payload, face_marker)
+            compact_draft_selection_at(&ctx, &lane.native_payload, face_marker, "collect SLDPRT compact draft paths")
                 .expect("compact selection parse")
                 .expect("compact drafted-face selection")
                 .1
@@ -947,12 +955,6 @@ mod tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
-        let neutral = draft_plane_reference_at(&lane.native_payload, object_start, class_offset)
-            .expect("neutral-plane record");
-        assert_eq!(
-            unique_draft_direction(&lane.native_payload, neutral.2, first_face),
-            Some(Vector3::new(0.0, 0.0, 1.0))
-        );
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload,
@@ -960,6 +962,13 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test decode context");
+        let neutral = draft_plane_reference_at(&ctx, &lane.native_payload, object_start, class_offset)
+            .expect("neutral-plane parse")
+            .expect("neutral-plane record");
+        assert_eq!(
+            unique_draft_direction(&lane.native_payload, neutral.2, first_face),
+            Some(Vector3::new(0.0, 0.0, 1.0))
+        );
         let operands = draft_operands(&ctx, &feature, &lane, object_start, class_offset)
             .expect("draft parse")
             .expect("complete draft operands");

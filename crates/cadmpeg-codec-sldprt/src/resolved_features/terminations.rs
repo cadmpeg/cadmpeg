@@ -323,7 +323,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                         return Ok(Some(TerminationVote::Blind { depth_m }));
                     }
                     if compact_extrusion_mid_plane_at(&lane.native_payload, offset) { return Ok(Some(TerminationVote::Symmetric)); }
-                    if let Some(reference) = compact_extrusion_offset_from_face_at(&lane.native_payload, offset, end_spec_end) {
+                    if let Some(reference) = compact_extrusion_offset_from_face_at(ctx, &lane.native_payload, offset, end_spec_end)? {
                         return Ok(Some(compact_termination_face_vote(ctx, FaceCondition::OffsetFromFace, lane, feature_id, lane_key, reference)?));
                     }
                     if compact_extrusion_through_all_both_at(&lane.native_payload, offset) { return Ok(Some(TerminationVote::ThroughAllBoth)); }
@@ -331,13 +331,13 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) { return Ok(Some(TerminationVote::ThroughAll)); }
                     if compact_extrusion_through_next_at(&lane.native_payload, offset) { return Ok(Some(TerminationVote::ThroughNext)); }
                     if has_depth { return Ok(None); }
-                    if let Some((reference, kind)) = compact_extrusion_to_vertex_at(&lane.native_payload, offset, end_spec_end) {
+                    if let Some((reference, kind)) = compact_extrusion_to_vertex_at(ctx, &lane.native_payload, offset, end_spec_end)? {
                         let prefix = match kind { CompactPointReferenceKind::Point => "point-ref", CompactPointReferenceKind::EdgeEndpoint { .. } => "edge-endpoint-ref" };
                         ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
                         let reference = ctx.format_retained(format_args!("sldprt:feature-input:{prefix}:{lane_key}:{reference}"), OPERATION)?;
                         return Ok(Some(TerminationVote::ToVertex { reference }));
                     }
-                    compact_extrusion_to_face_at(&lane.native_payload, offset, end_spec_end)
+                    compact_extrusion_to_face_at(ctx, &lane.native_payload, offset, end_spec_end)?
                         .map(|reference| compact_termination_face_vote(ctx, FaceCondition::ToFace, lane, feature_id, lane_key, reference)).transpose()
                 })()?;
                 if let Some(candidate) = candidate {
@@ -524,7 +524,7 @@ pub(crate) fn enrich_history_combine_selections(
             if let (Some(scan_start), Some(scan_end)) = (start.checked_add(12), end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())) {
                 for marker in scan_start..scan_end {
                     ctx.charge_work(32, OPERATION)?;
-                    if compact_body_component_path_at(&lane.native_payload, marker).is_some() {
+                    if compact_body_component_path_at(ctx, &lane.native_payload, marker)?.is_some() {
                         if first.is_none() { first = Some(marker); }
                         last = Some(marker);
                     }
@@ -961,32 +961,18 @@ pub(crate) fn project_surface_sweep_profiles(
 }
 
 #[cfg(test)]
-pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
-    if marker < 12
-        || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        || !payload
-            .get(marker - 8..marker - 4)
-            .is_some_and(|selector| is_component_vector_selector_for_role(selector, 3))
-        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
-    {
-        return None;
-    }
-    let count = usize::try_from(View::u32_le_at(payload, marker - 12)?).ok()?;
-    if count == 0 {
-        return None;
-    }
-    compact_body_component_entries_at(payload, marker + 18, count).and_then(|components| {
-        components
-            .into_iter()
-            .map(|component| component.local_id)
-            .collect()
-    })
+pub(crate) fn compact_body_path_at(
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<u32>>, cadmpeg_core::CodecError> {
+    let components = compact_body_component_path_at(ctx, payload, marker)?;
+    Ok(components.and_then(|components| components.into_iter().map(|component| component.local_id).collect()))
 }
 
 fn compact_body_component_path_at(
-    payload: &[u8],
-    marker: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(32, "decode SLDPRT body component path")?;
+    let count = (|| {
     if marker < 12
         || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
         || !payload
@@ -999,33 +985,31 @@ fn compact_body_component_path_at(
     let count = usize::try_from(View::u32_le_at(payload, marker - 12)?)
         .ok()
         .filter(|count| *count != 0)?;
-    compact_body_component_entries_at(payload, marker + 18, count)
+    Some(count)
+    })();
+    let Some(count) = count else { return Ok(None); };
+    compact_body_component_entries_at(ctx, payload, marker + 18, count)
 }
 
 fn compact_body_component_entries_at(
-    payload: &[u8],
-    cursor: usize,
-    count: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    if count == 0 {
-        return None;
-    }
-    let mixed = |count| {
-        let (components, end) = compact_mixed_component_path(payload, cursor, count, true)?;
-        components
-            .iter()
-            .any(|component| component.instance.is_none() || component.local_id.is_none())
-            .then_some((components, end))
+    ctx: &DecodeContext<'_>, payload: &[u8], cursor: usize, count: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    if count == 0 { return Ok(None); }
+    let parse = |count| -> Result<Option<_>, cadmpeg_core::CodecError> {
+        if let Some(path) = compact_heterogeneous_component_path(ctx, payload, cursor, count, "decode SLDPRT component path layout")? {
+            return Ok(Some(path));
+        }
+        let Some((components, end)) = compact_mixed_component_path(ctx, payload, cursor, count, true, "decode SLDPRT mixed component path")? else { return Ok(None); };
+        ctx.charge_work(u64_from_index(components.len()), "decode SLDPRT body mixed path")?;
+        Ok(components.iter().any(|component| component.instance.is_none() || component.local_id.is_none())
+            .then_some((components, end)))
     };
-    let parse = |count| {
-        compact_heterogeneous_component_path(payload, cursor, count).or_else(|| mixed(count))
-    };
-    if let Some((components, _)) = parse(count) { return Some(components); }
+    if let Some((components, _)) = parse(count)? { return Ok(Some(components)); }
     if count > 1 {
-        let (components, end) = parse(count - 1)?;
-        return compact_body_null_slot_at(payload, end).then_some(components);
+        let Some((components, end)) = parse(count - 1)? else { return Ok(None); };
+        return Ok(compact_body_null_slot_at(payload, end).then_some(components));
     }
-    None
+    Ok(None)
 }
 
 fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
@@ -1081,7 +1065,7 @@ pub(crate) fn project_compact_combine_paths(
                 ctx.charge_work(work, OPERATION)?;
             }
             let Some(lane) = lanes.iter().find(|lane| lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key) == lane_key) else { return Ok(None); };
-            let Some(components) = compact_body_component_path_at(&lane.native_payload, offset) else { return Ok(None); };
+            let Some(components) = compact_body_component_path_at(ctx, &lane.native_payload, offset)? else { return Ok(None); };
             let Some(producer) = component_path_terminal_feature(ctx, &components, history_features.iter().copied())? else { return Ok(None); };
             ctx.charge_work(u64_from_index(producer.len()), OPERATION)?;
             let Some(id) = feature_ids_by_native.get(producer.as_str()) else { return Ok(None); };
@@ -1354,10 +1338,12 @@ impl CompactPointReferenceKind {
 }
 
 pub(super) fn compact_extrusion_to_vertex_at(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<(usize, CompactPointReferenceKind)> {
+) -> Result<Option<(usize, CompactPointReferenceKind)>, cadmpeg_core::CodecError> {
+    ctx.charge_work(64, "decode SLDPRT extrusion vertex termination")?;
+    let header = (|| {
     let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 3)
@@ -1366,20 +1352,20 @@ pub(super) fn compact_extrusion_to_vertex_at(
         return None;
     }
     let child = offset + 30;
+    Some((payload, child, end))
+    })();
+    let Some((payload, child, end)) = header else { return Ok(None); };
     let point_declaration = b"\xff\xff\x01\x00\x0c\x00moPointRef_w";
     let endpoint_declaration = b"\xff\xff\x01\x00\x0f\x00moEndPointRef_w";
     let point_body_at = |body: usize| {
         payload.get(body + 1).is_some_and(|byte| byte & 0x80 != 0)
-            && payload
-                .get(body + 2..body + 4)
-                .is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
+            && payload.get(body + 2..body + 4).is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
             && payload.get(body + 4..body + 9) == Some(&[2, 0, 0, 0, 0])
     };
-    let ReferenceOffsets::One(marker) = unique_reference_offset(
-        compact_termination_reference_offsets(payload, child, end, true),
-    ) else {
-        return None;
+    let ReferenceOffsets::One(marker) = compact_termination_reference_offsets(ctx, payload, child, end, true)? else {
+        return Ok(None);
     };
+    let kind = (|| {
     let kind = if (payload.get(child..child + point_declaration.len()) == Some(point_declaration)
         && point_body_at(child + point_declaration.len()))
         || point_body_at(child)
@@ -1401,14 +1387,18 @@ pub(super) fn compact_extrusion_to_vertex_at(
     } else {
         return None;
     };
-    Some((marker, kind))
+    Some(kind)
+    })();
+    Ok(kind.map(|kind| (marker, kind)))
 }
 
 pub(super) fn compact_extrusion_offset_from_face_at(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<usize> {
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    ctx.charge_work(64, "decode SLDPRT extrusion face offset")?;
+    let header = (|| {
     let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     if !compact_extrusion_end_spec_header(payload, offset, 5)
@@ -1417,9 +1407,14 @@ pub(super) fn compact_extrusion_offset_from_face_at(
         return None;
     }
     let resume = compact_extrusion_dimension_child_at(payload, offset + 26)?;
+    Some((payload, resume, end))
+    })();
+    let Some((payload, resume, end)) = header else { return Ok(None); };
     let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
     let mut candidates = ReferenceOffsets::Empty;
-    for anchor in resume..end.checked_sub(2)? {
+    let Some(scan_end) = end.checked_sub(2) else { return Ok(None); };
+    for anchor in resume..scan_end {
+        ctx.charge_work(128, "decode SLDPRT extrusion face offset")?;
         if payload.get(anchor..anchor + 3) != Some(&[1, 1, 0]) {
             continue;
         }
@@ -1430,26 +1425,30 @@ pub(super) fn compact_extrusion_offset_from_face_at(
             child
         };
         // The reference body opens with lane tokens followed by the selector.
-        let open_start = body.checked_add(2)?;
-        let open_end = body.checked_add(9)?.min(end);
+        let Some(open_start) = body.checked_add(2) else { return Ok(None); };
+        let Some(open_end) = body.checked_add(9).map(|offset| offset.min(end)) else { return Ok(None); };
         for open in (open_start..open_end).filter(|cursor| {
             cursor.checked_add(7).is_some_and(|stop| stop <= end)
                 && payload.get(cursor - 1).is_some_and(|byte| byte & 0x80 != 0)
                 && payload.get(*cursor..cursor + 7) == Some(&[2, 0, 0, 0, 0x40, 0, 0])
         }) {
-            for marker in compact_termination_reference_offsets(payload, open, end, true) {
-                candidates.insert(marker);
+            match compact_termination_reference_offsets(ctx, payload, open, end, true)? {
+                ReferenceOffsets::Empty => {},
+                ReferenceOffsets::One(marker) => candidates.insert(marker),
+                ReferenceOffsets::Ambiguous => candidates = ReferenceOffsets::Ambiguous,
             }
         }
     }
-    match candidates { ReferenceOffsets::One(marker) => Some(marker), _ => None }
+    Ok(match candidates { ReferenceOffsets::One(marker) => Some(marker), _ => None })
 }
 
 pub(super) fn compact_extrusion_to_face_at(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     offset: usize,
     end: usize,
-) -> Option<usize> {
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    ctx.charge_work(128, "decode SLDPRT extrusion face termination")?;
+    let header = (|| {
     let end = super::DeclaredEnd::of(end, payload.len())?.get();
     let payload = payload.get(..end)?;
     // Older end-spec streams encode the `moEndSpec_c` class as the fixed
@@ -1491,46 +1490,33 @@ pub(super) fn compact_extrusion_to_face_at(
     } else {
         body_offset
     };
-    let compact_candidates = unique_reference_offset(compact_termination_reference_offsets(
-        payload,
-        search_start,
-        end,
-        declared,
-    ));
+    Some((payload, search_start, end, declared, body_offset))
+    })();
+    let Some((payload, search_start, end, declared, body_offset)) = header else { return Ok(None); };
+    let compact_candidates = compact_termination_reference_offsets(ctx, payload, search_start, end, declared)?;
     match compact_candidates {
-        ReferenceOffsets::One(candidate) => Some(candidate),
-        ReferenceOffsets::Empty if declared && compact_tokenized_single_face_child_at(payload, body_offset) => {
-            // A declared single-face child is still a complete native
-            // selection when its compact body header validates but its
-            // component path uses an unknown layout. Preserve that child as
-            // the reference instead of discarding the independently decoded
-            // to-face termination.
-            Some(body_offset)
-        }
-        ReferenceOffsets::Empty if declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
-            // Some declared children retain the older counted path directly
-            // in the body and do not carry a modern marker. Preserve that
-            // complete legacy selection when no modern marker is present.
-            Some(body_offset)
-        }
-        ReferenceOffsets::Empty if !declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
-            // Legacy streams place the path directly in the child body and
-            // have no compact marker to identify. Keep that form as a
-            // fallback only after the modern marker search is empty.
-            Some(body_offset)
-        }
-        _ => None,
+        ReferenceOffsets::One(candidate) => Ok(Some(candidate)),
+        ReferenceOffsets::Empty if declared && compact_tokenized_single_face_child_at(payload, body_offset) => Ok(Some(body_offset)),
+        ReferenceOffsets::Empty => Ok(legacy_single_face_reference_path_at(ctx, payload, body_offset)?.map(|_| body_offset)),
+        ReferenceOffsets::Ambiguous => Ok(None),
     }
 }
 
 fn compact_termination_reference_offsets(
-    payload: &[u8], start: usize, end: usize, require_path: bool,
-) -> impl Iterator<Item = usize> + '_ {
+    ctx: &DecodeContext<'_>, payload: &[u8], start: usize, end: usize, require_path: bool,
+) -> Result<ReferenceOffsets, cadmpeg_core::CodecError> {
     let end = super::DeclaredEnd::of(end, payload.len()).map_or(start, super::DeclaredEnd::get);
-    (start..end).filter(move |marker| {
-        if require_path { compact_termination_reference_at(payload, *marker) }
-        else { compact_termination_reference_frame_at(payload, *marker).is_some() }
-    })
+    let mut candidates = ReferenceOffsets::Empty;
+    for marker in start..end {
+        ctx.charge_work(1, "scan SLDPRT termination reference offsets")?;
+        let present = if require_path {
+            compact_termination_reference_path_at(ctx, payload, marker)?.is_some()
+        } else {
+            compact_termination_reference_frame_at(payload, marker).is_some()
+        };
+        if present { candidates.insert(marker); }
+    }
+    Ok(candidates)
 }
 
 enum ReferenceOffsets {
@@ -1547,12 +1533,6 @@ impl ReferenceOffsets {
             Self::One(_) | Self::Ambiguous => {}
         }
     }
-}
-
-fn unique_reference_offset(offsets: impl IntoIterator<Item = usize>) -> ReferenceOffsets {
-    let mut candidates = ReferenceOffsets::Empty;
-    for offset in offsets { candidates.insert(offset); }
-    candidates
 }
 
 fn compact_tokenized_single_face_child_at(payload: &[u8], offset: usize) -> bool {
@@ -1621,18 +1601,99 @@ fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -
 }
 
 fn compact_single_face_reference_path_at(
-    payload: &[u8],
-    marker: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    compact_single_face_reference_record_at(payload, marker)
-        .map(|record| record.0)
-        .or_else(|| legacy_single_face_reference_path_at(payload, marker))
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    if let Some((components, _)) = compact_single_face_reference_record_at(ctx, payload, marker)? {
+        return Ok(Some(components));
+    }
+    legacy_single_face_reference_path_at(ctx, payload, marker)
+}
+
+struct LegacyFacePathSearch<'a, 'b> {
+    ctx: &'a DecodeContext<'b>,
+    payload: &'a [u8],
+    entries: Vec<FeatureInputComponentPathEntry>,
+    complete: Option<Vec<FeatureInputComponentPathEntry>>,
+    ambiguous: bool,
+}
+
+impl LegacyFacePathSearch<'_, '_> {
+    fn entry_at(&self, offset: usize) -> Option<FeatureInputComponentPathEntry> {
+        let instance = self.payload.get(offset..offset + 4)?;
+        let signature: [u8; 12] = self.payload.get(offset + 4..offset + 16)?.try_into().ok()?;
+        (View::u16_le_at(instance, 0).is_some_and(is_class_token)
+            && instance[2..4] == [0, 0]
+            && signature[0..2] != [0, 0])
+        .then(|| FeatureInputComponentPathEntry {
+            instance: View::u16_le_at(instance, 0),
+            type_signature: signature,
+            local_id: None,
+        })
+    }
+
+    fn terminal_at(&self, offset: usize) -> bool {
+        self.payload.get(offset..offset + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+            || [20usize, 24].into_iter().any(|zero_count| {
+                self.payload
+                    .get(offset..offset + zero_count)
+                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                    && View::u32_le_at(self.payload, offset + zero_count)
+                        .is_some_and(|source| source != 0)
+            })
+    }
+
+    fn visit(&mut self, cursor: usize, remaining: usize, has_path_slots: bool) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "decode SLDPRT legacy face component path";
+        if self.ambiguous { return Ok(()); }
+        let ctx = self.ctx;
+        let _depth = ctx.enter_nested(OPERATION)?;
+        ctx.charge_work(256, OPERATION)?;
+        if remaining == 0 {
+            if !self.terminal_at(cursor) { return Ok(()); }
+            if let Some(complete) = &self.complete {
+                ctx.charge_work(u64_from_index(self.entries.len()).checked_mul(4)
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                if complete != &self.entries { self.ambiguous = true; }
+            } else {
+                let mut complete = Vec::new();
+                ctx.reserve_collection_vec(&mut complete, self.entries.len(), OPERATION)?;
+                complete.extend_from_slice(&self.entries);
+                self.complete = Some(complete);
+            }
+            return Ok(());
+        }
+        let Some(entry) = self.entry_at(cursor) else { return Ok(()); };
+        for with_local_id in [true, false] {
+            let mut entry = entry.clone();
+            let end = if with_local_id {
+                let Some(bytes) = self.payload.get(cursor + 16..cursor + 20) else { continue; };
+                entry.local_id = View::u32_le_at(bytes, 0);
+                cursor + 20
+            } else { cursor + 16 };
+            let entry_count = self.entries.len();
+            ctx.reserve_collection_vec(&mut self.entries, 1, OPERATION)?;
+            self.entries.push(entry);
+            for slot_bytes in [0usize, 4] {
+                if slot_bytes == 4 && (!has_path_slots || !View::u32_le_at(self.payload, end)
+                    .is_some_and(|slot| (1..=u32::from(u16::MAX)).contains(&slot))) { continue; }
+                for gap in [0usize, 2, 4, 6, 8] {
+                    let next = end + slot_bytes;
+                    if self.payload.get(next..next + gap).is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0)) {
+                        self.visit(next + gap, remaining - 1, has_path_slots)?;
+                    }
+                }
+            }
+            self.entries.truncate(entry_count);
+        }
+        Ok(())
+    }
 }
 
 fn legacy_single_face_reference_path_at(
-    payload: &[u8],
-    body: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    ctx: &DecodeContext<'_>, payload: &[u8], body: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    ctx.charge_work(32, "decode SLDPRT legacy face header")?;
+    let header_valid = (|| {
     let header = payload.get(body..body + 19)?;
     let class_token = View::u16_le_at(header, 0)?;
     let component_token = View::u16_le_at(header, 2)?;
@@ -1647,103 +1708,10 @@ fn legacy_single_face_reference_path_at(
     {
         return None;
     }
-    let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
-        let instance = payload.get(offset..offset + 4)?;
-        let signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
-        (View::u16_le_at(instance, 0).is_some_and(is_class_token)
-            && instance[2..4] == [0, 0]
-            && signature[0..2] != [0, 0])
-        .then(|| FeatureInputComponentPathEntry {
-            instance: View::u16_le_at(instance, 0),
-            type_signature: signature,
-            local_id: None,
-        })
-    };
-    let terminal = |offset: usize| {
-        payload.get(offset..offset + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
-            || [20usize, 24].into_iter().any(|zero_count| {
-                payload
-                    .get(offset..offset + zero_count)
-                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    && View::u32_le_at(payload, offset + zero_count)
-                        .is_some_and(|source| source != 0)
-            })
-    };
-    #[allow(clippy::items_after_statements, clippy::too_many_arguments)]
-    fn parse_entries(
-        payload: &[u8],
-        entry_at: &impl Fn(usize) -> Option<FeatureInputComponentPathEntry>,
-        terminal: &impl Fn(usize) -> bool,
-        cursor: usize,
-        remaining: usize,
-        has_path_slots: bool,
-        entries: &mut Vec<FeatureInputComponentPathEntry>,
-        complete: &mut Vec<Vec<FeatureInputComponentPathEntry>>,
-    ) {
-        if complete.len() > 1 {
-            return;
-        }
-        if remaining == 0 {
-            if terminal(cursor) && !complete.contains(entries) {
-                complete.push(entries.clone());
-            }
-            return;
-        }
-        let Some(entry) = entry_at(cursor) else {
-            return;
-        };
-        let next_offsets = |end: usize| {
-            let mut offsets = Vec::new();
-            for slot_bytes in [0usize, 4] {
-                if slot_bytes == 4 && !has_path_slots {
-                    continue;
-                }
-                if slot_bytes == 4
-                    && !View::u32_le_at(payload, end)
-                        .is_some_and(|slot| (1..=u32::from(u16::MAX)).contains(&slot))
-                {
-                    continue;
-                }
-                for gap in [0usize, 2, 4, 6, 8] {
-                    let next = end + slot_bytes;
-                    if payload
-                        .get(next..next + gap)
-                        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-                    {
-                        offsets.push(next + gap);
-                    }
-                }
-            }
-            offsets
-        };
-        for with_local_id in [true, false] {
-            let mut entry = entry.clone();
-            let end = if with_local_id {
-                let Some(bytes) = payload.get(cursor + 16..cursor + 20) else {
-                    continue;
-                };
-                entry.local_id = View::u32_le_at(bytes, 0);
-                cursor + 20
-            } else {
-                cursor + 16
-            };
-            entries.push(entry);
-            for next in next_offsets(end) {
-                parse_entries(
-                    payload,
-                    entry_at,
-                    terminal,
-                    next,
-                    remaining - 1,
-                    has_path_slots,
-                    entries,
-                    complete,
-                );
-            }
-            entries.pop();
-        }
-    }
-    let mut candidates = Vec::new();
+    Some(())
+    })();
+    if header_valid.is_none() { return Ok(None); }
+    let mut search = LegacyFacePathSearch { ctx, payload, entries: Vec::new(), complete: None, ambiguous: false };
     for control in [body + 44, body + 48, body + 84, body + 88] {
         let Some(prefix) = payload.get(control..control + 40) else {
             continue;
@@ -1751,6 +1719,7 @@ fn legacy_single_face_reference_path_at(
         let Some(filler) = payload.get(body + 19..control) else {
             continue;
         };
+        ctx.charge_work(8192, "decode SLDPRT legacy face path controls")?;
         let padded = filler.len() >= 16
             && filler.windows(16).enumerate().any(|(start, window)| {
                 window.iter().all(|byte| *byte == 0xff)
@@ -1760,8 +1729,8 @@ fn legacy_single_face_reference_path_at(
         if !filler.iter().all(|byte| *byte == 0) && !padded {
             continue;
         }
-        let token = View::u16_le_at(prefix, 0)?;
-        let count = usize::try_from(View::u32_le_at(prefix, 10)?).ok()?;
+        let Some(token) = View::u16_le_at(prefix, 0) else { return Ok(None); };
+        let Some(count) = View::u32_le_at(prefix, 10).and_then(|count| usize::try_from(count).ok()) else { return Ok(None); };
         if !is_class_token(token)
             || prefix[2..6] != 1u32.to_le_bytes()
             || prefix[6..10] != [0; 4]
@@ -1779,35 +1748,17 @@ fn legacy_single_face_reference_path_at(
             else {
                 continue;
             };
-            parse_entries(
-                payload,
-                &entry_at,
-                &terminal,
-                control + 40,
-                entry_count,
-                prefix[15] == 3,
-                &mut Vec::new(),
-                &mut candidates,
-            );
+            search.visit(control + 40, entry_count, prefix[15] == 3)?;
         }
     }
-    candidates.sort_by_key(|entries| {
-        entries
-            .iter()
-            .map(|entry| (entry.instance, entry.type_signature, entry.local_id))
-            .collect::<Vec<_>>()
-    });
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    Ok(if search.ambiguous { None } else { search.complete })
 }
 
 pub(super) fn compact_single_face_reference_record_at(
-    payload: &[u8],
-    marker: usize,
-) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, cadmpeg_core::CodecError> {
+    ctx.charge_work(32, "decode SLDPRT single face record")?;
+    let count = (|| {
     let count = marker
         .checked_sub(12)
         .and_then(|offset| View::u32_le_at(payload, offset))?;
@@ -1822,13 +1773,16 @@ pub(super) fn compact_single_face_reference_record_at(
     {
         return None;
     }
-    compact_heterogeneous_component_path(payload, marker + 18, count)
-        .map(|(components, _)| (components, None))
-        .or_else(|| {
-            [1usize, 2].into_iter().find_map(|serialized_roots| {
-                let entry_count = count.checked_sub(serialized_roots)?;
-                let (components, end) =
-                    compact_heterogeneous_component_path(payload, marker + 18, entry_count)?;
+    Some(count)
+    })();
+    let Some(count) = count else { return Ok(None); };
+    if let Some((components, _)) = compact_heterogeneous_component_path(ctx, payload, marker + 18, count, "decode SLDPRT component path layout")? {
+        return Ok(Some((components, None)));
+    }
+    for serialized_roots in [1usize, 2] {
+        let Some(entry_count) = count.checked_sub(serialized_roots) else { continue; };
+        let Some((components, end)) = compact_heterogeneous_component_path(ctx, payload, marker + 18, entry_count, "decode SLDPRT component path layout")? else { continue; };
+        ctx.charge_work(128, "decode SLDPRT single face terminal")?;
                 let source = [0usize, 4, 8].into_iter().find_map(|gap| {
                     let filler = match gap {
                         0 => true,
@@ -1855,14 +1809,10 @@ pub(super) fn compact_single_face_reference_record_at(
                     let source = View::u32_le_at(payload, terminal + 20)?;
                     (payload.get(terminal..terminal + 20)? == [0; 20] && source != 0)
                         .then_some(Some(source))
-                })?;
-                Some((components, source))
-            })
-        })
-}
-
-fn compact_termination_reference_at(payload: &[u8], marker: usize) -> bool {
-    compact_termination_reference_path_at(payload, marker).is_some()
+                });
+        if let Some(source) = source { return Ok(Some((components, source))); }
+    }
+    Ok(None)
 }
 
 /// Decode the component path of an up-to-vertex or offset-from-face
@@ -1871,14 +1821,15 @@ fn compact_termination_reference_at(payload: &[u8], marker: usize) -> bool {
 /// cell, `a0 86 01 00` filler words, or an `01 00 00 00` slot word between
 /// counted entries.
 pub(super) fn compact_termination_reference_path_at(
-    payload: &[u8],
-    marker: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    if let Some(components) = compact_single_face_reference_path_at(payload, marker) {
-        return Some(components);
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT termination reference path";
+    if let Some(components) = compact_single_face_reference_path_at(ctx, payload, marker)? {
+        return Ok(Some(components));
     }
-    let count = compact_termination_reference_frame_at(payload, marker)?;
-    let count = usize::try_from(count).ok()?;
+    let count = compact_termination_reference_frame_at(payload, marker)
+        .and_then(|count| usize::try_from(count).ok());
+    let Some(count) = count else { return Ok(None); };
     let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
         let instance = payload.get(offset..offset + 4)?;
         if instance[0..2] == [0, 0]
@@ -1905,6 +1856,7 @@ pub(super) fn compact_termination_reference_path_at(
     }
     let mut entries = Vec::new();
     while entries.len() < count {
+        ctx.charge_work(128, OPERATION)?;
         let ordinal_gap = payload
             .get(cursor..cursor + 4)
             .and_then(|bytes| {
@@ -1918,6 +1870,7 @@ pub(super) fn compact_termination_reference_path_at(
             continue;
         }
         if let Some(entry) = entry_at(cursor) {
+            ctx.reserve_collection_vec(&mut entries, 1, OPERATION)?;
             entries.push(entry);
             cursor += 20;
             continue;
@@ -1946,7 +1899,7 @@ pub(super) fn compact_termination_reference_path_at(
             None => break,
         }
     }
-    (!entries.is_empty()).then_some(entries)
+    Ok((!entries.is_empty()).then_some(entries))
 }
 
 fn compact_termination_reference_frame_at(payload: &[u8], marker: usize) -> Option<u32> {
