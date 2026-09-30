@@ -85,6 +85,7 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         if data.get(start..end).is_none() {
             continue;
         }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "patch SLDPRT PMI fuzz payload")?;
         let _patched_reservation =
             ctx.reserve_scoped(data.len() as u64, "patch SLDPRT PMI fuzz payload")?;
         let mut patched = Vec::new();
