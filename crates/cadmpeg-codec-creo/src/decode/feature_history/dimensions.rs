@@ -276,9 +276,13 @@ pub(in super::super) fn feature_relation_table_expected_rows(
 
 pub(in super::super) fn feature_relation_table_missing_rows(
     table: &crate::feature::definitions::FeatureRelationTable,
-) -> usize {
-    feature_relation_table_expected_rows(table)
-        .map_or(0, |expected| expected.saturating_sub(table.rows.len()))
+) -> Result<usize, cadmpeg_core::CodecError> {
+    let Some(expected) = feature_relation_table_expected_rows(table) else {
+        return Ok(0);
+    };
+    expected.checked_sub(table.rows.len()).ok_or_else(|| {
+        cadmpeg_core::CodecError::malformed("relation row count exceeds the declared count")
+    })
 }
 
 pub(in super::super) fn feature_skamp_table_complete(

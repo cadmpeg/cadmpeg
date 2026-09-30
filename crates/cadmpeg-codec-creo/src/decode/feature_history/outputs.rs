@@ -769,7 +769,7 @@ pub(in super::super) fn owned_section_feature_id(
     let row = exactly_one(scan.features.rows.iter().filter(|row| {
         row.root_schema_class == Some(SchemaClass::Section)
             && definition.offset >= row.body_offset
-            && definition.offset < row.body_offset.saturating_add(row.body.len())
+            && row.body_offset.checked_add(row.body.len()).is_some_and(|end| definition.offset < end)
     }))?;
     Some(row.feature_id)
 }
@@ -783,7 +783,7 @@ pub(super) fn section_definition_for_history_feature<'a>(
     }))?;
     let definition = exactly_one(scan.features.definitions.iter().filter(|definition| {
         definition.offset >= row.body_offset
-            && definition.offset < row.body_offset.saturating_add(row.body.len())
+            && row.body_offset.checked_add(row.body.len()).is_some_and(|end| definition.offset < end)
     }))?;
     Some(definition)
 }

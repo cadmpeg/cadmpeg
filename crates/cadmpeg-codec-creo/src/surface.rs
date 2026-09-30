@@ -537,7 +537,10 @@ fn take_spline_scalars(
     name: &str,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<f64>>, CodecError> {
-    if count > body.len().saturating_sub(*cursor) {
+    let Some(remaining) = body.len().checked_sub(*cursor) else {
+        return Ok(None);
+    };
+    if count > remaining {
         return Ok(None);
     }
     let mut values = Vec::new();
@@ -5935,8 +5938,11 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         else {
             continue;
         };
+        let Some(separator_limit) = limit.checked_sub(3) else {
+            continue;
+        };
         let mut first_separators =
-            (control_body_start..limit.saturating_sub(3)).filter_map(|offset| {
+            (control_body_start..separator_limit).filter_map(|offset| {
                 (payload.get(offset..offset + 3) == Some(&[0x18, 0xf1, 0xf7]))
                     .then(|| {
                         let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;
@@ -5951,7 +5957,10 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         if first_separators.next().is_some() {
             continue;
         }
-        let mut terminals = (first_body_start..limit.saturating_sub(4)).filter_map(|offset| {
+        let Some(terminal_limit) = limit.checked_sub(4) else {
+            continue;
+        };
+        let mut terminals = (first_body_start..terminal_limit).filter_map(|offset| {
             (payload.get(offset..offset + 3) == Some(&[0x18, 0xf2, 0xf7]))
                 .then(|| {
                     let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;

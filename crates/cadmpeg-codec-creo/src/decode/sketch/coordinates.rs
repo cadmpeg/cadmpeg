@@ -217,10 +217,11 @@ fn solve_section_coordinates_with_derived_constraints(
         solve_section_coordinate_equations(ctx, equations, stored_coordinates)?;
     let max_passes = point_on_line_constraints
         .len()
-        .saturating_add(equal_length_constraints.len())
-        .saturating_add(auxiliary_constraints.midpoints.len())
-        .saturating_add(auxiliary_constraints.point_bindings.len().saturating_mul(2))
-        .saturating_add(1);
+        .checked_add(equal_length_constraints.len())
+        .and_then(|count| count.checked_add(auxiliary_constraints.midpoints.len()))
+        .and_then(|count| auxiliary_constraints.point_bindings.len().checked_mul(2).and_then(|bindings| count.checked_add(bindings)))
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX))?;
     for _ in 0..max_passes {
         let mut appended = false;
         if append_point_on_line_equations(

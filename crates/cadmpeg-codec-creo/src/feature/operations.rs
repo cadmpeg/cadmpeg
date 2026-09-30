@@ -390,7 +390,10 @@ pub(crate) fn reference_names(
     payload: &[u8],
 ) -> Result<Vec<FeatureReferenceName>, CodecError> {
     let mut names = Vec::new();
-    for offset in 0..payload.len().saturating_sub(2) {
+    let Some(last) = payload.len().checked_sub(2) else {
+        return Ok(names);
+    };
+    for offset in 0..last {
         if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
             continue;
         }
@@ -405,8 +408,8 @@ pub(crate) fn reference_names(
             continue;
         }
         let Some(name_end) = payload
-            .get(name_start..name_start.saturating_add(256).min(payload.len()))
-            .and_then(|tail| tail.iter().position(|byte| *byte == 0))
+            .get(name_start..)
+            .and_then(|tail| tail.iter().take(256).position(|byte| *byte == 0))
             .map(|relative| name_start + relative)
         else {
             continue;
@@ -467,8 +470,8 @@ fn recipe_bindings(
         }
         let (parent_feature_id, display_start) = psb::compact_int(payload, after_schema + 1);
         let Some(display_end) = payload
-            .get(display_start..display_start.saturating_add(96).min(payload.len()))
-            .and_then(|bytes| bytes.iter().position(|byte| *byte == 0))
+            .get(display_start..)
+            .and_then(|bytes| bytes.iter().take(96).position(|byte| *byte == 0))
             .map(|relative| display_start + relative)
         else {
             continue;
@@ -584,7 +587,10 @@ pub(crate) fn operation_states(
         }
     }
     let mut result = Vec::new();
-    for separator in 0..payload.len().saturating_sub(4) {
+    let Some(last) = payload.len().checked_sub(4) else {
+        return Ok(result);
+    };
+    for separator in 0..last {
         let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
             payload.get(separator..separator + candidate.len()) == Some(**candidate)
         }) else {

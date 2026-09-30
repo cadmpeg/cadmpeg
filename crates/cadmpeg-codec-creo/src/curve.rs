@@ -8310,11 +8310,10 @@ struct TopologyPrefix {
 
 fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
     let short = find_in(payload, b"\xe1\xe3", start, end).map(|offset| (offset, 2));
-    let long_search_end = short.map_or(end, |(offset, _)| {
-        offset
-            .saturating_add(b"\xe1\xf5\x05\xf6\xe3".len())
-            .min(end)
-    });
+    let long_search_end = match short {
+        Some((offset, _)) => offset.checked_add(b"\xe1\xf5\x05\xf6\xe3".len())?.min(end),
+        None => end,
+    };
     let long =
         find_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, long_search_end).map(|offset| (offset, 5));
     match (short, long) {
@@ -8520,7 +8519,10 @@ fn complete_curve_row_linkage(bytes: &[u8]) -> bool {
         let Some((count, next)) = generic_compact_at(bytes, cursor + 1) else {
             return false;
         };
-        let Some(count) = bounded_len(count.into(), 1, bytes.len().saturating_sub(next)) else {
+        let Some(remaining) = bytes.len().checked_sub(next) else {
+            return false;
+        };
+        let Some(count) = bounded_len(count.into(), 1, remaining) else {
             return false;
         };
         cursor = next;
@@ -8797,7 +8799,10 @@ fn complete_two_chart_samples(
     count: u32,
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<[[f64; 2]; 2]>>, cadmpeg_core::CodecError> {
-    let Some(sample_count) = bounded_len(u64::from(count), 4, body.len().saturating_sub(start))
+    let Some(remaining) = body.len().checked_sub(start) else {
+        return Ok(None);
+    };
+    let Some(sample_count) = bounded_len(u64::from(count), 4, remaining)
     else {
         return Ok(None);
     };
@@ -9729,7 +9734,7 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<[Option<TopologySuffixCandid
     (row.get(close) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
     let mut reference_geometry_candidates = [None; 3];
     let mut reference_count = 0;
-    if row.get(close.saturating_sub(2)..close) == Some(&[0, 0]) {
+    if close.checked_sub(2).and_then(|start| row.get(start..close)) == Some(&[0, 0]) {
         reference_geometry_candidates[0] = Some((close - 2, [0, 0]));
         reference_count = 1;
     } else {
@@ -9788,7 +9793,7 @@ fn topology_suffix_candidates(row: &[u8]) -> Option<[Option<TopologySuffixCandid
 
 fn unique_find_in(data: &[u8], needle: &[u8], from: usize, end: usize) -> Option<usize> {
     let offset = find_in(data, needle, from, end)?;
-    find_in(data, needle, offset.saturating_add(1), end)
+    find_in(data, needle, offset.checked_add(1)?, end)
         .is_none()
         .then_some(offset)
 }

@@ -943,3 +943,10 @@ fn row_body_admission_requires_both_header_bytes() {
     assert_eq!(body.header(), [0xeb, 0x04]);
     assert_eq!(&*body, &[0xeb, 0x04]);
 }
+
+#[test]
+fn replay_ids_withholds_zero_count_past_end() {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        assert!(super::replay_ids(ctx, &[], 0, 1).is_none());
+    });
+}

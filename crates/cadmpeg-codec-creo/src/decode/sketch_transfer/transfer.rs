@@ -151,7 +151,7 @@ pub(in super::super) fn transfer_sketches(
         if let Some(table) = &definition.segments {
             let decoded_rows = table.rows.len();
             let expected_rows = expected_segment_rows(ctx, definition.identity.id(), table)?;
-            coverage.record_table_rows(decoded_rows, expected_rows);
+            coverage.record_table_rows(decoded_rows, expected_rows)?;
             for segment in table.rows.ordinary() {
                 let family = match segment.kind {
                     crate::feature::definitions::FeatureSegmentKind::Line(_) => {
