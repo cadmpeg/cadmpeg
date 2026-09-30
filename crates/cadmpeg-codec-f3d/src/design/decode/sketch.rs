@@ -756,7 +756,7 @@ fn parse_sketch_placement_candidates(
     for pair in records.offsets(record_index).windows(2) {
         let start = pair[0];
         let paired_at = pair[1];
-        let frame_length = paired_at.saturating_sub(start);
+        let Some(frame_length) = paired_at.checked_sub(start) else { continue; };
         if !matches!(frame_length, 201 | 213 | 305 | 325 | 329 | 341) {
             continue;
         }

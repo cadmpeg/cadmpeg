@@ -467,7 +467,7 @@ fn exact_legacy_class_383_record_frame(
     frame_length: usize,
 ) -> Option<(usize, usize)> {
     let mut candidates = records.frames(record_index).filter(|(start, paired_at)| {
-        *paired_at == start.saturating_add(frame_length)
+        Some(*paired_at) == start.checked_add(frame_length)
             && exact_indexed_header_at(bytes, *start, record_index).as_deref() == Some(class_tag)
             && exact_indexed_header_at(bytes, *paired_at, record_index).as_deref() == Some("258")
     });

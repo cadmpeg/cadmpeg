@@ -1157,10 +1157,7 @@ pub(crate) fn decode_face_source_groups(
             };
             let parsed_source_members = source_reference_offsets.into_iter()
                 .map(|(offset, source_record_index)| -> Result<Option<_>, CodecError> {
-                    let Some(source_byte_offset) = records.first_at_or_after(
-                        carrier_byte_offset.saturating_add(indexed_header::LEN),
-                        source_record_index,
-                    ) else { return Ok(None); };
+                    let Some(source_byte_offset) = carrier_byte_offset.checked_add(indexed_header::LEN).and_then(|at| records.first_at_or_after(at, source_record_index)) else { return Ok(None); };
                     let Some((source_class_tag, _)) =
                         lp_ascii_filtered_view(bytes, source_byte_offset, 3..=3, u8::is_ascii_digit) else { return Ok(None); };
                     let Some(member) = parse_extrude_identity_member(ctx, bytes, source_byte_offset).transpose()? else { return Ok(None); };
@@ -1269,11 +1266,8 @@ fn face_source_reference_headers<'a, 'r>(
         "f3d face source reference headers",
     )?;
     for record_index in references {
-        let header = records
-            .first_at_or_after(
-                scope_start.saturating_add(indexed_header::LEN),
-                *record_index,
-            )
+        let header = scope_start.checked_add(indexed_header::LEN)
+            .and_then(|at| records.first_at_or_after(at, *record_index))
             .and_then(|byte_offset| {
                 lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
                     |(class_tag, _)| FaceSourceReferenceHeader {
@@ -2466,7 +2460,7 @@ pub(super) fn parse_construction_operand_group(
     cursor += 4;
     // A reference is at least one byte, so a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
-    if index_from_u32(member_count) > bytes.len().saturating_sub(cursor) {
+    if bytes.len().checked_sub(cursor).is_none_or(|remaining| index_from_u32(member_count) > remaining) {
         return NotAGroup;
     }
     let mut members = Vec::new();
@@ -2515,7 +2509,7 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     };
     cursor += 4;
-    if index_from_u32(trailing_count) > bytes.len().saturating_sub(cursor) {
+    if bytes.len().checked_sub(cursor).is_none_or(|remaining| index_from_u32(trailing_count) > remaining) {
         return NotAGroup;
     }
     let mut trailing_records = Vec::new();
@@ -3508,7 +3502,7 @@ fn parse_extrude_selection_group(
         let mut position = start.checked_add(36)?;
         // Each member consumes 11 bytes; a count the remaining bytes cannot
         // supply is corrupt and must not reach the allocator.
-        if member_count == 0 || member_count > bytes.len().saturating_sub(position) / 11 {
+        if member_count == 0 || member_count > bytes.len().checked_sub(position)? / 11 {
             return None;
         }
         let members_operation = "parse F3D extrude selection members";
@@ -4437,7 +4431,7 @@ fn parse_body_recipe_operand_frame_with_index(
     let mut cursor = start.checked_add(25)?;
     // Each reference consumes 12 bytes; a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
-    if reference_count > bytes.len().saturating_sub(cursor) / 12 {
+    if reference_count > bytes.len().checked_sub(cursor)? / 12 {
         return None;
     }
 

@@ -170,7 +170,8 @@ pub(crate) fn decode_body_bounds(
         if !(first < second && second < third) {
             continue;
         }
-        let third_end = next_indexed_record_offset(bytes, third.saturating_add(11))
+        let Some(search_at) = third.checked_add(11) else { continue; };
+        let third_end = next_indexed_record_offset(bytes, search_at)
             .filter(|offset| *offset <= end)
             .unwrap_or(end);
         let intervals = [(first, second), (second, third), (third, third_end)];
@@ -183,7 +184,7 @@ pub(crate) fn decode_body_bounds(
                 {
                     let mut matches = body_bound_candidates(bytes, record_start, record_end)
                         .filter(|(offset, _)| {
-                            bytes.get(*offset..offset.saturating_add(49)) == Some(frame)
+                            offset.checked_add(49).and_then(|end| bytes.get(*offset..end)) == Some(frame)
                         })
                         .map(|(offset, _)| offset + 1);
                     value_offsets[ordinal] = match (matches.next(), matches.next()) {
@@ -272,7 +273,7 @@ fn body_bound_candidates(
     start: usize,
     end: usize,
 ) -> impl Iterator<Item = (usize, [FiniteReal; 6])> + '_ {
-    (start..end.saturating_sub(48)).filter_map(move |offset| {
+    end.checked_sub(48).into_iter().flat_map(move |last| start..last).filter_map(move |offset| {
         if bytes.get(offset) != Some(&1) {
             return None;
         }

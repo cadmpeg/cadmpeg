@@ -114,7 +114,7 @@ fn exact_class_363_operand_path(
             carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
         ) != Some(terminal_record_index)
         || scope_backlinks.iter().any(|frame| {
-            marked_record_reference(bytes, frame.start.saturating_add(frame.scope_reference))
+            frame.start.checked_add(frame.scope_reference).and_then(|at| marked_record_reference(bytes, at))
                 != Some(scope.record_index)
         })
     {
@@ -363,7 +363,7 @@ fn exact_class_264_record_frame(
     frame_length: usize,
 ) -> Option<(usize, usize)> {
     let mut candidates = records.frames(record_index).filter(|(start, paired_at)| {
-        *paired_at == start.saturating_add(frame_length)
+        Some(*paired_at) == start.checked_add(frame_length)
             && exact_indexed_header_at(bytes, *start, record_index).as_deref() == Some(class_tag)
             && exact_indexed_header_at(bytes, *paired_at, record_index).as_deref() == Some("264")
     });

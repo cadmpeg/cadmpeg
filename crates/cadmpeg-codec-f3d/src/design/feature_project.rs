@@ -1045,22 +1045,20 @@ face_operands,
                                 native_stream(owner.id()) == Some(native_scope)
                                     && owner.scope_record_index() == scope.record_index
                             });
-                            let face_reference_count = construction
-                                .face_group_record_indices
-                                .len()
-                                .saturating_mul(2);
+                            let face_reference_count = construction.face_group_record_indices.len().checked_mul(2);
                             let full_face_extent = !has_parameter_owners
-                                && scope.reference_members().len() == face_reference_count
+                                && Some(scope.reference_members().len()) == face_reference_count
                                 && construction
                                     .face_group_record_indices
                                     .iter()
                                     .enumerate()
                                     .all(|(group_ordinal, group_record_index)| {
-                                        let pair_at = group_ordinal.saturating_mul(2);
+                                        let Some(pair_at) = group_ordinal.checked_mul(2) else { return false; };
+                                        let Some(member_at) = pair_at.checked_add(1) else { return false; };
                                         let Some(member_record_index) = scope
                                             .reference_members()
                                             .values()
-                                            .nth(pair_at.saturating_add(1))
+                                            .nth(member_at)
                                             .copied()
                                         else {
                                             return false;
@@ -7451,7 +7449,7 @@ fn project_surface_patch(
         }
     }
     let endpoint_unoccupied = unoccupied.as_slice() == [0]
-        || unoccupied.as_slice() == [scope.reference_members().len().saturating_sub(1)];
+        || scope.reference_members().len().checked_sub(1).is_some_and(|last| unoccupied.as_slice() == [last]);
     if (scope.reference_members().len() == 3 && !unoccupied.is_empty())
         || (scope.reference_members().len() != 3 && !endpoint_unoccupied)
     {
