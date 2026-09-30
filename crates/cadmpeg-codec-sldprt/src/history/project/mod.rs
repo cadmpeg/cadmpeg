@@ -1297,31 +1297,6 @@ fn project_feature_dependencies(
     Ok(dependencies)
 }
 
-/// Project native configuration records into the neutral configuration arena.
-pub(crate) fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfiguration> {
-    histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .map(|configuration| DesignConfiguration {
-            id: ConfigurationId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "model", "configuration"),
-                configuration_identity_key(&configuration.id),
-            ),
-            ordinal: configuration.ordinal,
-            active: false,
-            source_index: configuration.source_index,
-            name: configuration.name.clone().into(),
-            material: configuration.material.clone(),
-            properties: configuration.properties.clone(),
-            bodies: None,
-            parameter_values: BTreeMap::new(),
-            feature_states: BTreeMap::new(),
-            parameter_overrides: BTreeMap::new(),
-            native_ref: Some(configuration.id.clone()),
-        })
-        .collect()
-}
-
 /// Project decoded native configurations under the caller's resource budget.
 pub(crate) fn project_configurations_charged(
     ctx: &DecodeContext<'_>,
@@ -1624,15 +1599,6 @@ pub(super) fn neutral_feature_id(native_id: &str) -> FeatureId {
     FeatureId::compose(
         &cadmpeg_ir::identity_namespace!("sldprt", "model", "feature"),
         feature_identity_key(native_id),
-    )
-}
-
-/// The identity key of one native configuration id, escaped as a feature id is.
-fn configuration_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
-    cadmpeg_ir::ids::IdentityKey::encode_key_text(
-        native_id
-            .strip_prefix("sldprt:history:configuration#")
-            .unwrap_or(native_id),
     )
 }
 

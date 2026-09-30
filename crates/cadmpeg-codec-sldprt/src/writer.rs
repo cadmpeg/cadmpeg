@@ -1300,14 +1300,11 @@ fn resolved_feature_payload(
         )));
     }
     let mut expected_lane = lane.clone();
-    expected_lane.scalars = crate::resolved_features::scalars::named_scalars(
+    expected_lane.scalars = crate::resolved_features::scalars::named_scalars_charged(
+        &ctx,
         &lane.native_payload,
         &lane.id,
         &lane.names,
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     expected_lane.relation_bindings = crate::resolved_features::markers::relation_bindings_charged(
         &ctx,

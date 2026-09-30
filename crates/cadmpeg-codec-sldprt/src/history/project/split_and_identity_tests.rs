@@ -7,7 +7,6 @@ use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
 use crate::history::project::neutral_feature_id;
 use crate::history::project::project_features;
-use crate::history::project::project_configurations;
 use crate::history::project::project_configurations_charged;
 use crate::history::project::project_semantic_notes;
 use crate::history::tests::feature;
@@ -176,7 +175,20 @@ fn charged_configuration_projection_preserves_writer_projection() {
     let charged = with_test_ctx(|ctx| {
         project_configurations_charged(ctx, &histories).expect("charged configuration projection")
     });
-    assert_eq!(charged, project_configurations(&histories));
+    assert_eq!(charged, vec![cadmpeg_ir::features::DesignConfiguration {
+        id: cadmpeg_ir::features::ConfigurationId::mint("sldprt:model:configuration#name%20%23%25%20µ").unwrap(),
+        ordinal: 1,
+        active: false,
+        source_index: Some(5),
+        name: Some("Inspect".into()),
+        material: Some("Steel".into()),
+        properties: BTreeMap::from([(cadmpeg_core::nonblank_literal!("Finish"), "Ground".into())]),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        native_ref: Some("sldprt:history:configuration#name #% µ".into()),
+    }]);
     assert_eq!(
         charged[0].id.as_str(),
         "sldprt:model:configuration#name%20%23%25%20µ"

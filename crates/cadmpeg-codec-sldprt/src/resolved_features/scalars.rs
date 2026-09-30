@@ -15,42 +15,6 @@ use cadmpeg_ir::scalar::FiniteReal;
 use crate::layout::feature_input_operand_cell12 as operand_cell;
 use crate::records::ObjectId;
 
-pub(crate) fn named_scalars(
-    payload: &[u8],
-    parent: &str,
-    names: &[FeatureInputName],
-) -> Vec<FeatureInputScalar> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    names
-        .iter()
-        .filter_map(|name| {
-            let name_offset = usize::try_from(name.offset).ok()?;
-            let value_offset = scalar_value_offset(payload, name_offset)?;
-            let value = FiniteReal::new(View::f64_le_at(payload, value_offset)?)?;
-            let trailer_offset = value_offset.checked_add(8)?;
-            let object_id = View::u32_le_at(payload, trailer_offset + 3)?;
-            let role = scalar_role(payload, trailer_offset);
-            let operands = scalar_operands(payload, trailer_offset, parent);
-            Some((name, value_offset, object_id, value, role, operands))
-        })
-        .enumerate()
-        .map(
-            |(ordinal, (name, offset, object_id, value, role, operands))| FeatureInputScalar {
-                id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                feature_ref: None,
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                object_id,
-                name: name.id.clone(),
-                value,
-                role,
-                operands,
-            },
-        )
-        .collect()
-}
-
 pub(crate) fn named_scalars_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -178,25 +142,6 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
         }
     }
     ordered(left).abs_diff(ordered(right))
-}
-
-fn scalar_operands(
-    payload: &[u8],
-    trailer_offset: usize,
-    parent: &str,
-) -> Vec<FeatureInputOperand> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    operand_cells(payload, trailer_offset)
-        .into_iter()
-        .flatten()
-        .map(|(offset, kind, entity_index)| FeatureInputOperand {
-                offset: offset as u64,
-                reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-                kind,
-                entity_index,
-                entity_ref: None,
-            })
-        .collect()
 }
 
 fn scalar_operands_charged(

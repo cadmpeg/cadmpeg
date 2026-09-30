@@ -1668,7 +1668,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(written[0].value, lane.names[0].value);
     assert_eq!(written[2].value, lane.names[2].value);
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written).len(),
+        crate::resolved_features::scalars::named_scalars_charged(&cadmpeg_test_support::service_decode_context(), &payload, &lane.id, &written).unwrap().len(),
         scalars
     );
 }
@@ -1963,7 +1963,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         ]
     );
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars(&payload, &lane.id, &written).len(),
+        crate::resolved_features::scalars::named_scalars_charged(&cadmpeg_test_support::service_decode_context(), &payload, &lane.id, &written).unwrap().len(),
         scalars
     );
 }
