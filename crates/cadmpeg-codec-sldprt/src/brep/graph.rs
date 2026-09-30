@@ -5002,10 +5002,11 @@ impl From<cadmpeg_core::CodecError> for NurbsPcurveFailure {
 }
 
 fn nurbs_boundary_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree() as usize,
@@ -5076,6 +5077,7 @@ fn nurbs_boundary_pcurve(
         .into_iter()
         .filter(|parameter| parameter.is_finite())
     {
+        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
         if nurbs_surface_isocurve(surface, fixed_axis, parameter)?
             .is_some_and(|candidate| same_curve(&candidate))
         {
@@ -5111,12 +5113,13 @@ fn nurbs_boundary_pcurve(
 }
 
 fn nurbs_strict_isocurve_pcurve(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
     let axis_candidate = |fixed_axis| -> Result<
         InverseResolution<PcurveGeometry>,
-        cadmpeg_core::decode::ResourceLimit,
+        cadmpeg_core::CodecError,
     > {
         let (uc, vc) = (surface.u_count(), surface.v_count());
         let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
@@ -5155,7 +5158,7 @@ fn nurbs_strict_isocurve_pcurve(
             return Ok(InverseResolution::NoMatch);
         }
         let (Some(&fixed_min), Some(&fixed_max)) = (fixed_knots.get(1), fixed_knots.get(2)) else {
-            return nurbs_boundary_pcurve(surface, curve, fixed_axis);
+            return nurbs_boundary_pcurve(ctx, surface, curve, fixed_axis);
         };
         if fixed_degree != 1
             || fixed_count != 2
@@ -5163,7 +5166,7 @@ fn nurbs_strict_isocurve_pcurve(
             || fixed_knots.as_slice() != [fixed_min, fixed_min, fixed_max, fixed_max]
             || fixed_min >= fixed_max
         {
-            return nurbs_boundary_pcurve(surface, curve, fixed_axis);
+            return nurbs_boundary_pcurve(ctx, surface, curve, fixed_axis);
         }
         let pole_indices = |varying: usize| match fixed_axis {
             SurfaceParameterAxis::U => (varying, vc + varying),
@@ -5702,6 +5705,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     };
     let mut matched = None;
     for fixed in unique_fixed_values {
+        let _scratch = super::evaluation::admit_nurbs_isocurve(ctx, surface, fixed_axis)?;
         if nurbs_surface_isocurve(surface, fixed_axis, fixed)?
             .is_some_and(|expected| nurbs_representation_matches(&expected, &clamped))
         {
@@ -5752,7 +5756,7 @@ fn nurbs_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
-    match nurbs_strict_isocurve_pcurve(surface, curve)? {
+    match nurbs_strict_isocurve_pcurve(ctx, surface, curve)? {
         InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(ctx, surface, curve),
         other => Ok(other),
     }
