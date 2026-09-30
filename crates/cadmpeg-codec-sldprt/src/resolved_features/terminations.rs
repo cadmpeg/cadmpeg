@@ -758,174 +758,194 @@ fn copy_termination_text(
 
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
-
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
+    use cadmpeg_ir::features::{FeatureId, GeneratedCurveRef, PlanarProfileRef};
+    use std::fmt::Write;
+    const OPERATION: &str = "project SLDPRT surface sweep profile";
+    let copy_id = |id: &FeatureId| {
+        ctx.charge_work(u64_from_index(id.as_str().len()).checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        FeatureId::mint(copy_termination_text(ctx, id.as_str(), OPERATION)?)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sweep feature identity"))
+    };
+    let mut history_features = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
+        history_features.push(feature);
+    }
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        ctx.charge_work(u64_from_index(native.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !feature_ids_by_native.contains_key(native) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature_ids_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        feature_ids_by_native.insert(native, &feature.id);
+    }
     let mut projections = HashMap::new();
     for lane in lanes {
-        let Some(reference_class) = lane
-            .classes
-            .iter()
-            .find(|class| class.name == "moCompReferenceCurve_c")
-        else {
-            continue;
-        };
-        let Some(class_offset) = usize::try_from(reference_class.offset).ok() else {
-            continue;
-        };
-        let Some(wrapper_token) = class_offset
-            .checked_sub(2)
-            .and_then(|offset| lane.native_payload.get(offset..offset + 2))
-        else {
-            continue;
-        };
+        for class in &lane.classes {
+            ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        }
+        let Some(reference_class) = lane.classes.iter().find(|class| class.name == "moCompReferenceCurve_c") else { continue; };
+        let Some(class_offset) = usize::try_from(reference_class.offset).ok() else { continue; };
+        let Some(wrapper_token) = class_offset.checked_sub(2).and_then(|offset| lane.native_payload.get(offset..offset + 2)) else { continue; };
         let wrapper_token = [wrapper_token[0], wrapper_token[1]];
         let declared_prefix = class_offset.checked_add(6 + reference_class.name.len());
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
-            .map_or(lane.id.as_str(), |(_, key)| key);
-        let mut objects = history_features
-            .iter()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-            .collect::<Vec<_>>();
+        let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+        let mut objects = Vec::new();
+        for feature in &history_features {
+            for name in &lane.names {
+                let work = u64_from_index(name.value.len()).checked_add(u64_from_index(feature.name.len()))
+                    .and_then(|work| work.checked_add(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            if let Some(name) = feature_object_name(feature, lane) {
+                ctx.reserve_collection_vec(&mut objects, 1, OPERATION)?;
+                objects.push((name.offset, *feature));
+            }
+        }
+        let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+        ctx.charge_work(u64_from_index(objects.len()).checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         objects.sort_unstable_by_key(|(offset, _)| *offset);
         for (index, &(start, feature)) in objects.iter().enumerate() {
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default())
-                != NativeClassKind::SweepReferenceSurface
-            {
-                continue;
-            }
-            let (Ok(start), end) = (
-                usize::try_from(start),
-                objects
-                    .get(index + 1)
-                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                    .unwrap_or(lane.native_payload.len()),
-            ) else {
-                continue;
-            };
-            let direct = declared_prefix
-                .filter(|prefix| (start..end).contains(prefix))
-                .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix))
-                .and_then(|source| {
-                    let native = history_features
-                        .iter()
-                        .find(|candidate| candidate.source_value() == Some(source))?;
-                    feature_ids_by_native
-                        .get(native.id.as_str())
-                        .cloned()
-                        .map(PlanarProfileRef::Feature)
-                });
+            ctx.charge_work(u64_from_index(feature.input_class.as_ref().map_or(0, String::len)).checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()) != NativeClassKind::SweepReferenceSurface { continue; }
+            let (Ok(start), end) = (usize::try_from(start), objects.get(index + 1)
+                .and_then(|(offset, _)| usize::try_from(*offset).ok()).unwrap_or(lane.native_payload.len())) else { continue; };
+            let direct_source = declared_prefix.filter(|prefix| (start..end).contains(prefix))
+                .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix));
+            let direct = if let Some(source) = direct_source {
+                ctx.charge_work(u64_from_index(history_features.len()), OPERATION)?;
+                if let Some(native) = history_features.iter().find(|candidate| candidate.source_value() == Some(source)) {
+                    ctx.charge_work(u64_from_index(native.id.len()), OPERATION)?;
+                    feature_ids_by_native.get(native.id.as_str()).map(|id| copy_id(id).map(PlanarProfileRef::Feature)).transpose()?
+                } else { None }
+            } else { None };
             let mut generated = Vec::new();
             if let Some(scan_end) = end.checked_sub(6) {
                 for wrapper in start..scan_end {
-                    ctx.charge_work(1, "project SLDPRT surface sweep profile")?;
+                    ctx.charge_work(1, OPERATION)?;
                     if lane.native_payload.get(wrapper..wrapper + 2) != Some(&wrapper_token)
                         || lane.native_payload.get(wrapper + 4..wrapper + 9) != Some(&[0x2b, 0x80, 0x02, 0, 0])
                         || wrapper.checked_sub(2).is_some_and(|prefix| lane.native_payload.get(prefix..wrapper) == Some(&[1, 0])) { continue; }
                     let mut candidates = Vec::new();
                     if let Some(marker_end) = end.checked_sub(16) {
                         for marker in wrapper + 4..marker_end {
-                            ctx.charge_work(1, "project SLDPRT surface sweep profile")?;
+                            ctx.charge_work(1, OPERATION)?;
                             if lane.native_payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
                             if let Some(components) = component_reference_curve_path_at(ctx, &lane.native_payload, marker)? {
-                                ctx.reserve_collection_vec(&mut candidates, 1, "project SLDPRT surface sweep profile")?;
+                                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
                                 candidates.push((marker, components));
                             }
                         }
                     }
-                    let [(_, components)] = candidates.as_slice() else { continue; };
-                    let Some(owner) = component_path_terminal_feature(ctx, components, &history_features)? else { continue; };
-                    let candidate = (|| {
-                        let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
-                    let local_id = components
-                        .iter()
-                        .map(|component| {
-                            component
-                                .local_id
-                                .map_or_else(|| "_".into(), |id| id.to_string())
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let native = format!(
-                        "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
-                    );
-                    Some((
-                        PlanarProfileRef::generated(
-                            vec![GeneratedCurveRef::new(feature_id, local_id).ok()?],
-                            native,
-                        )
-                        .ok()?,
-                        components.clone(),
-                    ))
-                    })();
-                    if let Some(candidate) = candidate {
-                        ctx.reserve_collection_vec(&mut generated, 1, "project SLDPRT surface sweep profile")?;
-                        generated.push(candidate);
+                    if candidates.len() != 1 { continue; }
+                    let Some((_, components)) = candidates.pop() else { continue; };
+                    let Some(owner) = component_path_terminal_feature(ctx, &components, history_features.iter().copied())? else { continue; };
+                    ctx.charge_work(u64_from_index(owner.len()), OPERATION)?;
+                    let Some(id) = feature_ids_by_native.get(owner.as_str()) else { continue; };
+                    let feature_id = copy_id(id)?;
+                    let size = components.len().checked_mul(11)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(u64_from_index(size), OPERATION)?;
+                    let mut local_id = String::new();
+                    ctx.reserve_retained_string(&mut local_id, size, OPERATION)?;
+                    for (index, component) in components.iter().enumerate() {
+                        if index != 0 { local_id.push(','); }
+                        match component.local_id {
+                            Some(id) => write!(&mut local_id, "{id}").map_err(|_| cadmpeg_core::CodecError::malformed("SLDPRT sweep local identity formatting failed"))?,
+                            None => local_id.push('_'),
+                        }
+                    }
+                    ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
+                    let native = ctx.format_retained(format_args!("sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"), OPERATION)?;
+                    let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else { continue; };
+                    let mut curves = Vec::new();
+                    ctx.reserve_collection_vec(&mut curves, 1, OPERATION)?;
+                    curves.push(curve);
+                    let Ok(profile) = PlanarProfileRef::generated(curves, native) else { continue; };
+                    ctx.reserve_collection_vec(&mut generated, 1, OPERATION)?;
+                    generated.push((profile, components));
+                }
+            }
+            let (profile, components) = match (direct, generated.len()) {
+                (Some(profile), 0) => (profile, None),
+                (None, 1) => { let Some((profile, components)) = generated.pop() else { continue; }; (profile, Some(components)) },
+                _ => continue,
+            };
+            let mut dependencies = Vec::new();
+            if let Some(components) = &components {
+                for native in component_path_features(ctx, components, history_features.iter().copied())? {
+                    ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
+                    if let Some(id) = feature_ids_by_native.get(native.as_str()) {
+                        let id = copy_id(id)?;
+                        ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                        dependencies.push(id);
                     }
                 }
             }
-            let profile = match (direct, generated.as_slice()) {
-                (Some(profile), []) => profile,
-                (None, [(profile, _)]) => profile.clone(),
-                _ => continue,
-            };
-            let mut dependencies = match generated.as_slice() {
-                [(_, components)] => component_path_features(ctx, components, &history_features)?
-                    .into_iter()
-                    .filter_map(|native| feature_ids_by_native.get(native.as_str()).cloned())
-                    .collect::<Vec<_>>(),
-                _ => Vec::new(),
-            };
             match &profile {
-                PlanarProfileRef::Feature(feature) => dependencies.push(feature.clone()),
+                PlanarProfileRef::Feature(id) => {
+                    let id = copy_id(id)?;
+                    ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                    dependencies.push(id);
+                }
                 PlanarProfileRef::Generated { curves, .. } => {
-                    dependencies.extend(curves.iter().map(|curve| curve.feature.clone()));
+                    for curve in curves.iter() {
+                        let id = copy_id(&curve.feature)?;
+                        ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
+                        dependencies.push(id);
+                    }
                 }
                 _ => {}
             }
-            projections.insert(feature.id.clone(), (profile, dependencies));
+            ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
+            if !projections.contains_key(feature.id.as_str()) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                projections.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            }
+            projections.insert(copy_termination_text(ctx, &feature.id, OPERATION)?, (profile, dependencies));
         }
     }
+    drop(feature_ids_by_native);
     for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some((profile, dependencies)) = feature
-                .native_ref
-                .as_ref()
-                .and_then(|native| projections.remove(native))
-            else {
-                break 'feature_edit;
-            };
-            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
-                &mut definition
-            else {
-                break 'feature_edit;
-            };
-            if shape.section_is_unresolved() {
-                shape.set_referenced_profile(profile);
-                for dependency in dependencies {
-                    if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                        feature.dependencies.insert(dependency);
-                    }
-                }
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
+        let Some((profile, dependencies)) = projections.remove(native) else { continue; };
+        if !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if shape.section_is_unresolved()) { continue; }
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition { shape.set_referenced_profile(profile); }
+        });
+        for dependency in dependencies {
+            let work = u64_from_index(dependency.as_str().len()).checked_add(u64_from_index(feature.id.as_str().len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            for existing in &feature.dependencies {
+                let work = u64_from_index(existing.as_str().len()).checked_add(u64_from_index(dependency.as_str().len()))
+                    .and_then(|work| work.checked_add(1)).and_then(|work| work.checked_mul(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                feature.dependencies.insert(dependency);
             }
         }
-        feature.evaluation.set_definition(definition);
     }
     Ok(())
 }
