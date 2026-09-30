@@ -1932,11 +1932,12 @@ pub(crate) fn project_relation_solved_point_geometry(
                 continue;
             };
             let profile_axis = profile_axis_for_relation(
+                ctx,
                 relation,
                 transforms
                     .get(relation.feature_ref.as_str())
                     .map(Vec::as_slice),
-            );
+            )?;
             if relation_uses_solver_points(relation) {
                 let coordinates_by_index =
                     inferred_point_coordinates_by_index(lane, relation.feature_ref.as_str());
@@ -2747,11 +2748,12 @@ pub(crate) fn project_relation_bindings(
                 FeatureInputRelationFamily::PointPointHorizontalDistance
                 | FeatureInputRelationFamily::PointPointVerticalDistance => {
                     profile_axis_for_relation(
+                        ctx,
                         relation,
                         transforms
                             .get(relation.feature_ref.as_str())
                             .map(Vec::as_slice),
-                    )
+                    )?
                     .and_then(|profile_axis| {
                         typed_relation_definition_with_profile_axis(
                             relation,
