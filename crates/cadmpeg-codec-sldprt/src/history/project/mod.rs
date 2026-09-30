@@ -85,10 +85,22 @@ pub(crate) struct FeatureProjection {
     regeneration_parents: Vec<(FeatureId, FeatureId)>,
 }
 
+fn charge_projected_text_work(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    // Escaping can emit three bytes per input byte; identity validation scans the result.
+    let work = u64::try_from(text.len()).ok().and_then(|bytes| bytes.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
+
 pub(super) fn copy_projected_feature_text(
     ctx: &DecodeContext<'_>,
     text: &str,
 ) -> Result<String, CodecError> {
+    charge_projected_text_work(ctx, text, "copy SLDPRT projected feature text")?;
     ctx.format_retained(format_args!("{text}"), "copy SLDPRT projected feature text")
 }
 
@@ -96,6 +108,7 @@ pub(super) fn neutral_feature_id_charged(
     ctx: &DecodeContext<'_>,
     native_id: &str,
 ) -> Result<FeatureId, CodecError> {
+    charge_projected_text_work(ctx, native_id, "retain SLDPRT projected feature ID")?;
     let key = native_id
         .strip_prefix("sldprt:history:feature#")
         .unwrap_or(native_id);
@@ -190,6 +203,9 @@ impl FeatureProjection {
             };
             let child_ordinal = ordinal(&child);
             let parent_ordinal = ordinal(&parent);
+            charge_projected_text_work(ctx, child.as_str(), "retain SLDPRT regeneration edge loss")?;
+            charge_projected_text_work(ctx, parent.as_str(), "retain SLDPRT regeneration edge loss")?;
+            charge_projected_text_work(ctx, &error, "retain SLDPRT regeneration edge loss")?;
             let message = ctx.format_retained(
                 format_args!(
                     "regeneration edge from child `{child}` (ordinal {}) to parent \
@@ -372,6 +388,7 @@ pub(crate) fn project_feature_model(
         let Some(parent) = parent else {
             continue;
         };
+        charge_projected_text_work(ctx, features[child_index].id.as_str(), "copy SLDPRT tree child ID")?;
         let child_text = ctx.format_retained(
             format_args!("{}", features[child_index].id.as_str()),
             "copy SLDPRT tree child ID",
@@ -434,6 +451,7 @@ pub(crate) fn project_semantic_notes(
     const OPERATION: &str = "project SLDPRT semantic notes";
     let mut notes = Vec::new();
     let copy = |value: &str| -> Result<String, CodecError> {
+        charge_projected_text_work(ctx, value, OPERATION)?;
         let mut copied = String::new();
         ctx.reserve_retained_string(&mut copied, value.len(), OPERATION)?;
         copied.push_str(value);
@@ -447,7 +465,7 @@ pub(crate) fn project_semantic_notes(
             if !is_semantic_note(feature) {
                 continue;
             }
-            ctx.charge_work(feature.id.len() as u64, OPERATION)?;
+            charge_projected_text_work(ctx, &feature.id, OPERATION)?;
             let native_id = feature
                 .id
                 .strip_prefix("sldprt:history:feature#")
@@ -1066,7 +1084,7 @@ pub(crate) fn custom_property_attributes(
             if !is_custom_property(feature) {
                 continue;
             }
-            ctx.charge_work(feature.id.len() as u64, OPERATION)?;
+            charge_projected_text_work(ctx, &feature.id, OPERATION)?;
             let native_id = feature
                 .id
                 .strip_prefix("sldprt:history:feature#")
@@ -1080,11 +1098,13 @@ pub(crate) fn custom_property_attributes(
             )?;
             let id = AttributeId::mint(id)
                 .map_err(|_| CodecError::malformed("invalid SLDPRT custom-property ID"))?;
+            charge_projected_text_work(ctx, &feature.name, OPERATION)?;
             let mut name = String::new();
             ctx.reserve_retained_string(&mut name, feature.name.len(), OPERATION)?;
             name.push_str(&feature.name);
             let mut values = Vec::new();
             if let Some(text) = &feature.text {
+                charge_projected_text_work(ctx, text, OPERATION)?;
                 let mut value = String::new();
                 ctx.reserve_retained_string(&mut value, text.len(), OPERATION)?;
                 value.push_str(text);
@@ -1238,6 +1258,7 @@ fn project_feature_content(
                 let Some(ordinal) = names.iter().position(|known| *known == name) else {
                     continue;
                 };
+                charge_projected_text_work(ctx, &feature.id, OPERATION)?;
                 let key = feature.id.strip_prefix("sldprt:history:feature#").unwrap_or(&feature.id);
                 let id = ctx.format_retained(
                     format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
@@ -1274,6 +1295,7 @@ fn project_feature_dependencies(
         let Some(value) = feature.properties.get(*property) else {
             continue;
         };
+        charge_projected_text_work(ctx, value, "scan SLDPRT feature dependencies")?;
         for reference in value
             .split(|character: char| {
                 character == ',' || character == ';' || character.is_whitespace()
@@ -1304,6 +1326,7 @@ pub(crate) fn project_configurations_charged(
 ) -> Result<Vec<DesignConfiguration>, CodecError> {
     const OPERATION: &str = "project SLDPRT configurations";
     let copy = |value: &str| -> Result<String, CodecError> {
+        charge_projected_text_work(ctx, value, OPERATION)?;
         let mut copied = String::new();
         ctx.reserve_retained_string(&mut copied, value.len(), OPERATION)?;
         copied.push_str(value);
@@ -1314,7 +1337,7 @@ pub(crate) fn project_configurations_charged(
     for history in histories {
         ctx.charge_work(history.configurations.len() as u64, OPERATION)?;
         for configuration in &history.configurations {
-            ctx.charge_work(configuration.id.len() as u64, OPERATION)?;
+            charge_projected_text_work(ctx, &configuration.id, OPERATION)?;
             let native_id = configuration
                 .id
                 .strip_prefix("sldprt:history:configuration#")
@@ -1582,6 +1605,7 @@ pub(super) fn projected_parameter_names(ctx: &DecodeContext<'_>, feature: &Featu
 }
 
 pub(super) fn neutral_parameter_id(ctx: &DecodeContext<'_>, feature: &Feature, ordinal: usize) -> Result<ParameterId, CodecError> {
+    charge_projected_text_work(ctx, &feature.id, "retain SLDPRT projected parameter ID")?;
     let key = feature.id.strip_prefix("sldprt:history:feature#").unwrap_or(&feature.id);
     let id = ctx.format_retained(format_args!("sldprt:model:parameter#{}:{ordinal}", EncodedNativeKey(key)),
         "retain SLDPRT projected parameter ID")?;
@@ -1589,6 +1613,7 @@ pub(super) fn neutral_parameter_id(ctx: &DecodeContext<'_>, feature: &Feature, o
 }
 
 fn native_definition(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
+    charge_projected_text_work(ctx, &feature.kind, "retain SLDPRT native definition kind")?;
     Ok(FeatureDefinition::Operation(FeatureOperation::Native {
         kind: ctx.format_retained(format_args!("{}", feature.kind), "retain SLDPRT native definition kind")?.into(),
         parameters: copy_projected_feature_properties(ctx, &feature.parameters, "collect SLDPRT native definition parameters")?,
