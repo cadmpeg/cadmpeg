@@ -975,7 +975,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
     let point = marker("point", Some(5), SketchInputKind::Point, Some([1.0, 0.0]));
     let markers = [&curve, &relation, &duplicate_curve, &point];
 
-    assert!(relation_reference_curve_record(&payload, &curve, &markers));
+    assert!(relation_reference_curve_record(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap());
 
     let first_point = marker(
         "first-point",
@@ -990,7 +990,7 @@ fn compact_curve_with_relation_endpoint_is_a_display_carrier() {
         Some([1.0, 0.0]),
     );
     let markers = [&curve, &first_point, &second_point];
-    assert!(!relation_reference_curve_record(&payload, &curve, &markers));
+    assert!(!relation_reference_curve_record(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap());
 }
 
 #[test]
@@ -1041,14 +1041,14 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     for prefix in [SKETCH_MARKER, LEGACY_EXTENDED_SKETCH_MARKER] {
         payload[..prefix.len()].copy_from_slice(prefix);
         payload[84..84 + prefix.len()].copy_from_slice(prefix);
-        let pair = compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+        let pair = compact_complete_marker_roster_pair(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers, true).unwrap()
             .expect("complete marker roster endpoints");
         assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     }
 
     let mut terminal = payload[..84].to_vec();
     terminal[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-    let pair = compact_complete_marker_roster_pair(&terminal, &curve, &markers, true)
+    let pair = compact_complete_marker_roster_pair(&cadmpeg_test_support::service_decode_context(), &terminal, &curve, &markers, true).unwrap()
         .expect("terminal complete marker roster endpoints");
     assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     assert_eq!(
@@ -1085,7 +1085,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         constructed_marker
     };
     let markers = [&curve, &first, &relation];
-    assert!(relation_reference_curve_record(&payload, &curve, &markers));
+    assert!(relation_reference_curve_record(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap());
 }
 
 #[test]
@@ -1133,16 +1133,16 @@ fn compact_complete_marker_roster_rejects_conflicting_index_bases() {
     let markers = [&curve, &first, &second, &third];
 
     assert_eq!(
-        compact_complete_marker_roster_pair(&payload, &curve, &markers, true)
+        compact_complete_marker_roster_pair(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers, true).unwrap()
             .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["first", "second"])
     );
     assert_eq!(
-        compact_complete_marker_roster_pair(&payload, &curve, &markers, false)
+        compact_complete_marker_roster_pair(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers, false).unwrap()
             .map(|pair| [pair[0].id(), pair[1].id()]),
         Some(["second", "third"])
     );
-    assert!(super::compact_complete_marker_roster_endpoints(&payload, &curve, &markers).is_empty());
+    assert!(super::compact_complete_marker_roster_endpoints(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap().is_empty());
 }
 
 #[test]

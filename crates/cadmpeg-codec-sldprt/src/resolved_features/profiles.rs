@@ -1162,27 +1162,17 @@ pub(crate) fn project_marker_backed_sketches(
             };
             let mut markers = Vec::new();
             for marker in object_markers.iter().copied() {
-                if
-                    matches!(
-                        marker.kind(),
-                        SketchInputKind::Point
-                            | SketchInputKind::ConstrainedPoint
-                            | SketchInputKind::LineOrCircle
-                            | SketchInputKind::Arc
-                    ) && index_from_u64(marker.offset()).is_none_or(|offset| {
-                        !legacy_unlocated_geometry_handle(&lane.native_payload, offset)
-                            && !auxiliary_profile_record(&lane.native_payload, offset)
-                            && !relation_reference_curve_record(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            )
-                            && !terminal_relation_display_carrier(lane, marker)
-                    })
-                {
-                    ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT profile geometry markers")?;
-                    markers.push(marker);
+                if !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc) { continue; }
+                if let Some(offset) = index_from_u64(marker.offset()) {
+                    if legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                        || auxiliary_profile_record(&lane.native_payload, offset)
+                        || relation_reference_curve_record(ctx, &lane.native_payload, marker, &object_markers)?
+                        || terminal_relation_display_carrier(lane, marker) {
+                        continue;
+                    }
                 }
+                ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT profile geometry markers")?;
+                markers.push(marker);
             }
             if markers.is_empty() {
                 let has_unbound_marker = lane
@@ -1374,7 +1364,7 @@ pub(crate) fn project_marker_backed_sketches(
                             let mut circle_geometry = legacy_profile_radial_circle(ctx, &lane.native_payload, marker, &object_markers)?;
                             if circle_geometry.is_none() { circle_geometry = compact_profile_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
                             if circle_geometry.is_none() { circle_geometry = current_profile_circle_dimension(ctx, &lane.native_payload, marker, &object_markers)?; }
-                            if circle_geometry.is_none() { circle_geometry = compact_legacy_terminal_diameter_circle(&lane.native_payload, marker, &object_markers); }
+                            if circle_geometry.is_none() { circle_geometry = compact_legacy_terminal_diameter_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
                             if circle_geometry.is_none() { circle_geometry = compact_legacy_profile_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
                             if circle_geometry.is_none() { circle_geometry = extended_geometry_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
                             if circle_geometry.is_none() { circle_geometry = coordinate_roster_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
@@ -1438,7 +1428,7 @@ pub(crate) fn project_marker_backed_sketches(
                                                 inferred_points.get_or_init(|| inferred)
                                             }
                                         };
-                                        endpoints = implicit_coordinate_roster_curve_endpoints(&lane.native_payload, marker, &object_markers, inferred);
+                                        endpoints = implicit_coordinate_roster_curve_endpoints(ctx, &lane.native_payload, marker, &object_markers, inferred)?;
                                     }
                                     if endpoints.is_none() { endpoints = implicit_profile_chain_closure_endpoints(ctx, &lane.native_payload, marker, &object_markers)?; }
                                     endpoints.or_else(|| compact_legacy_142_profile_curve_endpoints(&lane.native_payload, index_from_u64(marker.offset())?)
