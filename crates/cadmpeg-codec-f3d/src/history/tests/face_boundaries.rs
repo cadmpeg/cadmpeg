@@ -51,21 +51,11 @@ fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
     };
 
     assert_eq!(
-        resolve_direct_face_recipe_clauses(
-            None,
-            &references,
-            &topology,
-            &[2, 4].into_iter().collect()
-        )
+        crate::test_support::with_decode_context(|decode_ctx| resolve_direct_face_recipe_clauses(decode_ctx, &references, &topology, &[2, 4].into_iter().collect()))
         .unwrap(),
         [2, 4]
     );
-    assert!(resolve_direct_face_recipe_clauses(
-        None,
-        &references,
-        &topology,
-        &[2].into_iter().collect()
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| resolve_direct_face_recipe_clauses(decode_ctx, &references, &topology, &[2].into_iter().collect()))
     .unwrap()
     .is_empty());
 }
@@ -99,12 +89,7 @@ fn direct_clause_limit_case(
     policy.limits.max_collection_items = max_items;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    resolve_direct_face_recipe_clauses(
-        Some(&ctx),
-        &references,
-        &topology,
-        &[1].into_iter().collect(),
-    )
+    resolve_direct_face_recipe_clauses(&ctx, &references, &topology, &[1].into_iter().collect())
 }
 
 #[test]
@@ -314,7 +299,7 @@ fn bounded_face_rules_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_edge_identity_bounded_face_rules(Some(&ctx), &mut identities, &[face.clone()])
+    let error = bind_edge_identity_bounded_face_rules(&ctx, &mut identities, &[face.clone()])
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -325,7 +310,7 @@ fn bounded_face_rules_refuse_collection_limit() {
 #[test]
 fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     let (mut identities, face) = bounded_face_rule_fixture();
-    bind_edge_identity_bounded_face_rules(None, &mut identities, &[face.clone()]).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[face.clone()])).unwrap();
     assert_eq!(identities[0].resolved_edge_slots, [8, 7]);
     assert_eq!(
         identities[0].resolution_identity_id.as_deref(),
@@ -336,6 +321,6 @@ fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
     inconsistent.historical_support_contexts[0]
         .changed_preceding_face_slots
         .clear();
-    bind_edge_identity_bounded_face_rules(None, &mut identities, &[inconsistent]).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_bounded_face_rules(decode_ctx, &mut identities, &[inconsistent])).unwrap();
     assert!(identities[0].resolved_edge_slots.is_empty());
 }

@@ -24,7 +24,7 @@ fn complete_body_error(max_items: u64) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::complete_body_face_slots(Some(&ctx), &complete_body_topology(), 1).unwrap_err()
+    super::super::complete_body_face_slots(&ctx, &complete_body_topology(), 1).unwrap_err()
 }
 
 #[test]

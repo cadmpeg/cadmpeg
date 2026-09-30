@@ -157,15 +157,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
         ],
     };
 
-    bind_mirror_selection_planes(
-        None,
-        std::slice::from_mut(&mut scope),
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&operand),
-        &[],
-        &[],
-        std::slice::from_ref(&history),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_mirror_selection_planes(decode_ctx, std::slice::from_mut(&mut scope), std::slice::from_ref(&group), std::slice::from_ref(&operand), &[], &[], std::slice::from_ref(&history)))
     .unwrap();
 
     let construction = scope.mirror_construction().expect("mirror construction");
@@ -180,15 +172,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
     );
 
     operand.primary_identity = 44;
-    bind_mirror_selection_planes(
-        None,
-        std::slice::from_mut(&mut scope),
-        std::slice::from_ref(&group),
-        std::slice::from_ref(&operand),
-        &[],
-        &[],
-        std::slice::from_ref(&history),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_mirror_selection_planes(decode_ctx, std::slice::from_mut(&mut scope), std::slice::from_ref(&group), std::slice::from_ref(&operand), &[], &[], std::slice::from_ref(&history)))
     .unwrap();
 
     let construction = scope.mirror_construction().expect("mirror construction");
@@ -274,14 +258,14 @@ fn historical_loop_plane_requires_coincident_axis_bearing_curves() {
         ],
         ..Default::default()
     };
-    let plane = historical_loop_plane(None, 5, &topology)
+    let plane = crate::test_support::with_decode_context(|decode_ctx| historical_loop_plane(decode_ctx, 5, &topology))
         .unwrap()
         .expect("coincident loop curve planes");
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
     assert_eq!(plane.normal, Vector3::new(0.0, 0.0, 1.0));
 
     topology.curve_axes[1].origin.z = 4.0;
-    assert!(historical_loop_plane(None, 5, &topology).unwrap().is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| historical_loop_plane(decode_ctx, 5, &topology)).unwrap().is_none());
 }
 
 #[test]
@@ -321,7 +305,7 @@ fn historical_loop_plane_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_loop_plane(Some(&ctx), 5, &topology)
+    let error = historical_loop_plane(&ctx, 5, &topology)
         .err()
         .expect("limit refusal");
     assert!(
@@ -349,7 +333,7 @@ fn historical_mirror_coedge_plane_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_mirror_coedge_plane(Some(&ctx), 6, &topology)
+    let error = historical_mirror_coedge_plane(&ctx, 6, &topology)
         .err()
         .expect("limit refusal");
     assert!(
@@ -420,7 +404,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         states: vec![state(2, topology()), state(1, topology())],
     };
 
-    let plane = historical_mirror_plane(None, &candidate, 1, std::slice::from_ref(&history))
+    let plane = crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 1, std::slice::from_ref(&history)))
         .unwrap()
         .expect("stable selected-face plane");
     assert_eq!(
@@ -432,7 +416,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         }
     );
     assert!(
-        historical_mirror_plane(None, &candidate, 3, std::slice::from_ref(&history))
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 3, std::slice::from_ref(&history)))
             .unwrap()
             .is_some()
     );
@@ -440,12 +424,12 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         .normal
         .z = -1.0;
     assert!(
-        historical_mirror_plane(None, &candidate, 1, std::slice::from_ref(&history))
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 1, std::slice::from_ref(&history)))
             .unwrap()
             .is_some()
     );
     assert!(
-        historical_mirror_plane(None, &candidate, 3, std::slice::from_ref(&history))
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 3, std::slice::from_ref(&history)))
             .unwrap()
             .is_some()
     );
@@ -453,7 +437,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         .origin
         .z = 4.0;
     assert!(
-        historical_mirror_plane(None, &candidate, 3, std::slice::from_ref(&history))
+        crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 3, std::slice::from_ref(&history)))
             .unwrap()
             .is_none()
     );
@@ -463,7 +447,7 @@ fn historical_mirror_plane_requires_one_exact_plane_in_the_selected_state() {
         .unwrap()
         .face_surfaces
         .push(duplicate);
-    assert!(historical_mirror_plane(None, &candidate, 1, &[history])
+    assert!(crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 1, &[history]))
         .unwrap()
         .is_none());
 }

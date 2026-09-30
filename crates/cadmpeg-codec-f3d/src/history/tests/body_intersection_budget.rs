@@ -19,7 +19,7 @@ fn intersection_error(max_items: u64) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(Some(&ctx), &simple_topology(), &BTreeSet::from([1]))
+    super::super::bodies_intersecting(&ctx, &simple_topology(), &BTreeSet::from([1]))
         .unwrap_err()
 }
 
@@ -58,7 +58,7 @@ fn index_error(
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(Some(&ctx), topology, &std::collections::BTreeSet::new())
+    super::super::bodies_intersecting(&ctx, topology, &std::collections::BTreeSet::new())
         .unwrap_err()
 }
 
@@ -170,11 +170,7 @@ fn wire_error(max_items: u64, free_vertex: bool) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    super::super::bodies_intersecting(
-        Some(&ctx),
-        &wire_topology(free_vertex),
-        &std::collections::BTreeSet::from([1]),
-    )
+    super::super::bodies_intersecting(&ctx, &wire_topology(free_vertex), &std::collections::BTreeSet::from([1]))
     .unwrap_err()
 }
 

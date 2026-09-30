@@ -107,14 +107,14 @@ fn face_transition_requires_one_changed_surface_geometry() {
     };
 
     assert_eq!(
-        resolve_draft_face_by_surface_transition(None, &operand, &preceding, &result).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &result)).unwrap(),
         Some(10)
     );
 
     let mut ambiguous = result.clone();
     ambiguous.surface_planes[1] = plane(201, Vector3::new(0.0, 0.1, 0.995));
     assert_eq!(
-        resolve_draft_face_by_surface_transition(None, &operand, &preceding, &ambiguous).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &operand, &preceding, &ambiguous)).unwrap(),
         None
     );
 
@@ -122,7 +122,7 @@ fn face_transition_requires_one_changed_surface_geometry() {
     exact.candidate_faces = vec![face(10), face(11)];
     exact.recipe_references = vec![reference(vec![face(10)], Vec::new())];
     assert_eq!(
-        resolve_draft_face_by_surface_transition(None, &exact, &preceding, &preceding).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| resolve_draft_face_by_surface_transition(decode_ctx, &exact, &preceding, &preceding)).unwrap(),
         Some(10)
     );
 }
@@ -182,7 +182,7 @@ fn draft_limit_case(max_items: u64) -> Result<Option<i64>, cadmpeg_core::CodecEr
     policy.limits.max_collection_items = max_items;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    resolve_draft_face_by_surface_transition(Some(&ctx), &operand, &topology, &topology)
+    resolve_draft_face_by_surface_transition(&ctx, &operand, &topology, &topology)
 }
 
 #[test]
