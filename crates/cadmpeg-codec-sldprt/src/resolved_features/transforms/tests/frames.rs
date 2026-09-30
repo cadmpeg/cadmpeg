@@ -1604,9 +1604,10 @@ fn assert_marker_circle_projection_refusal(dimension: cadmpeg_core::decode::Reso
 
     let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
     let mut policy = DecodePolicy::service();
+    // Admit the fixture indexes, then refuse the first nonempty transform vote.
     match dimension {
-        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 26,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 3518,
         _ => panic!("unsupported marker circle projection dimension"),
     }
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
