@@ -756,6 +756,34 @@ fn copy_termination_text(
     Ok(copy)
 }
 
+fn copy_termination_feature_id(
+    ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId, operation: &'static str,
+) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
+    ctx.charge_work(u64_from_index(id.as_str().len()).checked_mul(3)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    cadmpeg_ir::features::FeatureId::mint(copy_termination_text(ctx, id.as_str(), operation)?)
+        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sweep feature identity"))
+}
+
+fn component_local_ids(
+    ctx: &DecodeContext<'_>, components: &[FeatureInputComponentPathEntry], operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    use std::fmt::Write;
+    let size = components.len().checked_mul(11)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(u64_from_index(size), operation)?;
+    let mut local_id = String::new();
+    ctx.reserve_retained_string(&mut local_id, size, operation)?;
+    for (index, component) in components.iter().enumerate() {
+        if index != 0 { local_id.push(','); }
+        match component.local_id {
+            Some(id) => write!(&mut local_id, "{id}").map_err(|_| cadmpeg_core::CodecError::malformed("SLDPRT sweep local identity formatting failed"))?,
+            None => local_id.push('_'),
+        }
+    }
+    Ok(local_id)
+}
+
 /// Bind reference-curve cross sections consumed by surface sweeps.
 pub(crate) fn project_surface_sweep_profiles(
     ctx: &DecodeContext<'_>,
@@ -763,15 +791,8 @@ pub(crate) fn project_surface_sweep_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    use cadmpeg_ir::features::{FeatureId, GeneratedCurveRef, PlanarProfileRef};
-    use std::fmt::Write;
+    use cadmpeg_ir::features::{GeneratedCurveRef, PlanarProfileRef};
     const OPERATION: &str = "project SLDPRT surface sweep profile";
-    let copy_id = |id: &FeatureId| {
-        ctx.charge_work(u64_from_index(id.as_str().len()).checked_mul(3)
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        FeatureId::mint(copy_termination_text(ctx, id.as_str(), OPERATION)?)
-            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sweep feature identity"))
-    };
     let mut history_features = Vec::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, OPERATION)?;
@@ -831,7 +852,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 ctx.charge_work(u64_from_index(history_features.len()), OPERATION)?;
                 if let Some(native) = history_features.iter().find(|candidate| candidate.source_value() == Some(source)) {
                     ctx.charge_work(u64_from_index(native.id.len()), OPERATION)?;
-                    feature_ids_by_native.get(native.id.as_str()).map(|id| copy_id(id).map(PlanarProfileRef::Feature)).transpose()?
+                    feature_ids_by_native.get(native.id.as_str()).map(|id| copy_termination_feature_id(ctx, id, OPERATION).map(PlanarProfileRef::Feature)).transpose()?
                 } else { None }
             } else { None };
             let mut generated = Vec::new();
@@ -857,19 +878,8 @@ pub(crate) fn project_surface_sweep_profiles(
                     let Some(owner) = component_path_terminal_feature(ctx, &components, history_features.iter().copied())? else { continue; };
                     ctx.charge_work(u64_from_index(owner.len()), OPERATION)?;
                     let Some(id) = feature_ids_by_native.get(owner.as_str()) else { continue; };
-                    let feature_id = copy_id(id)?;
-                    let size = components.len().checked_mul(11)
-                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                    ctx.charge_work(u64_from_index(size), OPERATION)?;
-                    let mut local_id = String::new();
-                    ctx.reserve_retained_string(&mut local_id, size, OPERATION)?;
-                    for (index, component) in components.iter().enumerate() {
-                        if index != 0 { local_id.push(','); }
-                        match component.local_id {
-                            Some(id) => write!(&mut local_id, "{id}").map_err(|_| cadmpeg_core::CodecError::malformed("SLDPRT sweep local identity formatting failed"))?,
-                            None => local_id.push('_'),
-                        }
-                    }
+                    let feature_id = copy_termination_feature_id(ctx, id, OPERATION)?;
+                    let local_id = component_local_ids(ctx, &components, OPERATION)?;
                     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
                     let native = ctx.format_retained(format_args!("sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"), OPERATION)?;
                     let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else { continue; };
@@ -891,7 +901,7 @@ pub(crate) fn project_surface_sweep_profiles(
                 for native in component_path_features(ctx, components, history_features.iter().copied())? {
                     ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
                     if let Some(id) = feature_ids_by_native.get(native.as_str()) {
-                        let id = copy_id(id)?;
+                        let id = copy_termination_feature_id(ctx, id, OPERATION)?;
                         ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
                     }
@@ -899,13 +909,13 @@ pub(crate) fn project_surface_sweep_profiles(
             }
             match &profile {
                 PlanarProfileRef::Feature(id) => {
-                    let id = copy_id(id)?;
+                    let id = copy_termination_feature_id(ctx, id, OPERATION)?;
                     ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
                     dependencies.push(id);
                 }
                 PlanarProfileRef::Generated { curves, .. } => {
                     for curve in curves.iter() {
-                        let id = copy_id(&curve.feature)?;
+                        let id = copy_termination_feature_id(ctx, &curve.feature, OPERATION)?;
                         ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
                     }
@@ -1024,139 +1034,155 @@ fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
 }
 
 pub(crate) fn project_compact_combine_paths(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::features::{BodySelection, CombineOperands, GeneratedBodyRef};
+    const OPERATION: &str = "project SLDPRT combine paths";
     struct Projection {
-        target: cadmpeg_ir::features::BodySelection,
-        tools: cadmpeg_ir::features::BodySelection,
+        target: BodySelection,
+        tools: BodySelection,
         dependencies: Vec<cadmpeg_ir::features::FeatureId>,
     }
-
-    let feature_ids_by_native = features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
-        .collect::<HashMap<_, _>>();
-    let history_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
+    let mut feature_ids_by_native = HashMap::new();
+    for feature in features.iter() {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        ctx.charge_work(u64_from_index(native.len()).checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !feature_ids_by_native.contains_key(native) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            feature_ids_by_native.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        feature_ids_by_native.insert(native, &feature.id);
+    }
+    let mut history_features = Vec::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(1, OPERATION)?;
+        ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
+        history_features.push(feature);
+    }
     let mut projections = HashMap::<String, Projection>::new();
     for history_feature in &history_features {
-        let (Some(target), Some(tools)) = (
-            history_feature.properties.get("Target"),
-            history_feature.properties.get("Tools"),
-        ) else {
-            continue;
+        ctx.charge_work(1, OPERATION)?;
+        let (Some(target), Some(tools)) = (history_feature.properties.get("Target"), history_feature.properties.get("Tools")) else { continue; };
+        let project = |native: &str| -> Result<_, cadmpeg_core::CodecError> {
+            ctx.charge_work(u64_from_index(native.len()).checked_mul(4)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            let Some((prefix, offset)) = native.rsplit_once(':') else { return Ok(None); };
+            let Ok(offset) = offset.parse::<usize>() else { return Ok(None); };
+            let Some((_, lane_key)) = prefix.rsplit_once(':') else { return Ok(None); };
+            for lane in lanes {
+                let work = u64_from_index(lane.id.len()).checked_add(u64_from_index(lane_key.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            let Some(lane) = lanes.iter().find(|lane| lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key) == lane_key) else { return Ok(None); };
+            let Some(components) = compact_body_component_path_at(&lane.native_payload, offset) else { return Ok(None); };
+            let Some(producer) = component_path_terminal_feature(ctx, &components, history_features.iter().copied())? else { return Ok(None); };
+            ctx.charge_work(u64_from_index(producer.len()), OPERATION)?;
+            let Some(id) = feature_ids_by_native.get(producer.as_str()) else { return Ok(None); };
+            let owner = copy_termination_feature_id(ctx, id, OPERATION)?;
+            let body_owner = copy_termination_feature_id(ctx, id, OPERATION)?;
+            let local_id = component_local_ids(ctx, &components, OPERATION)?;
+            let Ok(body) = GeneratedBodyRef::new(body_owner, local_id) else { return Ok(None); };
+            let mut bodies = Vec::new();
+            ctx.reserve_collection_vec(&mut bodies, 1, OPERATION)?;
+            bodies.push(body);
+            let native = copy_termination_text(ctx, native, OPERATION)?;
+            let Ok(selection) = BodySelection::generated(bodies, native) else { return Ok(None); };
+            Ok(Some((selection, components, owner)))
         };
-        let project = |native: &str| {
-            let components = (|| {
-            let (prefix, offset) = native.rsplit_once(':')?;
-            let offset = offset.parse::<usize>().ok()?;
-            let lane_key = prefix.rsplit_once(':')?.1;
-            let lane = lanes.iter().find(|lane| {
-                lane.id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key)
-                    == lane_key
-            })?;
-            compact_body_component_path_at(&lane.native_payload, offset)
-
-            })();
-            let Some(components) = components else { return Ok::<_, cadmpeg_core::CodecError>(None); };
-            let Some(producer) = component_path_terminal_feature(ctx, &components, &history_features)? else { return Ok(None); };
-            Ok((|| {
-            let feature = feature_ids_by_native.get(&producer)?.clone();
-            let local_id = components
-                .iter()
-                .map(|component| {
-                    component
-                        .local_id
-                        .map_or_else(|| "_".into(), |id| id.to_string())
-                })
-                .collect::<Vec<_>>()
-                .join(",");
-            Some((
-                cadmpeg_ir::features::BodySelection::generated(
-                    vec![
-                        cadmpeg_ir::features::GeneratedBodyRef::new(feature.clone(), local_id)
-                            .ok()?,
-                    ],
-                    native.to_owned(),
-                )
-                .ok()?,
-                components,
-                feature,
-            ))
-            })())
-        };
-        let (
-            Some((target, target_components, target_owner)),
-            Some((tools, tool_components, tool_owner)),
-        ) = (project(target)?, project(tools)?)
-        else {
-            continue;
-        };
+        let (Some((target, target_components, target_owner)), Some((tools, tool_components, tool_owner))) = (project(target)?, project(tools)?) else { continue; };
         let mut dependencies = Vec::new();
         for component in target_components.iter().chain(&tool_components) {
-            let Some(native) = component_path_terminal_feature(ctx, std::slice::from_ref(component), &history_features)? else { continue; };
-            if let Some(feature) = feature_ids_by_native.get(&native) {
+            let Some(native) = component_path_terminal_feature(ctx, std::slice::from_ref(component), history_features.iter().copied())? else { continue; };
+            ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
+            if let Some(feature) = feature_ids_by_native.get(native.as_str()) {
+                let feature = copy_termination_feature_id(ctx, feature, OPERATION)?;
                 ctx.reserve_collection_vec(&mut dependencies, 1, "project SLDPRT combine dependencies")?;
-                dependencies.push(feature.clone());
+                dependencies.push(feature);
             }
         }
         ctx.reserve_collection_vec(&mut dependencies, 2, "project SLDPRT combine dependencies")?;
         dependencies.push(target_owner);
         dependencies.push(tool_owner);
-        dependencies.sort_by_key(|dependency| {
-            features
-                .iter()
-                .find(|feature| feature.id == *dependency)
-                .map_or(u64::MAX, |feature| feature.ordinal)
-        });
-        dependencies.dedup();
-        projections.insert(
-            history_feature.id.clone(),
-            Projection {
-                target,
-                tools,
-                dependencies,
-            },
-        );
-    }
-    for feature in features {
-        let mut definition = feature.evaluation.definition().clone();
-        'feature_edit: {
-            let Some(projection) = feature
-                .native_ref
-                .as_ref()
-                .and_then(|native| projections.remove(native))
-            else {
-                break 'feature_edit;
-            };
-            let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
-                &mut definition
-            else {
-                break 'feature_edit;
-            };
-            operands
-                .try_edit(|target, tools| {
-                    *target = projection.target;
-                    *tools = projection.tools;
-                    for dependency in projection.dependencies {
-                        if dependency != feature.id && !feature.dependencies.contains(&dependency) {
-                            feature.dependencies.insert(dependency);
-                        }
-                    }
-                })
-                .map_err(cadmpeg_core::CodecError::malformed)?;
+        let levels = if dependencies.len() > 1 { dependencies.len().ilog2() + 1 } else { 1 };
+        for dependency in &dependencies {
+            for feature in features.iter() {
+                let work = u64_from_index(dependency.as_str().len()).checked_add(u64_from_index(feature.id.as_str().len()))
+                    .and_then(|work| work.checked_add(1)).and_then(|work| work.checked_mul(u64::from(levels).checked_mul(2)?))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
         }
-        feature.evaluation.set_definition(definition);
+        let mut ordered = Vec::new();
+        for (ordinal, dependency) in dependencies.into_iter().enumerate() {
+            let order = features.iter().find(|feature| feature.id == dependency).map_or(u64::MAX, |feature| feature.ordinal);
+            ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
+            ordered.push((order, ordinal, dependency));
+        }
+        ordered.sort_unstable_by_key(|(order, ordinal, _)| (*order, *ordinal));
+        let mut dependencies = Vec::<cadmpeg_ir::features::FeatureId>::new();
+        for (_, _, dependency) in ordered {
+            if let Some(previous) = dependencies.last() {
+                let work = u64_from_index(dependency.as_str().len()).checked_add(u64_from_index(previous.as_str().len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+                if previous == &dependency { continue; }
+            }
+            ctx.reserve_precharged_vec(&mut dependencies, 1, OPERATION)?;
+            dependencies.push(dependency);
+        }
+        ctx.charge_work(u64_from_index(history_feature.id.len()), OPERATION)?;
+        if !projections.contains_key(history_feature.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            projections.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        projections.insert(copy_termination_text(ctx, &history_feature.id, OPERATION)?, Projection { target, tools, dependencies });
     }
-
+    drop(feature_ids_by_native);
+    for feature in features {
+        ctx.charge_work(1, OPERATION)?;
+        let Some(native) = feature.native_ref.as_deref() else { continue; };
+        ctx.charge_work(u64_from_index(native.len()), OPERATION)?;
+        let Some(projection) = projections.remove(native) else { continue; };
+        if !matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Combine { .. })) { continue; }
+        for dependency in projection.dependencies {
+            let work = u64_from_index(dependency.as_str().len()).checked_add(u64_from_index(feature.id.as_str().len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            for existing in &feature.dependencies {
+                let work = u64_from_index(existing.as_str().len()).checked_add(u64_from_index(dependency.as_str().len()))
+                    .and_then(|work| work.checked_add(1)).and_then(|work| work.checked_mul(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                ctx.charge_collection_items(1, OPERATION)?;
+                feature.dependencies.insert(dependency);
+            }
+        }
+        for selection in [&projection.target, &projection.tools] {
+            if let BodySelection::Generated { bodies, .. } = selection {
+                for body in bodies.iter() {
+                    let work = u64_from_index(body.feature.as_str().len()).checked_add(u64_from_index(body.local_id.as_str().len()))
+                        .and_then(|work| work.checked_add(2))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    ctx.charge_work(work, OPERATION)?;
+                }
+            }
+        }
+        let operands = CombineOperands::new(projection.target, projection.tools).map_err(cadmpeg_core::CodecError::malformed)?;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Combine { operands: target, .. }) = definition { *target = operands; }
+        });
+    }
     Ok(())
 }
 
