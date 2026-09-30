@@ -908,7 +908,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -921,7 +921,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 92..curve_offset + 92 + SKETCH_MARKER.len()]
         .copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -939,7 +939,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -967,12 +967,12 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     centered_entities[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]);
     let centered_markers = centered_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(
+        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
             &payload,
             &centered_entities[3],
             &centered_markers,
             [&centered_entities[1], &centered_entities[2]],
-        ),
+        ).unwrap(),
         Some([0.0, 0.0])
     );
     let mut hybrid_entities = centered_entities.clone();
@@ -988,12 +988,12 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&1u16.to_le_bytes());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(
+        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
             &payload,
             &hybrid_entities[4],
             &hybrid_markers,
             [&hybrid_entities[3], &hybrid_entities[2]],
-        ),
+        ).unwrap(),
         None
     );
     hybrid_entities[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([4.0, 4.0]);
@@ -1002,12 +1002,12 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         hybrid_entities[1].with_test_identity(Some(0), hybrid_entities[1].local_id());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(
+        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
             &payload,
             &hybrid_entities[4],
             &hybrid_markers,
             [&hybrid_entities[3], &hybrid_entities[2]],
-        ),
+        ).unwrap(),
         Some([0.0, 0.0])
     );
     payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&0u16.to_le_bytes());
@@ -1020,7 +1020,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -1036,7 +1036,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 84..curve_offset + 84 + LEGACY_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -1055,7 +1055,7 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         Some([2, 3])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
             .iter()
             .map(|marker| marker
                 .coordinates_m
@@ -1080,11 +1080,11 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         .reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let complete_roster_markers = complete_roster_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        roster_curve_endpoint_markers(
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(),
             &payload,
             &complete_roster_entities[3],
             &complete_roster_markers,
-        )
+        ).unwrap()
         .iter()
         .map(|marker| marker
             .coordinates_m
@@ -1093,11 +1093,11 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
     );
     payload[curve_offset + 56..curve_offset + 58].fill(0);
-    assert!(roster_curve_endpoint_markers(
+    assert!(roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(),
         &payload,
         &complete_roster_entities[3],
         &complete_roster_markers,
-    )
+    ).unwrap()
     .is_empty());
 }
 
@@ -1181,14 +1181,14 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         Some([4, 2])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[4], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &entities[4], &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -1276,7 +1276,7 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         Some([4, 2])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[4], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -1367,7 +1367,7 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         Some([6, 8])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &entities[8], &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[8], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),

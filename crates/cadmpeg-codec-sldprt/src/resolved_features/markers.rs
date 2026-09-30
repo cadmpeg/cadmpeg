@@ -3407,11 +3407,28 @@ fn additional_linked_profile_point_coordinates(
     finite_coordinate_pair(payload, offset + 58)
 }
 
+enum ReverseIncidenceOffsets {
+    One(u64),
+    Pair([u64; 2]),
+    Many,
+}
+
+impl ReverseIncidenceOffsets {
+    fn include_offset(&mut self, offset: u64) {
+        match self {
+            Self::One(first) if *first != offset => { *self = Self::Pair([(*first).min(offset), (*first).max(offset)]); }
+            Self::Pair(pair) if !pair.contains(&offset) => { *self = Self::Many; }
+            Self::One(_) | Self::Pair(_) | Self::Many => {}
+        }
+    }
+}
+
 pub(super) fn current_reverse_incidence_endpoint_offsets(
-    payload: &[u8],
-    curve: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<[u64; 2]> {
+    ctx: &DecodeContext<'_>, payload: &[u8], curve: &SketchInputEntity, markers: &[&SketchInputEntity],
+) -> Result<Option<[u64; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT reverse incidence endpoints";
+    ctx.charge_work(256, OPERATION)?;
+    let curve_index = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     let curve_index = u16::try_from(curve.object_index()?).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
@@ -3421,32 +3438,40 @@ pub(super) fn current_reverse_incidence_endpoint_offsets(
     {
         return None;
     }
-    let mut by_selector = BTreeMap::<u16, Vec<u64>>::new();
-    for marker in markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref == curve.feature_ref)
-    {
-        let marker_offset = usize::try_from(marker.offset()).ok()?;
-        let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
-            continue;
-        };
+    Some(curve_index)
+    })();
+    let Some(curve_index) = curve_index else { return Ok(None); };
+    let mut by_selector = BTreeMap::<u16, ReverseIncidenceOffsets>::new();
+    for marker in markers.iter().copied() {
+        for len in [marker.feature_ref.as_deref().map_or(0, str::len), curve.feature_ref.as_deref().map_or(0, str::len)] {
+            let work = cadmpeg_core::decode::u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(4))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+        }
+        ctx.charge_work(512, OPERATION)?;
+        if marker.feature_ref != curve.feature_ref { continue; }
+        let Ok(marker_offset) = usize::try_from(marker.offset()) else { return Ok(None); };
+        let Some((_, links)) = linked_profile_point(payload, marker_offset) else { continue; };
         for (selector, linked_curve) in links {
-            if linked_curve == curve_index {
-                by_selector
-                    .entry(selector)
-                    .or_default()
-                    .push(marker.offset());
-            }
+            if linked_curve != curve_index { continue; }
+            let levels = u64::from(by_selector.len().checked_ilog2().unwrap_or(0));
+            let work = levels.checked_add(1).and_then(|levels| levels.checked_mul(32))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if !by_selector.contains_key(&selector) { ctx.charge_collection_items(1, OPERATION)?; }
+            by_selector.entry(selector).and_modify(|offsets| offsets.include_offset(marker.offset()))
+                .or_insert(ReverseIncidenceOffsets::One(marker.offset()));
         }
     }
-    let mut candidates = by_selector.into_values().filter_map(|mut offsets| {
-        offsets.sort_unstable();
-        offsets.dedup();
-        <[u64; 2]>::try_from(offsets).ok()
+    let work = cadmpeg_core::decode::u64_from_index(by_selector.len()).checked_add(1).and_then(|work| work.checked_mul(32))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, OPERATION)?;
+    let mut candidates = by_selector.into_values().filter_map(|offsets| match offsets {
+        ReverseIncidenceOffsets::Pair(pair) => Some(pair),
+        ReverseIncidenceOffsets::One(_) | ReverseIncidenceOffsets::Many => None,
     });
-    let endpoints = candidates.next()?;
-    candidates.next().is_none().then_some(endpoints)
+    let Some(endpoints) = candidates.next() else { return Ok(None); };
+    Ok(candidates.next().is_none().then_some(endpoints))
 }
 
 fn linked_profile_vertex(payload: &[u8], offset: usize) -> bool {

@@ -130,7 +130,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
     ));
     assert_eq!(coordinate_roster_endpoint_offset(&payload, 0), Some(56));
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -145,7 +145,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         0
     ));
     assert_eq!(
-        roster_curve_endpoint_markers(&alternate_header, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &alternate_header, &curve, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -154,7 +154,7 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
 
     let mut equal_endpoints = profile_roster_payload([3, 3]);
     assert!(!compact_legacy_96_profile_roster_curve_uses_complete_roster(&equal_endpoints, 0));
-    assert!(roster_curve_endpoint_markers(&equal_endpoints, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &equal_endpoints, &curve, &markers).unwrap().is_empty());
 
     equal_endpoints[legacy_96::TAIL_STATE..legacy_96::TAIL_STATE + 2]
         .copy_from_slice(&u16::MAX.to_le_bytes());
@@ -180,5 +180,5 @@ fn compact_legacy_96_profile_roster_uses_coordinate_geometry_ordinals() {
         &out_of_range,
         0
     ));
-    assert!(roster_curve_endpoint_markers(&out_of_range, &curve, &markers).is_empty());
+    assert!(roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &out_of_range, &curve, &markers).unwrap().is_empty());
 }

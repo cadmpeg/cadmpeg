@@ -798,7 +798,7 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        roster_curve_endpoint_markers(&lane.native_payload, &lane.sketch_entities[3], &markers,)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &lane.native_payload, &lane.sketch_entities[3], &markers,).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),

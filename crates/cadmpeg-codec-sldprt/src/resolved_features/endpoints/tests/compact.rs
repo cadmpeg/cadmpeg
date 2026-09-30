@@ -371,7 +371,7 @@ fn shared_endpoint_resolution_uses_compact_legacy_code_one_line_records() {
         Some([1, 2])
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -466,7 +466,7 @@ fn compact_legacy_90_geometry_line_uses_feature_marker_roster() {
     let markers = [&curve, &first, &non_point, &second];
 
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -562,7 +562,7 @@ fn compact_legacy_embedded_geometry_preserves_coordinate_roster_ordinals() {
         entity.feature_ref = Some("feature".into());
     }
     let markers = entities.iter().collect::<Vec<_>>();
-    let endpoints = coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers);
+    let endpoints = coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap();
     assert_eq!(
         endpoints
             .iter()
@@ -1052,7 +1052,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
         .expect("terminal complete marker roster endpoints");
     assert_eq!([pair[0].id(), pair[1].id()], ["first", "second"]);
     assert_eq!(
-        roster_curve_endpoint_markers(&terminal, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &terminal, &curve, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -1060,7 +1060,7 @@ fn current_compact_curve_resolves_complete_marker_roster_endpoints() {
     );
 
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .into_iter()
             .map(crate::records::SketchInputEntity::id)
             .collect::<Vec<_>>(),
@@ -1194,7 +1194,7 @@ fn current_referenced_compact_roster_prefers_complete_roster() {
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -1249,7 +1249,7 @@ fn current_referenced_compact_roster_falls_back_when_complete_slot_is_not_a_poin
         &payload, 0
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&payload, &curve, &markers)
+        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -1316,7 +1316,7 @@ fn current_compact_curve_falls_back_to_raw_object_indices() {
         constructed_marker
     };
     let markers = [&first, &second];
-    let endpoints = roster_curve_endpoint_markers(&payload, &curve, &markers);
+    let endpoints = roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap();
     assert_eq!(
         endpoints
             .iter()
@@ -1397,7 +1397,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     };
     let markers = [&first, &second];
     assert_eq!(
-        roster_curve_endpoint_markers(&payload, &curve, &markers)
+        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -1405,7 +1405,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     );
 
     let pairs = vec![vec![&first, &second], vec![&second, &coincident]];
-    let (selected, ambiguous) = super::resolve_indexed_marker_candidates(pairs.clone());
+    let (selected, ambiguous) = super::resolve_indexed_marker_candidates(&cadmpeg_test_support::service_decode_context(), (pairs.clone()).into_iter().map(Ok)).unwrap();
     assert!(!ambiguous);
     assert_eq!(
         selected
@@ -1414,7 +1414,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
-    let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(pairs.into_iter().rev());
+    let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(&cadmpeg_test_support::service_decode_context(), (pairs.into_iter().rev()).into_iter().map(Ok)).unwrap();
     assert!(!ambiguous);
     assert_eq!(
         reversed
@@ -1424,9 +1424,9 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         ["first", "second"]
     );
     let different = marker("different", Some(3), Some([2.0, 0.0]));
-    let (_, ambiguous) = super::resolve_indexed_marker_candidates([
+    let (_, ambiguous) = super::resolve_indexed_marker_candidates(&cadmpeg_test_support::service_decode_context(), ([
         vec![&first, &second],
         vec![&second, &different],
-    ]);
+    ]).into_iter().map(Ok)).unwrap();
     assert!(ambiguous);
 }

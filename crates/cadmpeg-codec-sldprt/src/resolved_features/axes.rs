@@ -1275,22 +1275,17 @@ fn profile_roster_construction_axis(
         ctx.reserve_collection_vec(&mut markers, 1, "collect SLDPRT revolution profile markers")?;
         markers.push(marker);
     }
-    let mut axes = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .filter_map(|marker| {
-            let offset = index_from_u64(marker.offset())?;
-            if !marker_is_selected_construction_line(&lane.native_payload, offset) {
-                return None;
-            }
-            let endpoints = roster_curve_endpoint_markers(&lane.native_payload, marker, &markers);
-            let [start, end] = endpoints.as_slice() else {
-                return None;
-            };
-            Some([*start, *end])
-        });
-    let native_endpoints = match (axes.next(), axes.next()) {
+    let mut first_axis = None;
+    let mut second_axis = None;
+    for marker in lane.sketch_entities.iter().filter(|marker| marker.feature_ref.as_deref() == Some(profile_native)) {
+        let Some(offset) = index_from_u64(marker.offset()) else { continue; };
+        if !marker_is_selected_construction_line(&lane.native_payload, offset) { continue; }
+        let endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers)?;
+        let [start, end] = endpoints.as_slice() else { continue; };
+        let endpoints = [*start, *end];
+        if first_axis.is_none() { first_axis = Some(endpoints); } else { second_axis = Some(endpoints); break; }
+    }
+    let native_endpoints = match (first_axis, second_axis) {
         (Some(endpoints), None) => {
             let (Some(start), Some(end)) =
                 (endpoints[0].coordinates_m, endpoints[1].coordinates_m)
@@ -1422,12 +1417,6 @@ fn profile_generated_surface_axis(
         };
         axis.origin = projected_origin;
     }
-    let curve_endpoints = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .flat_map(|curve| roster_curve_endpoint_markers(&lane.native_payload, curve, markers))
-        .filter(|endpoint| endpoint.object_index().is_some());
     let mut endpoint_ids = HashSet::new();
     let v_axis = normal.cross(u_axis.get());
     let mut observed_one = false;
@@ -1435,7 +1424,10 @@ fn profile_generated_surface_axis(
     let mut off_axis = false;
     let mut positive = false;
     let mut negative = false;
-    for endpoint in curve_endpoints {
+    for curve in markers.iter().copied().filter(|marker| marker.feature_ref.as_deref() == Some(profile_native)) {
+        let curve_endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)?;
+        for endpoint in curve_endpoints.into_iter().filter(|endpoint| endpoint.object_index().is_some()) {
+
         ctx.charge_work(1, "scan SLDPRT generated revolution axis endpoints")?;
         if endpoint_ids.contains(endpoint.id()) {
             continue;
@@ -1472,6 +1464,7 @@ fn profile_generated_surface_axis(
         off_axis |= side.abs() > LINE_TOLERANCE;
         positive |= side > LINE_TOLERANCE;
         negative |= side < -LINE_TOLERANCE;
+    }
     }
     if !observed_two || !off_axis || (positive && negative) {
         return Ok(None);
@@ -1555,7 +1548,7 @@ fn profile_curve_endpoint_ids<'a>(
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
     {
         ctx.charge_work(1, "scan SLDPRT profile curve endpoints")?;
-        for endpoint in roster_curve_endpoint_markers(&lane.native_payload, curve, markers) {
+        for endpoint in roster_curve_endpoint_markers(ctx, &lane.native_payload, curve, markers)? {
             if (indexed_only && endpoint.object_index().is_none()) || ids.contains(endpoint.id()) {
                 continue;
             }
@@ -1810,27 +1803,13 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             }
         }
     }
-    let boundary_candidates = markers
-        .iter()
-        .copied()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
-        .filter(|marker| {
-            index_from_u64(marker.offset()).is_some_and(|offset| {
-                extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
-                    .is_some()
-            })
-        })
-        .filter_map(|candidate| {
-            let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
-            let [start, end] = endpoints.as_slice() else {
-                return None;
-            };
-            let endpoints = [*start, *end];
-            bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
-                .then_some(endpoints)
-        });
     let mut boundary_relations = Vec::new();
-    for endpoints in boundary_candidates {
+    for candidate in markers.iter().copied().filter(|marker| marker.feature_ref.as_deref() == Some(profile_native)) {
+        if !index_from_u64(candidate.offset()).is_some_and(|offset| extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset).is_some()) { continue; }
+        let endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)?;
+        let [start, end] = endpoints.as_slice() else { continue; };
+        let endpoints = [*start, *end];
+        if !bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) { continue; }
         ctx.reserve_collection_vec(&mut boundary_relations, 1, "collect SLDPRT profile boundary relations")?;
         boundary_relations.push(endpoints);
     }
@@ -1845,7 +1824,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
     let [candidate] = curve_candidates.as_slice() else {
         return Ok(None);
     };
-    let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
+    let endpoints = roster_curve_endpoint_markers(ctx, &lane.native_payload, candidate, markers)?;
     let [start, end] = endpoints.as_slice() else {
         return Ok(None);
     };

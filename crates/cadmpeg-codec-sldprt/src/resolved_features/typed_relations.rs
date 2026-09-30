@@ -1922,12 +1922,12 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             }
             endpoints
         } else {
-            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
+            super::endpoints::coordinate_roster_curve_endpoint_markers_at(ctx,
                 payload,
                 curve,
                 markers,
                 Some(56),
-            )
+            )?
         };
         if endpoints.len() == 2 {
             return Ok(endpoints);
@@ -1953,19 +1953,19 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     if let Some(endpoints) = legacy_point_roster_line_endpoint_markers(payload, curve, markers) {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = roster_curve_endpoint_markers(payload, curve, markers);
+    let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, markers)?;
     if endpoints.len() == 2 {
-        if let Some(direct) = legacy_marker104_arc_endpoints(payload, curve, markers) {
+        if let Some(direct) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
             let roster = [endpoints[0], endpoints[1]];
-            if legacy_marker104_arc_center(payload, curve, markers, roster).is_none()
-                && legacy_marker104_arc_center(payload, curve, markers, direct).is_some()
+            if legacy_marker104_arc_center(ctx, payload, curve, markers, roster)?.is_none()
+                && legacy_marker104_arc_center(ctx, payload, curve, markers, direct)?.is_some()
             {
                 return copy_endpoint_markers(ctx, &direct);
             }
         }
         return Ok(endpoints);
     }
-    if let Some(endpoints) = legacy_marker104_arc_endpoints(payload, curve, markers) {
+    if let Some(endpoints) = legacy_marker104_arc_endpoints(ctx, payload, curve, markers)? {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = current_coordinate_linked_line_endpoints(payload, curve, markers) {
@@ -2166,10 +2166,13 @@ fn extended_wide_selected_axis_endpoints<'a>(
 }
 
 pub(super) fn legacy_marker104_arc_endpoints<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy marker104 arc endpoints";
+    ctx.charge_work(512, OPERATION)?;
+    let endpoint_ids = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if curve.kind() != SketchInputKind::Arc
         || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
@@ -2189,6 +2192,15 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     if endpoint_ids[0] == endpoint_ids[1] {
         return None;
     }
+    Some(endpoint_ids)
+    })();
+    let Some(endpoint_ids) = endpoint_ids else { return Ok(None); };
+    for marker in markers {
+        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
+        charge_typed_endpoint_work(ctx, curve.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
+        ctx.charge_work(128, OPERATION)?;
+    }
+    Ok((|| {
     let resolve = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
@@ -2204,6 +2216,7 @@ pub(super) fn legacy_marker104_arc_endpoints<'a>(
     };
     let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
     (endpoints[0].coordinates_m != endpoints[1].coordinates_m).then_some(endpoints)
+    })())
 }
 
 fn one_based_point_roster_line_endpoint_markers<'a>(

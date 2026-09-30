@@ -1006,7 +1006,7 @@ pub(super) fn resolve_connected_marker_arcs(
                     candidates.push(*center);
                 }
             }
-            let Some(center) = unique_arc_center_marker(start, end, &candidates, tolerance) else {
+            let Some(center) = unique_arc_center_marker(ctx, start, end, &candidates, tolerance)? else {
                 continue;
             };
             let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {

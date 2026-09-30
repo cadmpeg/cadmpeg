@@ -1539,7 +1539,7 @@ pub(super) fn normalize_indexed_curve_entities(
         let mut coordinates = HashMap::new();
         for curve in &lane.sketch_entities {
             ctx.charge_work(u64_from_index(markers.len()), "scan SLDPRT reverse incidence endpoints")?;
-            let Some(offsets) = current_reverse_incidence_endpoint_offsets(&lane.native_payload, curve, &markers) else { continue; };
+            let Some(offsets) = current_reverse_incidence_endpoint_offsets(ctx, &lane.native_payload, curve, &markers)? else { continue; };
             for offset in offsets {
                 let Ok(native_offset) = usize::try_from(offset) else { continue; };
                 let Some((point, _)) = linked_profile_point(&lane.native_payload, native_offset) else { continue; };
