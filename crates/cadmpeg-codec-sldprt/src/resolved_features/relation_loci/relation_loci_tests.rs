@@ -105,10 +105,10 @@ fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> Sketc
 fn point_operand_requires_one_profile_locus() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").unwrap();
     let locus = SketchLocus::Start(entity.clone());
-    assert_eq!(unique_locus(std::slice::from_ref(&locus)), Some(locus));
-    assert_eq!(unique_locus(&[]), None);
+    assert_eq!(unique_locus(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&locus)).unwrap(), Some(locus));
+    assert_eq!(unique_locus(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(), None);
     assert_eq!(
-        unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
+        unique_locus(&cadmpeg_test_support::service_decode_context(), &[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]).unwrap(),
         None
     );
 }

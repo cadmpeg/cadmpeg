@@ -991,11 +991,11 @@ fn line_operand_rejects_a_circular_geometry_alias() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity("circle-marker", &HashMap::new(), &loci, &entities),
+        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "circle-marker", &HashMap::new(), &loci, &entities).unwrap(),
         None
     );
     assert_eq!(
-        single_marker_line_entity("line-marker", &HashMap::new(), &loci, &entities),
+        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "line-marker", &HashMap::new(), &loci, &entities).unwrap(),
         Some(line_id)
     );
 }
@@ -1108,7 +1108,7 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity("handle", &markers, &loci, &entities),
+        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "handle", &markers, &loci, &entities).unwrap(),
         Some(line_id)
     );
 }
@@ -1144,7 +1144,7 @@ fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
     let loci = HashMap::from([(point.id().to_string(), vec![SketchLocus::Entity(point_id)])]);
 
     assert_eq!(
-        single_marker_line_entity("point-handle", &markers, &loci, &entities),
+        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "point-handle", &markers, &loci, &entities).unwrap(),
         Some(line_id)
     );
 }

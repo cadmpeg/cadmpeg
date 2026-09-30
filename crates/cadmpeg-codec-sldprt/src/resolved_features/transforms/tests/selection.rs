@@ -469,11 +469,11 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_point_locus(
+        marker_point_locus(&cadmpeg_test_support::service_decode_context(), 
             "sldprt:feature-input:sketch-entity#qualified-curve",
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchLocus::End(
             SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
         ))
@@ -643,7 +643,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
-        marker_point_locus(point_marker.id(), &markers, &loci),
+        marker_point_locus(&cadmpeg_test_support::service_decode_context(), point_marker.id(), &markers, &loci).unwrap(),
         Some(SketchLocus::Entity(point_entity.id().clone()))
     );
 }

@@ -391,42 +391,37 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 })
                 .collect::<Vec<_>>();
             if let [first_link, second_link] = point_links.as_slice() {
-                let point_locus = |link: &SketchInputLink| {
-                    let linked = markers_by_id.get(link.entity_ref.as_str())?;
-                    if !matches!(
-                        linked.kind(),
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    ) {
-                        return None;
+                let point_locus = |link: &SketchInputLink| -> Result<Option<SketchLocus>, CodecError> {
+                    const OPERATION: &str = "resolve SLDPRT forward axis point identity";
+                    charge_relation_marker_links(ctx, marker, markers_by_id, OPERATION)?;
+                    let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else { return Ok(None); };
+                    if !matches!(linked.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { return Ok(None); }
+                    let mut selected = None;
+                    for entity in sketch_entities {
+                        charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
+                        if entity.sketch != *sketch || entity.native_ref.as_deref() != Some(link.entity_ref.as_str())
+                            || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }) { continue; }
+                        if selected.is_some() { return Ok(None); }
+                        selected = Some(entity.id());
                     }
-                    let mut candidates = sketch_entities.iter().filter(|entity| {
-                        entity.sketch == *sketch
-                            && entity.native_ref.as_deref() == Some(link.entity_ref.as_str())
-                            && matches!(
-                                *entity.geometry.definition(),
-                                SketchGeometryDefinition::Point { .. }
-                            )
-                    });
-                    match (candidates.next(), candidates.next()) {
-                        (Some(entity), None) => Some(SketchLocus::Entity(entity.id().clone())),
-                        (None, None) => {
-                            let locus = marker_point_locus(
-                                &link.entity_ref,
-                                markers_by_id,
-                                loci_by_marker,
-                            )?;
-                            sketch_entities
-                                .iter()
-                                .any(|entity| {
-                                    entity.sketch == *sketch && entity.id() == locus_entity(&locus)
-                                })
-                                .then_some(locus)
-                        }
-                        _ => None,
+                    if let Some(identity) = selected {
+                        return super::transforms::SketchLocusRole::Entity.copy_locus(ctx, identity, OPERATION).map(Some);
                     }
+                    let Some(locus) = marker_point_locus(ctx, &link.entity_ref, markers_by_id, loci_by_marker)? else { return Ok(None); };
+                    for entity in sketch_entities {
+                        charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, entity.id().as_str().len(), 4, OPERATION)?;
+                        charge_typed_endpoint_work(ctx, locus_entity(&locus).as_str().len(), 4, OPERATION)?;
+                        if entity.sketch == *sketch && entity.id() == locus_entity(&locus) { return Ok(Some(locus)); }
+                    }
+                    Ok(None)
                 };
                 if let (Some(first), Some(second)) =
-                    (point_locus(first_link), point_locus(second_link))
+                    (point_locus(first_link)?, point_locus(second_link)?)
                 {
                     if first != second {
                         return Ok(Some(SketchConstraintDefinitionInput::SameCoordinate {
@@ -896,7 +891,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         }
         MarkerRelationGroup::Midpoint => {
             let Some((point, entity)) =
-                linked_midpoint_operands(marker, markers_by_id, loci_by_marker)
+                linked_midpoint_operands(ctx, marker, markers_by_id, loci_by_marker)?
             else {
                 return Ok(Some(native()?));
             };
@@ -1359,8 +1354,8 @@ pub(super) fn unique_axis_aligned_linked_loci(
         count += 1;
     }
     let [Some(first_link), Some(second_link)] = links else { return Ok(None); };
-    let first = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker);
-    let second = marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker);
+    let first = marker_point_locus(ctx, &first_link.entity_ref, markers_by_id, loci_by_marker)?;
+    let second = marker_point_locus(ctx, &second_link.entity_ref, markers_by_id, loci_by_marker)?;
     let (known, known_is_first) = match (first, second) {
         (Some(known), None) => (known, true),
         (None, Some(known)) => (known, false),
@@ -1494,7 +1489,7 @@ fn append_axis_relation_point_locus(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>, collection: &mut AxisRelationPointCollection<'_>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "resolve SLDPRT axis relation point identity";
-    if let Some(locus) = marker_point_locus(marker_id, markers_by_id, loci_by_marker) { return collection.append(ctx, locus); }
+    if let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? { return collection.append(ctx, locus); }
     let mut selected = None;
     for entity in sketch_entities {
         charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
