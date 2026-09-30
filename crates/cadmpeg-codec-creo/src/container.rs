@@ -3477,11 +3477,11 @@ pub(crate) fn summarize(
             name,
             role: s.role().into(),
             storage: expanded.map_or_else(
-                || EntryStorage::verbatim(VerbatimLabel::None, s.length() as u64),
+                || EntryStorage::verbatim(VerbatimLabel::None, cadmpeg_core::decode::u64_from_index(s.length())),
                 |expanded| EntryStorage::Compressed {
                     method: CompressionMethod::UnixCompress,
-                    stored: Some(s.length() as u64),
-                    expanded: Some((expanded.data.len() + s.raw_name.len() + 2) as u64),
+                    stored: Some(cadmpeg_core::decode::u64_from_index(s.length())),
+                    expanded: Some(cadmpeg_core::decode::u64_from_index(expanded.data.len() + s.raw_name.len() + 2)),
                 },
             ),
             attributes,
