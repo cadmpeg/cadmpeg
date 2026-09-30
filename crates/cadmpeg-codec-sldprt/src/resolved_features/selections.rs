@@ -357,7 +357,7 @@ pub(super) fn compact_edge_selections(
             .and_then(|(next, _, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
         let end = if kind == NativeClassKind::Fillet {
-            fillet_edge_roster_end(lane, start, object_end).unwrap_or(object_end)
+            fillet_edge_roster_end(ctx, lane, start, object_end)?.unwrap_or(object_end)
         } else {
             object_end
         };
@@ -377,19 +377,21 @@ pub(super) fn compact_edge_selections(
         }
         if let Some(token) = compact_edge_token {
             let repeated = repeated_edge_selections(
+                ctx,
                 &lane.native_payload,
                 start,
                 end,
                 token,
-            );
+            )?;
             ctx.reserve_collection_vec(&mut selections, repeated.len(), OPERATION)?;
             selections.extend(repeated);
         }
         let interval = edge_selection_vectors_in_interval(
+                ctx,
             &lane.native_payload,
             start,
             end,
-        );
+        )?;
         ctx.reserve_collection_vec(&mut selections, interval.len(), OPERATION)?;
         selections.extend(interval);
         let levels = if selections.len() > 1 { selections.len().ilog2() + 1 } else { 1 };
@@ -460,60 +462,64 @@ pub(super) fn compact_edge_selections(
     Ok(result)
 }
 
-fn fillet_edge_roster_end(lane: &FeatureInputLane, start: usize, end: usize) -> Option<usize> {
-    ["moEdgeDim_c", "moVertDim_c"]
-        .into_iter()
-        .filter_map(|class_name| first_class_object_in_interval(lane, start, end, class_name))
-        .min()
+fn fillet_edge_roster_end(
+    ctx: &DecodeContext<'_>, lane: &FeatureInputLane, start: usize, end: usize,
+) -> Result<Option<usize>, CodecError> {
+    let mut first = None;
+    for class_name in ["moEdgeDim_c", "moVertDim_c"] {
+        if let Some(offset) = first_class_object_in_interval(ctx, lane, start, end, class_name)? {
+            first = Some(first.map_or(offset, |first: usize| first.min(offset)));
+        }
+    }
+    Ok(first)
 }
 
 fn first_class_object_in_interval(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
     class_name: &str,
-) -> Option<usize> {
-    let direct = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == class_name)
-        .filter_map(|class| usize::try_from(class.offset).ok())
-        .filter(|offset| (start..end).contains(offset))
-        .map(|offset| {
-            offset
-                .checked_sub(4)
-                .filter(|record_start| {
-                    lane.native_payload.get(*record_start..*record_start + 2) == Some(&[0x20, 0x81])
-                })
-                .unwrap_or(offset)
-        })
-        .min();
-
-    let mut tokens = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == class_name)
-        .filter_map(|class| {
-            usize::try_from(class.offset)
-                .ok()?
-                .checked_add(6 + class.name.len())
-        })
-        .filter_map(|offset| View::u16_le_at(&lane.native_payload, offset))
-        .filter(|token| is_class_token(*token))
-        .collect::<Vec<_>>();
-    tokens.sort_unstable();
-    tokens.dedup();
-    let repeated = match tokens.as_slice() {
-        [token] => (start..end.saturating_sub(7)).find(|offset| {
-            lane.native_payload.get(*offset..*offset + 2) == Some(&[0x20, 0x81])
-                && lane.native_payload.get(*offset + 2..*offset + 4) == Some(&[0x10, 0x00])
-                && View::u16_le_at(&lane.native_payload, *offset + 4).is_some_and(is_class_token)
-                && lane.native_payload.get(*offset + 6..*offset + 8)
-                    == Some(token.to_le_bytes().as_slice())
-        }),
-        _ => None,
-    };
-    direct.into_iter().chain(repeated).min()
+) -> Result<Option<usize>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT selection class intervals";
+    let mut direct = None;
+    let mut token = None;
+    let mut ambiguous = false;
+    for class in &lane.classes {
+        let work = u64_from_index(class.name.len()).checked_add(u64_from_index(class_name.len()))
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        if class.name != class_name { continue; }
+        let Some(offset) = usize::try_from(class.offset).ok() else { continue; };
+        if (start..end).contains(&offset) {
+            let record = offset.checked_sub(4)
+                .filter(|record| lane.native_payload.get(*record..*record + 2) == Some(&[0x20, 0x81]))
+                .unwrap_or(offset);
+            direct = Some(direct.map_or(record, |direct: usize| direct.min(record)));
+        }
+        let candidate = offset.checked_add(6 + class.name.len())
+            .and_then(|body| View::u16_le_at(&lane.native_payload, body)).filter(|token| is_class_token(*token));
+        if let Some(candidate) = candidate {
+            if token.is_some_and(|token| token != candidate) { ambiguous = true; }
+            else { token = Some(candidate); }
+        }
+    }
+    let mut repeated = None;
+    if let (Some(token), false, Some(scan_end)) = (token, ambiguous, end.checked_sub(7)) {
+        let token = token.to_le_bytes();
+        for offset in start..scan_end {
+            ctx.charge_work(8, OPERATION)?;
+            if lane.native_payload.get(offset..offset + 2) == Some(&[0x20, 0x81])
+                && lane.native_payload.get(offset + 2..offset + 4) == Some(&[0x10, 0x00])
+                && View::u16_le_at(&lane.native_payload, offset + 4).is_some_and(is_class_token)
+                && lane.native_payload.get(offset + 6..offset + 8) == Some(token.as_slice()) {
+                repeated = Some(offset);
+                break;
+            }
+        }
+    }
+    Ok(direct.into_iter().chain(repeated).min())
 }
 
 pub(super) fn input_owned_edge_selections(
@@ -1711,39 +1717,48 @@ pub(crate) fn surface_reference_matches_at(
 }
 
 fn repeated_edge_selections(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
     token: u16,
-) -> Vec<(usize, Vec<u32>)> {
+) -> Result<Vec<(usize, Vec<u32>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT repeated edge selections";
     let token = token.to_le_bytes();
     let mut selections = Vec::new();
-    for offset in start..end.saturating_sub(110) {
-        if payload.get(offset..offset + 2) != Some(token.as_slice())
-            || payload.get(offset + 2) != Some(&2)
-        {
-            continue;
-        }
-        let marker = offset + 108;
-        if let Some(ids) = compact_edge_selection_at(payload, marker) {
-            selections.push((marker, ids));
+    if let Some(scan_end) = end.checked_sub(110) {
+        for offset in start..scan_end {
+            ctx.charge_work(3, OPERATION)?;
+            if payload.get(offset..offset + 2) != Some(token.as_slice()) || payload.get(offset + 2) != Some(&2) { continue; }
+            let marker = offset + 108;
+            if let Some(ids) = compact_edge_selection_at(payload, marker) {
+                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
+                selections.push((marker, ids));
+            }
         }
     }
-    selections
+    Ok(selections)
 }
 
 fn edge_selection_vectors_in_interval(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Vec<(usize, Vec<u32>)> {
-    (start.saturating_add(12)..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-        .filter(|marker| {
-            payload.get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-        })
-        .filter_map(|marker| compact_edge_selection_at(payload, marker).map(|ids| (marker, ids)))
-        .collect()
+) -> Result<Vec<(usize, Vec<u32>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT interval edge selections";
+    let mut selections = Vec::new();
+    if let (Some(scan_start), Some(scan_end)) = (start.checked_add(12), end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())) {
+        for marker in scan_start..scan_end {
+            ctx.charge_work(16, OPERATION)?;
+            if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len()) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+            if let Some(ids) = compact_edge_selection_at(payload, marker) {
+                ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
+                selections.push((marker, ids));
+            }
+        }
+    }
+    Ok(selections)
 }
 
 pub(super) const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
@@ -2473,7 +2488,7 @@ pub(super) fn variable_fillet_control_references(
         .and_then(|name| usize::try_from(name.offset).ok()) else {
         return Ok(None);
     };
-    let Some(control_start) = fillet_edge_roster_end(lane, object_start, object_end) else {
+    let Some(control_start) = fillet_edge_roster_end(ctx, lane, object_start, object_end)? else {
         return Ok(None);
     };
     let (Some(marker_start), Some(marker_end)) = (
