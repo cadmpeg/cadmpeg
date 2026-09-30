@@ -1633,7 +1633,7 @@ fn decode_corner_normals(
     let mut view = View::over_retained(values);
     let mut table = reserve_mesh_items(
         ctx,
-        values.len() / cadmpeg_core::decode::index_from_u32(PACKED_DIRECTION_BYTES),
+        values.len() / index_from_u32(PACKED_DIRECTION_BYTES),
         "collect paramesh normal table",
     )?;
     while !view.is_empty() {
@@ -2212,6 +2212,9 @@ fn registry_texture_ids(
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::convert::{f32_from_f64};
+
     use super::{
         decode_index_positions as decode_index_positions_charged,
         decode_mesh_container as decode_mesh_container_charged, decode_packed_direction,
@@ -2402,16 +2405,16 @@ mod tests {
         lzma_rs::lzma_compress(&mut std::io::Cursor::new(payload), &mut compressed)
             .expect("compress stream");
         let mut body = Vec::new();
-        body.extend_from_slice(&(descriptor.len() as u16).to_le_bytes());
+        body.extend_from_slice(&(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes());
         body.extend_from_slice(descriptor);
-        body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        body.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
         body.push(LZMA_PROPERTIES);
         body.push(LZMA_DICTIONARY_LOG);
         // `lzma_compress` writes the properties byte, the four-byte dictionary
         // size, and the eight-byte unpacked size ahead of the stream; the
         // container stores none of those three.
         body.extend_from_slice(&compressed[13..]);
-        let mut chunk = (body.len() as u64).to_le_bytes().to_vec();
+        let mut chunk = (u64_from_index(body.len())).to_le_bytes().to_vec();
         chunk.extend_from_slice(&CHUNK_STREAM.to_le_bytes());
         chunk.extend_from_slice(&body);
         chunk
@@ -2419,7 +2422,7 @@ mod tests {
 
     fn raw_stream_body(descriptor: &[u8], declared: u32, payload: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&(descriptor.len() as u16).to_le_bytes());
+        body.extend_from_slice(&(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes());
         body.extend_from_slice(descriptor);
         body.extend_from_slice(&declared.to_le_bytes());
         body.extend_from_slice(&[LZMA_PROPERTIES, RAW_STREAM_MODE]);
@@ -2434,13 +2437,13 @@ mod tests {
         let mut bytes = MAGIC.to_vec();
         bytes.extend_from_slice(&VERSION.to_le_bytes());
         bytes.extend_from_slice(&[0; 32]);
-        bytes.extend_from_slice(&(protobuf.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(u64_from_index(protobuf.len())).to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&protobuf);
 
         // The name table: a two-entry MessagePack map.
         let mut table = vec![0x82, 0xa1, b'v', 2, 0xa1, b't', 3];
-        let mut name_chunk = (table.len() as u64).to_le_bytes().to_vec();
+        let mut name_chunk = (u64_from_index(table.len())).to_le_bytes().to_vec();
         name_chunk.extend_from_slice(&CHUNK_NAME_TABLE.to_le_bytes());
         name_chunk.append(&mut table);
         bytes.extend_from_slice(&name_chunk);
@@ -2482,7 +2485,7 @@ mod tests {
 
     fn bytes_field(field: u64, payload: &[u8]) -> Vec<u8> {
         let mut bytes = varint(field << 3 | 2);
-        bytes.extend(varint(payload.len() as u64));
+        bytes.extend(varint(u64_from_index(payload.len())));
         bytes.extend_from_slice(payload);
         bytes
     }
@@ -2658,7 +2661,7 @@ mod tests {
         let mut bytes = MAGIC.to_vec();
         bytes.extend_from_slice(&VERSION.to_le_bytes());
         bytes.extend_from_slice(&[0; 32]);
-        bytes.extend_from_slice(&(protobuf.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&(u64_from_index(protobuf.len())).to_le_bytes());
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&protobuf);
 
@@ -2680,7 +2683,7 @@ mod tests {
             table.extend_from_slice(name.as_bytes());
             table.push(index);
         }
-        let mut name_chunk = (table.len() as u64).to_le_bytes().to_vec();
+        let mut name_chunk = (u64_from_index(table.len())).to_le_bytes().to_vec();
         name_chunk.extend_from_slice(&CHUNK_NAME_TABLE.to_le_bytes());
         name_chunk.append(&mut table);
         bytes.extend_from_slice(&name_chunk);
@@ -2718,7 +2721,7 @@ mod tests {
     #[test]
     fn vertex_domain_channel_carries_one_element_per_vertex() {
         let uv = (0..3)
-            .flat_map(|index| [index as f32, 0.5])
+            .flat_map(|index| [f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.5])
             .flat_map(f32::to_le_bytes)
             .collect::<Vec<_>>();
         let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
@@ -2742,7 +2745,7 @@ mod tests {
     #[test]
     fn index_stream_makes_a_channel_corner_domain() {
         let colors = (0..5)
-            .flat_map(|index| [index as f32, 0.0, 0.0, 1.0])
+            .flat_map(|index| [f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0, 1.0])
             .flat_map(f32::to_le_bytes)
             .collect::<Vec<_>>();
         let registry = channel_entry(

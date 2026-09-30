@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::operands::{
     bind_vertex_recipe_candidates, bind_work_plane_constructions, bind_work_point_input_carriers,
     decode_edge_identity_operands, decode_edge_operands, decode_edge_treatment_vertex_operands,
@@ -204,7 +206,7 @@ fn vertex_recipe_scope_identity_refuses_materialized_limit() {
     let mut scope = fixture_scope(crate::records::feature::scope::DesignFeatureKind::WorkPoint);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = scope.id.len() as u64 - 1;
+    policy.limits.max_materialized_bytes = u64_from_index(scope.id.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         bind_vertex_recipe_candidates(&ctx, std::slice::from_mut(&mut scope), &[]),

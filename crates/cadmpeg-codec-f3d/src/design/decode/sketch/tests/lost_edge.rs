@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::sketch::decode_lost_edge_references_from_stream;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
@@ -10,7 +12,7 @@ fn lost_edge_bytes() -> Vec<u8> {
     bytes.extend_from_slice(b"281");
     bytes.extend_from_slice(&41u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 14]);
-    bytes.extend_from_slice(&(marker.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(marker.len()).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend_from_slice(marker);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
@@ -41,7 +43,7 @@ fn lost_edge_reference_id_refuses_retained_limit() {
     let bytes = lost_edge_bytes();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::ids::native_scope("BulkStream.dat").len() as u64;
+    policy.limits.max_retained_bytes = u64_from_index(crate::ids::native_scope("BulkStream.dat").len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut references = Vec::new();
     let error =

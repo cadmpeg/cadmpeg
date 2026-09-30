@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::feature_project::{
     project_delete_face, project_split, project_split_face, selected_work_planes,
 };
@@ -35,7 +37,7 @@ fn group(
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
             lost_edge_references: Vec::new(),

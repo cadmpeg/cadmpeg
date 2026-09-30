@@ -9,6 +9,8 @@
 //! through the `bounds` and `allowed` parameters rather than sharing one
 //! unified policy.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
@@ -607,7 +609,7 @@ pub(crate) fn is_guid_prefix(value: &str) -> bool {
 pub(crate) fn lp_utf16_bytes(value: &str) -> Result<Vec<u8>, CodecError> {
     let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let count = u32::try_from(units.len() / 2).map_err(|_| {
-        cadmpeg_core::decode::refuse_local_limit("f3d UTF-16 code-unit count", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(units.len() / 2))
+        cadmpeg_core::decode::refuse_local_limit("f3d UTF-16 code-unit count", u64::from(u32::MAX), u64_from_index(units.len() / 2))
     })?;
     let mut out = count.to_le_bytes().to_vec();
     out.extend(units);

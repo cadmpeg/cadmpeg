@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
 use super::references::DesignClassTag;
@@ -225,7 +227,7 @@ impl DesignDimensionLocusPair {
             return Err("opaque_index_offset disagrees with byte_offset".into());
         }
         for (ordinal, locus) in draft.loci.iter().enumerate() {
-            let offset = draft.byte_offset + prefix + cadmpeg_core::decode::u64_from_index(ordinal) * 15;
+            let offset = draft.byte_offset + prefix + u64_from_index(ordinal) * 15;
             let field = if ordinal == 0 { "first" } else { "second" };
             if locus.geometry_reference_offset != offset {
                 return Err(format!(
@@ -759,7 +761,7 @@ impl DesignDimensionAnnotationFrame {
             return Err("owner_reference_offset disagrees with frame layout".into());
         }
         for (ordinal, operand) in draft.operands.iter().enumerate() {
-            let start = draft.byte_offset + 24 + cadmpeg_core::decode::u64_from_index(ordinal) * 15;
+            let start = draft.byte_offset + 24 + u64_from_index(ordinal) * 15;
             if operand.geometry_reference_offset != start + 1 || operand.role_offset != start + 11 {
                 return Err(
                     "operands geometry_reference_offset or role_offset disagrees with frame layout"
@@ -840,12 +842,12 @@ impl DesignDimensionAnnotationFrame {
 
     /// Derived annotation byte offset.
     pub(crate) fn annotation_byte_offset(&self) -> u64 {
-        self.byte_offset + 24 + cadmpeg_core::decode::u64_from_index(self.operands.len()) * 15 + 57
+        self.byte_offset + 24 + u64_from_index(self.operands.len()) * 15 + 57
     }
 
     /// Derived governing owner reference offset.
     fn governing_owner_reference_offset(&self) -> u64 {
-        self.annotation_byte_offset() + cadmpeg_core::decode::u64_from_index(self.annotation_bytes.len()) + 1
+        self.annotation_byte_offset() + u64_from_index(self.annotation_bytes.len()) + 1
     }
 
     /// Derived paired byte offset.
@@ -880,8 +882,8 @@ impl DesignDimensionAnnotationFrame {
                 .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
                     geometry_record_index: operand.geometry_record_index,
                     role: operand.role,
-                    geometry_reference_offset: self.byte_offset + 25 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                    role_offset: self.byte_offset + 35 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                    geometry_reference_offset: self.byte_offset + 25 + u64_from_index(ordinal) * 15,
+                    role_offset: self.byte_offset + 35 + u64_from_index(ordinal) * 15,
                 })
                 .collect(),
             entity_genesis: self.entity_genesis,
@@ -895,7 +897,7 @@ impl DesignDimensionAnnotationFrame {
                 .enumerate()
                 .map(|(ordinal, value)| Located {
                     value,
-                    offset: governing_owner_reference_offset + 15 + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
+                    offset: governing_owner_reference_offset + 15 + u64_from_index(ordinal) * 11,
                 })
                 .collect(),
             paired_class_tag: self.paired_class_tag,
@@ -965,9 +967,9 @@ impl Serialize for AnnotationOperands<'_> {
                 .enumerate()
                 .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
                     geometry_record_index: operand.geometry_record_index,
-                    geometry_reference_offset: self.0.byte_offset + 25 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                    geometry_reference_offset: self.0.byte_offset + 25 + u64_from_index(ordinal) * 15,
                     role: operand.role,
-                    role_offset: self.0.byte_offset + 35 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                    role_offset: self.0.byte_offset + 35 + u64_from_index(ordinal) * 15,
                 }),
         )
     }
@@ -983,7 +985,7 @@ impl Serialize for AnnotationReturnOffsets<'_> {
                 .return_members
                 .iter()
                 .enumerate()
-                .map(|(ordinal, _)| start + cadmpeg_core::decode::u64_from_index(ordinal) * 11),
+                .map(|(ordinal, _)| start + u64_from_index(ordinal) * 11),
         )
     }
 }

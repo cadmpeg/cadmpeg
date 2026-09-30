@@ -120,6 +120,8 @@ pub(crate) fn build_inspection_summary(
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     use super::{build_decode_report, classify_document, ReportScope};
@@ -238,7 +240,7 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = crate::container::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items = scan.entries.len() as u64;
+        limited_policy.limits.max_collection_items = u64_from_index(scan.entries.len());
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let error = crate::container::summarize(
             &limited,

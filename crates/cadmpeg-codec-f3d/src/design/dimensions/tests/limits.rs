@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
     container_only_dimension_companions, project_dimension_constraints,
@@ -1810,7 +1812,7 @@ fn counted_offset_source_id_refuses_retained_limit() {
     assert_counted_offset_refusal(
         "f3d counted offset source id",
         ResourceDimension::RetainedBytes,
-        "synthetic:test:id#offset-source".len() as u64 - 1,
+        u64_from_index("synthetic:test:id#offset-source".len()) - 1,
     );
 }
 
@@ -1819,7 +1821,7 @@ fn counted_offset_result_id_refuses_retained_limit() {
     assert_counted_offset_refusal(
         "f3d counted offset result id",
         ResourceDimension::RetainedBytes,
-        ("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len()) as u64
+        u64_from_index("synthetic:test:id#offset-source".len() + "synthetic:test:id#offset-result".len())
             - 1,
     );
 }

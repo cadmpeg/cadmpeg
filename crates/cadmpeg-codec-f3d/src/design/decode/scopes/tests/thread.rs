@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::thread::ThreadPrefix;
 use crate::design::decode::scopes::thread::{exact_thread_construction, parse_thread_payload};
@@ -429,7 +431,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     let mut referenced_expected = expected.clone();
     referenced_expected.form = DesignThreadForm::Compact(Some(crate::records::identity::Located {
         value: std::num::NonZeroU32::new(2075).expect("reference"),
-        offset: (after_profile + 39) as u64,
+        offset: u64_from_index(after_profile + 39),
     }));
     assert_thread_construction(
         parse_thread_payload(

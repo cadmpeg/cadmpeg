@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::scopes::combine::{
     exact_combine_operation, take_external_reference_identity,
 };
@@ -40,7 +42,7 @@ fn external_reference_text_fields_refuse_retained_limits() {
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = limit as u64;
+        policy.limits.max_retained_bytes = u64_from_index(limit);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = take_external_reference_identity(&ctx, &bytes, &mut 0);
         assert!(
@@ -51,7 +53,7 @@ fn external_reference_text_fields_refuse_retained_limits() {
     }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = total as u64;
+    policy.limits.max_retained_bytes = u64_from_index(total);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut cursor = 0;
     let identity = take_external_reference_identity(&ctx, &bytes, &mut cursor)
@@ -208,7 +210,7 @@ fn combine_tools_refuse_collection_limit() {
     bytes.push(1);
     bytes.extend_from_slice(&[0; 7]);
     bytes.resize(64, 0);
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -320,7 +322,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     bytes.push(1);
     bytes.extend_from_slice(&[0; 7]);
     bytes.resize(64, 0);
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());

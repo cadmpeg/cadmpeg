@@ -529,28 +529,30 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     ));
     let synthesized = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
 
+    let replay_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
+                matches!(
+                    path,
+                    cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                )
+            };
+    let synthesize_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
+                matches!(
+                    path,
+                    cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+                )
+            };
     for (label, result, fidelity, path_matches) in [
         (
             "replay",
             &replayed,
             true,
-            (|path| {
-                matches!(
-                    path,
-                    cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-                )
-            }) as fn(&cadmpeg_ir::report::export::WritePath) -> bool,
+            replay_matches,
         ),
         (
             "synthesize",
             &synthesized,
             false,
-            (|path| {
-                matches!(
-                    path,
-                    cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-                )
-            }) as fn(&cadmpeg_ir::report::export::WritePath) -> bool,
+            synthesize_matches,
         ),
     ] {
         let plan = plan(result, fidelity, TargetRequest::Inherit)

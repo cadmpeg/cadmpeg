@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact point-data levels and work-point constructions.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;
@@ -85,7 +87,7 @@ fn point_data_level(
             return None;
         }
         if let Err(error) = ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(arity),
+            u64_from_index(arity),
             "f3d point-data inputs",
         ) {
             return Some(Err(error));

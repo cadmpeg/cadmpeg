@@ -86,8 +86,9 @@ fn mesh_error(
     max_items: u64,
     max_retained_bytes: u64,
 ) -> cadmpeg_core::CodecError {
+    let feature: Option<fn() -> crate::records::mesh::DesignMeshFeature> = feature.then_some(mesh_feature);
     mesh_error_with_feature(
-        feature.then_some(mesh_feature as fn() -> _),
+        feature,
         asset,
         tessellation,
         max_items,

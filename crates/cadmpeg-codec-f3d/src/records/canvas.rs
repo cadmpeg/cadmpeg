@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::references::DesignClassTag;
 use cadmpeg_ir::features::{FeatureUnitPlaneFrame, FinitePoint3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -264,7 +266,7 @@ impl DesignCanvasGeometry {
         self.record_index
     }
     fn frame_length(&self) -> u64 {
-        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * cadmpeg_core::decode::u64_from_index(self.label.encode_utf16().count())
+        CANVAS_GEOMETRY_PREFIX_BYTES + 2 * u64_from_index(self.label.encode_utf16().count())
     }
     fn paired_byte_offset(&self) -> u64 {
         self.byte_offset + self.frame_length()
@@ -323,7 +325,7 @@ impl DesignCanvasAsset {
         })
     }
     fn frame_length(&self) -> u64 {
-        CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * cadmpeg_core::decode::u64_from_index(self.name.encode_utf16().count())
+        CANVAS_IMAGE_ASSET_PREFIX_BYTES + 2 * u64_from_index(self.name.encode_utf16().count())
     }
 }
 

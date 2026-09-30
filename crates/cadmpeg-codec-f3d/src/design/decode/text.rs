@@ -337,10 +337,8 @@ mod tests {
             let mut bytes = u32::try_from(field.len()).unwrap().to_le_bytes().to_vec();
             bytes.extend_from_slice(field);
             for bounds in [0..=2000, 3..=3] {
-                for allowed in [
-                    u8::is_ascii_graphic as fn(&u8) -> bool,
-                    u8::is_ascii_digit as fn(&u8) -> bool,
-                ] {
+                let predicates: [fn(&u8) -> bool; 2] = [u8::is_ascii_graphic, u8::is_ascii_digit];
+                for allowed in predicates {
                     let original =
                         crate::bytes::lp_ascii_filtered(&bytes, 0, bounds.clone(), allowed);
                     let borrowed = lp_ascii_filtered_view(&bytes, 0, bounds.clone(), allowed)

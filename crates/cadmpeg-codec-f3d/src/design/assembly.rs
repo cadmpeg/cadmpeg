@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact Design assembly alignments into neutral joints.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -88,12 +90,12 @@ impl AssemblyScopeGeneration {
             744 => ((class_tag == "430" && paired_class_tag == "262").then_some(Compact), Some((8, 4, 8)), Some([362, 373])),
             748 => ((class_tag == "430" && paired_class_tag == "262").then_some(Standard), Some((8, 4, 8)), Some([366, 377])),
             772 => (Some(Axial), Some((10, 8, 10)), None),
-            length if length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
+            length if length == u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN) => (
                 (class_tag == "388" && paired_class_tag == "266").then_some(LegacyClass388), Some((28, 4, 8)), Some([
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES,
                     crate::layout::assembly_class_388_266_scope_968::OPERAND_PATH_LOCATOR_REFERENCES + 11,
                 ])),
-            length if length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
+            length if length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) => (
                 (class_tag == "383" && paired_class_tag == "258").then_some(Standard), Some((20, 8, 12)), None),
             _ => (None, None, None),
         };
@@ -144,7 +146,7 @@ pub(super) fn legacy_class_383_258_scope(
     class_tag: &str,
     paired_class_tag: &str,
 ) -> bool {
-    frame_length == cadmpeg_core::decode::u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN)
+    frame_length == u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN)
         && class_tag == "383"
         && paired_class_tag == "258"
 }
@@ -652,6 +654,8 @@ fn unique_feature<'a>(features: &'a [Feature], native_ref: &str) -> Option<&'a F
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use crate::records::feature::assembly::{
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
     };
@@ -1321,12 +1325,12 @@ mod tests {
     fn alignment_lane_bounds_require_the_exact_frame_and_owner_count() {
         for (frame_length, owner_count, expected) in [
             (
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 28,
                 (4, 8),
             ),
             (
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 20,
                 (8, 12),
             ),
@@ -1359,7 +1363,7 @@ mod tests {
             for owner_count in [12, 14, 16, 20, 22, 36, 38, 44, 60] {
                 assert_eq!(
                     super::AssemblyScopeGeneration::new(
-                        800 + owner_count as u64,
+                        800 + u64_from_index(owner_count),
                         class_tag,
                         paired_class_tag
                     )
@@ -1370,7 +1374,7 @@ mod tests {
             for owner_count in [0, 10, 13, 15] {
                 assert_eq!(
                     super::AssemblyScopeGeneration::new(
-                        800 + owner_count as u64,
+                        800 + u64_from_index(owner_count),
                         class_tag,
                         paired_class_tag
                     )
@@ -1387,7 +1391,7 @@ mod tests {
 
     #[test]
     fn operand_path_locator_offsets_follow_the_frame_layout() {
-        let class_388_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+        let class_388_length = u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN);
         assert_eq!(
             super::AssemblyScopeGeneration::new(class_388_length, "388", "266")
                 .operand_path_locator_offsets(),
@@ -1436,7 +1440,7 @@ mod tests {
     fn operand_frames_are_scoped_by_class_pair() {
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 "388",
                 "266"
             )
@@ -1445,7 +1449,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_388_266_scope_968::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN),
                 "388",
                 "258"
             )
@@ -1454,7 +1458,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 "383",
                 "258"
             )
@@ -1463,7 +1467,7 @@ mod tests {
         );
         assert_eq!(
             super::AssemblyScopeGeneration::new(
-                crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+                u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
                 "383",
                 "261"
             )
@@ -1471,12 +1475,12 @@ mod tests {
             None
         );
         assert!(super::legacy_class_383_258_scope(
-            crate::layout::assembly_class_383_258_scope_1011::LEN as u64,
+            u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN),
             "383",
             "258"
         ));
         assert!(!super::legacy_class_383_258_scope(
-            crate::layout::assembly_class_383_258_scope_1011::LEN as u64 - 1,
+            u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN) - 1,
             "383",
             "258"
         ));

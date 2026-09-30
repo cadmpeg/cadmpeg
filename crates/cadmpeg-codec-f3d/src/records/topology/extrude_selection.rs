@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude selection groups, operand and face roles, and group members.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;
 use crate::records::identity::Located;
@@ -211,7 +213,7 @@ impl DesignExtrudeSelectionGroup {
             .member_offsets
             .iter()
             .enumerate()
-            .all(|(index, offset)| *offset == offsets[0] + 5 + cadmpeg_core::decode::u64_from_index(index) * 11)
+            .all(|(index, offset)| *offset == offsets[0] + 5 + u64_from_index(index) * 11)
         {
             return Err(
                 "member_offsets must start after member_count_offset and have stride 11".into(),
@@ -353,7 +355,7 @@ impl DesignExtrudeSelectionGroup {
         let offsets = Self::offsets(self.byte_offset, members.len())?;
         let mut wire = DesignExtrudeSelectionGroupWire::from(self.clone());
         wire.member_offsets = (0..members.len())
-            .map(|index| offsets[0] + 5 + cadmpeg_core::decode::u64_from_index(index) * 11)
+            .map(|index| offsets[0] + 5 + u64_from_index(index) * 11)
             .collect();
         wire.members = members;
         [

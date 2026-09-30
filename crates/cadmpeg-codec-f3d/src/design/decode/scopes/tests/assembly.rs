@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::records::feature::assembly::DesignAssemblyAlignment;
@@ -112,10 +114,10 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
         bytes.extend_from_slice(b"329");
         bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);
-        bytes.extend_from_slice(&(guids.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(guids.len()).expect("fixture value fits u32")).to_le_bytes());
         for guid in guids {
             let encoded = guid.encode_utf16().collect::<Vec<_>>();
-            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
             bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
         }
     };
@@ -125,16 +127,16 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             bytes.extend_from_slice(b"390");
             bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
             bytes.extend_from_slice(&[0; 6]);
-            bytes.extend_from_slice(&(path.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(&(u32::try_from(path.len()).expect("fixture value fits u32")).to_le_bytes());
             for guid in path.iter().chain(&identities[..2]) {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u64.to_le_bytes());
             for guid in &identities[2..] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -410,13 +412,13 @@ fn assembly_operand_paths_follow_ordered_locator_envelopes() {
             bytes.extend_from_slice(&[1, 0, 0, 0]);
             for guid in [occurrence, identities[0], identities[1]] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u64.to_le_bytes());
             for guid in &identities[2..] {
                 let encoded = guid.encode_utf16().collect::<Vec<_>>();
-                bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+                bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
                 bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
             }
             bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -559,7 +561,7 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
     scope.class_tag = DesignClassTag::try_from("383".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = crate::layout::assembly_class_383_258_scope_1011::LEN as u64;
+            draft.frame_length = u64_from_index(crate::layout::assembly_class_383_258_scope_1011::LEN);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_tail();
         })
@@ -585,12 +587,12 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                     "f3d:Design/BulkStream.dat:design-parameter-owner#{}",
                     100 + ordinal
                 ),
-                byte_offset: (2_000 + ordinal as u64) - 40,
+                byte_offset: (2_000 + u64_from_index(ordinal)) - 40,
                 frame_length: 103,
                 class_tag: DesignClassTag::try_from("284".to_owned()).unwrap(),
-                record_index: 100 + ordinal as u32,
+                record_index: 100 + u32::try_from(ordinal).expect("fixture value fits u32"),
                 scope_record_index,
-                local_ordinal: ordinal as u32,
+                local_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 evaluated_value: match ordinal {
                     8 => 0.25,
                     9 => 1.0,
@@ -598,11 +600,11 @@ fn legacy_class_383_258_assembly_uses_its_interleaved_operand_grammar() {
                     11 => 3.0,
                     _ => 0.0,
                 },
-                evaluated_value_offset: 2_000 + ordinal as u64,
-                parameter_record_index: 100 + ordinal as u32 + 1,
-                owned_ordinal: ordinal as u32,
+                evaluated_value_offset: 2_000 + u64_from_index(ordinal),
+                parameter_record_index: 100 + u32::try_from(ordinal).expect("fixture value fits u32") + 1,
+                owned_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 variant: None,
-                companion_record_index: 100 + ordinal as u32 + 2,
+                companion_record_index: 100 + u32::try_from(ordinal).expect("fixture value fits u32") + 2,
             })
             .unwrap()
         })
@@ -709,7 +711,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     scope.paired_class_tag = DesignClassTag::try_from("266".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = crate::layout::assembly_class_388_266_scope_968::LEN as u64;
+            draft.frame_length = u64_from_index(crate::layout::assembly_class_388_266_scope_968::LEN);
             draft.paired_byte_offset = draft.frame_length;
             draft.layout_fixture_tail();
         })
@@ -851,7 +853,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
 
     let write_guid = |bytes: &mut [u8], at: usize, guid: &str| {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
         for (ordinal, code_unit) in encoded.into_iter().enumerate() {
             bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2]
                 .copy_from_slice(&code_unit.to_le_bytes());
@@ -908,7 +910,7 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
             wrapper[4..7].copy_from_slice(b"369");
             wrapper[7..11].copy_from_slice(&wrapper_record_index.to_le_bytes());
             wrapper[21] = 1;
-            wrapper[22..26].copy_from_slice(&(path_record_indices.len() as u32).to_le_bytes());
+            wrapper[22..26].copy_from_slice(&(u32::try_from(path_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
             for (ordinal, path_record_index) in path_record_indices.iter().copied().enumerate() {
                 write_reference(&mut wrapper, 26 + ordinal * 11, path_record_index);
             }
@@ -954,13 +956,13 @@ fn legacy_class_388_266_assembly_uses_its_interleaved_owner_grammar() {
     .expect("legacy class-388 occurrence paths");
     assert_eq!(paths[0].link().locator_record_index, 5_001);
     assert_eq!(paths[0].link().locator_class_tag.as_str(), "451");
-    assert_eq!(paths[0].link().locator_byte_offset, first_locator_at as u64);
+    assert_eq!(paths[0].link().locator_byte_offset, u64_from_index(first_locator_at));
     assert_eq!(paths[0].link().wrapper_record_index, 5_004);
     assert_eq!(paths[0].link().wrapper_class_tag.as_str(), "369");
-    assert_eq!(paths[0].link().wrapper_byte_offset, first_wrapper_at as u64);
+    assert_eq!(paths[0].link().wrapper_byte_offset, u64_from_index(first_wrapper_at));
     assert_eq!(paths[0].record_index, 5_003);
     assert_eq!(paths[0].class_tag().as_str(), "412");
-    assert_eq!(paths[0].byte_offset(), (first_path_at + 425) as u64);
+    assert_eq!(paths[0].byte_offset(), u64_from_index(first_path_at + 425));
     assert_eq!(
         paths[0]
             .occurrence_guids()
@@ -1544,7 +1546,7 @@ fn write_legacy_class_383_reference(bytes: &mut [u8], at: usize, record_index: u
 
 fn write_legacy_class_383_guid(bytes: &mut [u8], at: usize, guid: &str) {
     let encoded = guid.encode_utf16().collect::<Vec<_>>();
-    bytes[at..at + 4].copy_from_slice(&(encoded.len() as u32).to_le_bytes());
+    bytes[at..at + 4].copy_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
     for (ordinal, code_unit) in encoded.into_iter().enumerate() {
         bytes[at + 4 + ordinal * 2..at + 6 + ordinal * 2].copy_from_slice(&code_unit.to_le_bytes());
     }
@@ -1624,13 +1626,13 @@ fn append_as_built_path_envelope(
     ];
     for guid in &identities[..3] {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
         bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     }
     bytes.extend_from_slice(&2_u64.to_le_bytes());
     for guid in &identities[3..] {
         let encoded = guid.encode_utf16().collect::<Vec<_>>();
-        bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(encoded.len()).expect("fixture value fits u32")).to_le_bytes());
         bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
     }
     bytes.extend_from_slice(&2_u32.to_le_bytes());
@@ -1649,7 +1651,7 @@ fn append_as_built_path_envelope(
 }
 
 fn append_axial_test_utf16(bytes: &mut Vec<u8>, value: &str) {
-    bytes.extend_from_slice(&(value.encode_utf16().count() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(value.encode_utf16().count()).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend(value.encode_utf16().flat_map(u16::to_le_bytes));
 }
 

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact mirror scopes and mirror construction binding.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
@@ -385,7 +387,7 @@ pub(crate) fn bind_mirror_constructions(
             _ => None,
         };
         ctx.charge_work(
-            cadmpeg_core::decode::u64_from_index(owners.len())
+            u64_from_index(owners.len())
                 .checked_mul(2)
                 .ok_or_else(|| ctx.refuse_codec_limit("f3d Mirror owner search work", 0, 1))?,
             "f3d Mirror owner search",

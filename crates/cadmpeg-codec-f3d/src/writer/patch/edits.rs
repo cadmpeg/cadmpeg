@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edit validators that diff the target against the baseline and build edit sets.
 
+use cadmpeg_core::decode::{index_from_u32};
+
 use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -200,7 +202,7 @@ pub(super) fn validate_edge_continuity_edits(
             )));
         }
         edits.insert(
-            cadmpeg_core::decode::index_from_u32(after.record_index),
+            index_from_u32(after.record_index),
             (after.sense, after.continuity.clone()),
         );
     }
@@ -271,7 +273,7 @@ pub(super) fn validate_edge_ownership_edits(
         } else {
             -1
         };
-        edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), owner);
+        edits.insert(index_from_u32(after.record_index), owner);
     }
     Ok(edits)
 }
@@ -346,7 +348,7 @@ pub(super) fn validate_vertex_ownership_edits(
                 ))
             })?;
         edits.insert(
-            cadmpeg_core::decode::index_from_u32(after.record_index),
+            index_from_u32(after.record_index),
             (edge_record, after.endpoint_index),
         );
     }
@@ -390,7 +392,7 @@ pub(super) fn validate_face_sidedness_edits(
         }
         match (before.containment, after.containment) {
             (Some(_), Some(containment)) => {
-                edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), containment);
+                edits.insert(index_from_u32(after.record_index), containment);
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -531,7 +533,7 @@ pub(super) fn validate_tolerant_vertex_edits(
                 tolerance / LEN_TO_MM
             };
             edits.insert(
-                cadmpeg_core::decode::index_from_u32(after.record_index),
+                index_from_u32(after.record_index),
                 (
                     stored,
                     after
@@ -607,7 +609,7 @@ pub(super) fn validate_tolerant_edge_edits(
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), tolerance.get() / LEN_TO_MM);
+            edits.insert(index_from_u32(after.record_index), tolerance.get() / LEN_TO_MM);
         }
     }
     Ok(edits)
@@ -673,7 +675,7 @@ pub(super) fn validate_tolerant_coedge_edits(
             )));
         }
         if after.parameter_range != before.parameter_range {
-            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), after.parameter_range.get());
+            edits.insert(index_from_u32(after.record_index), after.parameter_range.get());
         }
     }
     Ok(edits)
@@ -712,7 +714,7 @@ pub(super) fn validate_wire_topology_edits(
             )));
         }
         if after.side != before.side {
-            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), after.side);
+            edits.insert(index_from_u32(after.record_index), after.side);
         }
     }
     Ok(edits)
@@ -1906,7 +1908,7 @@ pub(super) fn validate_transform_hint_edits(
         }
         let flags = [after.rotation, after.reflection, after.shear];
         if flags != [before.rotation, before.reflection, before.shear] {
-            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), flags);
+            edits.insert(index_from_u32(after.record_index), flags);
         }
     }
     Ok(edits)
@@ -1953,7 +1955,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
                     CodecError::NotImplemented(format!("F3D ASM body key exceeds i64::MAX: {key}"))
                 })
             })?;
-            edits.asm.insert(cadmpeg_core::decode::index_from_u32(after.record_index), key);
+            edits.asm.insert(index_from_u32(after.record_index), key);
             let mut joined = Vec::new();
             joined.extend(
                 baseline_body_visibilities

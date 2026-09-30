@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse the legacy class-415 Extrude grammar variants.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::bytes::f64s_at;
 use crate::layout::legacy_class_415_one_sided_distance_extrude_prefix as distance;
 use crate::layout::legacy_class_415_one_sided_to_face_extrude_prefix as to_face;
@@ -25,7 +27,7 @@ pub(crate) fn is_symmetric_distance_layout(
 ) -> bool {
     class_tag == "415"
         && paired_class_tag == "265"
-        && reference_count_delta == cadmpeg_core::decode::u64_from_index(symmetric::REFERENCE_COUNT)
+        && reference_count_delta == u64_from_index(symmetric::REFERENCE_COUNT)
         && matches!((frame_length, reference_member_count), (447, 5) | (469, 7))
 }
 
@@ -94,7 +96,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::ToFace => (
             481,
             to_face::REFERENCE_COUNT,
-            cadmpeg_core::decode::index_from_u32(to_face::REFERENCE_COUNT_VALUE),
+            index_from_u32(to_face::REFERENCE_COUNT_VALUE),
             to_face::FIRST_SIDE_EXTENT,
             to_face::FIRST_SIDE_EXTENT_VALUE,
             to_face::FACE_EXTEND_VALUE,
@@ -103,7 +105,7 @@ pub(super) fn exact_one_sided_extrude_prologue(
         OneSidedVariant::Distance => (
             449,
             distance::REFERENCE_COUNT,
-            cadmpeg_core::decode::index_from_u32(distance::REFERENCE_COUNT_VALUE),
+            index_from_u32(distance::REFERENCE_COUNT_VALUE),
             distance::FIRST_SIDE_EXTENT,
             distance::FIRST_SIDE_EXTENT_VALUE,
             distance::FACE_EXTEND_VALUE,

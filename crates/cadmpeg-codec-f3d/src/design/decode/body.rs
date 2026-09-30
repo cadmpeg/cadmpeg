@@ -340,7 +340,7 @@ pub(super) fn decode_stream(
                                 value,
                                 "f3d construction recipe design ID",
                             )?,
-                            offset: cadmpeg_core::decode::u64_from_index(design_id_at),
+                            offset: u64_from_index(design_id_at),
                         },
                         selector,
                     })
@@ -1263,15 +1263,15 @@ pub(crate) fn decode_design_body_bindings(
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
-                        asm_body_key_offset: cadmpeg_core::decode::u64_from_index(binding.asm_key_offset),
+                        asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
-                        entity_suffix_offset: cadmpeg_core::decode::u64_from_index(binding.entity_suffix_offset()),
+                        entity_suffix_offset: u64_from_index(binding.entity_suffix_offset()),
                         blob_name: copy_body_map_name(
                             ctx,
                             &record.blob_name,
                             "f3d body-binding blob name",
                         )?,
-                        blob_name_offset: cadmpeg_core::decode::u64_from_index(record.blob_name_offset),
+                        blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body
                             .map(|id| crate::brep::copy_body_id(ctx, id))
                             .transpose()?,
@@ -1386,7 +1386,7 @@ pub(crate) fn decode_all_body_visibility(
                     DecodedBodyVisibility {
                         stream,
                         byte_offset: node.byte_offset,
-                        asm_body_key_offset: cadmpeg_core::decode::u64_from_index(binding.asm_key_offset),
+                        asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
                         visible: !node.hidden,
                     },
@@ -1557,6 +1557,8 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use std::io::{Cursor, Write};
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -1677,7 +1679,7 @@ mod tests {
         let mut out = Vec::new();
         indexed_header(&mut out, *b"256", 900);
         out.extend(std::iter::repeat_n(0, prefix_len));
-        out.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(u32::try_from(pairs.len()).expect("fixture value fits u32")).to_le_bytes());
         for (key, suffix) in pairs {
             out.extend_from_slice(&key.to_le_bytes());
             out.extend_from_slice(&suffix.to_le_bytes());
@@ -1742,7 +1744,7 @@ mod tests {
             1 => {
                 out.push(1);
                 out.extend_from_slice(&target.to_le_bytes());
-                out.extend_from_slice(&(target_type.len() as u32).to_le_bytes());
+                out.extend_from_slice(&(u32::try_from(target_type.len()).expect("fixture value fits u32")).to_le_bytes());
                 out.extend_from_slice(target_type.as_bytes());
                 out.extend_from_slice(&[0, 0]);
             }
@@ -2185,7 +2187,7 @@ mod tests {
                     &[100],
                 ),
             ],
-            &[(900, 0), (100, browser_offset as u64)],
+            &[(900, 0), (100, u64_from_index(browser_offset))],
         );
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
@@ -2235,11 +2237,11 @@ mod tests {
                 source_brep: Some("BREP.synthetic.smbh".into()),
                 asm_body_key: Some(7),
             };
-            let blob_len = "BREP.synthetic.smbh".len() as u64;
+            let blob_len = u64_from_index("BREP.synthetic.smbh".len());
             let stream_name = format!("{PREFIX}BulkStream.dat");
-            let scope_len = crate::ids::native_scope(&stream_name).len() as u64;
+            let scope_len = u64_from_index(crate::ids::native_scope(&stream_name).len());
             let suffix_len =
-                format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len() as u64;
+                u64_from_index(format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len());
             {
                 let (items, operation) = (46, "f3d body visibility entries");
                 let arena = DecodeArena::new();
@@ -2326,11 +2328,11 @@ mod tests {
                 (blob_len + scope_len, "f3d body record identifier"),
                 (blob_len + scope_len + suffix_len, "f3d body-binding stream"),
                 (
-                    blob_len + scope_len + suffix_len + stream_name.len() as u64,
+                    blob_len + scope_len + suffix_len + u64_from_index(stream_name.len()),
                     "f3d body-binding blob name",
                 ),
                 (
-                    blob_len * 2 + scope_len + suffix_len + stream_name.len() as u64,
+                    blob_len * 2 + scope_len + suffix_len + u64_from_index(stream_name.len()),
                     "copy F3D BREP body ID",
                 ),
             ] {
@@ -2386,7 +2388,7 @@ mod tests {
         indexed_header(out, *b"257", record_index);
         out.extend_from_slice(&[0; 10]);
         out.extend(lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32"));
-        let hidden_offset = out.len() as u64;
+        let hidden_offset = u64_from_index(out.len());
         out.push(u8::from(hidden));
         out.extend_from_slice(&[1, 1]);
         out.extend_from_slice(&entity.to_le_bytes());
@@ -2646,7 +2648,7 @@ mod tests {
             })
             .unwrap()
         };
-        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
+        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
         for (items, retained, dimension, operation) in [
             (
                 0,
@@ -2729,8 +2731,8 @@ mod tests {
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
-        let scope_len = crate::ids::native_scope(ENTRY).len() as u64;
-        let suffix_len = ":design-body-bounds#0".len() as u64;
+        let scope_len = u64_from_index(crate::ids::native_scope(ENTRY).len());
+        let suffix_len = u64_from_index(":design-body-bounds#0".len());
         with_scan(&archive, |scan| {
             for (items, retained, dimension, operation) in [
                 (
@@ -2806,8 +2808,8 @@ mod tests {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&16u32.to_le_bytes());
         bytes.extend_from_slice(b"body_recipe_data");
-        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
-        let suffix_len = ":construction-recipe#4".len() as u64;
+        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
+        let suffix_len = u64_from_index(":construction-recipe#4".len());
         for (items, retained, dimension, operation) in [
             (
                 0,

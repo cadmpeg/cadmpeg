@@ -27,7 +27,7 @@ fn rgb_attribute_chain_decodes_body_color() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
@@ -59,7 +59,7 @@ fn truecolor_attribute_chain_decodes_by_color_as_opaque_rgb() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
@@ -90,7 +90,7 @@ fn bt_text_color_attribute_chain_decodes_rgb() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(
@@ -122,7 +122,7 @@ fn bt_text_color_rejects_non_decimal_and_overwide_values() {
             cadmpeg_asm::kernel_header::RefWidth::Eight,
         )
         .unwrap();
-        let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+        let by_index: HashMap<i64, _> = records.iter().map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r)).collect();
         assert!(
             cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).is_none()
         );
@@ -159,7 +159,7 @@ fn invalid_color_attribute_does_not_hide_later_chain_color() {
         cadmpeg_asm::kernel_header::RefWidth::Eight,
     )
     .unwrap();
-    let by_index: HashMap<i64, _> = records.iter().map(|r| (r.index as i64, r)).collect();
+    let by_index: HashMap<i64, _> = records.iter().map(|r| (i64::try_from(r.index).expect("fixture value fits i64"), r)).collect();
     let color =
         cadmpeg_asm::brep::attributes::attribute_chain_color(&records[0], &by_index).unwrap();
     assert_eq!(

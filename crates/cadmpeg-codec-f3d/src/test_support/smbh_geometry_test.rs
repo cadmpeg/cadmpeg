@@ -159,9 +159,9 @@ pub(crate) fn synthetic_geometry_smbh() -> Vec<u8> {
 }
 
 pub(crate) fn replace_generated_record_head(bytes: &mut Vec<u8>, from: &str, to: &str) {
-    let mut needle = vec![0x0d, from.len() as u8];
+    let mut needle = vec![0x0d, u8::try_from(from.len()).expect("fixture value fits u8")];
     needle.extend_from_slice(from.as_bytes());
-    let mut replacement = vec![0x0d, to.len() as u8];
+    let mut replacement = vec![0x0d, u8::try_from(to.len()).expect("fixture value fits u8")];
     replacement.extend_from_slice(to.as_bytes());
     let offsets = bytes
         .windows(needle.len())
@@ -501,7 +501,7 @@ fn synthetic_geometry_with_attribute_at(owner_record_index: usize) -> Vec<u8> {
             t_long(&mut attribute, selector);
             push_u8_string(&mut attribute, token);
             t_long(&mut attribute, 0);
-            t_long(&mut attribute, references.len() as i64);
+            t_long(&mut attribute, i64::try_from(references.len()).expect("fixture value fits i64"));
             for reference in references {
                 t_long(&mut attribute, *reference);
             }

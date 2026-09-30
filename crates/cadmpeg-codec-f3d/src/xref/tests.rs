@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::collections::HashSet;
@@ -124,7 +126,7 @@ fn docstruct_type_refuses_retained_limit() {
 fn docstruct_subtype_refuses_retained_limit() {
     with_docstruct_scan(|arena, scan| {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = "assembly-design".len() as u64;
+        policy.limits.max_retained_bytes = u64_from_index("assembly-design".len());
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
             .unwrap()
             .0;
@@ -196,7 +198,7 @@ fn redirections_design_id_refuses_retained_limit() {
 fn redirections_reference_id_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2 * "f3d:xref:design#0".len() as u64;
+    policy.limits.max_retained_bytes = 2 * u64_from_index("f3d:xref:design#0".len());
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -275,7 +277,7 @@ fn xref_occurrence_native_reference_refuses_retained_limit() {
     .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = "part.f3d".len() as u64;
+    policy.limits.max_retained_bytes = u64_from_index("part.f3d".len());
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -616,13 +618,14 @@ fn redirections_keep_neutron_role_and_data_independent() {
 
 #[test]
 fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
-    for bytes in [
-        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":null}"# as &[u8],
+    let cases: [&[u8]; 5] = [
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":null}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{"unexpected":1}}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{}]}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[]}]}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"NUMBER"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
-    ] {
+    ];
+    for bytes in cases {
         assert!(super::parse(&cadmpeg_test_support::service_decode_context(), bytes).is_err(), "malformed table admitted: {bytes:?}");
     }
 }
@@ -930,9 +933,9 @@ fn occurrence_record_with_serializer_magic(
     bytes.extend_from_slice(&entity_id.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.push(1);
-    bytes.extend_from_slice(&(discriminators.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(discriminators.len()).expect("fixture value fits u32")).to_le_bytes());
     for (ordinal, discriminator) in discriminators.iter().enumerate() {
-        let target = 100 + ordinal as u64;
+        let target = 100 + u64_from_index(ordinal);
         if ordinal + 1 == discriminators.len() {
             bytes.extend(cross_document_reference(target, role));
         } else {
@@ -978,7 +981,7 @@ fn document_with_modern_placement(role: &str, matrix: [[f64; 4]; 4]) -> Vec<u8> 
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
+    zip.write_all(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes())
         .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
@@ -1442,7 +1445,7 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
+    zip.write_all(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes())
         .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
@@ -1503,7 +1506,7 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
+    zip.write_all(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes())
         .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
@@ -1562,7 +1565,7 @@ fn malformed_typed_role_placement_reports_a_loss() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
+    zip.write_all(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes())
         .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();

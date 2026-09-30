@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical face contexts: every binding stage is complete.
 
+use cadmpeg_core::decode::{index_from_u32};
+
 #[test]
 fn historical_loop_wire_preserves_each_complete_binding_stage() {
     for count in [0_u32, 1, 3] {
@@ -27,7 +29,7 @@ fn historical_loop_wire_preserves_each_complete_binding_stage() {
             }
             let context: super::DesignHistoricalFaceLoopContext =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(context.boundary.coedges().count(), count as usize);
+            assert_eq!(context.boundary.coedges().count(), index_from_u32(count));
             assert_eq!(serde_json::to_value(&context).unwrap(), wire);
             for field in ["edge_slots", "vertex_slots", "point_slots", "positions"] {
                 let mut invalid = wire.clone();

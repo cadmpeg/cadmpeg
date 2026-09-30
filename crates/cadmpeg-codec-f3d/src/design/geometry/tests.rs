@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 mod cast_limits;
 
 use super::analytic_segment_intersections;
@@ -682,7 +684,7 @@ fn sketch_arrangement_faces_declines_when_session_work_budget_is_exhausted() {
     policy.limits.max_work_units = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)
         .expect("root context for session work budget");
-    let budget = ctx.work_budget(MAX_ARRANGEMENT_WALK_WORK as u64);
+    let budget = ctx.work_budget(u64_from_index(MAX_ARRANGEMENT_WALK_WORK));
 
     assert!(
         sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))

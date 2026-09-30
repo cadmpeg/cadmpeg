@@ -140,7 +140,7 @@ fn surface_stitch_fixture() -> StitchFixture {
                 context_id_offset: 0,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 0,
-                primary_identity: face_slot as u64,
+                primary_identity: u64::try_from(face_slot).expect("fixture reference is nonnegative"),
                 primary_identity_offset: 21,
                 secondary: None,
                 historical_edge_candidates: Vec::new(),

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::exact_work_point_construction as exact_work_point_construction_with_ctx;
 use super::POINT_DATA_TYPE_GUID;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
@@ -82,7 +84,7 @@ fn work_point_stream(
     bytes.extend_from_slice(&12u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 11]);
 
-    bytes.extend_from_slice(&(class_tag.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(class_tag.len()).expect("fixture value fits u32")).to_le_bytes());
     bytes.extend_from_slice(class_tag.as_bytes());
     bytes.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -170,7 +172,7 @@ fn work_point_reads_the_class_version_its_type_table_stores() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [4.0, 5.0, 6.0]
     );
-    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.position_offset, u64_from_index(position_at));
     // The stored version drives the read: a version that describes a
     // different member sequence does not yield this frame's coordinate.
     assert_ne!(
@@ -181,7 +183,7 @@ fn work_point_reads_the_class_version_its_type_table_stores() {
             &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 0))])
         )
         .map(|frame| frame.position_offset),
-        Some(position_at as u64)
+        Some(u64_from_index(position_at))
     );
     // An unregistered entity falls back to the agreement sweep.
     assert_eq!(
@@ -218,7 +220,7 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
             "class tag {class_tag}"
         );
         assert_eq!(
-            frame.position_offset, position_at as u64,
+            frame.position_offset, u64_from_index(position_at),
             "class tag {class_tag}"
         );
     }
@@ -240,7 +242,7 @@ fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.position_offset, u64_from_index(position_at));
     assert_eq!(work_point_input_indices(&frame.rule), [70]);
 }
 
@@ -263,7 +265,7 @@ fn work_point_position_reads_every_class_version_that_stores_one() {
             "class version {version}"
         );
         assert_eq!(
-            frame.position_offset, position_at as u64,
+            frame.position_offset, u64_from_index(position_at),
             "class version {version}"
         );
     }
@@ -480,7 +482,7 @@ fn work_point_direct_record_carries_model_space_position() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.position_offset, u64_from_index(position_at));
     assert_eq!(frame.rule.reference_type(), 7);
     assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
     bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
@@ -497,7 +499,7 @@ fn work_point_direct_record_carries_model_space_position() {
         frame.position.map(cadmpeg_ir::scalar::FiniteReal::get),
         [1.25, -2.5, 3.75]
     );
-    assert_eq!(frame.position_offset, position_at as u64);
+    assert_eq!(frame.position_offset, u64_from_index(position_at));
     assert_eq!(frame.rule.reference_type(), 1);
     assert_eq!(work_point_input_indices(&frame.rule), [56]);
 }

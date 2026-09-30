@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::operands::bind_extrude_selection_geometry;
 use crate::design::decode::operands::bind_extrude_selection_identities;
 use crate::design::decode::operands::bind_lost_edge_groups;
@@ -102,7 +104,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     assert_eq!(profile.scope_reference_ordinal, 4);
     assert_eq!(profile.entity_id.suffix(), 172);
     assert_eq!(profile.entity_id.as_str(), "0_172");
-    assert_eq!(profile.paired_byte_offset(), paired_at as u64);
+    assert_eq!(profile.paired_byte_offset(), u64_from_index(paired_at));
 
     bytes.truncate(paired_at - 94);
     bytes[4..7].copy_from_slice(b"319");
@@ -140,7 +142,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .unwrap()
     .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
-    assert_eq!(compact.paired_byte_offset(), compact_paired_at as u64);
+    assert_eq!(compact.paired_byte_offset(), u64_from_index(compact_paired_at));
 
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
@@ -171,7 +173,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .transpose()
     .unwrap()
     .expect("omitted-ordinal sketch-profile operand");
-    assert_eq!(omitted.paired_byte_offset(), omitted_paired_at as u64);
+    assert_eq!(omitted.paired_byte_offset(), u64_from_index(omitted_paired_at));
 }
 
 #[test]
@@ -266,7 +268,7 @@ fn generated_base_flange_profile_frame_resolves() {
         .expect("generated BaseFlange profile");
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#1501".into(),
-        byte_offset: profile_offset as u64,
+        byte_offset: u64_from_index(profile_offset),
         class_tag: crate::records::references::DesignClassTag::try_from("377".to_owned()).unwrap(),
         record_index: 1501,
     };
@@ -643,9 +645,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     );
     assert_eq!(
         operand.clone().into_draft().identity_record_offset,
-        identity_at as u64
+        u64_from_index(identity_at)
     );
-    assert_eq!(operand.next_byte_offset(), next_at as u64);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
 
     let mut compact = bytes[..identity_at].to_vec();
     indexed_header(&mut compact, *b"429", 103);
@@ -665,10 +667,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     );
     assert_eq!(
         compact_operand.clone().into_draft().identity_record_offset,
-        identity_at as u64
+        u64_from_index(identity_at)
     );
     assert_eq!(compact_operand.next_record_index(), 109);
-    assert_eq!(compact_operand.next_byte_offset(), compact_next_at as u64);
+    assert_eq!(compact_operand.next_byte_offset(), u64_from_index(compact_next_at));
 
     let mut curve_identity = bytes[..identity_at].to_vec();
     indexed_header(&mut curve_identity, *b"429", 103);
@@ -700,9 +702,9 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             .secondary()
             .and_then(|secondary| secondary.curve_identity)
             .map(|identity| identity.offset),
-        Some(identity_at as u64 + 21)
+        Some(u64_from_index(identity_at) + 21)
     );
-    assert_eq!(curve_operand.next_byte_offset(), curve_next_at as u64);
+    assert_eq!(curve_operand.next_byte_offset(), u64_from_index(curve_next_at));
 
     let mut class_338_curve_identity = bytes[..identity_at].to_vec();
     class_338_curve_identity[4..7].copy_from_slice(b"338");
@@ -745,17 +747,17 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     );
     assert_eq!(
         class_338_operand.primary_identity_offset(),
-        identity_at as u64 + 33
+        u64_from_index(identity_at) + 33
     );
     assert_eq!(
         class_338_operand
             .secondary()
             .map(|secondary| secondary.identity.offset),
-        Some(identity_at as u64 + 41)
+        Some(u64_from_index(identity_at) + 41)
     );
     assert_eq!(
         class_338_operand.next_byte_offset(),
-        class_338_next_at as u64
+        u64_from_index(class_338_next_at)
     );
 
     let mut invalid_class_338 = class_338_curve_identity.clone();
@@ -900,7 +902,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     assert_eq!(group.opaque_index.get(), 180);
     assert_eq!(group.opaque_scalar().get(), 0.25);
     assert!(group.variant);
-    assert_eq!(group.paired_byte_offset(), paired_at as u64);
+    assert_eq!(group.paired_byte_offset(), u64_from_index(paired_at));
 
     let member_record = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:record#200".into(),
@@ -1581,7 +1583,7 @@ fn sketch_profile_region_selection_preserves_region_and_curve_order() {
         .unwrap()
         .expect("profile-region selection");
     assert_eq!(selection.record_index, 103);
-    assert_eq!(selection.byte_offset, selection_at as u64);
+    assert_eq!(selection.byte_offset, u64_from_index(selection_at));
     assert_eq!(selection.class_tag.as_str(), "327");
     assert_eq!(selection.companion_class_tag.as_str(), "261");
     assert_eq!(

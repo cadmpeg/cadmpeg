@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact coil placements, discriminators and coil extents.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
@@ -620,19 +622,19 @@ pub(super) fn exact_coil_discriminators(
     };
     Some(CoilDiscriminators {
         operation,
-        operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
+        operation_offset: u64_from_index(operation_offset),
         extent: Some(crate::records::identity::MaybeRecordedValue::Located(
             crate::records::identity::RecordedValue {
                 value: extent,
-                offset: cadmpeg_core::decode::u64_from_index(extent_offset),
+                offset: u64_from_index(extent_offset),
             },
         )),
         section,
-        section_offset: Some(cadmpeg_core::decode::u64_from_index(section_offset)),
+        section_offset: Some(u64_from_index(section_offset)),
         section_placement,
-        section_placement_offset: Some(cadmpeg_core::decode::u64_from_index(section_placement_offset)),
+        section_placement_offset: Some(u64_from_index(section_placement_offset)),
         clockwise,
-        clockwise_offset: Some(cadmpeg_core::decode::u64_from_index(clockwise_offset)),
+        clockwise_offset: Some(u64_from_index(clockwise_offset)),
     })
 }
 

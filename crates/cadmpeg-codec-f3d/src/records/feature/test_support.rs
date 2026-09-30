@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::scope::{DesignFeatureKind, DesignParameterScopeDraft};
 use crate::records::identity::{Located, ReferenceRun};
 
@@ -19,12 +21,12 @@ impl DesignParameterScopeDraft {
                 .enumerate()
                 .map(|(ordinal, value)| Located {
                     value,
-                    offset: self.reference_count_offset + 5 + 11 * ordinal as u64,
+                    offset: self.reference_count_offset + 5 + 11 * u64_from_index(ordinal),
                 })
                 .collect(),
         );
         self.kind_offset =
-            self.reference_count_offset + 12 + 11 * self.reference_members.len() as u64;
+            self.reference_count_offset + 12 + 11 * u64_from_index(self.reference_members.len());
     }
 
     pub(crate) fn layout_fixture_tail(&mut self) {

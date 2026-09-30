@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Combine operations, their tool bodies and the external body identity they may name.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -326,7 +328,7 @@ impl TryFrom<DesignCombineExternalBodyIdentityWire> for DesignCombineExternalBod
         let after_text = |offset: u64, text: &str, delta: u64| {
             utf16_end(offset, text).and_then(|end| end.checked_add(delta))
         };
-        let prefix = cadmpeg_core::decode::u64_from_index(crate::layout::combine_external_selector_prefix::LEN + 4);
+        let prefix = u64_from_index(crate::layout::combine_external_selector_prefix::LEN + 4);
         if wire.selector_asset_id_offset < prefix {
             return Err("selector_asset_id_offset must follow the selector header".into());
         }

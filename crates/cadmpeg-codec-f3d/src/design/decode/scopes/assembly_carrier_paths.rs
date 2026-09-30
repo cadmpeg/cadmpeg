@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
+use cadmpeg_core::decode::{index_from_u32};
+
 use cadmpeg_core::decode::View;
 
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
@@ -232,7 +234,7 @@ fn exact_class_307_joint_origin(
     {
         return None;
     }
-    for ordinal in 0..cadmpeg_core::decode::index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
+    for ordinal in 0..index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
         marked_record_reference(
             bytes,
             start
@@ -395,6 +397,8 @@ fn exact_class_363_identity_guids(
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{index_from_u32};
+
     use super::super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
     use super::{
         exact_class_264_record_frame, exact_class_307_joint_origin, exact_class_363_identity_frame,
@@ -422,7 +426,7 @@ mod tests {
 
     fn write_lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes[at..at + 4].copy_from_slice(&(units.len() as u32).to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(&(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
         for (ordinal, unit) in units.into_iter().enumerate() {
             let start = at + 4 + ordinal * 2;
             bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
@@ -455,11 +459,11 @@ mod tests {
         );
         bytes[class_307_joint_origin::REFERENCE_COUNT..class_307_joint_origin::REFERENCE_COUNT + 4]
             .copy_from_slice(&class_307_joint_origin::REFERENCE_COUNT_VALUE.to_le_bytes());
-        for ordinal in 0..class_307_joint_origin::REFERENCE_COUNT_VALUE as usize {
+        for ordinal in 0..index_from_u32(class_307_joint_origin::REFERENCE_COUNT_VALUE) {
             write_marked_reference(
                 &mut bytes,
                 class_307_joint_origin::REFERENCE_ENTRIES + ordinal * ASSEMBLY_MARKED_REFERENCE_LEN,
-                40 + ordinal as u32,
+                40 + u32::try_from(ordinal).expect("fixture value fits u32"),
             );
         }
         bytes[class_307_joint_origin::REFERENCE_TRAILER

@@ -8,6 +8,9 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
+use cadmpeg_core::convert::{f32_from_f64};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::records::references::DesignVisualToken;
 use cadmpeg_core::container::ContainerRole;
 
@@ -1085,10 +1088,10 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
         .then(|| {
             Color::new(
-                cadmpeg_core::convert::f32_from_f64(values[0])?,
-                cadmpeg_core::convert::f32_from_f64(values[1])?,
-                cadmpeg_core::convert::f32_from_f64(values[2])?,
-                cadmpeg_core::convert::f32_from_f64(values[3])?,
+                f32_from_f64(values[0])?,
+                f32_from_f64(values[1])?,
+                f32_from_f64(values[2])?,
+                f32_from_f64(values[3])?,
             )
         })
         .flatten()
@@ -1137,9 +1140,9 @@ pub(crate) fn decode_design_assignments(
                     presentation.byte_offset,
                 )?,
                 asm_body_key: body_binding.asm_key,
-                asm_body_key_offset: cadmpeg_core::decode::u64_from_index(body_binding.asm_key_offset),
+                asm_body_key_offset: u64_from_index(body_binding.asm_key_offset),
 
-                entity_suffix_offset: cadmpeg_core::decode::u64_from_index(body_binding.entity_suffix_offset()),
+                entity_suffix_offset: u64_from_index(body_binding.entity_suffix_offset()),
                 entity_id,
                 entity_id_offset,
                 visual_guid: material.visual_guid,
@@ -1228,9 +1231,9 @@ fn decode_body_appearance_overrides(
                 body_bindings,
                 &crate::ids::native_design_body_binding_id(&entry.name, map_pair.asm_key_offset),
                 map_pair.asm_key,
-                cadmpeg_core::decode::u64_from_index(map_pair.asm_key_offset),
+                u64_from_index(map_pair.asm_key_offset),
                 map_pair.entity_suffix,
-                cadmpeg_core::decode::u64_from_index(map_pair.entity_suffix_offset()),
+                u64_from_index(map_pair.entity_suffix_offset()),
             )?
             else {
                 continue;
@@ -2428,13 +2431,13 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
     match record.get(slot) {
         Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
-            let count = cadmpeg_core::decode::index_from_u32(View::u32_le_at(record, slot + 2)?);
+            let count = index_from_u32(View::u32_le_at(record, slot + 2)?);
             if count > 8 {
                 return None;
             }
             let mut position = slot + 6;
             for _ in 0..count {
-                let length = cadmpeg_core::decode::index_from_u32(View::u32_le_at(record, position)?);
+                let length = index_from_u32(View::u32_le_at(record, position)?);
                 position += 4;
                 record.get(position..position + length)?;
                 position += length;

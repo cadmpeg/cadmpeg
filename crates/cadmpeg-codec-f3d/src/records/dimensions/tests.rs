@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::records::{
     dimensions::{
         DesignDimensionAnnotationFrame as Frame, DesignDimensionAnnotationFrameDraft as Draft,
@@ -20,13 +22,13 @@ fn locus_group(state: u32, count: usize) -> super::DesignDimensionLocusGroup {
         loci: (0..count)
             .map(|index| super::DesignDimensionLocus {
                 returned: Located {
-                    value: 30 + index as u32,
-                    offset: 140 + index as u64 * 8,
+                    value: 30 + u32::try_from(index).expect("fixture value fits u32"),
+                    offset: 140 + u64_from_index(index) * 8,
                 },
-                geometry_record_index: 10 + index as u32,
-                geometry_reference_offset: 120 + index as u64 * 8,
+                geometry_record_index: 10 + u32::try_from(index).expect("fixture value fits u32"),
+                geometry_reference_offset: 120 + u64_from_index(index) * 8,
                 role: 1,
-                role_offset: 124 + index as u64 * 8,
+                role_offset: 124 + u64_from_index(index) * 8,
             })
             .collect(),
         owner_reference: 4,
@@ -94,9 +96,9 @@ fn draft(base: u64) -> Draft {
             .enumerate()
             .map(|(ordinal, index)| Operand {
                 geometry_record_index: NonZeroU32::new(index),
-                geometry_reference_offset: base + 25 + ordinal as u64 * 15,
+                geometry_reference_offset: base + 25 + u64_from_index(ordinal) * 15,
                 role: 1,
-                role_offset: base + 35 + ordinal as u64 * 15,
+                role_offset: base + 35 + u64_from_index(ordinal) * 15,
             })
             .collect(),
         entity_genesis: 0,
@@ -109,7 +111,7 @@ fn draft(base: u64) -> Draft {
             .enumerate()
             .map(|(ordinal, index)| Located {
                 value: NonZeroU32::new(index).unwrap(),
-                offset: base + 159 + ordinal as u64 * 11,
+                offset: base + 159 + u64_from_index(ordinal) * 11,
             })
             .collect(),
         paired_class_tag: "259".to_owned().try_into().unwrap(),
