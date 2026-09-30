@@ -63,8 +63,12 @@ fn sketch_geometry_endpoints(
             let [lower, upper] = cadmpeg_ir::scalar::FiniteReal::raw_array(range);
             let carrier = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
             let (Some(first), Some(last)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, lower)?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, upper)?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                    ctx, &carrier, lower,
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                    ctx, &carrier, upper,
+                )?)?,
             ) else {
                 return Ok(None);
             };
@@ -975,7 +979,9 @@ fn nurbs_profile_point(
         nurbs,
         require_some!(cadmpeg_ir::scalar::FiniteReal::new(parameter)),
     ));
-    let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(evaluator.point(ctx, parameter.get())?)?);
+    let point = require_some!(cadmpeg_ir::eval::finite_or_refusal(
+        evaluator.point(ctx, parameter.get())?
+    )?);
     Ok(Some([point.x, point.y]))
 }
 
@@ -1172,8 +1178,12 @@ fn nurbs_profile_signed_area_twice(
         {
             let parameter = middle + half_width * node;
             let (Some(point), Some(tangent)) = (
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(ctx, &carrier, parameter)?)?,
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_tangent(ctx, &carrier, parameter)?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_point(
+                    ctx, &carrier, parameter,
+                )?)?,
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::curve_tangent(
+                    ctx, &carrier, parameter,
+                )?)?,
             ) else {
                 return Ok(None);
             };

@@ -387,7 +387,9 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
                     major_radius > minor_radius
                 })
     );
-    assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).expect("evaluation resources").is_none());
+    assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]])
+        .expect("evaluation resources")
+        .is_none());
     assert!(
         matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
