@@ -218,10 +218,7 @@ fn xref_occurrence_id_refuses_retained_limit() {
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
-    let error = super::xref_id_charged(
-        &ctx,
-        format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0),
-    )
+    let error = (&ctx).format_retained(format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0), "retain F3D xref record ID")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -916,7 +913,7 @@ fn occurrence_path_refuses_link_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = super::occurrence_path(Some(&ctx), &bytes).unwrap_err();
+    let error = super::occurrence_path(&ctx, &bytes).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D xref placement link names")
@@ -1040,7 +1037,7 @@ fn repeated_target_occurrence_record_with_path_role(
     let metadata_guid_a = "66666666-7777-8888-9999-aaaaaaaaaaaa";
     let metadata_guid_b = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff";
     let mut bytes = occurrence_record(path_role, entity_id, &[1], None);
-    let path_end = super::occurrence_path(None, &bytes)
+    let path_end = crate::test_support::with_decode_context(|decode_ctx| super::occurrence_path(decode_ctx, &bytes))
         .unwrap()
         .expect("synthetic path")
         .1;
