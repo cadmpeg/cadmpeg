@@ -358,12 +358,8 @@ fn fence_text(text: &str) -> String {
 
 /// Turn one validated table into the checked-in `layout.rs` source.
 pub(crate) fn emit_layout_rs(file: &LayoutFile, source_root: &std::path::Path) -> Result<String, Vec<String>> {
-    let reads = if file.format != "nx" {
-        Some(read_set::layout_reads(source_root).map_err(|error| vec![error])?)
-    } else {
-        None
-    };
-    emit_layout_source(file, reads.as_ref()).map_err(|failure| match failure {
+    let reads = read_set::layout_reads(source_root).map_err(|error| vec![error])?;
+    emit_layout_source(file, &reads).map_err(|failure| match failure {
         EmitFailure::Invalid(errors) => errors,
         EmitFailure::Format(error) => vec![error.to_string()],
     })
@@ -383,102 +379,7 @@ impl From<std::fmt::Error> for EmitFailure {
     }
 }
 
-/// NX reader constants selected from the complete byte-layout table.
-fn nx_reader_constant(record: &str, name: &str) -> bool {
-    match record {
-        "edge_node" | "face_node" | "fin_node" | "loop_node" | "point_node" | "shell_node"
-        | "vertex_node" => matches!(name, "ATTRIBUTES" | "LEN"),
-        "chart_s_preamble"
-        | "circle_payload"
-        | "cone_payload"
-        | "cylinder_payload"
-        | "directory_entry"
-        | "ellipse_payload"
-        | "intersection_type_38"
-        | "jt_toc_entry"
-        | "line_payload"
-        | "offset_surf_payload"
-        | "plane_payload"
-        | "sp_curve_payload"
-        | "sphere_payload"
-        | "torus_payload"
-        | "trimmed_curve_payload" => matches!(name, "LEN"),
-        "analytic_common_header" => matches!(name, "ATTRIBUTES"),
-
-        "directory_file_payload" => matches!(name, "LEN" | "SIZE"),
-
-        "extrefstream_handle_set_record" => matches!(
-            name,
-            "COUNT" | "ID_SLOTS" | "LEN" | "MARKER_A" | "MARKER_B" | "N"
-        ),
-
-        "fastload_structure_envelope" => matches!(name, "LEN" | "PAYLOAD_LEN"),
-
-        "jt_document_header" => matches!(
-            name,
-            "BYTE_ORDER" | "LEN" | "LSG_SEGMENT_ID" | "RESERVED" | "TOC_OFFSET"
-        ),
-
-        "jt_tristrip_shape_node_family_data" => matches!(
-            name,
-            "AREA"
-                | "COLOR_QUANTIZATION_BITS"
-                | "COMPRESSION_LEVEL"
-                | "LEN"
-                | "MEMORY_BYTE_LEN"
-                | "NODE_COUNT_RANGE"
-                | "NORMAL_QUANTIZATION_FACTOR"
-                | "POLYGON_COUNT_RANGE"
-                | "RESERVED_BOUNDS"
-                | "SHAPE_VERSION"
-                | "TEXTURE_QUANTIZATION_BITS"
-                | "UNTRANSFORMED_BOUNDS"
-                | "VERTEX_BINDINGS"
-                | "VERTEX_COUNT_RANGE"
-                | "VERTEX_QUANTIZATION_BITS"
-                | "VERTEX_VERSION"
-        ),
-        "legacy_ugii_payload_prefix" => matches!(name, "LEN" | "VERSION"),
-
-        "nurbs_curve_descriptor_prefix" => matches!(
-            name,
-            "DEGREE"
-                | "DIMENSION"
-                | "DISTINCT_KNOT_COUNT"
-                | "KNOT_TYPE"
-                | "LEN"
-                | "PERIODIC"
-                | "POLE_COUNT"
-        ),
-        "nurbs_surface_descriptor_prefix" => matches!(
-            name,
-            "U_DEGREE"
-                | "U_DISTINCT_KNOT_COUNT"
-                | "U_KNOT_TYPE"
-                | "U_PERIODIC"
-                | "U_POLE_COUNT"
-                | "V_DEGREE"
-                | "V_DISTINCT_KNOT_COUNT"
-                | "V_KNOT_TYPE"
-                | "V_PERIODIC"
-                | "V_POLE_COUNT"
-        ),
-
-        "splmsstr_header" => matches!(
-            name,
-            "FILE_TAG" | "FOOTER_OFFSET" | "HEADER_MARKER" | "MAGIC_VALUE" | "VERSION_TAG"
-        ),
-
-        "ug_part_segment_index_row" => {
-            matches!(name, "LEN" | "SUBTYPE_CODE" | "TYPE_CODE" | "VALUE")
-        }
-
-        _ => false,
-    }
-}
-
-fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Result<String, EmitFailure> {
-    let is_read = |record: &str, name: &str| reads.map_or_else(|| file.format != "nx" || nx_reader_constant(record, name), |reads| reads.contains(record, name));
+fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<String, EmitFailure> {
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
     let mut modules = String::new();
@@ -539,13 +440,13 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
             } else {
                 format!("`{}`", field.ty)
             };
-            if is_read(&record.name, &const_name) {
+            if reads.contains(&record.name, &const_name) {
                 writeln!(
                     fields_out,
                     "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
                     field.name, record.section
                 )?;
-                if reads.is_some_and(|reads| reads.test_only(&record.name, &const_name)) {
+                if reads.test_only(&record.name, &const_name) {
                     writeln!(fields_out, "    #[cfg(test)]")?;
                 }
                 writeln!(
@@ -566,13 +467,13 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
                 let width = type_width(&field.ty, &custom).ok().flatten();
                 match decode_field_value(raw, &field.ty, width) {
                     Ok(binding) => {
-                        if is_read(&record.name, &value_name) {
+                        if reads.contains(&record.name, &value_name) {
                             writeln!(
                                 fields_out,
                                 "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
                                 field.name, field.ty, record.section
                             )?;
-                            if reads.is_some_and(|reads| reads.test_only(&record.name, &value_name)) {
+                            if reads.test_only(&record.name, &value_name) {
                                 writeln!(fields_out, "    #[cfg(test)]")?;
                             }
                             writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
@@ -583,7 +484,7 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
             }
         }
 
-        if fields_out.is_empty() && !is_read(&record.name, "LEN")
+        if fields_out.is_empty() && !reads.contains(&record.name, "LEN")
         {
             continue;
         }
@@ -627,14 +528,14 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
         if let Some(size) = record
             .size
-            .filter(|_| is_read(&record.name, "LEN"))
+            .filter(|_| reads.contains(&record.name, "LEN"))
         {
             writeln!(
                 modules,
                 "    /// Record length in bytes. Spec §{}.",
                 record.section
             )?;
-            if reads.is_some_and(|reads| reads.test_only(&record.name, "LEN")) {
+            if reads.test_only(&record.name, "LEN") {
                 writeln!(modules, "    #[cfg(test)]")?;
             }
             writeln!(modules, "    pub(crate) const LEN: usize = {size};")?;
@@ -657,7 +558,7 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
         let Some(name) = token_const_name(&token.name) else {
             continue;
         };
-        if reads.is_none() || is_read("token", &name) {
+        if reads.contains("token", &name) {
             token_consts.push((name, value, token));
         }
     }
@@ -670,7 +571,7 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
                 "    /// `{}` (`{}`). Spec §{}.",
                 token.name, token.tag, token.section
             )?;
-            if reads.is_some_and(|reads| reads.test_only("token", name)) {
+            if reads.test_only("token", name) {
                 writeln!(token_mod, "    #[cfg(test)]")?;
             }
             match value {
@@ -716,13 +617,6 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Res
         "//! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`."
     )?;
     writeln!(out)?;
-    if reads.is_none() && file.format != "nx" {
-        writeln!(
-            out,
-            "#![allow(dead_code)] // Not every generated constant is referenced yet."
-        )?;
-        writeln!(out)?;
-    }
     if !omitted.is_empty() {
         writeln!(
             out,
@@ -768,3 +662,73 @@ fn rustfmt_source(src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::emit_layout_rs;
+    use crate::LayoutFile;
+
+    #[test]
+    fn layout_emission_filters_records_values_tokens_and_test_reads() -> Result<(), Box<dyn std::error::Error>> {
+        let file: LayoutFile = toml::from_str(r#"
+schema = 1
+format = "demo"
+spec = "demo.md"
+[[record]]
+name = "header"
+kind = "byte"
+section = "1"
+anchor = "header"
+size = 2
+[[record.field]]
+name = "magic"
+type = "u8"
+offset = 0
+value = 7
+source = "spec"
+anchor = "magic"
+[[record.field]]
+name = "unread"
+type = "u8"
+offset = 1
+source = "spec"
+anchor = "unread"
+[[record]]
+name = "unread_record"
+kind = "byte"
+section = "1"
+anchor = "unread record"
+size = 1
+[[record.field]]
+name = "value"
+type = "u8"
+offset = 0
+source = "spec"
+anchor = "value"
+[[token]]
+tag = "0x01"
+name = "used tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+[[token]]
+tag = "0x02"
+name = "unused tag"
+note = "tag"
+section = "1"
+anchor = "tag"
+"#)?;
+        let temporary = tempfile::tempdir()?;
+        std::fs::write(temporary.path().join("lib.rs"), "use crate::layout::{header as h, token}; const M: u8 = h::MAGIC_VALUE; const T: u8 = token::USED_TAG; #[cfg(test)] mod tests { const L: usize = super::h::LEN; }")?;
+        let rendered = emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        assert!(rendered.contains("pub(crate) const MAGIC_VALUE: u8 = 7;"));
+        assert!(rendered.contains("pub(crate) const USED_TAG: u8 = 1;"));
+        assert!(rendered.contains("#[cfg(test)]\n    pub(crate) const LEN: usize = 2;"));
+        assert!(!rendered.contains("const MAGIC:"));
+        assert!(!rendered.contains("UNREAD"));
+        assert!(!rendered.contains("mod unread_record"));
+        assert!(!rendered.contains("UNUSED_TAG"));
+        assert!(!rendered.contains("allow("));
+        Ok(())
+    }
+}
