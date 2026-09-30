@@ -1259,7 +1259,7 @@ fn configuration_snapshots_preserve_base_tree_node_roles() {
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
 
-    restore_configuration_tree_node_definitions(&mut configured, &base);
+    restore_configuration_tree_node_definitions(&cadmpeg_test_support::service_decode_context(), &mut configured, &base).unwrap();
     assert!(matches!(
         configured[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {

@@ -23,6 +23,48 @@ use crate::history::project::project_features;
 
 const EPS_CONFIGURATION_ALIGN_CONFIGURATION_PARAMETER_KINDS_E9: f64 = 1.0e-9;
 
+struct ConfigurationDefinitions<'features> {
+    definitions: HashMap<&'features FeatureId, &'features FeatureDefinition>,
+    key_bytes: usize,
+}
+
+impl<'features> ConfigurationDefinitions<'features> {
+    fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        features: &'features [cadmpeg_ir::features::Feature],
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "index SLDPRT configuration base definitions";
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(features.len()), OPERATION)?;
+        let key_bytes = features.iter().try_fold(0_usize, |bytes, feature| {
+            bytes.checked_add(feature.id.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+        })?;
+        let mut definitions = HashMap::new();
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(features.len()), OPERATION)?;
+        definitions.try_reserve(features.len())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        for feature in features {
+            let work = key_bytes.checked_add(feature.id.as_str().len()).and_then(|bytes| bytes.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            definitions.insert(&feature.id, feature.evaluation.definition());
+        }
+        Ok(Self { definitions, key_bytes })
+    }
+
+    fn get(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &FeatureId,
+    ) -> Result<Option<&'features FeatureDefinition>, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "match SLDPRT configuration base definition";
+        let work = self.key_bytes.checked_add(id.as_str().len()).and_then(|bytes| bytes.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+        Ok(self.definitions.get(id).copied())
+    }
+}
+
 fn apply_configuration_state(
     feature: &mut cadmpeg_ir::features::Feature,
     state: &cadmpeg_ir::features::ConfigurationFeatureState,
@@ -193,12 +235,7 @@ pub(crate) fn project_configuration_design_states(
         lanes,
         form_padding,
     )?;
-    let base_definitions = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.clone(), feature.evaluation.definition().clone()))
-        .collect::<HashMap<_, _>>();
+    let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
     for configuration in &mut ir.model.configurations {
         configuration.parameter_values.clear();
         configuration.feature_states.clear();
@@ -292,11 +329,11 @@ pub(crate) fn project_configuration_design_states(
             histories,
             scoped_lanes,
         )?;
-        restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
+        restore_configuration_tree_node_definitions(ctx, &mut features, &ir.model.features)?;
         ir.model.configurations[configuration_index].feature_states = features
             .into_iter()
             .map(|mut feature| {
-                if let Some(base_definition) = base_definitions.get(&feature.id) {
+                if let Some(base_definition) = base_definitions.get(ctx, &feature.id)? {
                     if matches!(
                         feature.evaluation.definition(),
                         FeatureDefinition::Operation(FeatureOperation::Hole { .. })
@@ -459,13 +496,11 @@ pub(crate) fn bind_configuration_topology_selections(
 }
 
 pub(super) fn restore_configuration_tree_node_definitions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
-) {
-    let base = base_features
-        .iter()
-        .map(|feature| (&feature.id, feature.evaluation.definition()))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let base = ConfigurationDefinitions::new(ctx, base_features)?;
     for feature in features {
         if !matches!(
             feature.evaluation.definition(),
@@ -474,7 +509,7 @@ pub(super) fn restore_configuration_tree_node_definitions(
             continue;
         }
         let Some(FeatureDefinition::Operation(FeatureOperation::TreeNode { role, .. })) =
-            base.get(&feature.id).copied()
+            base.get(ctx, &feature.id)?
         else {
             continue;
         };
@@ -485,6 +520,7 @@ pub(super) fn restore_configuration_tree_node_definitions(
                 children: cadmpeg_ir::features::TreeChildren::default(),
             }));
     }
+    Ok(())
 }
 
 /// Apply sketch ownership projection to configuration-local feature snapshots.
@@ -530,12 +566,7 @@ pub(crate) fn project_configuration_sketch_states(
             })
             .map(|sketch| &sketch.id)
             .collect::<HashSet<_>>();
-        let base_definitions = ir
-            .model
-            .features
-            .iter()
-            .map(|feature| (feature.id.clone(), feature.evaluation.definition().clone()))
-            .collect::<HashMap<_, _>>();
+        let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
         for feature in &mut features {
             if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
                 feature.evaluation.definition()
@@ -566,7 +597,7 @@ pub(crate) fn project_configuration_sketch_states(
             };
             let Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
                 sketch: Some(base_sketch),
-            })) = base_definitions.get(&feature.id)
+            })) = base_definitions.get(ctx, &feature.id)?
             else {
                 continue;
             };
@@ -787,12 +818,7 @@ pub(crate) fn project_configuration_sketch_states(
         }
     }
     let scoped_configuration_indices = configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?;
-    let base = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.clone(), feature.evaluation.definition().clone()))
-        .collect::<HashMap<_, _>>();
+    let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
     for (configuration_index, configuration) in ir.model.configurations.iter_mut().enumerate() {
         // DI-55: a valid configuration lane owns its unresolved slots. The
         // document definition is a fallback only for an unscoped snapshot.
@@ -800,7 +826,7 @@ pub(crate) fn project_configuration_sketch_states(
             continue;
         }
         for (feature_id, state) in &mut configuration.feature_states {
-            if let Some(base_definition) = base.get(feature_id) {
+            if let Some(base_definition) = base.get(ctx, feature_id)? {
                 inherit_configuration_shared_semantics(&mut state.definition, base_definition)?;
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::Feature { feature: reference }),
