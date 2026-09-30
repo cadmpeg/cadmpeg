@@ -313,7 +313,10 @@ fn scan_expands_toc_sized_unix_compress_payload() {
         method,
         cadmpeg_core::container::CompressionMethod::UnixCompress
     );
-    assert_eq!(stored, Some(cadmpeg_core::decode::u64_from_index(section_length)));
+    assert_eq!(
+        stored,
+        Some(cadmpeg_core::decode::u64_from_index(section_length))
+    );
     assert_eq!(expanded, Some(18));
 }
 
@@ -330,7 +333,8 @@ fn geometry_array_census_overflow_error_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     let entry = b"srf_array\0\xf8\xbf\xff";
     let count = (u32::MAX / 16_383) + 1;
-    let mut region = Vec::with_capacity(entry.len() * usize::try_from(count).expect("fixture index fits usize"));
+    let mut region =
+        Vec::with_capacity(entry.len() * usize::try_from(count).expect("fixture index fits usize"));
     for _ in 0..count {
         region.extend_from_slice(entry);
     }

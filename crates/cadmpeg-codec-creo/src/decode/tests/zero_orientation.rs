@@ -1384,8 +1384,12 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     for u in 0..4 {
         for v in 0..4 {
             let point = &nurbs.poles().into_iter().nth(u * 4 + v).expect("pole");
-            let expected_u = cadmpeg_core::convert::f64_from_index(u).expect("fixture index is exact in f64") / 3.0;
-            let expected_v = cadmpeg_core::convert::f64_from_index(v).expect("fixture index is exact in f64") / 3.0;
+            let expected_u = cadmpeg_core::convert::f64_from_index(u)
+                .expect("fixture index is exact in f64")
+                / 3.0;
+            let expected_v = cadmpeg_core::convert::f64_from_index(v)
+                .expect("fixture index is exact in f64")
+                / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
             assert!((point.y - expected_v).abs() < 1.0e-12);
             assert!((point.z - expected_u - 2.0 * expected_v).abs() < 1.0e-12);

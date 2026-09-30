@@ -1225,7 +1225,8 @@ mod tests {
     fn section_row_suffix_refuses_each_retained_choice() {
         for (unique, expected) in [(true, "42"), (false, "circle:offset:9")] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
             assert!(
                 matches!(with_policy(&policy, |ctx| section_row_suffix(ctx, unique, 42, "circle", 9)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))

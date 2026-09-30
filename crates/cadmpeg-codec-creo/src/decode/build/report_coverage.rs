@@ -424,7 +424,8 @@ pub(super) fn push_coverage_drop_losses(
     .checked_sub(coverage_count(
         coverage,
         "transferred_configuration_driver_table_count",
-    )).ok_or_else(|| CodecError::malformed("transferred driver count exceeds decoded count"))?;
+    ))
+    .ok_or_else(|| CodecError::malformed("transferred driver count exceeds decoded count"))?;
     if unresolved_configuration_driver_tables != 0 {
         push_report_loss(
             ctx,
@@ -457,7 +458,8 @@ pub(super) fn push_coverage_drop_losses(
     .checked_sub(coverage_count(
         coverage,
         "evaluated_active_curve_expression_solve_block_count",
-    )).ok_or_else(|| CodecError::malformed("evaluated solve count exceeds decoded count"))?;
+    ))
+    .ok_or_else(|| CodecError::malformed("evaluated solve count exceeds decoded count"))?;
     if unresolved_solve_blocks != 0 {
         push_report_loss(
             ctx,
@@ -512,8 +514,14 @@ mod tests {
     fn driver_coverage_refuses_transferred_count_above_decoded() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            coverage.record(crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT, 1);
-            assert!(matches!(push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage), Err(CodecError::Malformed(_))));
+            coverage.record(
+                crate::coverage::TRANSFERRED_CONFIGURATION_DRIVER_TABLE_COUNT,
+                1,
+            );
+            assert!(matches!(
+                push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage),
+                Err(CodecError::Malformed(_))
+            ));
         });
     }
 
@@ -521,8 +529,14 @@ mod tests {
     fn solve_coverage_refuses_evaluated_count_above_decoded() {
         crate::decode::with_test_decode_ctx(|ctx| {
             let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
-            coverage.record(crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT, 1);
-            assert!(matches!(push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage), Err(CodecError::Malformed(_))));
+            coverage.record(
+                crate::coverage::EVALUATED_ACTIVE_CURVE_EXPRESSION_SOLVE_BLOCK_COUNT,
+                1,
+            );
+            assert!(matches!(
+                push_coverage_drop_losses(ctx, &mut Vec::new(), &coverage),
+                Err(CodecError::Malformed(_))
+            ));
         });
     }
 

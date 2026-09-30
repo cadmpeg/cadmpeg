@@ -1013,7 +1013,10 @@ fn spline_scalar_reader_withholds_zero_count_past_end() {
     crate::decode::with_test_decode_ctx(|ctx| {
         let mut cursor = 1;
         let cache = crate::scalar::ScalarCache::default();
-        assert!(crate::surface::take_spline_scalars(ctx, &[], &mut cursor, 0, "i_points", &cache)
-            .expect("empty scalar reader stays within resource limits").is_none());
+        assert!(
+            crate::surface::take_spline_scalars(ctx, &[], &mut cursor, 0, "i_points", &cache)
+                .expect("empty scalar reader stays within resource limits")
+                .is_none()
+        );
     });
 }

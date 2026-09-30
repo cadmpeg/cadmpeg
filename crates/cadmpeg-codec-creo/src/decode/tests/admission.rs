@@ -635,8 +635,9 @@ fn decode_annotations_cover_every_emitted_entity() {
             ("ActDatums", datum),
         ],
     );
-    let datum_offset =
-        cadmpeg_core::decode::u64_from_index(container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload);
+    let datum_offset = cadmpeg_core::decode::u64_from_index(
+        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload,
+    );
     let mut reader = Cursor::new(data);
     let result = EditableDecodeResult::from(
         CreoCodec

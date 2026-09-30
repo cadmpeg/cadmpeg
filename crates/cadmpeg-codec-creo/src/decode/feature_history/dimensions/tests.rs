@@ -28,7 +28,8 @@ fn dimension_row_identity_refuses_before_formatting() {
     let sketch = layout_key();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:featdefs:parameter#917:3:2".len()) - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:featdefs:parameter#917:3:2".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_dimension_parameter_row_id_admitted(&ctx, &sketch, 3, Some(1))
         .expect_err("dimension row ID exceeds retained cap");
@@ -407,7 +408,8 @@ fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
         });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:sketch#917".len());
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch#917".len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = planned_feature_dimension_parameter_ids(&ctx, &scan)
         .expect_err("parameter identity exceeds remaining retained cap");
@@ -557,5 +559,8 @@ fn relation_coverage_refuses_rows_above_declared_empty_table() {
         triples: None,
         offset: 0,
     };
-    assert!(matches!(super::feature_relation_table_missing_rows(&table), Err(cadmpeg_core::CodecError::Malformed(_))));
+    assert!(matches!(
+        super::feature_relation_table_missing_rows(&table),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
 }

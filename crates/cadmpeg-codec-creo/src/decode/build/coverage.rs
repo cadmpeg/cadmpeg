@@ -988,7 +988,8 @@ where
         }
         counts.elements = counts
             .elements
-            .checked_add(record.payload.element_count()).ok_or_else(|| {
+            .checked_add(record.payload.element_count())
+            .ok_or_else(|| {
                 ctx.refuse_codec_limit("creo legacy numeric element count", u64::MAX, u64::MAX)
             })?;
     }

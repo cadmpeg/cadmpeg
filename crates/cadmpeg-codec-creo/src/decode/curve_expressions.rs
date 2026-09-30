@@ -303,7 +303,11 @@ fn curve_expression_parameter_names(
                 let mut value = *occurrence;
                 let mut width = 0;
                 loop {
-                    digits[width] = u8::try_from(value % 10).map_err(|_| cadmpeg_core::CodecError::malformed("Creo occurrence decimal digit exceeds u8"))?;
+                    digits[width] = u8::try_from(value % 10).map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo occurrence decimal digit exceeds u8",
+                        )
+                    })?;
                     width += 1;
                     value /= 10;
                     if value == 0 {
@@ -414,18 +418,26 @@ fn joined_dependency_names(
     let mut bytes = 0usize;
     for name in names {
         if include(name)? {
-            bytes = bytes
-                .checked_add(name.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, cadmpeg_core::decode::u64_from_index(usize::MAX), u64::MAX))?;
+            bytes = bytes.checked_add(name.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    operation,
+                    cadmpeg_core::decode::u64_from_index(usize::MAX),
+                    u64::MAX,
+                )
+            })?;
             count += 1;
         }
     }
     if count == 0 {
         return Ok(None);
     }
-    bytes = bytes
-        .checked_add(count - 1)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, cadmpeg_core::decode::u64_from_index(usize::MAX), u64::MAX))?;
+    bytes = bytes.checked_add(count - 1).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            operation,
+            cadmpeg_core::decode::u64_from_index(usize::MAX),
+            u64::MAX,
+        )
+    })?;
     let mut joined = String::new();
     ctx.try_reserve_retained_text(&mut joined, bytes, operation)?;
     let mut emitted = false;

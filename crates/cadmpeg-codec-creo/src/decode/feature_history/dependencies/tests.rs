@@ -641,7 +641,9 @@ fn reconciled_native_dependency_error(
 fn reconciled_native_dependency_id_refuses_retained_limit() {
     reconciled_native_dependency_error(
         None,
-        Some(cadmpeg_core::decode::u64_from_index("creo:model:feature#3".len() + "creo:model:feature#10".len())),
+        Some(cadmpeg_core::decode::u64_from_index(
+            "creo:model:feature#3".len() + "creo:model:feature#10".len(),
+        )),
         "creo reconciled native dependency IDs",
     );
 }
@@ -677,7 +679,8 @@ fn reconciled_generated_dependency_refuses_before_retained_id() {
     let mut ir = reconciliation_ir_with_generated_dependency();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:feature#10".len());
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:feature#10".len());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root");
     let error = crate::decode::feature_history::dependencies::reconcile_feature_links(

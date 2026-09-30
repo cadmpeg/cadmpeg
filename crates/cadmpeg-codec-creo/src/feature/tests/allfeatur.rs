@@ -297,7 +297,8 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
     assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
     assert!(
-        (usize::try_from(scan.features.entity_references[0].target_entity_id).expect("fixture index fits usize"))
+        (usize::try_from(scan.features.entity_references[0].target_entity_id)
+            .expect("fixture index fits usize"))
             < scan.features.entities.len()
     );
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));

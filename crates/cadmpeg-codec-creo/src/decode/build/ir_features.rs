@@ -960,9 +960,13 @@ pub(super) fn finish_feature_transfers(
         coverage.record_admitted(
             ctx,
             crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
-            decoded_dimension_count.checked_sub(resolved_dimension_count).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
+            decoded_dimension_count
+                .checked_sub(resolved_dimension_count)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "resolved dimension count exceeds decoded count",
+                    )
+                })?,
         )?;
     }
     close_sketch_constraint_parameter_references(ctx, ir)?;

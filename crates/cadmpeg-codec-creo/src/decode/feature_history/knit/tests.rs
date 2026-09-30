@@ -158,7 +158,8 @@ fn knit_generated_native_copy_refuses_retained_limit() {
     let local = "surface#98";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(native.len() + producer.len() * 2 + local.len());
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() * 2 + local.len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = knit_surface_feature_definition(&ctx, &scan, 416)
@@ -235,7 +236,9 @@ fn generated_surface_feature_id_refuses_retained_limit() {
 fn generated_surface_local_id_refuses_retained_limit() {
     generated_face_reference_error(
         None,
-        Some(cadmpeg_core::decode::u64_from_index("creo:model:feature#17".len())),
+        Some(cadmpeg_core::decode::u64_from_index(
+            "creo:model:feature#17".len(),
+        )),
         "creo generated surface local IDs",
     );
 }
@@ -350,7 +353,9 @@ fn feature_result_owner_id_refuses_retained_limit() {
     topology_limit_error(
         true,
         None,
-        Some(cadmpeg_core::decode::u64_from_index("surface#201".len() + "creo:model:feature-result-topology#17".len())),
+        Some(cadmpeg_core::decode::u64_from_index(
+            "surface#201".len() + "creo:model:feature-result-topology#17".len(),
+        )),
         "creo feature result owner ID",
     );
 }

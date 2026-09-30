@@ -663,8 +663,8 @@ fn scan_sections<'a>(
     // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
     let mut i = body_start;
-    if i > 0 {
-        i -= 1;
+    if let Some(preceding_byte) = body_start.checked_sub(1) {
+        i = preceding_byte;
     }
     while i + 1 < data.len() {
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
@@ -751,7 +751,10 @@ fn toc_sections<'a>(
         }
         let rows_start = line_end + 1;
         for index in 0..count {
-            let Some(start) = index.checked_mul(row_width).and_then(|relative| rows_start.checked_add(relative)) else {
+            let Some(start) = index
+                .checked_mul(row_width)
+                .and_then(|relative| rows_start.checked_add(relative))
+            else {
                 break;
             };
             let Some(end) = start.checked_add(row_width) else {
@@ -2493,9 +2496,10 @@ fn section_owner_ranges(
             .map(|section| (section.section.offset(), section.section.end())),
     );
     for row in feature_rows {
-        let end = row.body_offset.checked_add(row.body.len()).ok_or_else(|| {
-            CodecError::malformed("feature owner range end exceeds usize")
-        })?;
+        let end = row
+            .body_offset
+            .checked_add(row.body.len())
+            .ok_or_else(|| CodecError::malformed("feature owner range end exceeds usize"))?;
         ranges.push((row.body_offset, end));
     }
     Ok(ranges)
@@ -3477,11 +3481,18 @@ pub(crate) fn summarize(
             name,
             role: s.role().into(),
             storage: expanded.map_or_else(
-                || EntryStorage::verbatim(VerbatimLabel::None, cadmpeg_core::decode::u64_from_index(s.length())),
+                || {
+                    EntryStorage::verbatim(
+                        VerbatimLabel::None,
+                        cadmpeg_core::decode::u64_from_index(s.length()),
+                    )
+                },
                 |expanded| EntryStorage::Compressed {
                     method: CompressionMethod::UnixCompress,
                     stored: Some(cadmpeg_core::decode::u64_from_index(s.length())),
-                    expanded: Some(cadmpeg_core::decode::u64_from_index(expanded.data.len() + s.raw_name.len() + 2)),
+                    expanded: Some(cadmpeg_core::decode::u64_from_index(
+                        expanded.data.len() + s.raw_name.len() + 2,
+                    )),
                 },
             ),
             attributes,

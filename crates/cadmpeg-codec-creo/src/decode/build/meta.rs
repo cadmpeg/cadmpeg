@@ -238,7 +238,9 @@ pub(super) fn source_meta(
         let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
             legacy.persistence.string_values.iter().try_fold(
                 (0usize, 0usize, 0usize, 0usize),
-                |(scalars, arrays, elements, undecoded_encodings), record| -> Result<_, CodecError> {
+                |(scalars, arrays, elements, undecoded_encodings),
+                 record|
+                 -> Result<_, CodecError> {
                     Ok((
                         scalars
                             + usize::from(matches!(
@@ -250,12 +252,23 @@ pub(super) fn source_meta(
                                 record.payload,
                                 crate::legacy::StringPayload::Array { .. }
                             )),
-                        elements.checked_add(record.payload.element_count()).ok_or_else(|| {
-                            ctx.refuse_codec_limit("creo legacy string element count", u64::MAX, u64::MAX)
-                        })?,
+                        elements
+                            .checked_add(record.payload.element_count())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "creo legacy string element count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
                         undecoded_encodings
-                            .checked_add(record.payload.undecoded_encoding_count()).ok_or_else(|| {
-                                ctx.refuse_codec_limit("creo legacy string encoding count", u64::MAX, u64::MAX)
+                            .checked_add(record.payload.undecoded_encoding_count())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "creo legacy string encoding count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
                             })?,
                     ))
                 },
@@ -922,7 +935,10 @@ pub(super) fn source_meta(
         ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?,
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
@@ -948,20 +964,30 @@ pub(super) fn source_meta(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .checked_sub(resolved_dimension_driven_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?,
+            .checked_sub(resolved_dimension_driven_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
         decoded_dimension_driven_coordinate_variable_count
-            .checked_sub(resolved_dimension_driven_coordinate_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?,
+            .checked_sub(resolved_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?
-            .checked_sub(resolved_dimension_driven_other_variable_count).ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?,
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?
+            .checked_sub(resolved_dimension_driven_other_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
@@ -1244,7 +1270,8 @@ mod tests {
     fn principal_unit_attribute_refuses_before_retaining_token() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("principal_unit".len() + "unknown:7".len() - 1);
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("principal_unit".len() + "unknown:7".len() - 1);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut attributes = BTreeMap::new();
