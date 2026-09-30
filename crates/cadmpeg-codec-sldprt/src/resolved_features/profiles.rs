@@ -1071,7 +1071,7 @@ pub(crate) fn project_marker_backed_sketches(
             ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT marker profile objects")?;
             objects.push((start, feature));
         }
-        objects.sort_by_key(|(offset, _)| *offset);
+        ctx.stable_sort_by(&mut objects, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT profile objects")?;
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
             let Some((feature_index, bound_sketch, block_definition)) =
                 features.iter().enumerate().find_map(|(index, feature)| {

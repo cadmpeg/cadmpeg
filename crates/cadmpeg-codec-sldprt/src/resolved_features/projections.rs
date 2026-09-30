@@ -309,7 +309,7 @@ pub(crate) fn bind_parameter_scalars<'a>(
             starts.push((start, feature));
         }
         ctx.charge_work(starts.len() as u64, OPERATION)?;
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);

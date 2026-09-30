@@ -145,7 +145,7 @@ pub(crate) fn bind_history_classes(
         let mut declared = collect_class_vec(ctx, lane.classes.iter()
             .filter(|class| native_object_class(&class.name) == NativeClassKind::CosmeticThread)
             .map(|class| class.name.as_str()))?;
-        declared.sort();
+        ctx.stable_sort_by(&mut declared, Ord::cmp, |class| class.len(), "sort SLDPRT declared classes")?;
         declared.dedup();
         let [class] = declared.as_slice() else {
             continue;
@@ -192,7 +192,7 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in cosmetic_thread_classes.values_mut() {
-        classes.sort();
+        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
         classes.dedup();
     }
     for feature in histories
@@ -263,7 +263,7 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in classes_by_type.values_mut() {
-        classes.sort();
+        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
         classes.dedup();
     }
     for feature in histories
@@ -317,7 +317,7 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in classes_by_token.values_mut() {
-        classes.sort();
+        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
         classes.dedup();
     }
     for feature in histories
@@ -361,7 +361,7 @@ pub(crate) fn bind_history_classes(
                 }
             }
         }
-        candidates.sort();
+        ctx.stable_sort_by(&mut candidates, Ord::cmp, |class| class.len(), "sort SLDPRT class candidates")?;
         candidates.dedup();
         if let [class] = candidates.as_slice() {
             feature.input_class = Some(copy_class_text(ctx, class)?);

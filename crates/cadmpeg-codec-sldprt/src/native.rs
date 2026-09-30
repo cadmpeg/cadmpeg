@@ -774,7 +774,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == history.id),
                 "attach SLDPRT history configurations",
             )?;
-            history.configurations.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut history.configurations, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             if let Some(pair) = history
                 .configurations
                 .windows(2)
@@ -793,7 +793,7 @@ impl SldprtNative {
                 features.iter().filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
             )?;
-            history.features.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut history.features, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             if let Some(pair) = history
                 .features
                 .windows(2)
@@ -814,25 +814,25 @@ impl SldprtNative {
                 classes.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
             )?;
-            lane.classes.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.classes, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.names = collect_retained_clones(
                 ctx,
                 names.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
             )?;
-            lane.names.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.names, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.scalars = collect_retained_clones(
                 ctx,
                 scalars.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
             )?;
-            lane.scalars.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.scalars, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.references = collect_retained_clones(
                 ctx,
                 references.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
             )?;
-            lane.references.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.references, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.relation_bindings = collect_retained_clones(
                 ctx,
                 relation_bindings
@@ -840,7 +840,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation bindings",
             )?;
-            lane.relation_bindings.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.relation_bindings, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.relation_instances = collect_retained_clones(
                 ctx,
                 relation_instances
@@ -848,7 +848,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation instances",
             )?;
-            lane.relation_instances.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.relation_instances, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.body_selections = collect_retained_clones(
                 ctx,
                 body_selections
@@ -856,7 +856,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane body selections",
             )?;
-            lane.body_selections.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.body_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             for record in &lane.body_selections {
                 if body_selection_disagrees_with_payload(ctx, lane, record)? {
                     return Err(invalid_owner(
@@ -875,7 +875,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane edge selections",
             )?;
-            lane.edge_selections.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.edge_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
                 ctx,
                 features.iter(),
@@ -938,7 +938,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane surface selections",
             )?;
-            lane.surface_selections.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut lane.surface_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             for record in &lane.surface_selections {
                 if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
                     return Err(invalid_owner(
@@ -957,7 +957,7 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane generated surfaces",
             )?;
-            records.sort_by_key(|record| record.ordinal);
+            ctx.stable_sort_by(&mut records, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
             lane.generated_surface_identities = records;
             if generated_surface_identities_disagree_with_payload(ctx, lane)? {
                 return Err(invalid_owner(
@@ -973,8 +973,7 @@ impl SldprtNative {
                 entities.iter().filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
             )?;
-            lane.sketch_entities
-                .sort_by_key(crate::records::SketchInputEntity::ordinal);
+            ctx.stable_sort_by(&mut lane.sketch_entities, |left, right| left.ordinal().cmp(&right.ordinal()), |_| 0, "sort SLDPRT sketch entity records")?;
         }
         lanes::admit(&native, ctx)?;
         Ok(native)
