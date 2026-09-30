@@ -5,6 +5,9 @@ use super::{
     identity::{Located, ReferenceRun},
     references::DesignClassTag,
 };
+use crate::records::serde_column::SliceColumn;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
 
@@ -79,17 +82,21 @@ pub(super) const SKETCH_CONSTRAINT_MASK: u64 = {
 /// Decode the constraint kinds and unknown bits selected by a sketch-relation mask.
 #[must_use]
 pub(crate) fn constraint_kinds_from_state(state: u64) -> (Vec<SketchConstraintKind>, u64) {
-    let mut kinds = if state == 0 {
-        vec![SketchConstraintKind::Coincident]
-    } else {
-        Vec::new()
-    };
-    for (bit, kind) in SKETCH_CONSTRAINT_DEFINITIONS {
-        if state & bit != 0 {
-            kinds.push(kind);
-        }
-    }
-    (kinds, state & !SKETCH_CONSTRAINT_MASK)
+    (
+        constraint_kinds_iter(state).collect(),
+        state & !SKETCH_CONSTRAINT_MASK,
+    )
+}
+
+pub(crate) fn constraint_kinds_iter(state: u64) -> impl Iterator<Item = SketchConstraintKind> {
+    std::iter::once(SketchConstraintKind::Coincident)
+        .filter(move |_| state == 0)
+        .chain(
+            SKETCH_CONSTRAINT_DEFINITIONS
+                .into_iter()
+                .filter(move |(bit, _)| state & bit != 0)
+                .map(|(_, kind)| kind),
+        )
 }
 
 /// An indexed relation reference before or after sketch identity resolution.
@@ -113,7 +120,7 @@ impl SketchRelationReference {
 
     /// Identity after resolution, including a record with no sketch identity.
     #[must_use]
-    pub(super) fn resolved(&self) -> Option<&SketchRelationOperand> {
+    pub(crate) fn resolved(&self) -> Option<&SketchRelationOperand> {
         match self {
             Self::Index(_) => None,
             Self::Resolved(operand) => Some(operand),
@@ -186,31 +193,43 @@ pub(crate) struct SketchRelationMembers(pub(super) Vec<SketchRelationMember>);
 
 impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
-    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32, u32)>) -> Self {
-        Self(
-            rows.into_iter()
-                .map(
-                    |(record_index, offset, relation_ordinal)| SketchRelationMember {
-                        reference: SketchRelationReference::Index(record_index),
-                        offset,
-                        relation_ordinal: Some(relation_ordinal),
-                    },
-                )
-                .collect(),
-        )
+    pub(crate) fn from_indices(
+        ctx: &DecodeContext<'_>,
+        rows: impl IntoIterator<Item = (u32, u32, u32)>,
+    ) -> Result<Self, CodecError> {
+        let mut members = Vec::new();
+        for (record_index, offset, relation_ordinal) in rows {
+            ctx.charge_collection_items(1, "admit F3D sketch relation members")?;
+            members
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("admit F3D sketch relation members", 0, 1))?;
+            members.push(SketchRelationMember {
+                reference: SketchRelationReference::Index(record_index),
+                offset,
+                relation_ordinal: Some(relation_ordinal),
+            });
+        }
+        Ok(Self(members))
     }
 
     /// Resolve every member while retaining its position metadata.
-    pub(crate) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self
-            .0
-            .iter()
-            .map(|row| SketchRelationMember {
-                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-                offset: row.offset,
-                relation_ordinal: row.relation_ordinal,
-            })
-            .collect();
+    pub(crate) fn resolve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) -> Result<(), CodecError> {
+        let mut resolved = Vec::new();
+        for row in &self.0 {
+            ctx.charge_collection_items(1, "resolve F3D sketch relation members")?;
+            resolved
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit("resolve F3D sketch relation members", 0, 1))?;
+            resolved.push(resolve(row.reference.record_index()));
+        }
+        for (row, operand) in self.0.iter_mut().zip(resolved) {
+            row.reference = SketchRelationReference::Resolved(operand);
+        }
+        Ok(())
     }
 }
 
@@ -251,27 +270,42 @@ pub(crate) struct SketchRelationReturnMembers(Vec<SketchRelationReturnMember>);
 
 impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
-    pub(crate) fn from_indices(rows: impl IntoIterator<Item = (u32, u32)>) -> Self {
-        Self(
-            rows.into_iter()
-                .map(|(record_index, offset)| SketchRelationReturnMember {
-                    reference: SketchRelationReference::Index(record_index),
-                    offset,
-                })
-                .collect(),
-        )
+    pub(crate) fn from_indices(
+        ctx: &DecodeContext<'_>,
+        rows: impl IntoIterator<Item = (u32, u32)>,
+    ) -> Result<Self, CodecError> {
+        let mut members = Vec::new();
+        for (record_index, offset) in rows {
+            ctx.charge_collection_items(1, "admit F3D sketch relation return members")?;
+            members.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("admit F3D sketch relation return members", 0, 1)
+            })?;
+            members.push(SketchRelationReturnMember {
+                reference: SketchRelationReference::Index(record_index),
+                offset,
+            });
+        }
+        Ok(Self(members))
     }
 
     /// Resolve every member while retaining its position metadata.
-    pub(super) fn resolve(&mut self, mut resolve: impl FnMut(u32) -> SketchRelationOperand) {
-        self.0 = self
-            .0
-            .iter()
-            .map(|row| SketchRelationReturnMember {
-                reference: SketchRelationReference::Resolved(resolve(row.reference.record_index())),
-                offset: row.offset,
-            })
-            .collect();
+    pub(super) fn resolve(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        mut resolve: impl FnMut(u32) -> SketchRelationOperand,
+    ) -> Result<(), CodecError> {
+        let mut resolved = Vec::new();
+        for row in &self.0 {
+            ctx.charge_collection_items(1, "resolve F3D sketch relation return members")?;
+            resolved.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("resolve F3D sketch relation return members", 0, 1)
+            })?;
+            resolved.push(resolve(row.reference.record_index()));
+        }
+        for (row, operand) in self.0.iter_mut().zip(resolved) {
+            row.reference = SketchRelationReference::Resolved(operand);
+        }
+        Ok(())
     }
 }
 
@@ -402,10 +436,23 @@ impl std::fmt::Display for SketchRelationPayloadError {
 
 impl std::error::Error for SketchRelationPayloadError {}
 
+enum SketchRelationWireError {
+    Payload(SketchRelationPayloadError),
+    Resource(CodecError),
+}
+
+impl From<SketchRelationPayloadError> for SketchRelationWireError {
+    fn from(error: SketchRelationPayloadError) -> Self {
+        Self::Payload(error)
+    }
+}
+
 /// Counted constraint relation owned by a sketch container.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "SketchRelationSerde", into = "SketchRelationSerde")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "SketchRelationSerde")]
 pub(crate) struct SketchRelation {
+    #[cfg(test)]
+    clone_probe: SketchRelationCloneProbe,
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
     /// Index of this relation record within the `BulkStream` tree.
@@ -440,6 +487,122 @@ pub(crate) struct SketchRelation {
     return_members: SketchRelationReturnMembers,
     /// Complete variable-width source record for native replay/write.
     raw_bytes: Vec<u8>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_RELATION_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct SketchRelationCloneProbe;
+
+#[cfg(test)]
+impl Clone for SketchRelationCloneProbe {
+    fn clone(&self) -> Self {
+        SKETCH_RELATION_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
+}
+
+struct FilteredColumn<'a, T, U> {
+    items: &'a [T],
+    value: fn(&'a T) -> Option<U>,
+}
+
+impl<T, U: Serialize> Serialize for FilteredColumn<'_, T, U> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.items.iter().filter_map(self.value))
+    }
+}
+
+struct ConstraintKinds(u64);
+
+impl Serialize for ConstraintKinds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(constraint_kinds_iter(self.0))
+    }
+}
+
+impl Serialize for SketchRelation {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct BorrowedWire<'a> {
+            id: &'a str,
+            record_index: u32,
+            class_tag: &'a str,
+            byte_offset: u64,
+            state_offset: u32,
+            owner_reference: u32,
+            owner_entity_id: &'a str,
+            auxiliary_references: SliceColumn<'a, Located<u32, u32>, u32>,
+            auxiliary_reference_offsets: SliceColumn<'a, Located<u32, u32>, u32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            rectangular_counted_reference_count: Option<u32>,
+            members: SliceColumn<'a, SketchRelationMember, u32>,
+            resolved_members: FilteredColumn<'a, SketchRelationMember, &'a SketchRelationOperand>,
+            member_offsets: SliceColumn<'a, SketchRelationMember, u32>,
+            owner_reference_offset: u32,
+            state: u64,
+            constraint_kinds: ConstraintKinds,
+            unknown_constraint_bits: u64,
+            member_relation_ordinals: FilteredColumn<'a, SketchRelationMember, u32>,
+            entity_genesis: Option<u64>,
+            pattern: Option<&'a SketchPatternDefinition>,
+            return_members: SliceColumn<'a, SketchRelationReturnMember, u32>,
+            resolved_return_members:
+                FilteredColumn<'a, SketchRelationReturnMember, &'a SketchRelationOperand>,
+            return_member_offsets: SliceColumn<'a, SketchRelationReturnMember, u32>,
+            #[serde(serialize_with = "cadmpeg_ir::bytes::serialize")]
+            raw_bytes: &'a [u8],
+        }
+        let auxiliary = self.auxiliary_references.located_rows().ok_or_else(|| {
+            serde::ser::Error::custom("sketch relation auxiliary_references must be located")
+        })?;
+        let members = &self.members.0;
+        let returns = &self.return_members.0;
+        let state = self.definition.state();
+        BorrowedWire {
+            id: &self.id,
+            record_index: self.record_index,
+            class_tag: self.class_tag.as_str(),
+            byte_offset: self.byte_offset,
+            state_offset: self.state_offset,
+            owner_reference: self.owner_reference,
+            owner_entity_id: self
+                .owner_entity_id
+                .as_ref()
+                .map_or("", |owner| owner.as_str()),
+            auxiliary_references: SliceColumn::new(auxiliary, |row| row.value),
+            auxiliary_reference_offsets: SliceColumn::new(auxiliary, |row| row.offset),
+            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
+            members: SliceColumn::new(members, |row| row.reference.record_index()),
+            resolved_members: FilteredColumn {
+                items: members,
+                value: |row| row.reference.resolved(),
+            },
+            member_offsets: SliceColumn::new(members, |row| row.offset),
+            owner_reference_offset: self.owner_reference_offset,
+            state,
+            constraint_kinds: ConstraintKinds(state),
+            unknown_constraint_bits: state & !SKETCH_CONSTRAINT_MASK,
+            member_relation_ordinals: FilteredColumn {
+                items: members,
+                value: |row| row.relation_ordinal,
+            },
+            entity_genesis: self.entity_genesis,
+            pattern: self.definition.pattern.as_ref(),
+            return_members: SliceColumn::new(returns, |row| row.reference.record_index()),
+            resolved_return_members: FilteredColumn {
+                items: returns,
+                value: |row| row.reference.resolved(),
+            },
+            return_member_offsets: SliceColumn::new(returns, |row| row.offset),
+            raw_bytes: &self.raw_bytes,
+        }
+        .serialize(serializer)
+    }
 }
 
 /// Unchecked sketch relation payload and byte frame.
@@ -525,6 +688,8 @@ impl SketchRelation {
             }
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: SketchRelationCloneProbe,
             id: draft.id,
             record_index: draft.record_index,
             class_tag: draft.class_tag,
@@ -578,10 +743,11 @@ impl SketchRelation {
     /// Resolve both member runs without changing their byte offsets.
     pub(crate) fn resolve_members(
         &mut self,
+        ctx: &DecodeContext<'_>,
         mut resolve: impl FnMut(u32) -> SketchRelationOperand,
-    ) {
-        self.members.resolve(&mut resolve);
-        self.return_members.resolve(resolve);
+    ) -> Result<(), CodecError> {
+        self.members.resolve(ctx, &mut resolve)?;
+        self.return_members.resolve(ctx, resolve)
     }
 
     /// Retained auxiliary references.
@@ -611,31 +777,21 @@ impl SketchRelation {
 
     /// Constraint kinds selected by `state`.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(self.definition.state()).0
     }
 
     /// Bits in `state` outside the defined constraint mask.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn unknown_constraint_bits(&self) -> u64 {
         constraint_kinds_from_state(self.definition.state()).1
     }
 
-    /// The single constraint kind `state` selects, when it selects exactly one and no unknown bits.
-    #[must_use]
-    pub(crate) fn sole_constraint_kind(&self) -> Option<SketchConstraintKind> {
-        let (kinds, unknown) = constraint_kinds_from_state(self.definition.state());
-        if unknown != 0 {
-            return None;
-        }
-        match kinds.as_slice() {
-            [kind] => Some(*kind),
-            _ => None,
-        }
-    }
-
     /// Record indices of the first reference run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn member_indices(&self) -> Vec<u32> {
         self.members
             .iter()
@@ -645,6 +801,7 @@ impl SketchRelation {
 
     /// Record indices of the return reference run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn return_member_indices(&self) -> Vec<u32> {
         self.return_members
             .iter()
@@ -666,6 +823,7 @@ impl SketchRelation {
 
     /// Resolved first-run members, empty for an unresolved run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn resolved_members(&self) -> Vec<SketchRelationOperand> {
         self.members
             .iter()
@@ -675,6 +833,7 @@ impl SketchRelation {
 
     /// Resolved return-run members, empty for an unresolved run.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn resolved_return_members(&self) -> Vec<SketchRelationOperand> {
         self.return_members
             .iter()
@@ -683,109 +842,198 @@ impl SketchRelation {
     }
 }
 
+fn collect_wire_items<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = T>,
+    operation: &'static str,
+) -> Result<Vec<T>, SketchRelationWireError> {
+    let Some(ctx) = ctx else {
+        return Ok(items.into_iter().collect());
+    };
+    let mut collected = Vec::new();
+    for item in items {
+        ctx.charge_collection_items(1, operation)
+            .map_err(SketchRelationWireError::Resource)?;
+        collected.try_reserve(1).map_err(|_| {
+            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+        })?;
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
+fn collect_wire_results<T>(
+    ctx: Option<&DecodeContext<'_>>,
+    items: impl IntoIterator<Item = Result<T, SketchRelationPayloadError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, SketchRelationWireError> {
+    let Some(ctx) = ctx else {
+        return items
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(Into::into);
+    };
+    let mut collected = Vec::new();
+    for item in items {
+        let item = item?;
+        ctx.charge_collection_items(1, operation)
+            .map_err(SketchRelationWireError::Resource)?;
+        collected.try_reserve(1).map_err(|_| {
+            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
+        })?;
+        collected.push(item);
+    }
+    Ok(collected)
+}
+
 fn zip_relation_members(
+    ctx: Option<&DecodeContext<'_>>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     ordinals: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
-) -> Result<SketchRelationMembers, SketchRelationPayloadError> {
+) -> Result<SketchRelationMembers, SketchRelationWireError> {
     let len = members.len();
-    let offsets = pad_or_check("member_offsets", offsets, len)?;
+    let offsets = pad_or_check(ctx, "member_offsets", offsets, len)?;
+    let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        (0..len).map(|_| None).collect::<Vec<_>>()
+        collect_wire_items(
+            ctx,
+            (0..len).map(|_| None),
+            "admit sketch relation ordinals",
+        )?
     } else if ordinals.len() == len {
-        ordinals.into_iter().map(Some).collect()
+        collect_wire_items(
+            ctx,
+            ordinals.into_iter().map(Some),
+            "admit sketch relation ordinals",
+        )?
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
-        ));
+        )
+        .into());
     };
-    let resolved = pad_resolved("resolved_members", resolved, len)?;
-    members
-        .into_iter()
-        .zip(offsets)
-        .zip(ordinals)
-        .zip(resolved)
-        .map(|(((record_index, offset), relation_ordinal), resolved)| {
-            Ok(SketchRelationMember {
-                reference: SketchRelationReference::from_wire(
-                    record_index,
-                    resolved,
-                    "resolved_members",
-                )?,
-                offset,
-                relation_ordinal,
-            })
-        })
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
-        .try_into()
+    collect_wire_results(
+        ctx,
+        members
+            .into_iter()
+            .zip(offsets)
+            .zip(ordinals)
+            .zip(resolved)
+            .map(|(((record_index, offset), relation_ordinal), resolved)| {
+                Ok(SketchRelationMember {
+                    reference: SketchRelationReference::from_wire(
+                        record_index,
+                        resolved,
+                        "resolved_members",
+                    )?,
+                    offset,
+                    relation_ordinal,
+                })
+            }),
+        "admit sketch relation members",
+    )?
+    .try_into()
+    .map_err(Into::into)
 }
 
 fn zip_return_members(
+    ctx: Option<&DecodeContext<'_>>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
-) -> Result<SketchRelationReturnMembers, SketchRelationPayloadError> {
+) -> Result<SketchRelationReturnMembers, SketchRelationWireError> {
     let len = members.len();
-    let offsets = pad_or_check("return_member_offsets", offsets, len)?;
-    let resolved = pad_resolved("resolved_return_members", resolved, len)?;
-    members
-        .into_iter()
-        .zip(offsets)
-        .zip(resolved)
-        .map(|((record_index, offset), resolved)| {
-            Ok(SketchRelationReturnMember {
-                reference: SketchRelationReference::from_wire(
-                    record_index,
-                    resolved,
-                    "resolved_return_members",
-                )?,
-                offset,
-            })
-        })
-        .collect::<Result<Vec<_>, SketchRelationPayloadError>>()?
-        .try_into()
+    let offsets = pad_or_check(ctx, "return_member_offsets", offsets, len)?;
+    let resolved = pad_resolved(ctx, "resolved_return_members", resolved, len)?;
+    collect_wire_results(
+        ctx,
+        members
+            .into_iter()
+            .zip(offsets)
+            .zip(resolved)
+            .map(|((record_index, offset), resolved)| {
+                Ok(SketchRelationReturnMember {
+                    reference: SketchRelationReference::from_wire(
+                        record_index,
+                        resolved,
+                        "resolved_return_members",
+                    )?,
+                    offset,
+                })
+            }),
+        "admit sketch relation return members",
+    )?
+    .try_into()
+    .map_err(Into::into)
 }
 
 fn pad_or_check(
+    ctx: Option<&DecodeContext<'_>>,
     name: &str,
     values: Vec<u32>,
     len: usize,
-) -> Result<Vec<u32>, SketchRelationPayloadError> {
+) -> Result<Vec<u32>, SketchRelationWireError> {
     if values.is_empty() {
-        cadmpeg_core::decode::alloc_filled(len, 0, "pad sketch relation offsets")
-            .map_err(|error| SketchRelationPayloadError(error.to_string()))
+        match ctx {
+            Some(ctx) => ctx
+                .alloc_filled(len, 0, "pad sketch relation offsets")
+                .map_err(SketchRelationWireError::Resource),
+            None => cadmpeg_core::decode::alloc_filled(len, 0, "pad sketch relation offsets")
+                .map_err(|error| {
+                    SketchRelationWireError::Payload(SketchRelationPayloadError(error.to_string()))
+                }),
+        }
     } else if values.len() == len {
         Ok(values)
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
             values.len()
-        )))
+        ))
+        .into())
     }
 }
 
 fn pad_resolved(
+    ctx: Option<&DecodeContext<'_>>,
     name: &str,
     values: Vec<SketchRelationOperand>,
     len: usize,
-) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationPayloadError> {
+) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
-        cadmpeg_core::decode::alloc_filled(len, None, "pad sketch relation resolutions")
-            .map_err(|error| SketchRelationPayloadError(error.to_string()))
+        match ctx {
+            Some(ctx) => ctx
+                .alloc_filled(len, None, "pad sketch relation resolutions")
+                .map_err(SketchRelationWireError::Resource),
+            None => {
+                cadmpeg_core::decode::alloc_filled(len, None, "pad sketch relation resolutions")
+                    .map_err(|error| {
+                        SketchRelationWireError::Payload(SketchRelationPayloadError(
+                            error.to_string(),
+                        ))
+                    })
+            }
+        }
     } else if values.len() == len {
-        Ok(values.into_iter().map(Some).collect())
+        collect_wire_items(
+            ctx,
+            values.into_iter().map(Some),
+            "admit sketch relation resolutions",
+        )
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
             values.len()
-        )))
+        ))
+        .into())
     }
 }
 
 /// Wire form of [`SketchRelation`] with the historical flat field set.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct SketchRelationSerde {
+pub(crate) struct SketchRelationSerde {
     id: String,
     record_index: u32,
     class_tag: String,
@@ -835,21 +1083,48 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
+        Self::from_wire_with_context(None, wire).map_err(|error| match error {
+            SketchRelationWireError::Payload(error) => error,
+            SketchRelationWireError::Resource(error) => {
+                SketchRelationPayloadError(error.to_string())
+            }
+        })
+    }
+}
+
+impl SketchRelation {
+    pub(crate) fn from_wire_charged(
+        ctx: &DecodeContext<'_>,
+        wire: SketchRelationSerde,
+    ) -> Result<Self, CodecError> {
+        Self::from_wire_with_context(Some(ctx), wire).map_err(|error| match error {
+            SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
+            SketchRelationWireError::Resource(error) => error,
+        })
+    }
+
+    fn from_wire_with_context(
+        ctx: Option<&DecodeContext<'_>>,
+        wire: SketchRelationSerde,
+    ) -> Result<Self, SketchRelationWireError> {
         let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
         if !wire.constraint_kinds.is_empty() && wire.constraint_kinds != derived_kinds {
             return Err(SketchRelationPayloadError(
                 "sketch relation constraint_kinds disagrees with state".into(),
-            ));
+            )
+            .into());
         }
         if wire.unknown_constraint_bits != 0 && wire.unknown_constraint_bits != derived_unknown {
             return Err(SketchRelationPayloadError(
                 "sketch relation unknown_constraint_bits disagrees with state".into(),
-            ));
+            )
+            .into());
         }
         if wire.auxiliary_references.len() != wire.auxiliary_reference_offsets.len() {
             return Err(SketchRelationPayloadError(
                 "sketch relation auxiliary_reference_offsets must locate every reference".into(),
-            ));
+            )
+            .into());
         }
         let definition = SketchRelationDefinition::new(wire.state, wire.pattern)?;
         Self::try_new(SketchRelationDraft {
@@ -861,15 +1136,17 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::located(
+            auxiliary_references: ReferenceRun::located(collect_wire_items(
+                ctx,
                 wire.auxiliary_references
                     .into_iter()
                     .zip(wire.auxiliary_reference_offsets)
-                    .map(|(value, offset)| Located { value, offset })
-                    .collect(),
-            ),
+                    .map(|(value, offset)| Located { value, offset }),
+                "admit sketch relation auxiliary references",
+            )?),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
+                ctx,
                 wire.members,
                 wire.member_offsets,
                 wire.member_relation_ordinals,
@@ -879,15 +1156,18 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
             definition,
             entity_genesis: wire.entity_genesis,
             return_members: zip_return_members(
+                ctx,
                 wire.return_members,
                 wire.return_member_offsets,
                 wire.resolved_return_members,
             )?,
             raw_bytes: wire.raw_bytes,
         })
+        .map_err(Into::into)
     }
 }
 
+#[cfg(test)]
 impl From<SketchRelation> for SketchRelationSerde {
     fn from(relation: SketchRelation) -> Self {
         let (constraint_kinds, unknown_constraint_bits) =

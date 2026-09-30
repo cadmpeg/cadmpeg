@@ -31,6 +31,7 @@ use crate::chunks::{chunk_at, parse_header, ArchiveVersion, BoundedReader, Frami
 use crate::layout::file_header;
 use crate::loss::RhinoLossCode;
 use crate::settings::MillimeterScale;
+use crate::wire::admitted_loss;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
 const TCODE_RH_POINT: u32 = 0x0010_0001;
@@ -301,8 +302,7 @@ struct V1DirectRecord {
     payload: V1DirectPayload,
 }
 
-#[allow(clippy::needless_pass_by_value)]
-fn malformed(error: FramingError) -> CodecError {
+fn malformed(error: &FramingError) -> CodecError {
     CodecError::Malformed(error.to_string())
 }
 
@@ -314,7 +314,7 @@ fn geometry_error(error: crate::curves::GeometryError) -> CodecError {
 }
 
 fn v1_f64(reader: &mut BoundedReader<'_>, label: &str) -> Result<FiniteReal, CodecError> {
-    let value = reader.f64().map_err(malformed)?;
+    let value = reader.f64().map_err(|error| malformed(&error))?;
     FiniteReal::new(value)
         .ok_or_else(|| CodecError::malformed(format_args!("V1 {label} is not finite")))
 }
@@ -324,7 +324,7 @@ fn v1_count(
     label: &str,
     maximum: usize,
 ) -> Result<usize, CodecError> {
-    let count = reader.i32().map_err(malformed)?;
+    let count = reader.i32().map_err(|error| malformed(&error))?;
     usize::try_from(count)
         .ok()
         .filter(|value| *value <= maximum)
@@ -337,20 +337,16 @@ fn v1_string(
     label: &str,
 ) -> Result<V1String, CodecError> {
     let count = v1_count(reader, label, 1 << 20)?;
-    let source = reader.take(count).map_err(malformed)?;
+    let source = reader.take(count).map_err(|error| malformed(&error))?;
     ctx.charge_collection_items(
-        u64::try_from(count).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(count),
         "Rhino V1 source text",
     )?;
     let text_bytes = count.checked_mul(3).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
     })?;
     ctx.charge_retained(
-        u64::try_from(text_bytes).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 text exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(text_bytes),
         "Rhino V1 decoded text",
     )?;
     let bytes = ctx.copy_retained(source, "Rhino V1 source text")?;
@@ -383,7 +379,7 @@ fn v1_points(
             "V1 {label} count exceeds the remaining bytes"
         )));
     }
-    let mut points = v1_values::<[FiniteReal; 3]>(ctx, count, "Rhino V1 annotation points")?;
+    let mut points = ctx.retained_vec::<[FiniteReal; 3]>(count, "Rhino V1 annotation points")?;
     for _ in 0..count {
         let mut point = [FiniteReal::ZERO; 3];
         for value in &mut point {
@@ -399,9 +395,9 @@ fn v1_annotation(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
 ) -> Result<V1AnnotationPayload, CodecError> {
-    let mut reader =
-        BoundedReader::new(data, chunk.body().start, chunk.body().end).map_err(malformed)?;
-    let version = reader.i32().map_err(malformed)?;
+    let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
+        .map_err(|error| malformed(&error))?;
+    let version = reader.i32().map_err(|error| malformed(&error))?;
     match chunk.typecode {
         TCODE_TEXT_BLOCK => {
             if version != 1 && version != 2 {
@@ -409,13 +405,13 @@ fn v1_annotation(
                     "unsupported V1 text-block version {version}"
                 )));
             }
-            let type_flag = reader.i32().map_err(malformed)?;
+            let type_flag = reader.i32().map_err(|error| malformed(&error))?;
             let plane = v1_plane(&mut reader)?;
             let user_text = v1_string(ctx, &mut reader, "text-block user text")?;
-            let flags = reader.i32().map_err(malformed)?;
-            let by_object = reader.i32().map_err(malformed)?;
+            let flags = reader.i32().map_err(|error| malformed(&error))?;
+            let by_object = reader.i32().map_err(|error| malformed(&error))?;
             let face_name = v1_string(ctx, &mut reader, "text-block face name")?;
-            let face_weight = reader.i32().map_err(malformed)?;
+            let face_weight = reader.i32().map_err(|error| malformed(&error))?;
             let height = v1_f64(&mut reader, "text-block height")?;
             let version_one_extra = if version == 1 {
                 Some([
@@ -425,7 +421,7 @@ fn v1_annotation(
             } else {
                 None
             };
-            reader.skip_remaining().map_err(malformed)?;
+            reader.skip_remaining().map_err(|error| malformed(&error))?;
             Ok(V1AnnotationPayload::TextBlock(V1TextBlock {
                 version,
                 type_flag,
@@ -445,13 +441,13 @@ fn v1_annotation(
                     "unsupported V1 leader version {version}"
                 )));
             }
-            let type_flag = reader.i32().map_err(malformed)?;
+            let type_flag = reader.i32().map_err(|error| malformed(&error))?;
             let plane = v1_plane(&mut reader)?;
-            let flags = reader.i32().map_err(malformed)?;
-            let by_object = reader.i32().map_err(malformed)?;
+            let flags = reader.i32().map_err(|error| malformed(&error))?;
+            let by_object = reader.i32().map_err(|error| malformed(&error))?;
             let count = v1_count(&mut reader, "leader point", 1 << 16)?;
             let points = v1_points(ctx, &mut reader, count, "leader point")?;
-            reader.skip_remaining().map_err(malformed)?;
+            reader.skip_remaining().map_err(|error| malformed(&error))?;
             Ok(V1AnnotationPayload::Leader(V1Leader {
                 version,
                 type_flag,
@@ -467,15 +463,15 @@ fn v1_annotation(
                     "unsupported V1 linear-dimension version {version}"
                 )));
             }
-            let annotation_type = reader.i32().map_err(malformed)?;
+            let annotation_type = reader.i32().map_err(|error| malformed(&error))?;
             let plane = v1_plane(&mut reader)?;
             let points = v1_points(ctx, &mut reader, 11, "linear-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "linear-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "linear-dimension default text")?;
-            let user_positioned_text = reader.i32().map_err(malformed)?;
-            let flags = reader.i32().map_err(malformed)?;
-            let by_object = reader.i32().map_err(malformed)?;
-            reader.skip_remaining().map_err(malformed)?;
+            let user_positioned_text = reader.i32().map_err(|error| malformed(&error))?;
+            let flags = reader.i32().map_err(|error| malformed(&error))?;
+            let by_object = reader.i32().map_err(|error| malformed(&error))?;
+            reader.skip_remaining().map_err(|error| malformed(&error))?;
             Ok(V1AnnotationPayload::LinearDimension(V1LinearDimension {
                 version,
                 annotation_type,
@@ -494,7 +490,7 @@ fn v1_annotation(
                     "unsupported V1 angular-dimension version {version}"
                 )));
             }
-            let annotation_type = reader.i32().map_err(malformed)?;
+            let annotation_type = reader.i32().map_err(|error| malformed(&error))?;
             let plane = v1_plane(&mut reader)?;
             let angle = v1_f64(&mut reader, "angular-dimension angle")?;
             let radius = v1_f64(&mut reader, "angular-dimension radius")?;
@@ -505,10 +501,10 @@ fn v1_annotation(
             let points = v1_points(ctx, &mut reader, 5, "angular-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "angular-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "angular-dimension default text")?;
-            let user_positioned_text = reader.i32().map_err(malformed)?;
-            let flags = reader.i32().map_err(malformed)?;
-            let by_object = reader.i32().map_err(malformed)?;
-            reader.skip_remaining().map_err(malformed)?;
+            let user_positioned_text = reader.i32().map_err(|error| malformed(&error))?;
+            let flags = reader.i32().map_err(|error| malformed(&error))?;
+            let by_object = reader.i32().map_err(|error| malformed(&error))?;
+            reader.skip_remaining().map_err(|error| malformed(&error))?;
             Ok(V1AnnotationPayload::AngularDimension(V1AngularDimension {
                 version,
                 annotation_type,
@@ -530,15 +526,15 @@ fn v1_annotation(
                     "unsupported V1 radial-dimension version {version}"
                 )));
             }
-            let annotation_type = reader.i32().map_err(malformed)?;
+            let annotation_type = reader.i32().map_err(|error| malformed(&error))?;
             let plane = v1_plane(&mut reader)?;
             let points = v1_points(ctx, &mut reader, 5, "radial-dimension point")?;
             let user_text = v1_string(ctx, &mut reader, "radial-dimension user text")?;
             let default_text = v1_string(ctx, &mut reader, "radial-dimension default text")?;
-            let user_positioned_text = reader.i32().map_err(malformed)?;
-            let flags = reader.i32().map_err(malformed)?;
-            let by_object = reader.i32().map_err(malformed)?;
-            reader.skip_remaining().map_err(malformed)?;
+            let user_positioned_text = reader.i32().map_err(|error| malformed(&error))?;
+            let flags = reader.i32().map_err(|error| malformed(&error))?;
+            let by_object = reader.i32().map_err(|error| malformed(&error))?;
+            reader.skip_remaining().map_err(|error| malformed(&error))?;
             Ok(V1AnnotationPayload::RadialDimension(V1RadialDimension {
                 version,
                 annotation_type,
@@ -567,7 +563,6 @@ fn retain_v1_record(
     let range = chunk.range();
     let bytes = &data[range.clone()];
     ctx.charge_entities(1, "Rhino V1 source record")?;
-    ctx.charge_collection_items(1, "Rhino V1 source records")?;
     let retained_end = retained_bytes.checked_add(bytes.len()).filter(|end| {
         bytes.len() <= crate::decode::RETAINED_RECORD_CAP
             && *end <= crate::decode::RETAINED_DOCUMENT_CAP
@@ -581,7 +576,7 @@ fn retain_v1_record(
         &cadmpeg_ir::identity_namespace!("rhino", "legacy", "record"),
         key,
     );
-    let offset = range.start as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(range.start);
     Ok(match retained_end {
         Some(end) => {
             *retained_bytes = end;
@@ -595,11 +590,45 @@ fn retain_v1_record(
         None => UnknownRecord::unavailable(
             id,
             offset,
-            bytes.len() as u64,
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
             sha256_hex(bytes),
             Vec::new(),
         ),
     })
+}
+
+fn push_v1_record(
+    ctx: &DecodeContext<'_>,
+    records: &mut Vec<UnknownRecord>,
+    data: &[u8],
+    chunk: &crate::chunks::Chunk,
+    retained_bytes: &mut usize,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(records, 1, "Rhino V1 source records")?;
+    records.push(retain_v1_record(ctx, data, chunk, retained_bytes)?);
+    Ok(())
+}
+
+fn count_v1_omission(
+    ctx: &DecodeContext<'_>,
+    omitted: &mut BTreeMap<u32, usize>,
+    typecode: u32,
+) -> Result<(), CodecError> {
+    if !omitted.contains_key(&typecode) {
+        ctx.charge_collection_items(1, "Rhino V1 omitted typecodes")?;
+    }
+    *omitted.entry(typecode).or_default() += 1;
+    Ok(())
+}
+
+fn push_v1_diagnostic(
+    ctx: &DecodeContext<'_>,
+    diagnostics: &mut Vec<String>,
+    message: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    ctx.reserve_vec(diagnostics, 1, "Rhino V1 diagnostics")?;
+    diagnostics.push(ctx.format_retained(message, "Rhino V1 diagnostic message")?);
+    Ok(())
 }
 
 fn child_with_type(
@@ -623,14 +652,15 @@ fn child_with_type(
             end: range.end,
             bound: data.len(),
         })
-        .map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
     let end = if available >= SHARED_CRC16_LEN {
         range.end + SHARED_CRC16_LEN
     } else {
         data.len()
     };
     while offset < end {
-        let chunk = chunk_at(data, offset, end, ArchiveVersion::V1, false).map_err(malformed)?;
+        let chunk = chunk_at(data, offset, end, ArchiveVersion::V1, false)
+            .map_err(|error| malformed(&error))?;
         if chunk.typecode == typecode {
             return Ok(Some(chunk));
         }
@@ -644,13 +674,11 @@ fn admit_v1_values<T>(
     count: usize,
     operation: &'static str,
 ) -> Result<u64, CodecError> {
-    let count = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
-    })?;
+    let count = cadmpeg_core::decode::u64_from_index(count);
     let bytes = count
-        .checked_mul(u64::try_from(std::mem::size_of::<T>()).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
-        })?)
+        .checked_mul(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<T>(),
+        ))
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 collection exceeds address space".to_string())
         })?;
@@ -659,65 +687,36 @@ fn admit_v1_values<T>(
     Ok(bytes)
 }
 
-fn v1_values<T>(
-    ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let bytes = admit_v1_values::<T>(ctx, count, operation)?;
-    let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_retained_bytes,
-            used: 0,
-            additional: bytes,
-            operation,
-        })
-    })?;
-    Ok(values)
-}
-
 fn admit_v1_temporary_items<T>(
     ctx: &DecodeContext<'_>,
     workspace: &mut ScopedReservation<'_>,
     count: usize,
     operation: &'static str,
 ) -> Result<u64, CodecError> {
-    let count_u64 = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
-    })?;
-    let bytes = count
-        .checked_mul(std::mem::size_of::<T>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
-        .ok_or_else(|| {
-            CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
-        })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    let bytes = v1_temporary_bytes::<T>(count)?;
     ctx.charge_collection_items(count_u64, operation)?;
     workspace.grow(bytes)?;
     Ok(bytes)
 }
 
-fn v1_temporary_values<T>(
-    ctx: &DecodeContext<'_>,
+fn reserve_v1_temporary_bytes<T>(
     workspace: &mut ScopedReservation<'_>,
     count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let bytes = admit_v1_temporary_items::<T>(ctx, workspace, count, operation)?;
-    let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_materialized_bytes,
-            used: 0,
-            additional: bytes,
-            operation,
-        })
-    })?;
-    Ok(values)
+) -> Result<u64, CodecError> {
+    let bytes = v1_temporary_bytes::<T>(count)?;
+    workspace.grow(bytes)?;
+    Ok(bytes)
+}
+
+fn v1_temporary_bytes<T>(count: usize) -> Result<u64, CodecError> {
+    let bytes = count
+        .checked_mul(std::mem::size_of::<T>())
+        .map(cadmpeg_core::decode::u64_from_index)
+        .ok_or_else(|| {
+            CodecError::NotImplemented("Rhino V1 workspace exceeds address space".to_string())
+        })?;
+    Ok(bytes)
 }
 
 fn legacy_spline(
@@ -726,37 +725,38 @@ fn legacy_spline(
     range: std::ops::Range<usize>,
     scale: MillimeterScale,
 ) -> Result<NurbsCurve, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let dimension = reader.u8().map_err(malformed)?;
+    let mut reader =
+        BoundedReader::new(data, range.start, range.end).map_err(|error| malformed(&error))?;
+    let dimension = reader.u8().map_err(|error| malformed(&error))?;
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
             "invalid V1 spline dimension".to_string(),
         ));
     }
-    let rational = reader.u8().map_err(malformed)?;
+    let rational = reader.u8().map_err(|error| malformed(&error))?;
     if rational > 2 {
         return Err(CodecError::Malformed(
             "invalid V1 spline rational flag".to_string(),
         ));
     }
-    let order = usize::from(reader.u8().map_err(malformed)?);
-    let cv_count = usize::from(reader.u16().map_err(malformed)?);
+    let order = usize::from(reader.u8().map_err(|error| malformed(&error))?);
+    let cv_count = usize::from(reader.u16().map_err(|error| malformed(&error))?);
     if order < 2 || cv_count < order {
         return Err(CodecError::Malformed("invalid V1 spline shape".to_string()));
     }
-    let closed = reader.u8().map_err(malformed)?;
+    let closed = reader.u8().map_err(|error| malformed(&error))?;
     if closed > 2 {
         return Err(CodecError::Malformed(
             "invalid V1 spline closure".to_string(),
         ));
     }
-    let _form = reader.u8().map_err(malformed)?;
+    let _form = reader.u8().map_err(|error| malformed(&error))?;
     reader
         .skip(usize::from(dimension) * 16)
-        .map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
 
     let clamped = if order > 2 {
-        reader.u8().map_err(malformed)?
+        reader.u8().map_err(|error| malformed(&error))?
     } else {
         0
     };
@@ -766,8 +766,8 @@ fn legacy_spline(
         ));
     }
     let knot_count = order + cv_count - 2;
-    let mut stored_knots = v1_values::<f64>(ctx, knot_count, "Rhino V1 spline stored knots")?;
-    let first = reader.f64().map_err(malformed)?;
+    let mut stored_knots = ctx.retained_vec::<f64>(knot_count, "Rhino V1 spline stored knots")?;
+    let first = reader.f64().map_err(|error| malformed(&error))?;
     stored_knots.push(first);
     if clamped & 1 != 0 {
         while stored_knots.len() <= order - 2 {
@@ -775,17 +775,17 @@ fn legacy_spline(
         }
     }
     while stored_knots.len() < cv_count {
-        stored_knots.push(reader.f64().map_err(malformed)?);
+        stored_knots.push(reader.f64().map_err(|error| malformed(&error))?);
     }
     let last = stored_knots
         .last()
         .copied()
         .ok_or_else(|| CodecError::malformed("V1 spline has no stored knots"))?;
     if clamped & 2 != 0 {
-        stored_knots.resize(knot_count, last);
+        stored_knots.extend(std::iter::repeat_with(|| last).take(knot_count - stored_knots.len()));
     } else {
         while stored_knots.len() < knot_count {
-            stored_knots.push(reader.f64().map_err(malformed)?);
+            stored_knots.push(reader.f64().map_err(|error| malformed(&error))?);
         }
     }
     if order == 2 && cv_count == 2 && stored_knots[0] > stored_knots[1] {
@@ -798,26 +798,22 @@ fn legacy_spline(
     admit_v1_values::<f64>(ctx, reconstructed, "Rhino V1 spline reconstructed knots")?;
     let knots = crate::surfaces::reconstruct_knots(&stored_knots, order, cv_count)
         .map_err(geometry_error)?;
-    let mut control_points = v1_values::<Point3>(ctx, cv_count, "Rhino V1 spline poles")?;
+    let mut control_points = ctx.retained_vec::<Point3>(cv_count, "Rhino V1 spline poles")?;
     let mut weights = if rational != 0 {
-        Some(v1_values::<NonZeroReal>(
-            ctx,
-            cv_count,
-            "Rhino V1 spline weights",
-        )?)
+        Some(ctx.retained_vec::<NonZeroReal>(cv_count, "Rhino V1 spline weights")?)
     } else {
         None
     };
     for _ in 0..cv_count {
-        let x = reader.f64().map_err(malformed)?;
-        let y = reader.f64().map_err(malformed)?;
+        let x = reader.f64().map_err(|error| malformed(&error))?;
+        let y = reader.f64().map_err(|error| malformed(&error))?;
         let z = if dimension == 3 {
-            reader.f64().map_err(malformed)?
+            reader.f64().map_err(|error| malformed(&error))?
         } else {
             0.0
         };
         if let Some(weights) = &mut weights {
-            let weight = reader.f64().map_err(malformed)?;
+            let weight = reader.f64().map_err(|error| malformed(&error))?;
             let weight = NonZeroReal::new(weight)
                 .ok_or_else(|| CodecError::Malformed("invalid V1 spline weight".to_string()))?;
             let divisor = if rational == 2 { weight.get() } else { 1.0 };
@@ -869,35 +865,43 @@ fn legacy_curve_segments(
 ) -> Result<Vec<NurbsCurve>, CodecError> {
     let stuff = child_with_type(data, range, TCODE_LEGACY_CRVSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 curve has no curve-stuff chunk".to_string()))?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let dimension = reader.u8().map_err(malformed)?;
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let dimension = reader.u8().map_err(|error| malformed(&error))?;
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
             "invalid V1 curve dimension".to_string(),
         ));
     }
-    let closure = reader.u8().map_err(malformed)?;
+    let closure = reader.u8().map_err(|error| malformed(&error))?;
     if !matches!(closure, 0 | 1 | 2 | 255) {
         return Err(CodecError::Malformed(
             "invalid V1 curve closure".to_string(),
         ));
     }
-    let count = reader.u16().map_err(malformed)?;
+    let count = reader.u16().map_err(|error| malformed(&error))?;
     if count == 0 {
         return Err(CodecError::Malformed("empty V1 curve".to_string()));
     }
     let count = usize::from(count);
     reader
         .skip(usize::from(dimension) * 16)
-        .map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
     if count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 curve segment count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut segments =
-        v1_temporary_values::<NurbsCurve>(ctx, workspace, count, "Rhino V1 curve segments")?;
+    let mut segments = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<NurbsCurve>(
+            workspace,
+            &mut values,
+            count,
+            "Rhino V1 curve segments",
+        )?;
+        values
+    };
     for _ in 0..count {
         let spline = chunk_at(
             data,
@@ -906,7 +910,7 @@ fn legacy_curve_segments(
             ArchiveVersion::V1,
             false,
         )
-        .map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
         if spline.typecode != TCODE_LEGACY_SPL {
             return Err(CodecError::Malformed(
                 "V1 curve segment is not a spline".to_string(),
@@ -919,7 +923,7 @@ fn legacy_curve_segments(
         segments.push(legacy_spline(ctx, data, spline_stuff.body(), scale)?);
         reader
             .skip(spline.next_offset() - reader.position())
-            .map_err(malformed)?;
+            .map_err(|error| malformed(&error))?;
     }
     Ok(segments)
 }
@@ -950,7 +954,7 @@ fn nested_chunk(
         ArchiveVersion::V1,
         false,
     )
-    .map_err(malformed)?;
+    .map_err(|error| malformed(&error))?;
     if chunk.short() || chunk.typecode != typecode {
         return Err(CodecError::malformed(format_args!(
             "expected V1 nested chunk {typecode:#010x} at offset {}",
@@ -959,7 +963,7 @@ fn nested_chunk(
     }
     reader
         .skip(chunk.next_offset() - reader.position())
-        .map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
     Ok(chunk)
 }
 
@@ -987,9 +991,9 @@ fn v1_i32_array(
             "V1 {label} count exceeds the remaining bytes"
         )));
     }
-    let mut values = v1_values::<i32>(ctx, count, "Rhino V1 Brep indices")?;
+    let mut values = ctx.retained_vec::<i32>(count, "Rhino V1 Brep indices")?;
     for _ in 0..count {
-        values.push(reader.i32().map_err(malformed)?);
+        values.push(reader.i32().map_err(|error| malformed(&error))?);
     }
     Ok(values)
 }
@@ -1011,21 +1015,22 @@ fn v1_nurbs_curve_data(
     data: &[u8],
     range: std::ops::Range<usize>,
 ) -> Result<V1NurbsCurve, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let wire_version = reader.i32().map_err(malformed)?;
+    let mut reader =
+        BoundedReader::new(data, range.start, range.end).map_err(|error| malformed(&error))?;
+    let wire_version = reader.i32().map_err(|error| malformed(&error))?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
         return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 NURBS curve version {wire_version}"
         )));
     }
-    let dimension = reader.i32().map_err(malformed)?;
+    let dimension = reader.i32().map_err(|error| malformed(&error))?;
     if !(1..=1 << 10).contains(&dimension) {
         return Err(CodecError::Malformed(
             "invalid RhinoIO V1 NURBS curve dimension".to_string(),
         ));
     }
-    let rational = match reader.i32().map_err(malformed)? {
+    let rational = match reader.i32().map_err(|error| malformed(&error))? {
         0 => false,
         1 => true,
         value => {
@@ -1034,19 +1039,19 @@ fn v1_nurbs_curve_data(
             )));
         }
     };
-    let order = reader.i32().map_err(malformed)?;
+    let order = reader.i32().map_err(|error| malformed(&error))?;
     if order < 2 {
         return Err(CodecError::Malformed(
             "invalid RhinoIO V1 NURBS curve order".to_string(),
         ));
     }
-    let control_count = reader.i32().map_err(malformed)?;
+    let control_count = reader.i32().map_err(|error| malformed(&error))?;
     if control_count < order {
         return Err(CodecError::Malformed(
             "invalid RhinoIO V1 NURBS curve control count".to_string(),
         ));
     }
-    let flag = reader.i32().map_err(malformed)?;
+    let flag = reader.i32().map_err(|error| malformed(&error))?;
     if flag != 0 {
         return Err(CodecError::malformed(format_args!(
             "invalid RhinoIO V1 NURBS curve flag {flag}"
@@ -1067,7 +1072,7 @@ fn v1_nurbs_curve_data(
             "V1 NURBS curve knots exceed the remaining bytes".to_string(),
         ));
     }
-    let mut knots = v1_values::<FiniteReal>(ctx, knot_count, "Rhino V1 direct curve knots")?;
+    let mut knots = ctx.retained_vec::<FiniteReal>(knot_count, "Rhino V1 direct curve knots")?;
     for _ in 0..knot_count {
         knots.push(v1_f64(&mut reader, "NURBS curve knot")?);
     }
@@ -1086,10 +1091,10 @@ fn v1_nurbs_curve_data(
         ));
     }
     let mut control_values =
-        v1_values::<Vec<FiniteReal>>(ctx, control_count, "Rhino V1 direct curve control rows")?;
+        ctx.retained_vec::<Vec<FiniteReal>>(control_count, "Rhino V1 direct curve control rows")?;
     for _ in 0..control_count {
         let mut values =
-            v1_values::<FiniteReal>(ctx, value_width, "Rhino V1 direct curve controls")?;
+            ctx.retained_vec::<FiniteReal>(value_width, "Rhino V1 direct curve controls")?;
         for _ in 0..value_width {
             values.push(v1_f64(&mut reader, "NURBS curve control value")?);
         }
@@ -1101,7 +1106,7 @@ fn v1_nurbs_curve_data(
             "V1 NURBS curve declares {value_count} control values and carries {read_values}"
         )));
     }
-    reader.skip_remaining().map_err(malformed)?;
+    reader.skip_remaining().map_err(|error| malformed(&error))?;
     Ok(V1NurbsCurve {
         wire_version,
         version,
@@ -1118,21 +1123,22 @@ fn v1_nurbs_surface_data(
     data: &[u8],
     range: std::ops::Range<usize>,
 ) -> Result<V1NurbsSurface, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
-    let wire_version = reader.i32().map_err(malformed)?;
+    let mut reader =
+        BoundedReader::new(data, range.start, range.end).map_err(|error| malformed(&error))?;
+    let wire_version = reader.i32().map_err(|error| malformed(&error))?;
     let version = wire_version & !0x100;
     if version != 100 && version != 101 {
         return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 NURBS surface version {wire_version}"
         )));
     }
-    let dimension = reader.i32().map_err(malformed)?;
+    let dimension = reader.i32().map_err(|error| malformed(&error))?;
     if !(1..=1 << 10).contains(&dimension) {
         return Err(CodecError::Malformed(
             "invalid RhinoIO V1 NURBS surface dimension".to_string(),
         ));
     }
-    let rational = match reader.i32().map_err(malformed)? {
+    let rational = match reader.i32().map_err(|error| malformed(&error))? {
         0 => false,
         1 => true,
         value => {
@@ -1142,8 +1148,8 @@ fn v1_nurbs_surface_data(
         }
     };
     let orders = [
-        reader.i32().map_err(malformed)?,
-        reader.i32().map_err(malformed)?,
+        reader.i32().map_err(|error| malformed(&error))?,
+        reader.i32().map_err(|error| malformed(&error))?,
     ];
     if orders.iter().any(|order| *order < 2) {
         return Err(CodecError::Malformed(
@@ -1151,8 +1157,8 @@ fn v1_nurbs_surface_data(
         ));
     }
     let control_counts = [
-        reader.i32().map_err(malformed)?,
-        reader.i32().map_err(malformed)?,
+        reader.i32().map_err(|error| malformed(&error))?,
+        reader.i32().map_err(|error| malformed(&error))?,
     ];
     if control_counts
         .iter()
@@ -1163,7 +1169,7 @@ fn v1_nurbs_surface_data(
             "invalid RhinoIO V1 NURBS surface control count".to_string(),
         ));
     }
-    let flag = reader.i32().map_err(malformed)?;
+    let flag = reader.i32().map_err(|error| malformed(&error))?;
     if flag != 0 {
         return Err(CodecError::malformed(format_args!(
             "invalid RhinoIO V1 NURBS surface flag {flag}"
@@ -1192,7 +1198,7 @@ fn v1_nurbs_surface_data(
         ));
     }
     let mut u_knots =
-        v1_values::<FiniteReal>(ctx, knot_counts[0], "Rhino V1 direct surface U knots")?;
+        ctx.retained_vec::<FiniteReal>(knot_counts[0], "Rhino V1 direct surface U knots")?;
     for _ in 0..knot_counts[0] {
         u_knots.push(v1_f64(&mut reader, "NURBS surface U knot")?);
     }
@@ -1202,7 +1208,7 @@ fn v1_nurbs_surface_data(
         ));
     }
     let mut v_knots =
-        v1_values::<FiniteReal>(ctx, knot_counts[1], "Rhino V1 direct surface V knots")?;
+        ctx.retained_vec::<FiniteReal>(knot_counts[1], "Rhino V1 direct surface V knots")?;
     for _ in 0..knot_counts[1] {
         v_knots.push(v1_f64(&mut reader, "NURBS surface V knot")?);
     }
@@ -1230,16 +1236,16 @@ fn v1_nurbs_surface_data(
         ));
     }
     let mut control_values =
-        v1_values::<Vec<FiniteReal>>(ctx, pole_count, "Rhino V1 direct surface control rows")?;
+        ctx.retained_vec::<Vec<FiniteReal>>(pole_count, "Rhino V1 direct surface control rows")?;
     for _ in 0..pole_count {
         let mut values =
-            v1_values::<FiniteReal>(ctx, value_width, "Rhino V1 direct surface controls")?;
+            ctx.retained_vec::<FiniteReal>(value_width, "Rhino V1 direct surface controls")?;
         for _ in 0..value_width {
             values.push(v1_f64(&mut reader, "NURBS surface control value")?);
         }
         control_values.push(values);
     }
-    reader.skip_remaining().map_err(malformed)?;
+    reader.skip_remaining().map_err(|error| malformed(&error))?;
     Ok(V1NurbsSurface {
         wire_version,
         version,
@@ -1270,7 +1276,7 @@ fn v1_nurbs_curve_group(
         ));
     }
     let mut segments =
-        v1_values::<V1NurbsCurve>(ctx, segment_count, "Rhino V1 direct Brep curve segments")?;
+        ctx.retained_vec::<V1NurbsCurve>(segment_count, "Rhino V1 direct Brep curve segments")?;
     for _ in 0..segment_count {
         let object = nested_chunk(data, reader, TCODE_RHINOIO_OBJECT_NURBS_CURVE)?;
         segments.push(v1_nurbs_object(
@@ -1288,12 +1294,12 @@ fn v1_nurbs_brep(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
 ) -> Result<V1NurbsBrep, CodecError> {
-    let mut outer =
-        BoundedReader::new(data, chunk.body().start, chunk.body().end).map_err(malformed)?;
+    let mut outer = BoundedReader::new(data, chunk.body().start, chunk.body().end)
+        .map_err(|error| malformed(&error))?;
     let data_chunk = nested_chunk(data, &mut outer, TCODE_RHINOIO_OBJECT_DATA)?;
     let mut reader = BoundedReader::new(data, data_chunk.body().start, data_chunk.body().end)
-        .map_err(malformed)?;
-    let wire_version = reader.i32().map_err(malformed)?;
+        .map_err(|error| malformed(&error))?;
+    let wire_version = reader.i32().map_err(|error| malformed(&error))?;
     if wire_version != 100 && wire_version != 101 {
         return Err(CodecError::malformed(format_args!(
             "unsupported RhinoIO V1 Brep version {wire_version}"
@@ -1312,7 +1318,7 @@ fn v1_nurbs_brep(
         ));
     }
     let mut curves_2d =
-        v1_values::<V1NurbsCurveGroup>(ctx, curve_count, "Rhino V1 direct Brep 2D curves")?;
+        ctx.retained_vec::<V1NurbsCurveGroup>(curve_count, "Rhino V1 direct Brep 2D curves")?;
     for _ in 0..curve_count {
         curves_2d.push(v1_nurbs_curve_group(ctx, data, &mut reader)?);
     }
@@ -1329,7 +1335,7 @@ fn v1_nurbs_brep(
         ));
     }
     let mut curves_3d =
-        v1_values::<V1NurbsCurveGroup>(ctx, curve_count, "Rhino V1 direct Brep 3D curves")?;
+        ctx.retained_vec::<V1NurbsCurveGroup>(curve_count, "Rhino V1 direct Brep 3D curves")?;
     for _ in 0..curve_count {
         curves_3d.push(v1_nurbs_curve_group(ctx, data, &mut reader)?);
     }
@@ -1346,7 +1352,7 @@ fn v1_nurbs_brep(
         ));
     }
     let mut surfaces =
-        v1_values::<V1NurbsSurface>(ctx, surface_count, "Rhino V1 direct Brep surfaces")?;
+        ctx.retained_vec::<V1NurbsSurface>(surface_count, "Rhino V1 direct Brep surfaces")?;
     for _ in 0..surface_count {
         let object = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_NURBS_SURFACE)?;
         surfaces.push(v1_nurbs_object(
@@ -1359,10 +1365,10 @@ fn v1_nurbs_brep(
 
     let vertex_count = v1_count(&mut reader, "Brep vertex", 1 << 20)?;
     let mut vertices =
-        v1_values::<V1BrepVertex>(ctx, vertex_count, "Rhino V1 direct Brep vertices")?;
+        ctx.retained_vec::<V1BrepVertex>(vertex_count, "Rhino V1 direct Brep vertices")?;
     for _ in 0..vertex_count {
         vertices.push(V1BrepVertex {
-            index: reader.i32().map_err(malformed)?,
+            index: reader.i32().map_err(|error| malformed(&error))?,
             point: v1_point3(&mut reader, "Brep vertex point")?,
             edge_indices: v1_i32_array(ctx, &mut reader, "Brep vertex edge")?,
             tolerance: v1_f64(&mut reader, "Brep vertex tolerance")?,
@@ -1370,15 +1376,15 @@ fn v1_nurbs_brep(
     }
 
     let edge_count = v1_count(&mut reader, "Brep edge", 1 << 20)?;
-    let mut edges = v1_values::<V1BrepEdge>(ctx, edge_count, "Rhino V1 direct Brep edges")?;
+    let mut edges = ctx.retained_vec::<V1BrepEdge>(edge_count, "Rhino V1 direct Brep edges")?;
     for _ in 0..edge_count {
         edges.push(V1BrepEdge {
-            index: reader.i32().map_err(malformed)?,
-            curve_3d_index: reader.i32().map_err(malformed)?,
+            index: reader.i32().map_err(|error| malformed(&error))?,
+            curve_3d_index: reader.i32().map_err(|error| malformed(&error))?,
             domain: v1_interval(&mut reader, "Brep edge domain")?,
             vertex_indices: [
-                reader.i32().map_err(malformed)?,
-                reader.i32().map_err(malformed)?,
+                reader.i32().map_err(|error| malformed(&error))?,
+                reader.i32().map_err(|error| malformed(&error))?,
             ],
             trim_indices: v1_i32_array(ctx, &mut reader, "Brep edge trim")?,
             tolerance: v1_f64(&mut reader, "Brep edge tolerance")?,
@@ -1386,21 +1392,21 @@ fn v1_nurbs_brep(
     }
 
     let trim_count = v1_count(&mut reader, "Brep trim", 1 << 20)?;
-    let mut trims = v1_values::<V1BrepTrim>(ctx, trim_count, "Rhino V1 direct Brep trims")?;
+    let mut trims = ctx.retained_vec::<V1BrepTrim>(trim_count, "Rhino V1 direct Brep trims")?;
     for _ in 0..trim_count {
         trims.push(V1BrepTrim {
-            index: reader.i32().map_err(malformed)?,
-            curve_2d_index: reader.i32().map_err(malformed)?,
+            index: reader.i32().map_err(|error| malformed(&error))?,
+            curve_2d_index: reader.i32().map_err(|error| malformed(&error))?,
             domain: v1_interval(&mut reader, "Brep trim domain")?,
-            edge_index: reader.i32().map_err(malformed)?,
+            edge_index: reader.i32().map_err(|error| malformed(&error))?,
             vertex_indices: [
-                reader.i32().map_err(malformed)?,
-                reader.i32().map_err(malformed)?,
+                reader.i32().map_err(|error| malformed(&error))?,
+                reader.i32().map_err(|error| malformed(&error))?,
             ],
-            reversed_3d: reader.i32().map_err(malformed)? != 0,
-            trim_type: reader.i32().map_err(malformed)?,
-            iso: reader.i32().map_err(malformed)?,
-            loop_index: reader.i32().map_err(malformed)?,
+            reversed_3d: reader.i32().map_err(|error| malformed(&error))? != 0,
+            trim_type: reader.i32().map_err(|error| malformed(&error))?,
+            iso: reader.i32().map_err(|error| malformed(&error))?,
+            loop_index: reader.i32().map_err(|error| malformed(&error))?,
             tolerances: [
                 v1_f64(&mut reader, "Brep trim tolerance")?,
                 v1_f64(&mut reader, "Brep trim tolerance")?,
@@ -1415,32 +1421,32 @@ fn v1_nurbs_brep(
     }
 
     let loop_count = v1_count(&mut reader, "Brep loop", 1 << 20)?;
-    let mut loops = v1_values::<V1BrepLoop>(ctx, loop_count, "Rhino V1 direct Brep loops")?;
+    let mut loops = ctx.retained_vec::<V1BrepLoop>(loop_count, "Rhino V1 direct Brep loops")?;
     for _ in 0..loop_count {
         loops.push(V1BrepLoop {
-            index: reader.i32().map_err(malformed)?,
+            index: reader.i32().map_err(|error| malformed(&error))?,
             trim_indices: v1_i32_array(ctx, &mut reader, "Brep loop trim")?,
-            loop_type: reader.i32().map_err(malformed)?,
-            face_index: reader.i32().map_err(malformed)?,
+            loop_type: reader.i32().map_err(|error| malformed(&error))?,
+            face_index: reader.i32().map_err(|error| malformed(&error))?,
         });
     }
 
     let face_count = v1_count(&mut reader, "Brep face", 1 << 20)?;
-    let mut faces = v1_values::<V1BrepFace>(ctx, face_count, "Rhino V1 direct Brep faces")?;
+    let mut faces = ctx.retained_vec::<V1BrepFace>(face_count, "Rhino V1 direct Brep faces")?;
     for _ in 0..face_count {
         faces.push(V1BrepFace {
-            index: reader.i32().map_err(malformed)?,
+            index: reader.i32().map_err(|error| malformed(&error))?,
             loop_indices: v1_i32_array(ctx, &mut reader, "Brep face loop")?,
-            surface_index: reader.i32().map_err(malformed)?,
-            reversed: reader.i32().map_err(malformed)? != 0,
+            surface_index: reader.i32().map_err(|error| malformed(&error))?,
+            reversed: reader.i32().map_err(|error| malformed(&error))? != 0,
         });
     }
     let bbox = [
         v1_point3(&mut reader, "Brep bounding box")?,
         v1_point3(&mut reader, "Brep bounding box")?,
     ];
-    reader.skip_remaining().map_err(malformed)?;
-    outer.skip_remaining().map_err(malformed)?;
+    reader.skip_remaining().map_err(|error| malformed(&error))?;
+    outer.skip_remaining().map_err(|error| malformed(&error))?;
     Ok(V1NurbsBrep {
         wire_version,
         curves_2d,
@@ -1492,8 +1498,7 @@ fn v1_direct_record(
             "rhino:legacy:v1-record#{:08x}-{:016x}",
             chunk.typecode, chunk.header_start
         ),
-        source_offset: u64::try_from(chunk.header_start)
-            .map_err(|_| CodecError::Malformed("V1 direct record offset overflow".to_string()))?,
+        source_offset: cadmpeg_core::decode::u64_from_index(chunk.header_start),
         typecode: chunk.typecode,
         document_scale: document_scale.positive(),
         payload,
@@ -1507,18 +1512,18 @@ fn legacy_surface(
     scale: MillimeterScale,
 ) -> Result<NurbsSurface, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_SRF, TCODE_LEGACY_SRFSTUFF)?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let dimension = usize::from(reader.u8().map_err(malformed)?);
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let dimension = usize::from(reader.u8().map_err(|error| malformed(&error))?);
     if !matches!(dimension, 2 | 3) {
         return Err(CodecError::Malformed(
             "invalid V1 surface dimension".to_string(),
         ));
     }
-    let _form = reader.u8().map_err(malformed)?;
+    let _form = reader.u8().map_err(|error| malformed(&error))?;
     let orders = [
-        usize::from(reader.u8().map_err(malformed)?) + 1,
-        usize::from(reader.u8().map_err(malformed)?) + 1,
+        usize::from(reader.u8().map_err(|error| malformed(&error))?) + 1,
+        usize::from(reader.u8().map_err(|error| malformed(&error))?) + 1,
     ];
     if orders.iter().any(|order| *order < 2) {
         return Err(CodecError::Malformed(
@@ -1526,8 +1531,8 @@ fn legacy_surface(
         ));
     }
     let counts = [
-        orders[0] - 1 + usize::from(reader.u16().map_err(malformed)?),
-        orders[1] - 1 + usize::from(reader.u16().map_err(malformed)?),
+        orders[0] - 1 + usize::from(reader.u16().map_err(|error| malformed(&error))?),
+        orders[1] - 1 + usize::from(reader.u16().map_err(|error| malformed(&error))?),
     ];
     if counts[0] < orders[0] || counts[1] < orders[1] {
         return Err(CodecError::Malformed(
@@ -1535,8 +1540,8 @@ fn legacy_surface(
         ));
     }
     let rational_modes = [
-        reader.u8().map_err(malformed)?,
-        reader.u8().map_err(malformed)?,
+        reader.u8().map_err(|error| malformed(&error))?,
+        reader.u8().map_err(|error| malformed(&error))?,
     ];
     if rational_modes.iter().any(|mode| *mode > 2) {
         return Err(CodecError::Malformed(
@@ -1548,8 +1553,8 @@ fn legacy_surface(
         .rfind(|mode| *mode != 0)
         .unwrap_or(0);
     let closed = [
-        reader.u8().map_err(malformed)?,
-        reader.u8().map_err(malformed)?,
+        reader.u8().map_err(|error| malformed(&error))?,
+        reader.u8().map_err(|error| malformed(&error))?,
     ];
     if closed.iter().any(|value| *value > 2) {
         return Err(CodecError::Malformed(
@@ -1557,24 +1562,26 @@ fn legacy_surface(
         ));
     }
     let singular = [
-        reader.u8().map_err(malformed)?,
-        reader.u8().map_err(malformed)?,
+        reader.u8().map_err(|error| malformed(&error))?,
+        reader.u8().map_err(|error| malformed(&error))?,
     ];
     if singular.iter().any(|value| *value > 3) {
         return Err(CodecError::Malformed(
             "invalid V1 surface singular flag".to_string(),
         ));
     }
-    reader.skip(dimension * 16).map_err(malformed)?;
+    reader
+        .skip(dimension * 16)
+        .map_err(|error| malformed(&error))?;
     let u_count = orders[0] + counts[0] - 2;
     let v_count = orders[1] + counts[1] - 2;
-    let mut stored_u = v1_values::<f64>(ctx, u_count, "Rhino V1 surface stored U knots")?;
+    let mut stored_u = ctx.retained_vec::<f64>(u_count, "Rhino V1 surface stored U knots")?;
     for _ in 0..u_count {
-        stored_u.push(reader.f64().map_err(malformed)?);
+        stored_u.push(reader.f64().map_err(|error| malformed(&error))?);
     }
-    let mut stored_v = v1_values::<f64>(ctx, v_count, "Rhino V1 surface stored V knots")?;
+    let mut stored_v = ctx.retained_vec::<f64>(v_count, "Rhino V1 surface stored V knots")?;
     for _ in 0..v_count {
-        stored_v.push(reader.f64().map_err(malformed)?);
+        stored_v.push(reader.f64().map_err(|error| malformed(&error))?);
     }
     admit_v1_values::<f64>(ctx, u_count + 2, "Rhino V1 surface U knots")?;
     admit_v1_values::<f64>(ctx, v_count + 2, "Rhino V1 surface V knots")?;
@@ -1585,25 +1592,22 @@ fn legacy_surface(
     let pole_count = counts[0].checked_mul(counts[1]).ok_or_else(|| {
         CodecError::NotImplemented("V1 surface pole count exceeds address space".to_string())
     })?;
-    let mut control_points = v1_values::<FinitePoint3>(ctx, pole_count, "Rhino V1 surface poles")?;
+    let mut control_points =
+        ctx.retained_vec::<FinitePoint3>(pole_count, "Rhino V1 surface poles")?;
     let mut weights = if rational_mode != 0 {
-        Some(v1_values::<NonZeroReal>(
-            ctx,
-            pole_count,
-            "Rhino V1 surface weights",
-        )?)
+        Some(ctx.retained_vec::<NonZeroReal>(pole_count, "Rhino V1 surface weights")?)
     } else {
         None
     };
     for _ in 0..pole_count {
         let mut coordinates = [0.0_f64; 3];
         for coordinate in coordinates.iter_mut().take(dimension) {
-            *coordinate = reader.f64().map_err(malformed)?;
+            *coordinate = reader.f64().map_err(|error| malformed(&error))?;
         }
         let weight = if rational_mode == 0 {
             1.0
         } else {
-            reader.f64().map_err(malformed)?
+            reader.f64().map_err(|error| malformed(&error))?
         };
         let weight = NonZeroReal::new(weight)
             .ok_or_else(|| CodecError::Malformed("invalid V1 surface weight".to_string()))?;
@@ -1771,19 +1775,29 @@ fn append_legacy_brep(
         &cadmpeg_ir::identity_namespace!("rhino", "object", "shell"),
         suffix_key.clone(),
     );
-    let mut trim_paths = v1_temporary_values::<(usize, usize, usize)>(
-        ctx,
-        &mut workspace,
-        trim_count,
-        "Rhino V1 Brep trim paths",
-    )?;
-    let mut face_trim_indices = v1_temporary_values::<Vec<usize>>(
-        ctx,
-        &mut workspace,
-        brep.faces.len(),
-        "Rhino V1 Brep face trim rows",
-    )?;
-    face_trim_indices.resize_with(brep.faces.len(), Vec::new);
+    let mut trim_paths = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<(usize, usize, usize)>(
+            &mut workspace,
+            &mut values,
+            trim_count,
+            "Rhino V1 Brep trim paths",
+        )?;
+        values
+    };
+    let mut face_trim_indices = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<Vec<usize>>(
+            &mut workspace,
+            &mut values,
+            brep.faces.len(),
+            "Rhino V1 Brep face trim rows",
+        )?;
+        values
+    };
+    for _ in 0..brep.faces.len() {
+        face_trim_indices.push(Vec::new());
+    }
     for (face_index, face) in brep.faces.iter().enumerate() {
         let face_trim_count = face
             .loops
@@ -1796,12 +1810,16 @@ fn append_legacy_brep(
                     "Rhino V1 Brep face trim count exceeds address space".to_string(),
                 )
             })?;
-        face_trim_indices[face_index] = v1_temporary_values::<usize>(
-            ctx,
-            &mut workspace,
-            face_trim_count,
-            "Rhino V1 Brep face trim indices",
-        )?;
+        face_trim_indices[face_index] = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<usize>(
+                &mut workspace,
+                &mut values,
+                face_trim_count,
+                "Rhino V1 Brep face trim indices",
+            )?;
+            values
+        };
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
             for trim_index in 0..loop_record.trims.len() {
                 let global = trim_paths.len();
@@ -1813,12 +1831,16 @@ fn append_legacy_brep(
     if trim_paths.is_empty() {
         return Err(CodecError::Malformed("V1 Brep has no trims".to_string()));
     }
-    let mut parents = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep trim parents",
-    )?;
+    let mut parents = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep trim parents",
+        )?;
+        values
+    };
     parents.extend(0..trim_paths.len());
     let has_edge = |index: usize| {
         let (face, loop_index, trim) = trim_paths[index];
@@ -1833,12 +1855,16 @@ fn append_legacy_brep(
     };
     for (face_index, face) in brep.faces.iter().enumerate() {
         let mut seam_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep seams")?;
-        let mut seams = v1_temporary_values::<usize>(
-            ctx,
-            &mut seam_workspace,
-            face_trim_indices[face_index].len(),
-            "Rhino V1 Brep seams",
-        )?;
+        let mut seams = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<usize>(
+                &mut seam_workspace,
+                &mut values,
+                face_trim_indices[face_index].len(),
+                "Rhino V1 Brep seams",
+            )?;
+            values
+        };
         for index in face_trim_indices[face_index].iter().copied() {
             let (_, loop_index, trim_index) = trim_paths[index];
             if face.loops[loop_index].trims[trim_index].mate == Mate::Seam {
@@ -1853,12 +1879,16 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut mates = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep mated trims",
-    )?;
+    let mut mates = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep mated trims",
+        )?;
+        values
+    };
     for (index, (face, loop_index, trim)) in trim_paths.iter().enumerate() {
         let record = &brep.faces[*face].loops[*loop_index].trims[*trim];
         if record.mate == Mate::Mated {
@@ -1872,21 +1902,29 @@ fn append_legacy_brep(
             }
         }
     }
-    let mut roots = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        trim_paths.len(),
-        "Rhino V1 Brep trim roots",
-    )?;
+    let mut roots = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            trim_paths.len(),
+            "Rhino V1 Brep trim roots",
+        )?;
+        values
+    };
     for index in 0..trim_paths.len() {
         roots.push(find_root(&mut parents, index));
     }
-    let mut group_roots = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        roots.len(),
-        "Rhino V1 Brep unique roots",
-    )?;
+    let mut group_roots = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            roots.len(),
+            "Rhino V1 Brep unique roots",
+        )?;
+        values
+    };
     group_roots.extend_from_slice(&roots);
     group_roots.sort_unstable();
     group_roots.dedup();
@@ -1954,12 +1992,16 @@ fn append_legacy_brep(
                 .find_map(|(global, path)| (*path == (face_index, loop_index, 0)).then_some(global))
                 .ok_or_else(|| CodecError::malformed("V1 loop has no indexed trim"))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep loop globals")?;
-            let mut globals = v1_temporary_values::<usize>(
-                ctx,
-                &mut globals_workspace,
-                loop_record.trims.len(),
-                "Rhino V1 Brep loop globals",
-            )?;
+            let mut globals = {
+                let mut values = Vec::new();
+                ctx.reserve_scoped_vec::<usize>(
+                    &mut globals_workspace,
+                    &mut values,
+                    loop_record.trims.len(),
+                    "Rhino V1 Brep loop globals",
+                )?;
+                values
+            };
             globals.extend(start..start + loop_record.trims.len());
             for (position, global) in globals.iter().copied().enumerate() {
                 let root = roots[global];
@@ -1996,12 +2038,16 @@ fn append_legacy_brep(
     let endpoint_count = trim_paths.len().checked_mul(2).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 Brep endpoint count exceeds address space".to_string())
     })?;
-    let mut endpoint_parents = v1_temporary_values::<usize>(
-        ctx,
-        &mut workspace,
-        endpoint_count,
-        "Rhino V1 Brep endpoint parents",
-    )?;
+    let mut endpoint_parents = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            &mut workspace,
+            &mut values,
+            endpoint_count,
+            "Rhino V1 Brep endpoint parents",
+        )?;
+        values
+    };
     endpoint_parents.extend(0..endpoint_count);
     for (face_index, face) in brep.faces.iter().enumerate() {
         for (loop_index, loop_record) in face.loops.iter().enumerate() {
@@ -2014,12 +2060,16 @@ fn append_legacy_brep(
                 .map(|position| face_trim_indices[face_index][position])
                 .ok_or_else(|| CodecError::Malformed("V1 loop has no indexed trim".to_string()))?;
             let mut globals_workspace = ctx.reserve_scoped(0, "Rhino V1 Brep endpoint globals")?;
-            let mut globals = v1_temporary_values::<usize>(
-                ctx,
-                &mut globals_workspace,
-                loop_record.trims.len(),
-                "Rhino V1 Brep endpoint globals",
-            )?;
+            let mut globals = {
+                let mut values = Vec::new();
+                ctx.reserve_scoped_vec::<usize>(
+                    &mut globals_workspace,
+                    &mut values,
+                    loop_record.trims.len(),
+                    "Rhino V1 Brep endpoint globals",
+                )?;
+                values
+            };
             globals.extend((0..loop_record.trims.len()).map(|offset| start + offset));
             for (position, global) in globals.iter().copied().enumerate() {
                 let next = globals[(position + 1) % globals.len()];
@@ -2124,15 +2174,11 @@ fn append_legacy_brep(
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
         })?;
-    let entity_count = u64::try_from(entity_count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
-    })?;
+    let entity_count = cadmpeg_core::decode::u64_from_index(entity_count);
     ctx.charge_entities(entity_count, "Rhino V1 Brep topology")?;
     ctx.charge_collection_items(entity_count, "Rhino V1 Brep model collections")?;
     ctx.charge_retained(
-        u64::try_from(retained_bytes).map_err(|_| {
-            CodecError::NotImplemented("Rhino V1 Brep model exceeds address space".to_string())
-        })?,
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
         "Rhino V1 Brep topology storage",
     )?;
     admit_v1_temporary_items::<cadmpeg_ir::ids::CoedgeId>(
@@ -2143,7 +2189,9 @@ fn append_legacy_brep(
     )?;
     admit_v1_values::<PcurveUse>(ctx, trim_count, "Rhino V1 Brep pcurve uses")?;
     for (class, samples) in class_samples {
-        let count = samples.len() as f64;
+        let count = cadmpeg_core::convert::f64_from_index(samples.len()).ok_or_else(|| {
+            CodecError::Malformed("Rhino V1 endpoint count exceeds exact float range".into())
+        })?;
         let (position, tolerance) = samples.into_iter().fold(
             (Point3::new(0.0, 0.0, 0.0), 0.0_f64),
             |(sum, maximum_tolerance), (point, sample_tolerance)| {
@@ -2166,11 +2214,13 @@ fn append_legacy_brep(
         let finite_position = cadmpeg_ir::features::FinitePoint3::new(position)
             .ok_or(Point::NON_FINITE_POSITION)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-        model
-            .points
-            .push(Point::new(point_id.clone(), finite_position, None));
+        model.points.push(Point::new(
+            point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            finite_position,
+            None,
+        ));
         model.vertices.push(Vertex {
-            id: vertex_id.clone(),
+            id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             point: point_id,
             tolerance: (tolerance > 0.0)
                 .then(|| {
@@ -2181,31 +2231,33 @@ fn append_legacy_brep(
         });
         vertex_by_class.insert(class, vertex_id);
     }
-    admit_v1_temporary_items::<(usize, [cadmpeg_ir::ids::VertexId; 2])>(
-        ctx,
+    reserve_v1_temporary_bytes::<(usize, [cadmpeg_ir::ids::VertexId; 2])>(
         &mut workspace,
         group_roots.len(),
-        "Rhino V1 Brep grouped vertices",
     )?;
     let mut group_vertices = BTreeMap::new();
     for root in &group_roots {
         let start_class = find_root(&mut endpoint_parents, root * 2);
         let end_class = find_root(&mut endpoint_parents, root * 2 + 1);
-        let start = vertex_by_class.get(&start_class).cloned().ok_or_else(|| {
-            CodecError::malformed("V1 edge start endpoint has no admitted vertex")
-        })?;
+        let start = vertex_by_class
+            .get(&start_class)
+            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
+            .transpose()?
+            .ok_or_else(|| {
+                CodecError::malformed("V1 edge start endpoint has no admitted vertex")
+            })?;
         let end = vertex_by_class
             .get(&end_class)
-            .cloned()
+            .map(|id| id.try_clone_for_decode(ctx, "Rhino V1 vertex identity copy"))
+            .transpose()?
             .ok_or_else(|| CodecError::malformed("V1 edge end endpoint has no admitted vertex"))?;
         let ids = [start, end];
+        ctx.charge_collection_items(1, "Rhino V1 Brep grouped vertices")?;
         group_vertices.insert(*root, ids);
     }
-    admit_v1_temporary_items::<(usize, cadmpeg_ir::ids::EdgeId)>(
-        ctx,
+    reserve_v1_temporary_bytes::<(usize, cadmpeg_ir::ids::EdgeId)>(
         &mut workspace,
         group_roots.len(),
-        "Rhino V1 Brep grouped edges",
     )?;
     let mut group_edges = BTreeMap::new();
     for (edge_index, root) in group_roots.iter().copied().enumerate() {
@@ -2221,7 +2273,7 @@ fn append_legacy_brep(
                 legacy_identity_key(format!("{suffix}.edge-{edge_index}"))?,
             );
             model.curves.push(Curve {
-                id: id.clone(),
+                id: id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone())),
                 source_object: None,
             });
@@ -2237,14 +2289,21 @@ fn append_legacy_brep(
             .get(&root)
             .ok_or_else(|| CodecError::Malformed("V1 edge has no vertices".to_string()))?;
         model.edges.push(Edge {
-            id: edge_id.clone(),
+            id: edge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                curve_id.as_ref().map(|value| value.0.clone()),
+                curve_id
+                    .as_ref()
+                    .map(|value| {
+                        value
+                            .0
+                            .try_clone_for_decode(ctx, "Rhino V1 curve identity copy")
+                    })
+                    .transpose()?,
                 curve_id.map(|value| value.1),
             )
             .map_err(CodecError::malformed)?,
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
+            start: vertices[0].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            end: vertices[1].try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             tolerance: group_tolerance
                 .get(&root)
                 .copied()
@@ -2255,10 +2314,11 @@ fn append_legacy_brep(
                 })
                 .transpose()?,
         });
+        ctx.charge_collection_items(1, "Rhino V1 Brep grouped edges")?;
         group_edges.insert(root, edge_id);
     }
     let mut shell_faces =
-        v1_values::<cadmpeg_ir::ids::FaceId>(ctx, face_count, "Rhino V1 shell faces")?;
+        ctx.retained_vec::<cadmpeg_ir::ids::FaceId>(face_count, "Rhino V1 shell faces")?;
     admit_v1_temporary_items::<(usize, Vec<cadmpeg_ir::ids::CoedgeId>)>(
         ctx,
         &mut workspace,
@@ -2277,15 +2337,14 @@ fn append_legacy_brep(
             legacy_identity_key(format!("{suffix}.slot-{face_index}"))?,
         );
         model.surfaces.push(Surface {
-            id: surface_id.clone(),
+            id: surface_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(face_record.surface)),
             source_object: None,
         });
         // Each V1 boundary record states its loop and its role together, so
         // the face's classification is folded from those rows and never
         // recovered from a position in a parallel array.
-        let mut face_loops = v1_values::<cadmpeg_ir::ids::LoopId>(
-            ctx,
+        let mut face_loops = ctx.retained_vec::<cadmpeg_ir::ids::LoopId>(
             face_record.loops.len(),
             "Rhino V1 face loops",
         )?;
@@ -2296,8 +2355,7 @@ fn append_legacy_brep(
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "loop"),
                 legacy_identity_key(format!("{suffix}.face-{face_index}-{loop_index}"))?,
             );
-            let mut coedge_ids = v1_values::<cadmpeg_ir::ids::CoedgeId>(
-                ctx,
+            let mut coedge_ids = ctx.retained_vec::<cadmpeg_ir::ids::CoedgeId>(
                 loop_record.trims.len(),
                 "Rhino V1 loop coedges",
             )?;
@@ -2310,23 +2368,11 @@ fn append_legacy_brep(
                     ))?,
                 );
                 let pcurve_domain = curve_domain(&trim.pcurve)?;
-                let pcurve_knot_bytes = admit_v1_values::<f64>(
-                    ctx,
-                    trim.pcurve.knots().len(),
-                    "Rhino V1 pcurve knots",
-                )?;
-                let pcurve_knots = trim.pcurve.knots().try_clone().map_err(|_| {
-                    CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-                        dimension: cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-                        reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-                        limit: ctx.policy().limits.max_retained_bytes,
-                        used: 0,
-                        additional: pcurve_knot_bytes,
-                        operation: "Rhino V1 pcurve knots",
-                    })
-                })?;
-                let mut pcurve_points = v1_values::<cadmpeg_ir::units::FinitePoint2>(
-                    ctx,
+                let pcurve_knots = trim
+                    .pcurve
+                    .knots()
+                    .try_clone_for_decode(ctx, "Rhino V1 pcurve knots")?;
+                let mut pcurve_points = ctx.retained_vec::<cadmpeg_ir::units::FinitePoint2>(
                     trim.pcurve.pole_count(),
                     "Rhino V1 pcurve controls",
                 )?;
@@ -2334,8 +2380,7 @@ fn append_legacy_brep(
                     trim.pcurve.pole_rows(),
                     cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { .. }
                 ) {
-                    Some(v1_values::<cadmpeg_ir::scalar::NonZeroReal>(
-                        ctx,
+                    Some(ctx.retained_vec::<cadmpeg_ir::scalar::NonZeroReal>(
                         trim.pcurve.pole_count(),
                         "Rhino V1 pcurve weights",
                     )?)
@@ -2388,7 +2433,7 @@ fn append_legacy_brep(
                     )?;
                 }
                 model.pcurves.push(Pcurve {
-                    id: pcurve_id.clone(),
+                    id: pcurve_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     geometry: PcurveGeometry::Nurbs {
                         nurbs: PcurveNurbs::from_checked_lanes(
                             trim.pcurve.degree(),
@@ -2426,12 +2471,15 @@ fn append_legacy_brep(
                 coedges_by_root
                     .entry(root)
                     .or_default()
-                    .push(coedge_id.clone());
-                coedge_ids.push(coedge_id.clone());
+                    .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
+                coedge_ids
+                    .push(coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?);
                 model.coedges.push(Coedge {
-                    id: coedge_id.clone(),
-                    owner_loop: loop_id.clone(),
-                    edge: group_edges[&root].clone(),
+                    id: coedge_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    owner_loop: loop_id
+                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                    edge: group_edges[&root]
+                        .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                     radial_next: coedge_id,
                     sense: if trim.reversed {
                         Sense::Reversed
@@ -2453,15 +2501,18 @@ fn append_legacy_brep(
             let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new())
                 .map_err(|error| CodecError::Malformed(error.to_string()))?;
             model.loops.push(Loop {
-                id: loop_id.clone(),
-                face: face_id.clone(),
+                id: loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                face: face_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
             match loop_record.role {
                 LoopBoundaryRole::Unspecified => {}
                 LoopBoundaryRole::Outer => {
                     classified = true;
-                    if outer_loop.replace(loop_id.clone()).is_some() {
+                    if outer_loop
+                        .replace(loop_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?)
+                        .is_some()
+                    {
                         return Err(CodecError::malformed(format_args!(
                             "V1 face {face_id} states more than one outer boundary"
                         )));
@@ -2485,15 +2536,15 @@ fn append_legacy_brep(
                 "Rhino V1 classified inner loops",
             )?;
             cadmpeg_ir::topology::FaceLoops::classified(
-                outer.clone(),
+                outer.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 face_loops.into_iter().filter(|id| *id != outer).collect(),
             )
         } else {
             cadmpeg_ir::topology::FaceLoops::unspecified(face_loops)
         };
         model.faces.push(Face {
-            id: face_id.clone(),
-            shell: shell_id.clone(),
+            id: face_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            shell: shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             surface: surface_id,
             sense: if face_record.reversed {
                 Sense::Reversed
@@ -2507,28 +2558,30 @@ fn append_legacy_brep(
         });
         shell_faces.push(face_id);
     }
-    admit_v1_temporary_items::<(cadmpeg_ir::ids::CoedgeId, usize)>(
-        ctx,
+    reserve_v1_temporary_bytes::<(cadmpeg_ir::ids::CoedgeId, usize)>(
         &mut workspace,
         model.coedges.len(),
-        "Rhino V1 Brep radial positions",
     )?;
-    let coedge_positions = model
-        .coedges
-        .iter()
-        .enumerate()
-        .map(|(index, coedge)| (coedge.id.clone(), index))
-        .collect::<BTreeMap<_, _>>();
+    let mut coedge_positions = BTreeMap::new();
+    for (index, coedge) in model.coedges.iter().enumerate() {
+        ctx.charge_collection_items(1, "Rhino V1 Brep radial positions")?;
+        let id = cadmpeg_ir::ids::CoedgeId::try_from(
+            ctx.copy_retained_text(coedge.id.as_str(), "Rhino V1 Brep radial position ID")?,
+        )
+        .map_err(|error| CodecError::malformed(error.to_string()))?;
+        coedge_positions.insert(id, index);
+    }
     for ring in coedges_by_root.values() {
         for index in 0..ring.len() {
-            model.coedges[coedge_positions[&ring[index]]].radial_next =
-                ring[(index + 1) % ring.len()].clone();
+            model.coedges[coedge_positions[&ring[index]]].radial_next = ring
+                [(index + 1) % ring.len()]
+            .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?;
         }
     }
     model.shells.push(
         Shell::new(
-            shell_id.clone(),
-            region_id.clone(),
+            shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+            region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
             shell_faces,
             Vec::new(),
             Vec::new(),
@@ -2536,8 +2589,8 @@ fn append_legacy_brep(
         .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
     );
     model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id.clone(),
+        id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+        body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
         shells: vec![shell_id],
     });
     model.bodies.push(Body {
@@ -2560,9 +2613,9 @@ fn legacy_trim(
     scale: MillimeterScale,
 ) -> Result<LegacyTrim, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_TRM, TCODE_LEGACY_TRMSTUFF)?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let flags = reader.u8().map_err(malformed)?;
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let flags = reader.u8().map_err(|error| malformed(&error))?;
     let has_edge = flags % 2 != 0;
     let mate = if flags & 2 != 0 {
         Mate::Seam
@@ -2571,11 +2624,11 @@ fn legacy_trim(
     } else {
         Mate::None
     };
-    let reversed = reader.i32().map_err(malformed)? != 0;
-    let _continuity = reader.i32().map_err(malformed)?;
-    let _monotonicity = reader.i32().map_err(malformed)?;
-    let tolerance_3d = reader.f64().map_err(malformed)? * scale.value();
-    let tolerance_2d = reader.f64().map_err(malformed)?;
+    let reversed = reader.i32().map_err(|error| malformed(&error))? != 0;
+    let _continuity = reader.i32().map_err(|error| malformed(&error))?;
+    let _monotonicity = reader.i32().map_err(|error| malformed(&error))?;
+    let tolerance_3d = reader.f64().map_err(|error| malformed(&error))? * scale.value();
+    let tolerance_2d = reader.f64().map_err(|error| malformed(&error))?;
     let pcurve_wrapper = nested_chunk(data, &mut reader, TCODE_LEGACY_CRV)?;
     let pcurve = legacy_curve(
         ctx,
@@ -2614,13 +2667,13 @@ fn legacy_loop(
     scale: MillimeterScale,
 ) -> Result<LegacyLoop, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_BND, TCODE_LEGACY_BNDSTUFF)?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let count = usize::try_from(reader.i32().map_err(malformed)?)
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .ok()
         .filter(|count| *count > 0)
         .ok_or_else(|| CodecError::Malformed("invalid V1 boundary trim count".to_string()))?;
-    let boundary_type = reader.i32().map_err(malformed)?;
+    let boundary_type = reader.i32().map_err(|error| malformed(&error))?;
     let role = match boundary_type {
         0 => LoopBoundaryRole::Outer,
         1 => LoopBoundaryRole::Inner,
@@ -2631,14 +2684,22 @@ fn legacy_loop(
             ));
         }
     };
-    reader.skip(32).map_err(malformed)?;
+    reader.skip(32).map_err(|error| malformed(&error))?;
     if count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 boundary trim count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut trims =
-        v1_temporary_values::<LegacyTrim>(ctx, workspace, count, "Rhino V1 boundary trims")?;
+    let mut trims = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyTrim>(
+            workspace,
+            &mut values,
+            count,
+            "Rhino V1 boundary trims",
+        )?;
+        values
+    };
     for _ in 0..count {
         let trim = nested_chunk(data, &mut reader, TCODE_LEGACY_TRM)?;
         trims.push(legacy_trim(ctx, workspace, data, trim.body(), scale)?);
@@ -2654,9 +2715,9 @@ fn legacy_face(
     scale: MillimeterScale,
 ) -> Result<LegacyFace, CodecError> {
     let stuff = nested_stuff(data, range, TCODE_LEGACY_FAC, TCODE_LEGACY_FACSTUFF)?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let reversed = match reader.i32().map_err(malformed)? {
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let reversed = match reader.i32().map_err(|error| malformed(&error))? {
         0 => false,
         1 => true,
         _ => {
@@ -2665,8 +2726,8 @@ fn legacy_face(
             ));
         }
     };
-    let _face_type = reader.i32().map_err(malformed)?;
-    let boundary_flags = reader.i32().map_err(malformed)?;
+    let _face_type = reader.i32().map_err(|error| malformed(&error))?;
+    let boundary_flags = reader.i32().map_err(|error| malformed(&error))?;
     if boundary_flags < 0 {
         return Err(CodecError::Malformed(
             "invalid V1 face boundary count".to_string(),
@@ -2674,18 +2735,28 @@ fn legacy_face(
     }
     let boundary_count = usize::try_from(boundary_flags / 2)
         .map_err(|_| CodecError::Malformed("V1 face boundary count overflow".to_string()))?;
-    reader.skip(48).map_err(malformed)?;
-    let glue_count = usize::try_from(reader.i32().map_err(malformed)?)
+    reader.skip(48).map_err(|error| malformed(&error))?;
+    let glue_count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .map_err(|_| CodecError::Malformed("invalid V1 face seam count".to_string()))?;
     if glue_count > reader.remaining() / 2 {
         return Err(CodecError::Malformed(
             "V1 face seam count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut seam_glue =
-        v1_temporary_values::<usize>(ctx, workspace, glue_count, "Rhino V1 face seam glue")?;
+    let mut seam_glue = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(
+            workspace,
+            &mut values,
+            glue_count,
+            "Rhino V1 face seam glue",
+        )?;
+        values
+    };
     for _ in 0..glue_count {
-        seam_glue.push(usize::from(reader.u16().map_err(malformed)?));
+        seam_glue.push(usize::from(
+            reader.u16().map_err(|error| malformed(&error))?,
+        ));
     }
     let surface_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_SRF)?;
     let surface = legacy_surface(ctx, data, surface_chunk.body(), scale)?;
@@ -2694,8 +2765,16 @@ fn legacy_face(
             "V1 face boundary count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut loops =
-        v1_temporary_values::<LegacyLoop>(ctx, workspace, boundary_count, "Rhino V1 face loops")?;
+    let mut loops = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyLoop>(
+            workspace,
+            &mut values,
+            boundary_count,
+            "Rhino V1 face loops",
+        )?;
+        values
+    };
     for _ in 0..boundary_count {
         let loop_chunk = nested_chunk(data, &mut reader, TCODE_LEGACY_BND)?;
         loops.push(legacy_loop(ctx, workspace, data, loop_chunk.body(), scale)?);
@@ -2717,8 +2796,11 @@ fn legacy_brep(
 ) -> Result<LegacyBrep, CodecError> {
     if chunk.typecode == TCODE_LEGACY_FAC {
         let face = legacy_face(ctx, workspace, data, chunk.body().clone(), scale)?;
-        let mut faces =
-            v1_temporary_values::<LegacyFace>(ctx, workspace, 1, "Rhino V1 Brep faces")?;
+        let mut faces = {
+            let mut values = Vec::new();
+            ctx.reserve_scoped_vec::<LegacyFace>(workspace, &mut values, 1, "Rhino V1 Brep faces")?;
+            values
+        };
         faces.push(face);
         return Ok(LegacyBrep {
             shell_glue: Vec::new(),
@@ -2727,33 +2809,46 @@ fn legacy_brep(
     }
     let stuff = child_with_type(data, chunk.body().clone(), TCODE_LEGACY_SHLSTUFF)?
         .ok_or_else(|| CodecError::Malformed("V1 shell has no shell-stuff chunk".to_string()))?;
-    let mut reader =
-        BoundedReader::new(data, stuff.body().start, stuff.body().end).map_err(malformed)?;
-    let _outer = reader.i32().map_err(malformed)?;
-    let face_count = usize::try_from(reader.i32().map_err(malformed)?)
+    let mut reader = BoundedReader::new(data, stuff.body().start, stuff.body().end)
+        .map_err(|error| malformed(&error))?;
+    let _outer = reader.i32().map_err(|error| malformed(&error))?;
+    let face_count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .ok()
         .filter(|count| *count > 0)
         .ok_or_else(|| CodecError::Malformed("invalid V1 shell face count".to_string()))?;
-    reader.skip(48).map_err(malformed)?;
-    let glue_count = usize::try_from(reader.i32().map_err(malformed)?)
+    reader.skip(48).map_err(|error| malformed(&error))?;
+    let glue_count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .map_err(|_| CodecError::Malformed("invalid V1 shell glue count".to_string()))?;
     if glue_count > reader.remaining() / 2 {
         return Err(CodecError::Malformed(
             "V1 shell glue count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut shell_glue =
-        v1_temporary_values::<usize>(ctx, workspace, glue_count, "Rhino V1 shell glue")?;
+    let mut shell_glue = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<usize>(workspace, &mut values, glue_count, "Rhino V1 shell glue")?;
+        values
+    };
     for _ in 0..glue_count {
-        shell_glue.push(usize::from(reader.u16().map_err(malformed)?));
+        shell_glue.push(usize::from(
+            reader.u16().map_err(|error| malformed(&error))?,
+        ));
     }
     if face_count > reader.remaining() / 8 {
         return Err(CodecError::Malformed(
             "V1 shell face count exceeds the remaining bytes".to_string(),
         ));
     }
-    let mut faces =
-        v1_temporary_values::<LegacyFace>(ctx, workspace, face_count, "Rhino V1 Brep faces")?;
+    let mut faces = {
+        let mut values = Vec::new();
+        ctx.reserve_scoped_vec::<LegacyFace>(
+            workspace,
+            &mut values,
+            face_count,
+            "Rhino V1 Brep faces",
+        )?;
+        values
+    };
     for _ in 0..face_count {
         let face = nested_chunk(data, &mut reader, TCODE_LEGACY_FAC)?;
         faces.push(legacy_face(ctx, workspace, data, face.body(), scale)?);
@@ -2770,39 +2865,39 @@ fn legacy_mesh(
 ) -> Result<Tessellation, CodecError> {
     let geometry = child_with_type(data, range, TCODE_COMPRESSED_MESH_GEOMETRY)?
         .ok_or_else(|| CodecError::Malformed("V1 mesh has no compressed geometry".to_string()))?;
-    let mut reader =
-        BoundedReader::new(data, geometry.body().start, geometry.body().end).map_err(malformed)?;
-    let point_count = usize::try_from(reader.i32().map_err(malformed)?)
+    let mut reader = BoundedReader::new(data, geometry.body().start, geometry.body().end)
+        .map_err(|error| malformed(&error))?;
+    let point_count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .ok()
         .filter(|count| *count > 0 && *count <= reader.remaining() / 6)
         .ok_or_else(|| CodecError::Malformed("invalid V1 mesh point count".to_string()))?;
-    let face_count = usize::try_from(reader.i32().map_err(malformed)?)
+    let face_count = usize::try_from(reader.i32().map_err(|error| malformed(&error))?)
         .ok()
         .filter(|count| *count > 0)
         .ok_or_else(|| CodecError::Malformed("invalid V1 mesh face count".to_string()))?;
-    let has_normals = reader.i32().map_err(malformed)? != 0;
-    let has_uv = reader.i32().map_err(malformed)? != 0;
+    let has_normals = reader.i32().map_err(|error| malformed(&error))? != 0;
+    let has_uv = reader.i32().map_err(|error| malformed(&error))? != 0;
     let minimum = Point3::new(
-        reader.f64().map_err(malformed)? * scale.value(),
-        reader.f64().map_err(malformed)? * scale.value(),
-        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
     );
     let maximum = Point3::new(
-        reader.f64().map_err(malformed)? * scale.value(),
-        reader.f64().map_err(malformed)? * scale.value(),
-        reader.f64().map_err(malformed)? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+        reader.f64().map_err(|error| malformed(&error))? * scale.value(),
     );
     let step = [
         (maximum.x - minimum.x) / 65535.0,
         (maximum.y - minimum.y) / 65535.0,
         (maximum.z - minimum.z) / 65535.0,
     ];
-    let mut vertices = v1_values::<Point3>(ctx, point_count, "Rhino V1 mesh vertices")?;
+    let mut vertices = ctx.retained_vec::<Point3>(point_count, "Rhino V1 mesh vertices")?;
     for _ in 0..point_count {
         let q = [
-            reader.u16().map_err(malformed)?,
-            reader.u16().map_err(malformed)?,
-            reader.u16().map_err(malformed)?,
+            reader.u16().map_err(|error| malformed(&error))?,
+            reader.u16().map_err(|error| malformed(&error))?,
+            reader.u16().map_err(|error| malformed(&error))?,
         ];
         vertices.push(Point3::new(
             minimum.x + step[0] * f64::from(q[0]),
@@ -2810,21 +2905,21 @@ fn legacy_mesh(
             minimum.z + step[2] * f64::from(q[2]),
         ));
     }
-    let mut faces = v1_values::<[u32; 4]>(ctx, face_count, "Rhino V1 mesh faces")?;
+    let mut faces = ctx.retained_vec::<[u32; 4]>(face_count, "Rhino V1 mesh faces")?;
     for _ in 0..face_count {
         let face = if point_count < 65535 {
             [
-                u32::from(reader.u16().map_err(malformed)?),
-                u32::from(reader.u16().map_err(malformed)?),
-                u32::from(reader.u16().map_err(malformed)?),
-                u32::from(reader.u16().map_err(malformed)?),
+                u32::from(reader.u16().map_err(|error| malformed(&error))?),
+                u32::from(reader.u16().map_err(|error| malformed(&error))?),
+                u32::from(reader.u16().map_err(|error| malformed(&error))?),
+                u32::from(reader.u16().map_err(|error| malformed(&error))?),
             ]
         } else {
             [
-                reader.u32().map_err(malformed)?,
-                reader.u32().map_err(malformed)?,
-                reader.u32().map_err(malformed)?,
-                reader.u32().map_err(malformed)?,
+                reader.u32().map_err(|error| malformed(&error))?,
+                reader.u32().map_err(|error| malformed(&error))?,
+                reader.u32().map_err(|error| malformed(&error))?,
+                reader.u32().map_err(|error| malformed(&error))?,
             ]
         };
         if face
@@ -2840,20 +2935,31 @@ fn legacy_mesh(
     // An unshaded mesh is stated by absence: the V1 header says whether the
     // record carries a normal lane at all.
     let mut normals = if has_normals {
-        Some(v1_values::<Vector3>(
-            ctx,
-            point_count,
-            "Rhino V1 mesh normals",
-        )?)
+        Some(ctx.retained_vec::<Vector3>(point_count, "Rhino V1 mesh normals")?)
     } else {
         None
     };
     if let Some(normals) = normals.as_mut() {
         for _ in 0..point_count {
             normals.push(Vector3::new(
-                f64::from(reader.u8().map_err(malformed)? as i8) / 127.0,
-                f64::from(reader.u8().map_err(malformed)? as i8) / 127.0,
-                f64::from(reader.u8().map_err(malformed)? as i8) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
+                f64::from(
+                    reader
+                        .u8()
+                        .map_err(|error| malformed(&error))?
+                        .cast_signed(),
+                ) / 127.0,
             ));
         }
     }
@@ -2864,15 +2970,18 @@ fn legacy_mesh(
                     .checked_mul(4)
                     .ok_or_else(|| CodecError::Malformed("V1 mesh UV size overflow".to_string()))?,
             )
-            .map_err(malformed)?;
+            .map_err(|error| malformed(&error))?;
     }
-    let triangle_count = face_count.checked_mul(2).ok_or_else(|| {
-        CodecError::NotImplemented("Rhino V1 mesh triangle count exceeds address space".to_string())
-    })?;
-    admit_v1_values::<[u32; 3]>(ctx, triangle_count, "Rhino V1 mesh triangles")?;
-    let triangles = crate::mesh::triangulate_faces(&faces, &vertices, |point| point);
+    let triangles =
+        crate::mesh::triangulate_faces(ctx, &faces, &vertices, |point| point).map_err(|error| {
+            match error {
+                crate::curves::GeometryError::Codec(error) => error,
+                other => CodecError::Malformed(other.to_string()),
+            }
+        })?;
     Tessellation::new(
-        id,
+        cadmpeg_ir::tessellation::TessellationId::mint(id)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(vertices, triangles, normals)?,
         Vec::new(),
     )
@@ -2904,12 +3013,10 @@ fn evaluate_nurbs(
     let count = degree.checked_add(1).ok_or_else(|| {
         CodecError::NotImplemented("Rhino V1 curve degree exceeds address space".to_string())
     })?;
-    let count_u64 = u64::try_from(count).map_err(|_| {
-        CodecError::NotImplemented("Rhino V1 curve degree exceeds address space".to_string())
-    })?;
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
     let bytes = count
         .checked_mul(std::mem::size_of::<[f64; 4]>())
-        .and_then(|bytes| u64::try_from(bytes).ok())
+        .map(cadmpeg_core::decode::u64_from_index)
         .ok_or_else(|| {
             CodecError::NotImplemented("Rhino V1 curve workspace exceeds address space".to_string())
         })?;
@@ -2922,16 +3029,11 @@ fn evaluate_nurbs(
     )?;
     let _workspace = ctx.reserve_scoped(bytes, "Rhino V1 curve evaluation")?;
     let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
-            dimension: cadmpeg_core::decode::ResourceDimension::MaterializedBytes,
-            reason: cadmpeg_core::decode::ResourceFailure::AllocationFailed,
-            limit: ctx.policy().limits.max_materialized_bytes,
-            used: 0,
-            additional: bytes,
-            operation: "Rhino V1 curve evaluation",
-        })
-    })?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        count,
+        "Rhino V1 curve evaluation",
+    )?;
     let poles = curve.pole_rows();
     for j in 0..count {
         let index = span - degree + j;
@@ -2973,15 +3075,15 @@ fn evaluate_nurbs(
 
 /// Decodes the V1 flat geometry stream.
 pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded, CodecError> {
-    let header = parse_header(data).map_err(malformed)?;
+    let header = parse_header(data).map_err(|error| malformed(&error))?;
     if header.archive_version != ArchiveVersion::V1 {
         return Err(CodecError::Malformed(
             "legacy decoder requires V1".to_string(),
         ));
     }
     let mut offset = header.start_offset + file_header::LEN;
-    let comment =
-        chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
+    let comment = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
+        .map_err(|error| malformed(&error))?;
     if comment.typecode != TCODE_COMMENT || comment.short() {
         return Err(CodecError::Malformed(
             "V1 first post-header chunk is not the comment".to_string(),
@@ -2995,9 +3097,10 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let primary = ArchiveVersion::V1.classify(None);
 
     let mut ir = CadIr::decoded(crate::container::source_meta(
+        ctx,
         primary,
         crate::container::SourceMetaDetail::FlatLegacyArchive,
-    ));
+    )?);
     let mut decoded = 0_usize;
     let mut decoded_curves = 0_usize;
     let mut decoded_meshes = 0_usize;
@@ -3015,8 +3118,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     let mut tolerance_losses = Vec::new();
     let mut scale = MillimeterScale::IDENTITY;
     while offset < data.len() {
-        let chunk =
-            chunk_at(data, offset, data.len(), ArchiveVersion::V1, false).map_err(malformed)?;
+        let chunk = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
+            .map_err(|error| malformed(&error))?;
         if chunk.typecode == TCODE_ENDOFFILE {
             break;
         }
@@ -3026,14 +3129,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         }
         if chunk.typecode == TCODE_UNIT_AND_TOLERANCES && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
-                .map_err(malformed)?;
-            let version = reader.i32().map_err(malformed)?;
+                .map_err(|error| malformed(&error))?;
+            let version = reader.i32().map_err(|error| malformed(&error))?;
             if version != 1 {
                 return Err(CodecError::malformed(format_args!(
                     "unsupported V1 unit structure {version}"
                 )));
             }
-            let unit = reader.i32().map_err(malformed)?;
+            let unit = reader.i32().map_err(|error| malformed(&error))?;
             scale = if unit == 0 {
                 MillimeterScale::IDENTITY
             } else {
@@ -3043,33 +3146,35 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         CodecError::malformed(format_args!("unsupported V1 unit system {unit}"))
                     })?
             };
-            let linear = reader.f64().map_err(malformed)? * scale.value();
+            let linear = reader.f64().map_err(|error| malformed(&error))? * scale.value();
             ir.tolerances.linear = crate::decode::admitted_tolerance(
+                ctx,
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
                 linear,
                 CadIr::empty().tolerances.linear,
                 "linear",
                 &mut tolerance_losses,
-            );
-            let _relative_tolerance = reader.f64().map_err(malformed)?;
-            let angular = reader.f64().map_err(malformed)?;
+            )?;
+            let _relative_tolerance = reader.f64().map_err(|error| malformed(&error))?;
+            let angular = reader.f64().map_err(|error| malformed(&error))?;
             ir.tolerances.angular = crate::decode::admitted_tolerance(
+                ctx,
                 cadmpeg_ir::scalar::PositiveAngle::new(angular),
                 angular,
                 CadIr::empty().tolerances.angular,
                 "angular",
                 &mut tolerance_losses,
-            );
+            )?;
         } else if is_v1_presentation_setting(chunk.typecode) && !chunk.short() {
-            *omitted.entry(chunk.typecode).or_default() += 1;
-            opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
         } else if chunk.typecode == TCODE_RH_POINT && !chunk.short() {
             let mut reader = BoundedReader::new(data, chunk.body().start, chunk.body().end)
-                .map_err(malformed)?;
+                .map_err(|error| malformed(&error))?;
             let Some(position) = FinitePoint3::new(Point3::new(
-                reader.f64().map_err(malformed)? * scale.value(),
-                reader.f64().map_err(malformed)? * scale.value(),
-                reader.f64().map_err(malformed)? * scale.value(),
+                reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+                reader.f64().map_err(|error| malformed(&error))? * scale.value(),
+                reader.f64().map_err(|error| malformed(&error))? * scale.value(),
             )) else {
                 return Err(CodecError::malformed(format_args!(
                     "V1 point at offset {offset} is not finite"
@@ -3083,11 +3188,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 + std::mem::size_of::<Region>()
                 + std::mem::size_of::<Body>();
             ctx.charge_retained(
-                u64::try_from(model_bytes).map_err(|_| {
-                    CodecError::NotImplemented(
-                        "Rhino V1 point model exceeds address space".to_string(),
-                    )
-                })?,
+                cadmpeg_core::decode::u64_from_index(model_bytes),
                 "Rhino V1 point topology storage",
             )?;
             let suffix = format!("legacy-{decoded:06}");
@@ -3112,22 +3213,24 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 &cadmpeg_ir::identity_namespace!("rhino", "object", "point"),
                 suffix_key,
             );
-            ir.model
-                .points
-                .push(Point::new(point_id.clone(), position, None));
+            ir.model.points.push(Point::new(
+                point_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                position,
+                None,
+            ));
             ir.model.vertices.push(Vertex {
-                id: vertex_id.clone(),
+                id: vertex_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 point: point_id,
                 tolerance: None,
             });
             ir.model.shells.push(Shell::with_free_vertex(
-                shell_id.clone(),
-                region_id.clone(),
+                shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 vertex_id,
             ));
             ir.model.regions.push(Region {
-                id: region_id.clone(),
-                body: body_id.clone(),
+                id: region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                body: body_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                 shells: vec![shell_id],
             });
             ir.model.bodies.push(Body {
@@ -3139,7 +3242,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 color: None,
                 visible: None,
             });
-            typed_source_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            push_v1_record(
+                ctx,
+                &mut typed_source_records,
+                data,
+                &chunk,
+                &mut retained_bytes,
+            )?;
             decoded += 1;
         } else if matches!(
             chunk.typecode,
@@ -3156,7 +3265,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
             match v1_direct_record(ctx, data, &chunk, scale) {
                 Ok(record) => {
                     ctx.charge_entities(1, "Rhino V1 direct record")?;
-                    admit_v1_values::<V1DirectRecord>(ctx, 1, "Rhino V1 direct record storage")?;
+                    ctx.charge_retained(
+                        cadmpeg_core::decode::u64_from_index(std::mem::size_of::<V1DirectRecord>()),
+                        "Rhino V1 direct record storage",
+                    )?;
+                    ctx.reserve_vec(&mut direct_records, 1, "Rhino V1 direct records")?;
                     if matches!(
                         chunk.typecode,
                         TCODE_TEXT_BLOCK
@@ -3174,18 +3287,23 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         decoded_nurbs_breps += 1;
                     }
                     direct_records.push(record);
-                    typed_source_records.push(retain_v1_record(
+                    push_v1_record(
                         ctx,
+                        &mut typed_source_records,
                         data,
                         &chunk,
                         &mut retained_bytes,
-                    )?);
+                    )?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 direct record at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 direct record at offset {offset}: {error}"),
+                    )?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if chunk.typecode == TCODE_LEGACY_CRV && !chunk.short() {
@@ -3203,11 +3321,7 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             + std::mem::size_of::<Region>()
                             + std::mem::size_of::<Body>();
                         ctx.charge_retained(
-                            u64::try_from(topology_bytes).map_err(|_| {
-                                CodecError::NotImplemented(
-                                    "Rhino V1 curve topology exceeds address space".to_string(),
-                                )
-                            })?,
+                            cadmpeg_core::decode::u64_from_index(topology_bytes),
                             "Rhino V1 curve topology storage",
                         )?;
                         let suffix = format!("legacy-{decoded_curves:06}");
@@ -3258,7 +3372,8 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         let start = evaluate_nurbs(ctx, &segment, parameter_range[0])?;
                         let end = evaluate_nurbs(ctx, &segment, parameter_range[1])?;
                         ir.model.curves.push(Curve {
-                            id: curve_id.clone(),
+                            id: curve_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(segment)),
                             source_object: None,
                         });
@@ -3269,23 +3384,36 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             .ok_or(Point::NON_FINITE_POSITION)
                             .map_err(cadmpeg_core::CodecError::malformed)?;
                         ir.model.points.extend([
-                            Point::new(start_point.clone(), start, None),
-                            Point::new(end_point.clone(), end, None),
+                            Point::new(
+                                start_point
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                start,
+                                None,
+                            ),
+                            Point::new(
+                                end_point
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
+                                end,
+                                None,
+                            ),
                         ]);
                         ir.model.vertices.extend([
                             Vertex {
-                                id: start_vertex.clone(),
+                                id: start_vertex
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: start_point,
                                 tolerance: None,
                             },
                             Vertex {
-                                id: end_vertex.clone(),
+                                id: end_vertex
+                                    .try_clone_for_decode(ctx, "Rhino V1 endpoint identity copy")?,
                                 point: end_point,
                                 tolerance: None,
                             },
                         ]);
                         ir.model.edges.push(Edge {
-                            id: edge_id.clone(),
+                            id: edge_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                                 Some(curve_id),
                                 Some(parameter_range),
@@ -3296,13 +3424,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                             tolerance: None,
                         });
                         ir.model.shells.push(Shell::with_wire_edge(
-                            shell_id.clone(),
-                            region_id.clone(),
+                            shell_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            region_id.try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             edge_id,
                         ));
                         ir.model.regions.push(Region {
-                            id: region_id.clone(),
-                            body: body_id.clone(),
+                            id: region_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
+                            body: body_id
+                                .try_clone_for_decode(ctx, "Rhino V1 typed identity copy")?,
                             shells: vec![shell_id],
                         });
                         ir.model.bodies.push(Body {
@@ -3316,18 +3446,23 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         });
                         decoded_curves += 1;
                     }
-                    typed_source_records.push(retain_v1_record(
+                    push_v1_record(
                         ctx,
+                        &mut typed_source_records,
                         data,
                         &chunk,
                         &mut retained_bytes,
-                    )?);
+                    )?;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 curve at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 curve at offset {offset}: {error}"),
+                    )?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if matches!(chunk.typecode, TCODE_LEGACY_FAC | TCODE_LEGACY_SHL) && !chunk.short() {
@@ -3341,19 +3476,24 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                 )
             }) {
                 Ok(()) => {
-                    typed_source_records.push(retain_v1_record(
+                    push_v1_record(
                         ctx,
+                        &mut typed_source_records,
                         data,
                         &chunk,
                         &mut retained_bytes,
-                    )?);
+                    )?;
                     decoded_breps += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 Brep at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 Brep at offset {offset}: {error}"),
+                    )?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else if chunk.typecode == TCODE_MESH_OBJECT && !chunk.short() {
@@ -3368,24 +3508,29 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     ctx.charge_entities(1, "Rhino V1 mesh")?;
                     admit_v1_values::<Tessellation>(ctx, 1, "Rhino V1 mesh storage")?;
                     ir.model.tessellations.push(mesh);
-                    typed_source_records.push(retain_v1_record(
+                    push_v1_record(
                         ctx,
+                        &mut typed_source_records,
                         data,
                         &chunk,
                         &mut retained_bytes,
-                    )?);
+                    )?;
                     decoded_meshes += 1;
                 }
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Err(error) => {
-                    diagnostics.push(format!("V1 mesh at offset {offset}: {error}"));
-                    *omitted.entry(chunk.typecode).or_default() += 1;
-                    opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+                    push_v1_diagnostic(
+                        ctx,
+                        &mut diagnostics,
+                        format_args!("V1 mesh at offset {offset}: {error}"),
+                    )?;
+                    count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+                    push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
                 }
             }
         } else {
-            *omitted.entry(chunk.typecode).or_default() += 1;
-            opaque_records.push(retain_v1_record(ctx, data, &chunk, &mut retained_bytes)?);
+            count_v1_omission(ctx, &mut omitted, chunk.typecode)?;
+            push_v1_record(ctx, &mut opaque_records, data, &chunk, &mut retained_bytes)?;
         }
         offset = chunk.next_offset();
     }
@@ -3406,22 +3551,84 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         .iter()
         .filter(|record| record.data().is_some())
         .count();
-    let losses = omitted
-        .into_iter()
-        .map(|(typecode, count)| {
-            if is_v1_presentation_setting(typecode) {
-                RhinoLossCode::PresentationRecordDropped.note(format!(
-                    "V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"
-                ))
-            } else {
-                RhinoLossCode::ObjectFamilyNotTransferred.note(format!(
-                    "V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"
-                ))
-            }
-        })
-        .chain(tolerance_losses)
-        .collect();
+    let mut losses = Vec::new();
+    for (typecode, count) in omitted {
+        ctx.reserve_vec(&mut losses, 1, "Rhino V1 report losses")?;
+        losses.push(if is_v1_presentation_setting(typecode) {
+            admitted_loss(
+                ctx,
+                RhinoLossCode::PresentationRecordDropped,
+                format_args!("V1 presentation typecode {typecode:#010x}: {count} record(s) retained as opaque"),
+                "Rhino V1 report loss text",
+            )?
+        } else {
+            admitted_loss(
+                ctx,
+                RhinoLossCode::ObjectFamilyNotTransferred,
+                format_args!("V1 typecode {typecode:#010x}: {count} flat geometry records not transferred"),
+                "Rhino V1 report loss text",
+            )?
+        });
+    }
+    ctx.reserve_vec(
+        &mut losses,
+        tolerance_losses.len(),
+        "Rhino V1 report losses",
+    )?;
+    losses.append(&mut tolerance_losses);
+    let mut notes = ctx.collection_vec(1, "Rhino V1 report notes")?;
+    notes.push(ctx.format_retained(format_args!(
+        "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
+    ), "Rhino V1 report note text")?);
+    if !direct_records.is_empty() {
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
+            "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
+        ), "Rhino V1 report note text")?);
+    }
+    if opaque_count > 0 {
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
+            "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
+        ), "Rhino V1 report note text")?);
+    }
+    if typed_source_count > 0 {
+        ctx.reserve_vec(&mut notes, 1, "Rhino V1 report notes")?;
+        notes.push(ctx.format_retained(format_args!(
+            "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
+        ), "Rhino V1 report note text")?);
+    }
+    ctx.reserve_vec(&mut notes, diagnostics.len(), "Rhino V1 report notes")?;
+    notes.extend(diagnostics);
+    let mut coverage = cadmpeg_ir::report::decode::Coverage::default();
+    for (key, count) in [
+        (crate::coverage::LEGACY_V1_POINTS, decoded),
+        (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
+        (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
+        (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
+        (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
+        (
+            crate::coverage::LEGACY_V1_NURBS_CURVES,
+            decoded_nurbs_curves,
+        ),
+        (
+            crate::coverage::LEGACY_V1_NURBS_SURFACES,
+            decoded_nurbs_surfaces,
+        ),
+        (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
+    ] {
+        ctx.charge_collection_items(1, "Rhino V1 coverage entries")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(key.as_str().len()),
+            "Rhino V1 coverage keys",
+        )?;
+        coverage.record(key, count);
+    }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
+    for _ in opaque_records.iter().chain(&typed_source_records) {
+        ctx.charge_collection_items(2, "Rhino V1 source fidelity indexes")?;
+        ctx.charge_retained(5, "Rhino V1 source fidelity owners")?;
+    }
     source_fidelity.retain_unknown_records(
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
@@ -3429,43 +3636,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     Ok(Decoded {
         ir,
         body: DecodeBody {
-            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0),
-            coverage: [
-                (crate::coverage::LEGACY_V1_POINTS, decoded),
-                (crate::coverage::LEGACY_V1_CURVE_SEGMENTS, decoded_curves),
-                (crate::coverage::LEGACY_V1_MESHES, decoded_meshes),
-                (crate::coverage::LEGACY_V1_BREPS, decoded_breps),
-                (crate::coverage::LEGACY_V1_ANNOTATIONS, decoded_annotations),
-                (crate::coverage::LEGACY_V1_NURBS_CURVES, decoded_nurbs_curves),
-                (
-                    crate::coverage::LEGACY_V1_NURBS_SURFACES,
-                    decoded_nurbs_surfaces,
-                ),
-                (crate::coverage::LEGACY_V1_NURBS_BREPS, decoded_nurbs_breps),
-            ]
-            .into_iter()
-            .collect(),
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(
+                decoded > 0 || decoded_curves > 0 || decoded_meshes > 0 || decoded_breps > 0,
+            ),
+            coverage,
             losses,
-            notes: std::iter::once(format!(
-            "decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"
-        ))
-        .chain((!direct_records.is_empty()).then(|| {
-            format!(
-                "typed {decoded_annotations} V1 annotations, {decoded_nurbs_curves} pre-class NURBS curves, {decoded_nurbs_surfaces} pre-class NURBS surfaces, and {decoded_nurbs_breps} pre-class NURBS Breps"
-            )
-        }))
-        .chain((opaque_count > 0).then(|| {
-            format!(
-                "retained metadata/digests for {opaque_count} unsupported V1 records; complete bytes for {opaque_bytes}"
-            )
-        }))
-        .chain((typed_source_count > 0).then(|| {
-            format!(
-                "retained complete source boundaries/digests for {typed_source_count} typed V1 records; complete bytes for {typed_source_bytes}"
-            )
-        }))
-        .chain(diagnostics)
-        .collect(),
+            notes,
             transfer_ledger: TransferLedger::default(),
         },
         source_fidelity,
@@ -3478,10 +3654,11 @@ fn v1_nurbs_object<T>(
     range: std::ops::Range<usize>,
     decode: impl FnOnce(&DecodeContext<'_>, &[u8], std::ops::Range<usize>) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
-    let mut reader = BoundedReader::new(data, range.start, range.end).map_err(malformed)?;
+    let mut reader =
+        BoundedReader::new(data, range.start, range.end).map_err(|error| malformed(&error))?;
     let data_chunk = nested_chunk(data, &mut reader, TCODE_RHINOIO_OBJECT_DATA)?;
     let value = decode(ctx, data, data_chunk.body())?;
-    reader.skip_remaining().map_err(malformed)?;
+    reader.skip_remaining().map_err(|error| malformed(&error))?;
     Ok(value)
 }
 
@@ -3578,6 +3755,83 @@ mod tests {
                 .bodies
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn v1_omitted_typecode_refuses_collection_limit() {
+        let mut data = archive(&[]);
+        data.extend(chunk(0x1234_5678, b"unsupported"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("V1 input fits service input limit");
+        assert!(matches!(
+            super::decode_v1(&ctx, &data),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V1 omitted typecodes"
+        ));
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the record")
+                .body
+                .losses
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_malformed_direct_diagnostic_refuses_collection_limit() {
+        let mut data = archive(&[]);
+        data.extend(chunk(TCODE_TEXT_BLOCK, b"invalid direct record"));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+            .expect("V1 input fits service input limit");
+        assert!(matches!(
+            super::decode_v1(&ctx, &data),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.operation == "Rhino V1 diagnostics"
+        ));
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the diagnostic")
+                .body
+                .notes
+                .len(),
+            3
+        );
+    }
+
+    #[test]
+    fn v1_report_notes_and_coverage_refuse_collection_limit() {
+        let data = archive(&[]);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        for (limit, operation) in [
+            (1, "Rhino V1 report notes"),
+            (2, "Rhino V1 coverage entries"),
+        ] {
+            let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) =
+                cadmpeg_core::decode::DecodeContext::from_root_bytes(&data, &arena, &policy)
+                    .expect("V1 input fits service input limit");
+            assert!(matches!(
+                super::decode_v1(&ctx, &data),
+                Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
+                    if refusal.operation == operation
+            ));
+        }
+        assert_eq!(
+            decode_v1(&data)
+                .expect("service profile admits the report")
+                .body
+                .coverage
+                .len(),
+            8
         );
     }
 
@@ -3866,7 +4120,7 @@ mod tests {
 
     fn chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = typecode.to_le_bytes().to_vec();
-        bytes.extend((body.len() as i32).to_le_bytes());
+        bytes.extend((i32::try_from(body.len()).expect("fixture value fits i32")).to_le_bytes());
         bytes.extend(body);
         bytes
     }
@@ -3927,7 +4181,9 @@ mod tests {
 
     fn v1_string(value: &str) -> Vec<u8> {
         let bytes = value.as_bytes();
-        let mut result = (bytes.len() as i32).to_le_bytes().to_vec();
+        let mut result = (i32::try_from(bytes.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         result.extend(bytes);
         result
     }
@@ -3960,7 +4216,7 @@ mod tests {
         linear.extend(10_i32.to_le_bytes());
         linear.extend(&plane);
         for index in 0..11 {
-            for value in [index as f64, 0.0, 0.0] {
+            for value in [f64::from(index), 0.0, 0.0] {
                 linear.extend(value.to_le_bytes());
             }
         }
@@ -3979,7 +4235,7 @@ mod tests {
             angular.extend(value.to_le_bytes());
         }
         for index in 0..5 {
-            for value in [index as f64, 1.0, 0.0] {
+            for value in [f64::from(index), 1.0, 0.0] {
                 angular.extend(value.to_le_bytes());
             }
         }
@@ -3993,7 +4249,7 @@ mod tests {
         radial.extend(8_i32.to_le_bytes());
         radial.extend(&plane);
         for index in 0..5 {
-            for value in [index as f64, 2.0, 0.0] {
+            for value in [f64::from(index), 2.0, 0.0] {
                 radial.extend(value.to_le_bytes());
             }
         }
@@ -4225,7 +4481,9 @@ mod tests {
 
     fn legacy_face_archive_with(corners: &[[f64; 3]], trim_flags: &[u8], glue: &[u16]) -> Vec<u8> {
         assert_eq!(corners.len(), trim_flags.len());
-        let mut boundary = (corners.len() as i32).to_le_bytes().to_vec();
+        let mut boundary = (i32::try_from(corners.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .to_vec();
         boundary.extend(0_i32.to_le_bytes());
         for value in [0.0_f64, 0.0, 1.0, 1.0] {
             boundary.extend(value.to_le_bytes());
@@ -4247,7 +4505,7 @@ mod tests {
         for value in [0.0_f64, 0.0, 0.0, 1.0, 1.0, 0.0] {
             face.extend(value.to_le_bytes());
         }
-        face.extend((glue.len() as i32).to_le_bytes());
+        face.extend((i32::try_from(glue.len()).expect("fixture value fits i32")).to_le_bytes());
         for value in glue {
             face.extend(value.to_le_bytes());
         }
@@ -4579,7 +4837,10 @@ mod tests {
         let retained = result.source_fidelity().retained_records();
         assert_eq!(retained.len(), 1);
         let record = retained.values().next().expect("typed source boundary");
-        assert_eq!(record.offset(), point_offset as u64);
+        assert_eq!(
+            record.offset(),
+            cadmpeg_core::decode::u64_from_index(point_offset)
+        );
         assert_eq!(record.data(), Some(point.as_slice()));
     }
 
@@ -4628,8 +4889,14 @@ mod tests {
             .iter()
             .find(|(id, _)| id.as_str().starts_with("rhino:legacy:record#00200004-"))
             .expect("the malformed direct record is retained under its typecode");
-        assert_eq!(malformed.offset(), record_offset as u64);
-        assert_eq!(malformed.byte_len(), record.len() as u64);
+        assert_eq!(
+            malformed.offset(),
+            cadmpeg_core::decode::u64_from_index(record_offset)
+        );
+        assert_eq!(
+            malformed.byte_len(),
+            cadmpeg_core::decode::u64_from_index(record.len())
+        );
         assert_eq!(malformed.data(), Some(record.as_slice()));
         assert_eq!(malformed.stream(), "rhino");
         assert!(malformed_id
@@ -4647,7 +4914,7 @@ mod tests {
         let mut bytes = archive(&[]);
         let mut direct_records = v1_annotation_records();
         direct_records[0].extend([0xde, 0xad]);
-        let body_len = (direct_records[0].len() - 8) as i32;
+        let body_len = i32::try_from(direct_records[0].len() - 8).expect("fixture value fits i32");
         direct_records[0][4..8].copy_from_slice(&body_len.to_le_bytes());
         for record in direct_records {
             bytes.extend(record);
@@ -4740,7 +5007,8 @@ mod tests {
         assert_eq!(model.pcurves.len(), 4);
         assert_eq!(model.surfaces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(report.is_ok(), "{report:?}");
     }
 
@@ -4753,7 +5021,8 @@ mod tests {
         assert_eq!(result.ir().model.bodies.len(), 1, "{:?}", result.report());
         assert_eq!(result.ir().model.faces.len(), 1);
         assert_eq!(wire::coverage(result.report())["legacy_v1_breps"], 1);
-        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+        let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail");
         assert!(report.is_ok(), "{report:?}");
     }
 

@@ -11,23 +11,31 @@ pub(crate) struct PaletteIndex(u8);
 
 impl PaletteIndex {
     pub(crate) fn new(value: u16) -> Option<Self> {
-        (1..=216).contains(&value).then_some(Self(value as u8))
+        if !(1..=216).contains(&value) {
+            return None;
+        }
+        Some(Self(u8::try_from(value).ok()?))
     }
 
     pub(crate) fn all() -> [Self; PALETTE_SIZE] {
-        std::array::from_fn(|ordinal| Self(ordinal as u8 + 1))
+        let mut all = [Self(1); PALETTE_SIZE];
+        for (slot, value) in all.iter_mut().zip(1u8..=216) {
+            *slot = Self(value);
+        }
+        all
     }
 
     pub(crate) fn value(self) -> u16 {
         u16::from(self.0)
     }
 
+    #[cfg(test)]
     pub(crate) fn definition_raw(self) -> Vec<u8> {
         let (bytes, width) = self.definition_token();
         bytes[..width].to_vec()
     }
 
-    pub(super) fn definition_token(self) -> ([u8; 2], usize) {
+    pub(crate) fn definition_token(self) -> ([u8; 2], usize) {
         if self.0 < 128 {
             ([self.0, 0], 1)
         } else {
@@ -43,12 +51,18 @@ impl PaletteIndex {
         }
     }
 
-    pub(crate) fn display_raw(self) -> Vec<u8> {
+    pub(crate) fn display_token(self) -> ([u8; 2], usize) {
         if self.0 < 128 {
-            vec![self.0]
+            ([self.0, 0], 1)
         } else {
-            vec![0x80, self.0]
+            ([0x80, self.0], 2)
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn display_raw(self) -> Vec<u8> {
+        let (raw, width) = self.display_token();
+        raw[..width].to_vec()
     }
 
     pub(super) fn read_display(raw: &[u8]) -> Option<Self> {
@@ -63,7 +77,7 @@ impl PaletteIndex {
 enum ColorAtom {
     Zero,
     One,
-    Shifted(ShiftedScalar),
+    Shifted(ShiftedScalar, u32),
 }
 
 /// Source atom whose normalized value lies in the closed unit interval.
@@ -75,9 +89,13 @@ impl ColorComponent {
         let atom = match bytes.first()? {
             0 => ColorAtom::Zero,
             1 => ColorAtom::One,
-            _ => ColorAtom::Shifted(ShiftedScalar::read(bytes)?),
+            _ => {
+                let scalar = ShiftedScalar::read(bytes)?;
+                let value = cadmpeg_core::convert::f32_from_f64(scalar.value().get() / 4.0)?;
+                ColorAtom::Shifted(scalar, value.to_bits())
+            }
         };
-        if let ColorAtom::Shifted(scalar) = atom {
+        if let ColorAtom::Shifted(scalar, _) = atom {
             if !(0.0..=1.0).contains(&(scalar.value().get() / 4.0)) {
                 return None;
             }
@@ -89,7 +107,7 @@ impl ColorComponent {
         match self.0 {
             ColorAtom::Zero => 0.0,
             ColorAtom::One => 1.0,
-            ColorAtom::Shifted(scalar) => (scalar.value().get() / 4.0) as f32,
+            ColorAtom::Shifted(_, value_bits) => f32::from_bits(value_bits),
         }
     }
 
@@ -97,7 +115,7 @@ impl ColorComponent {
         match &self.0 {
             ColorAtom::Zero => &[0],
             ColorAtom::One => &[1],
-            ColorAtom::Shifted(scalar) => scalar.raw(),
+            ColorAtom::Shifted(scalar, _) => scalar.raw(),
         }
     }
 

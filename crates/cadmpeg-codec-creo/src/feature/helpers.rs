@@ -19,7 +19,7 @@ pub(super) fn decode_exact_scalars(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.try_reserve_items(&mut values, slot_count, "creo feature scalar values")?;
+    ctx.reserve_vec(&mut values, slot_count, "creo feature scalar values")?;
     let mut cursor = psb::Cursor::new(payload);
     for _ in 0..slot_count {
         let Some(value) = cursor.take_with(|data, pos| scalar::decode_in_lane(data, pos, cache))

@@ -265,7 +265,7 @@ fn parse_frame(
         let Some(close) = row_end(data, prefix.body_offset, end) else {
             break;
         };
-        ctx.try_reserve_items(&mut records, 1, "creo loop array frame records")?;
+        ctx.reserve_vec(&mut records, 1, "creo loop array frame records")?;
         let body = ctx.copy_retained(
             &data[prefix.body_offset..=close],
             "creo loop array record body",
@@ -315,9 +315,9 @@ pub(crate) fn scan(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<LoopArrayScan
         let Some((frame, records)) = parse_frame(ctx, data, offset, data.len())? else {
             continue;
         };
-        ctx.try_reserve_items(&mut result.frames, 1, "creo loop array frames")?;
+        ctx.reserve_vec(&mut result.frames, 1, "creo loop array frames")?;
         result.frames.push(frame);
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut result.records,
             records.len(),
             "creo loop array section records",

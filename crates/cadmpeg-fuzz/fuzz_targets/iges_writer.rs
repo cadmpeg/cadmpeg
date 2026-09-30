@@ -36,6 +36,13 @@ fuzz_target!(|data: &[u8]| {
     let encoder = IgesCodec;
 
     if control & 0x80 != 0 {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::service();
+        let Ok((ctx, _)) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(data, &arena, &policy)
+        else {
+            return;
+        };
         let mut source_fidelity = SourceFidelity::default();
         if source_fidelity
             .attach_native_unknown_records(
@@ -46,7 +53,9 @@ fuzz_target!(|data: &[u8]| {
                     0,
                     vec![control],
                     Vec::new(),
-                )],
+                )]
+                .into(),
+                &ctx,
             )
             .is_err()
         {
@@ -86,7 +95,11 @@ fuzz_target!(|data: &[u8]| {
     let decoded = codec
         .decode(&mut decode, &DecodeOptions::default())
         .expect("writer output must decode");
-    assert!(cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone()).is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
     let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
 
     if control & 0x40 != 0 {
@@ -128,6 +141,10 @@ fuzz_target!(|data: &[u8]| {
         let edited = codec
             .decode(&mut edited_decode, &DecodeOptions::default())
             .expect("edited writer output must decode");
-        assert!(cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone()).is_ok());
+        assert!(
+            cadmpeg_ir::validate_neutral(edited.ir(), edited.report().losses.clone())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 });

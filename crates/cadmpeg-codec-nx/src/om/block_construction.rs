@@ -25,9 +25,9 @@ impl BlockConstructionReferenceField {
         let width: u64 = self
             .tokens
             .iter()
-            .map(|token| token.raw().len() as u64)
+            .map(|token| cadmpeg_core::decode::u64_from_index(token.raw().len()))
             .sum();
-        origin.checked_add(6 + width + 1 + TRAILER.len() as u64)?;
+        origin.checked_add(6 + width + 1 + cadmpeg_core::decode::u64_from_index(TRAILER.len()))?;
         self.origin = origin;
         Some(self)
     }
@@ -40,7 +40,7 @@ impl BlockConstructionReferenceField {
             }
             let offset = at;
             let token = self.tokens[slot];
-            at += token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(token.raw().len());
             (token, offset)
         })
     }
@@ -72,7 +72,7 @@ pub(crate) fn block_construction_references(
     }
     Some(BlockConstructionReferenceField {
         control: record.payload()[0],
-        origin: record.payload_offset() as u64,
+        origin: cadmpeg_core::decode::u64_from_index(record.payload_offset()),
         tokens,
     })
 }

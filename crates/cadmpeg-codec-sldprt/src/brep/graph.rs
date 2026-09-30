@@ -1836,14 +1836,16 @@ fn decode_graph(
                         else {
                             return Ok(None);
                         };
-                        let Some((geometry, parameter_range, source)) = intersection_support_pcurve(
-                            support_data,
-                            curve,
-                            f.surface_attr,
-                            surface,
-                            *endpoint_positions,
-                            pcurve_refusal,
-                        ) else {
+                        let Some((geometry, parameter_range, source)) =
+                            intersection_support_pcurve(
+                                support_data,
+                                curve,
+                                f.surface_attr,
+                                surface,
+                                *endpoint_positions,
+                                pcurve_refusal,
+                            )?
+                        else {
                             return Ok(None);
                         };
                         let Some(finite_range) =
@@ -3944,13 +3946,14 @@ fn derive_nurbs_isoparametric_pcurves(
                 };
                 let resolution = match derive_nurbs_edge_pcurve(surface, curve, parameter_range) {
                     Ok(resolution) => resolution,
-                    Err(error) => {
+                    Err(NurbsPcurveFailure::Carrier(error)) => {
                         lane_refusals.note(
                             format_args!("isoparametric pcurve for edge {}", edge.id.as_str()),
                             &error,
                         );
                         continue;
                     }
+                    Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit.into()),
                 };
                 match resolution {
                     NurbsPcurveResolution::Exact(geometry) => {
@@ -4118,248 +4121,279 @@ fn intersection_support_pcurve(
     surface: &SurfaceGeometry,
     edge_endpoints: [cadmpeg_ir::math::Point3; 2],
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)> {
-    if chart.degree() != 1
-        || chart.weights().is_some()
-        || chart.periodic()
-        || !support_data.fit_tolerance_mm.is_finite()
-        || support_data.fit_tolerance_mm <= 0.0
-    {
-        return None;
-    }
-    let parameter_range = nurbs_curve_parameter_domain(chart)?.endpoints();
-    let support_index = match support_data.supports.map(|support| support == surface_attr) {
-        [true, false] => 0,
-        [false, true] => 1,
-        _ => return None,
-    };
-    let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
-        (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
-    };
-    let model_endpoints = [
-        *chart.control_points().first()?,
-        *chart.control_points().last()?,
-    ];
-    let direct_error = squared_distance(model_endpoints[0].get(), edge_endpoints[0])
-        + squared_distance(model_endpoints[1].get(), edge_endpoints[1]);
-    let reverse_error = squared_distance(model_endpoints[0].get(), edge_endpoints[1])
-        + squared_distance(model_endpoints[1].get(), edge_endpoints[0]);
-    let targets = if direct_error <= reverse_error {
-        edge_endpoints
-    } else {
-        [edge_endpoints[1], edge_endpoints[0]]
-    };
-    let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
-        let mut control_points = support_uv[support_index].clone();
-        match surface {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-                for point in &mut control_points {
-                    point.u *= LEN_TO_MM;
-                    point.v *= LEN_TO_MM;
-                }
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-                for point in &mut control_points {
-                    point.v *= LEN_TO_MM;
-                }
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-                for point in &mut control_points {
-                    point.v *= LEN_TO_MM;
-                }
-            }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {}
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {}
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {}
+) -> Result<
+    Option<(PcurveGeometry, [f64; 2], IntersectionPcurveSource)>,
+    cadmpeg_core::decode::ResourceLimit,
+> {
+    let candidate = (|| {
+        if chart.degree() != 1
+            || chart.weights().is_some()
+            || chart.periodic()
+            || !support_data.fit_tolerance_mm.is_finite()
+            || support_data.fit_tolerance_mm <= 0.0
+        {
+            return None;
+        }
+        let parameter_range = nurbs_curve_parameter_domain(chart)?.endpoints();
+        let support_index = match support_data.supports.map(|support| support == surface_attr) {
+            [true, false] => 0,
+            [false, true] => 1,
             _ => return None,
-        }
-        (control_points, IntersectionPcurveSource::StoredCache)
-    } else {
-        match surface {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                let mut control_points = Vec::with_capacity(chart.pole_count());
-                for point in chart.control_points() {
-                    let parameters = nurbs_surface_parameter_within_tolerance(
-                        surface,
-                        point.get(),
-                        control_points.last().copied(),
-                        support_data.fit_tolerance_mm,
-                    )?;
-                    control_points.push(parameters.get());
-                }
-                (control_points, IntersectionPcurveSource::NurbsInverse)
-            }
-            _ => {
-                let mut control_points = chart
-                    .control_points()
-                    .into_iter()
-                    .map(|point| {
-                        analytic_surface_parameters(surface, point.get())
-                            .map(cadmpeg_ir::math::Point2::from)
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                for index in 1..control_points.len() {
-                    let previous = control_points[index - 1];
-                    match surface {
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-                            control_points[index].u += ((previous.u - control_points[index].u)
-                                / std::f64::consts::TAU)
-                                .round()
-                                * std::f64::consts::TAU;
-                        }
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-                            control_points[index].u += ((previous.u - control_points[index].u)
-                                / std::f64::consts::TAU)
-                                .round()
-                                * std::f64::consts::TAU;
-                        }
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
-                            control_points[index].u += ((previous.u - control_points[index].u)
-                                / std::f64::consts::TAU)
-                                .round()
-                                * std::f64::consts::TAU;
-                        }
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
-                            control_points[index].u += ((previous.u - control_points[index].u)
-                                / std::f64::consts::TAU)
-                                .round()
-                                * std::f64::consts::TAU;
-                        }
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
-                        _ => return None,
-                    }
-                    if matches!(
-                        surface,
-                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
-                    ) {
-                        control_points[index].v += ((previous.v - control_points[index].v)
-                            / std::f64::consts::TAU)
-                            .round()
-                            * std::f64::consts::TAU;
-                    }
-                }
-                (control_points, IntersectionPcurveSource::AnalyticInverse)
-            }
-        }
-    };
-    if control_points.len() != chart.control_points().len() {
-        return None;
-    }
-    if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = surface {
-        let tolerance = inverse_coordinate_tolerance(edge_endpoints);
-        let last = control_points.len() - 1;
-        for (index, target) in [(0, targets[0]), (last, targets[1])] {
-            control_points[index] = nurbs_surface_parameter_within_tolerance(
-                surface,
-                target,
-                Some(control_points[index]),
-                tolerance,
-            )?
-            .get();
-        }
-    } else {
-        let adjust_periodic = |parameter: f64, reference: f64| {
-            parameter
-                + ((reference - parameter) / std::f64::consts::TAU).round() * std::f64::consts::TAU
         };
-        let last = control_points.len() - 1;
-        for (index, target) in [(0, targets[0]), (last, targets[1])] {
-            let reference = control_points[index];
-            let mut parameters =
-                cadmpeg_ir::math::Point2::from(analytic_surface_parameters(surface, target)?);
+        let squared_distance = |left: cadmpeg_ir::math::Point3, right: cadmpeg_ir::math::Point3| {
+            (left.x - right.x).powi(2) + (left.y - right.y).powi(2) + (left.z - right.z).powi(2)
+        };
+        let model_endpoints = [
+            *chart.control_points().first()?,
+            *chart.control_points().last()?,
+        ];
+        let direct_error = squared_distance(model_endpoints[0].get(), edge_endpoints[0])
+            + squared_distance(model_endpoints[1].get(), edge_endpoints[1]);
+        let reverse_error = squared_distance(model_endpoints[0].get(), edge_endpoints[1])
+            + squared_distance(model_endpoints[1].get(), edge_endpoints[0]);
+        let targets = if direct_error <= reverse_error {
+            edge_endpoints
+        } else {
+            [edge_endpoints[1], edge_endpoints[0]]
+        };
+        let (mut control_points, source) = if let Some(support_uv) = &support_data.support_uv {
+            let mut control_points = support_uv[support_index].clone();
             match surface {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
+                    for point in &mut control_points {
+                        point.u *= LEN_TO_MM;
+                        point.v *= LEN_TO_MM;
+                    }
+                }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
-                    parameters.u = adjust_periodic(parameters.u, reference.u);
+                    for point in &mut control_points {
+                        point.v *= LEN_TO_MM;
+                    }
                 }
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
-                    parameters.u = adjust_periodic(parameters.u, reference.u);
+                    for point in &mut control_points {
+                        point.v *= LEN_TO_MM;
+                    }
                 }
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
-                    parameters.u = adjust_periodic(parameters.u, reference.u);
-                }
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
-                    parameters.u = adjust_periodic(parameters.u, reference.u);
-                }
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {}
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {}
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => {}
                 _ => return None,
             }
-            if matches!(
-                surface,
-                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
-            ) {
-                parameters.v = adjust_periodic(parameters.v, reference.v);
-            }
-            control_points[index] = parameters;
-        }
-    }
-    let tolerance = inverse_coordinate_tolerance(edge_endpoints);
-    if [control_points.first()?, control_points.last()?]
-        .into_iter()
-        .zip(targets)
-        .any(|(parameters, target)| {
-            surface_point(surface, parameters.u, parameters.v)
-                .ok()
-                .is_none_or(|point| squared_distance(point.get(), target) > tolerance * tolerance)
-        })
-    {
-        return None;
-    }
-    let mapped_points = control_points
-        .iter()
-        .map(|parameters| {
-            surface_point(surface, parameters.u, parameters.v)
-                .ok()
-                .map(cadmpeg_ir::features::FinitePoint3::get)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let control_errors = mapped_points
-        .iter()
-        .zip(chart.control_points())
-        .map(|(point, target)| squared_distance(*point, target.get()).sqrt())
-        .collect::<Vec<_>>();
-    if control_errors
-        .iter()
-        .any(|error| !error.is_finite() || *error > support_data.fit_tolerance_mm)
-    {
-        return None;
-    }
-    if control_points
-        .windows(2)
-        .zip(chart.control_points().windows(2))
-        .zip(control_errors.windows(2))
-        .any(|((parameters, chord), endpoint_errors)| match surface {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                nurbs_surface_parameter_segment_chord_bound(
-                    surface,
-                    [parameters[0], parameters[1]],
-                    [chord[0].get(), chord[1].get()],
-                )
-                .is_none_or(|error| error > support_data.fit_tolerance_mm)
-            }
-            _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
-                |curvature_error| {
-                    curvature_error + endpoint_errors[0].max(endpoint_errors[1])
-                        > support_data.fit_tolerance_mm
-                },
-            ),
-        })
-    {
-        return None;
-    }
-    let nurbs =
-        match PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false) {
-            Ok(nurbs) => nurbs,
-            Err(error) => {
-                refusal.note(
-                    format_args!(
-                        "sldprt intersection support pcurve for surface attr {surface_attr}"
-                    ),
-                    &error,
-                );
-                return None;
+            (control_points, IntersectionPcurveSource::StoredCache)
+        } else {
+            match surface {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
+                    let mut control_points = Vec::with_capacity(chart.pole_count());
+                    for point in chart.control_points() {
+                        let parameters = match nurbs_surface_parameter_within_tolerance(
+                            surface,
+                            point.get(),
+                            control_points.last().copied(),
+                            support_data.fit_tolerance_mm,
+                        ) {
+                            Ok(Some(parameters)) => parameters,
+                            Ok(None) => return None,
+                            Err(limit) => return Some(Err(limit)),
+                        };
+                        control_points.push(parameters.get());
+                    }
+                    (control_points, IntersectionPcurveSource::NurbsInverse)
+                }
+                _ => {
+                    let mut control_points = chart
+                        .control_points()
+                        .into_iter()
+                        .map(|point| {
+                            analytic_surface_parameters(surface, point.get())
+                                .map(cadmpeg_ir::math::Point2::from)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    for index in 1..control_points.len() {
+                        let previous = control_points[index - 1];
+                        match surface {
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+                                control_points[index].u += ((previous.u - control_points[index].u)
+                                    / std::f64::consts::TAU)
+                                    .round()
+                                    * std::f64::consts::TAU;
+                            }
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+                                control_points[index].u += ((previous.u - control_points[index].u)
+                                    / std::f64::consts::TAU)
+                                    .round()
+                                    * std::f64::consts::TAU;
+                            }
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
+                                control_points[index].u += ((previous.u - control_points[index].u)
+                                    / std::f64::consts::TAU)
+                                    .round()
+                                    * std::f64::consts::TAU;
+                            }
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+                                control_points[index].u += ((previous.u - control_points[index].u)
+                                    / std::f64::consts::TAU)
+                                    .round()
+                                    * std::f64::consts::TAU;
+                            }
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
+                            _ => return None,
+                        }
+                        if matches!(
+                            surface,
+                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+                        ) {
+                            control_points[index].v += ((previous.v - control_points[index].v)
+                                / std::f64::consts::TAU)
+                                .round()
+                                * std::f64::consts::TAU;
+                        }
+                    }
+                    (control_points, IntersectionPcurveSource::AnalyticInverse)
+                }
             }
         };
-    Some((PcurveGeometry::Nurbs { nurbs }, parameter_range, source))
+        if control_points.len() != chart.control_points().len() {
+            return None;
+        }
+        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) = surface {
+            let tolerance = inverse_coordinate_tolerance(edge_endpoints);
+            let last = control_points.len() - 1;
+            for (index, target) in [(0, targets[0]), (last, targets[1])] {
+                control_points[index] = match nurbs_surface_parameter_within_tolerance(
+                    surface,
+                    target,
+                    Some(control_points[index]),
+                    tolerance,
+                ) {
+                    Ok(Some(parameters)) => parameters.get(),
+                    Ok(None) => return None,
+                    Err(limit) => return Some(Err(limit)),
+                };
+            }
+        } else {
+            let adjust_periodic = |parameter: f64, reference: f64| {
+                parameter
+                    + ((reference - parameter) / std::f64::consts::TAU).round()
+                        * std::f64::consts::TAU
+            };
+            let last = control_points.len() - 1;
+            for (index, target) in [(0, targets[0]), (last, targets[1])] {
+                let reference = control_points[index];
+                let mut parameters =
+                    cadmpeg_ir::math::Point2::from(analytic_surface_parameters(surface, target)?);
+                match surface {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_)) => {
+                        parameters.u = adjust_periodic(parameters.u, reference.u);
+                    }
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) => {
+                        parameters.u = adjust_periodic(parameters.u, reference.u);
+                    }
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_)) => {
+                        parameters.u = adjust_periodic(parameters.u, reference.u);
+                    }
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_)) => {
+                        parameters.u = adjust_periodic(parameters.u, reference.u);
+                    }
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {}
+                    _ => return None,
+                }
+                if matches!(
+                    surface,
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))
+                ) {
+                    parameters.v = adjust_periodic(parameters.v, reference.v);
+                }
+                control_points[index] = parameters;
+            }
+        }
+        let tolerance = inverse_coordinate_tolerance(edge_endpoints);
+        for (parameters, target) in [control_points.first()?, control_points.last()?]
+            .into_iter()
+            .zip(targets)
+        {
+            let point = match surface_point(surface, parameters.u, parameters.v) {
+                Ok(point) => point.get(),
+                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                    return Some(Err(limit))
+                }
+                Err(_) => return None,
+            };
+            if squared_distance(point, target) > tolerance * tolerance {
+                return None;
+            }
+        }
+        let mut mapped_points = Vec::with_capacity(control_points.len());
+        for parameters in &control_points {
+            let point = match surface_point(surface, parameters.u, parameters.v) {
+                Ok(point) => point.get(),
+                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                    return Some(Err(limit))
+                }
+                Err(_) => return None,
+            };
+            mapped_points.push(point);
+        }
+        let control_errors = mapped_points
+            .iter()
+            .zip(chart.control_points())
+            .map(|(point, target)| squared_distance(*point, target.get()).sqrt())
+            .collect::<Vec<_>>();
+        if control_errors
+            .iter()
+            .any(|error| !error.is_finite() || *error > support_data.fit_tolerance_mm)
+        {
+            return None;
+        }
+        for ((parameters, chord), endpoint_errors) in control_points
+            .windows(2)
+            .zip(chart.control_points().windows(2))
+            .zip(control_errors.windows(2))
+        {
+            let exceeds = match surface {
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
+                    match nurbs_surface_parameter_segment_chord_bound(
+                        surface,
+                        [parameters[0], parameters[1]],
+                        [chord[0].get(), chord[1].get()],
+                    ) {
+                        Ok(error) => {
+                            error.is_none_or(|error| error > support_data.fit_tolerance_mm)
+                        }
+                        Err(limit) => return Some(Err(limit)),
+                    }
+                }
+                _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
+                    |curvature_error| {
+                        curvature_error + endpoint_errors[0].max(endpoint_errors[1])
+                            > support_data.fit_tolerance_mm
+                    },
+                ),
+            };
+            if exceeds {
+                return None;
+            }
+        }
+        let nurbs =
+            match PcurveNurbs::from_lanes(1, chart.knots().to_vec(), control_points, None, false) {
+                Ok(nurbs) => nurbs,
+                Err(error) => {
+                    refusal.note(
+                        format_args!(
+                            "sldprt intersection support pcurve for surface attr {surface_attr}"
+                        ),
+                        &error,
+                    );
+                    return None;
+                }
+            };
+        Some(Ok((
+            PcurveGeometry::Nurbs { nurbs },
+            parameter_range,
+            source,
+        )))
+    })();
+    candidate.transpose()
 }
 
 fn resolve_axis_candidates<T, const N: usize>(
@@ -4377,11 +4411,29 @@ fn resolve_axis_candidates<T, const N: usize>(
     unique.map_or(InverseResolution::NoMatch, InverseResolution::Unique)
 }
 
+#[derive(Debug)]
+enum NurbsPcurveFailure {
+    Carrier(cadmpeg_ir::geometry::nurbs::NurbsError),
+    Resource(cadmpeg_core::decode::ResourceLimit),
+}
+
+impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
+    fn from(error: cadmpeg_ir::geometry::nurbs::NurbsError) -> Self {
+        Self::Carrier(error)
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for NurbsPcurveFailure {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Resource(limit)
+    }
+}
+
 fn nurbs_boundary_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
-) -> InverseResolution<PcurveGeometry> {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree() as usize,
@@ -4403,14 +4455,14 @@ fn nurbs_boundary_pcurve(
         fixed_knots.get(fixed_count),
         varying_knots.get(varying_degree),
     ) else {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     };
     if !fixed_min.is_finite()
         || !fixed_max.is_finite()
         || fixed_min >= fixed_max
         || !varying_min.is_finite()
     {
-        return InverseResolution::NoMatch;
+        return Ok(InverseResolution::NoMatch);
     }
     let tolerance = inverse_coordinate_tolerance(
         surface
@@ -4445,27 +4497,31 @@ fn nurbs_boundary_pcurve(
                 _ => false,
             }
     };
-    let mut candidates = [fixed_min, fixed_max]
+    let mut fixed = None;
+    for parameter in [fixed_min, fixed_max]
         .into_iter()
         .filter(|parameter| parameter.is_finite())
-        .filter(|parameter| {
-            nurbs_surface_isocurve(surface, fixed_axis, *parameter)
-                .is_some_and(|candidate| same_curve(&candidate))
-        });
-    let Some(fixed) = candidates.next() else {
-        return InverseResolution::NoMatch;
-    };
-    if candidates.next().is_some() {
-        return InverseResolution::Ambiguous;
+    {
+        if nurbs_surface_isocurve(surface, fixed_axis, parameter)?
+            .is_some_and(|candidate| same_curve(&candidate))
+        {
+            if fixed.is_some() {
+                return Ok(InverseResolution::Ambiguous);
+            }
+            fixed = Some(parameter);
+        }
     }
-    InverseResolution::Unique(match fixed_axis {
+    let Some(fixed) = fixed else {
+        return Ok(InverseResolution::NoMatch);
+    };
+    Ok(InverseResolution::Unique(match fixed_axis {
         SurfaceParameterAxis::U => PcurveGeometry::Line(
             match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                 cadmpeg_ir::math::Point2::new(fixed, varying_min),
                 cadmpeg_ir::math::Point2::new(0.0, 1.0),
             ) {
                 Ok(payload) => payload,
-                Err(_) => return InverseResolution::NoMatch,
+                Err(_) => return Ok(InverseResolution::NoMatch),
             },
         ),
         SurfaceParameterAxis::V => PcurveGeometry::Line(
@@ -4474,17 +4530,20 @@ fn nurbs_boundary_pcurve(
                 cadmpeg_ir::math::Point2::new(1.0, 0.0),
             ) {
                 Ok(payload) => payload,
-                Err(_) => return InverseResolution::NoMatch,
+                Err(_) => return Ok(InverseResolution::NoMatch),
             },
         ),
-    })
+    }))
 }
 
 fn nurbs_strict_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> InverseResolution<PcurveGeometry> {
-    let axis_candidate = |fixed_axis| {
+) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::decode::ResourceLimit> {
+    let axis_candidate = |fixed_axis| -> Result<
+        InverseResolution<PcurveGeometry>,
+        cadmpeg_core::decode::ResourceLimit,
+    > {
         let (uc, vc) = (surface.u_count(), surface.v_count());
         let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
             SurfaceParameterAxis::U => (
@@ -4519,7 +4578,7 @@ fn nurbs_strict_isocurve_pcurve(
             || curve.periodic() != varying_periodic
             || curve.control_points().len() != varying_count
         {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         }
         let (Some(&fixed_min), Some(&fixed_max)) = (fixed_knots.get(1), fixed_knots.get(2)) else {
             return nurbs_boundary_pcurve(surface, curve, fixed_axis);
@@ -4557,7 +4616,7 @@ fn nurbs_strict_isocurve_pcurve(
             }
             _ => true,
         } {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         }
         let surface_poles = surface.poles().into_iter().collect::<Vec<_>>();
         let mut delta_squared = 0.0;
@@ -4589,11 +4648,11 @@ fn nurbs_strict_isocurve_pcurve(
                 (point.x - a.x).powi(2) + (point.y - a.y).powi(2) + (point.z - a.z).powi(2)
                     <= tolerance * tolerance
             });
-            return if all_equal {
+            return Ok(if all_equal {
                 InverseResolution::Ambiguous
             } else {
                 InverseResolution::NoMatch
-            };
+            });
         }
         let factor = relative_dot_delta / delta_squared;
         let residual_squared = (0..varying_count)
@@ -4613,29 +4672,29 @@ fn nurbs_strict_isocurve_pcurve(
             || factor > 1.0 + parameter_tolerance
             || residual_squared > tolerance * tolerance
         {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         }
         let fixed = fixed_min + factor.clamp(0.0, 1.0) * (fixed_max - fixed_min);
         let Some(varying_degree) = usize::try_from(varying_degree).ok() else {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         };
         let (Some(&varying_min), Some(&varying_max)) = (
             varying_knots.get(varying_degree),
             varying_knots.get(varying_count),
         ) else {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         };
         if !varying_min.is_finite() || !varying_max.is_finite() || varying_min >= varying_max {
-            return InverseResolution::NoMatch;
+            return Ok(InverseResolution::NoMatch);
         }
-        InverseResolution::Unique(match fixed_axis {
+        Ok(InverseResolution::Unique(match fixed_axis {
             SurfaceParameterAxis::U => PcurveGeometry::Line(
                 match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
                     cadmpeg_ir::math::Point2::new(fixed, varying_min),
                     cadmpeg_ir::math::Point2::new(0.0, 1.0),
                 ) {
                     Ok(payload) => payload,
-                    Err(_) => return InverseResolution::NoMatch,
+                    Err(_) => return Ok(InverseResolution::NoMatch),
                 },
             ),
             SurfaceParameterAxis::V => PcurveGeometry::Line(
@@ -4644,15 +4703,15 @@ fn nurbs_strict_isocurve_pcurve(
                     cadmpeg_ir::math::Point2::new(1.0, 0.0),
                 ) {
                     Ok(payload) => payload,
-                    Err(_) => return InverseResolution::NoMatch,
+                    Err(_) => return Ok(InverseResolution::NoMatch),
                 },
             ),
-        })
+        }))
     };
-    resolve_axis_candidates([
-        axis_candidate(SurfaceParameterAxis::U),
-        axis_candidate(SurfaceParameterAxis::V),
-    ])
+    Ok(resolve_axis_candidates([
+        axis_candidate(SurfaceParameterAxis::U)?,
+        axis_candidate(SurfaceParameterAxis::V)?,
+    ]))
 }
 
 fn nurbs_active_domain(knots: &[f64], degree: u32, count: usize) -> Option<[f64; 2]> {
@@ -4891,7 +4950,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree(),
@@ -4946,7 +5005,14 @@ fn extended_nurbs_isocurve_axis_candidate(
     ];
     if overlap[0] < overlap[1] {
         let parameter = overlap[0].midpoint(overlap[1]);
-        if let Ok(point) = nurbs_curve_point_at(curve, parameter) {
+        let point = match nurbs_curve_point_at(curve, parameter) {
+            Ok(point) => Some(point),
+            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                return Err(limit.into())
+            }
+            Err(_) => None,
+        };
+        if let Some(point) = point {
             let tolerance = inverse_coordinate_tolerance(
                 surface
                     .poles()
@@ -4954,17 +5020,24 @@ fn extended_nurbs_isocurve_axis_candidate(
                     .map(FinitePoint3::get)
                     .chain(std::iter::once(point.get())),
             );
-            if let Some(parameters) = nurbs_surface_parameter_near_point(surface, point.get(), None)
-                .filter(|parameters| {
-                    nurbs_surface_point(surface, parameters.u, parameters.v).is_ok_and(|mapped| {
-                        Point3::distance(point.get(), mapped.get()) <= tolerance
-                    })
-                })
+            if let Some(parameters) =
+                nurbs_surface_parameter_near_point(surface, point.get(), None)?
             {
-                fixed_values.push(match fixed_axis {
-                    SurfaceParameterAxis::U => parameters.u,
-                    SurfaceParameterAxis::V => parameters.v,
-                });
+                let mapped = match nurbs_surface_point(surface, parameters.u, parameters.v) {
+                    Ok(mapped) => Some(mapped),
+                    Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                        return Err(limit.into())
+                    }
+                    Err(_) => None,
+                };
+                if mapped
+                    .is_some_and(|mapped| Point3::distance(point.get(), mapped.get()) <= tolerance)
+                {
+                    fixed_values.push(match fixed_axis {
+                        SurfaceParameterAxis::U => parameters.u,
+                        SurfaceParameterAxis::V => parameters.v,
+                    });
+                }
             }
         }
     }
@@ -4993,16 +5066,20 @@ fn extended_nurbs_isocurve_axis_candidate(
     let Some(clamped) = clamped else {
         return Ok(InverseResolution::NoMatch);
     };
-    let mut matches = unique_fixed_values.into_iter().filter(|fixed| {
-        nurbs_surface_isocurve(surface, fixed_axis, *fixed)
+    let mut matched = None;
+    for fixed in unique_fixed_values {
+        if nurbs_surface_isocurve(surface, fixed_axis, fixed)?
             .is_some_and(|expected| nurbs_representation_matches(&expected, &clamped))
-    });
-    let Some(fixed) = matches.next() else {
+        {
+            if matched.is_some() {
+                return Ok(InverseResolution::Ambiguous);
+            }
+            matched = Some(fixed);
+        }
+    }
+    let Some(fixed) = matched else {
         return Ok(InverseResolution::NoMatch);
     };
-    if matches.next().is_some() {
-        return Ok(InverseResolution::Ambiguous);
-    }
     Ok(InverseResolution::Unique(match fixed_axis {
         SurfaceParameterAxis::U => PcurveGeometry::Line(
             match cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -5028,7 +5105,7 @@ fn extended_nurbs_isocurve_axis_candidate(
 fn extended_nurbs_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
     Ok(resolve_axis_candidates([
         extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::U)?,
         extended_nurbs_isocurve_axis_candidate(surface, curve, SurfaceParameterAxis::V)?,
@@ -5038,8 +5115,8 @@ fn extended_nurbs_isocurve_pcurve(
 fn nurbs_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
-) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_ir::geometry::nurbs::NurbsError> {
-    match nurbs_strict_isocurve_pcurve(surface, curve) {
+) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
+    match nurbs_strict_isocurve_pcurve(surface, curve)? {
         InverseResolution::NoMatch => extended_nurbs_isocurve_pcurve(surface, curve),
         other => Ok(other),
     }
@@ -5091,10 +5168,14 @@ fn nurbs_edge_endpoint_parameters(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Option<[cadmpeg_ir::math::Point2; 2]> {
-    let curve_points = range.map(|parameter| nurbs_curve_point_at(curve, parameter));
-    let [Ok(first), Ok(last)] = curve_points else {
-        return None;
+) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(first) = cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, range[0]))?
+    else {
+        return Ok(None);
+    };
+    let Some(last) = cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, range[1]))?
+    else {
+        return Ok(None);
     };
     // The inverse-projection tolerance of this surface's coordinates against
     // the NURBS endpoint tolerance.
@@ -5108,33 +5189,70 @@ fn nurbs_edge_endpoint_parameters(
         ),
         NURBS_ENDPOINT_TOLERANCE_MM,
     );
-    let project = |point| {
-        let parameters = nurbs_surface_parameter_near_point(surface, point, None)?;
-        let mapped = nurbs_surface_point(surface, parameters.u, parameters.v).ok()?;
-        (Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters.get())
+    let project =
+        |point| -> Result<Option<cadmpeg_ir::math::Point2>, cadmpeg_core::decode::ResourceLimit> {
+            let Some(parameters) = nurbs_surface_parameter_near_point(surface, point, None)? else {
+                return Ok(None);
+            };
+            let Some(mapped) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+                surface,
+                parameters.u,
+                parameters.v,
+            ))?
+            else {
+                return Ok(None);
+            };
+            Ok((Point3::distance(point, mapped.get()) <= tolerance).then_some(parameters.get()))
+        };
+    let Some(start) = project(first.get())? else {
+        return Ok(None);
     };
-    Some([project(first.get())?, project(last.get())?])
+    let Some(end) = project(last.get())? else {
+        return Ok(None);
+    };
+    Ok(Some([start, end]))
 }
 
 fn nurbs_curve_surface_deviation(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Option<f64> {
-    let parameters = nurbs_curve_sample_parameters(curve, range)?;
+) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit> {
+    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
+        return Ok(None);
+    };
     let mut seed = None;
     let mut maximum = 0.0_f64;
     for parameter in parameters {
-        let point = nurbs_curve_point_at(curve, parameter).ok()?;
-        let parameters = seed
-            .and_then(|seed| nurbs_surface_parameter_near_point(surface, point.get(), Some(seed)))
-            .or_else(|| nurbs_surface_parameter_near_point(surface, point.get(), None))?
-            .get();
-        let surface_point = nurbs_surface_point(surface, parameters.u, parameters.v).ok()?;
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let projected = match seed {
+            Some(seed) => nurbs_surface_parameter_near_point(surface, point.get(), Some(seed))?,
+            None => None,
+        };
+        let parameters = match projected {
+            Some(parameters) => Some(parameters),
+            None => nurbs_surface_parameter_near_point(surface, point.get(), None)?,
+        };
+        let Some(parameters) = parameters else {
+            return Ok(None);
+        };
+        let parameters = parameters.get();
+        let Some(surface_point) = cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(
+            surface,
+            parameters.u,
+            parameters.v,
+        ))?
+        else {
+            return Ok(None);
+        };
         seed = Some(parameters);
         maximum = maximum.max(Point3::distance(point.get(), surface_point.get()));
     }
-    maximum.is_finite().then_some(maximum)
+    Ok(maximum.is_finite().then_some(maximum))
 }
 
 /// The degree-one pcurve lanes a cached projection states, and the fit
@@ -5144,41 +5262,69 @@ fn nurbs_degree_one_cache_lanes(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Option<(Vec<cadmpeg_ir::math::Point2>, f64)> {
-    if curve.degree() != 1 || curve.weights().is_some() || curve.periodic() {
-        return None;
+) -> Result<Option<(Vec<cadmpeg_ir::math::Point2>, f64)>, cadmpeg_core::decode::ResourceLimit> {
+    if curve.degree() != 1 || curve.pole_rows().weight_at(0).is_some() || curve.periodic() {
+        return Ok(None);
     }
     let curve_points = curve.pole_rows().raw_points();
     let mut control_points = Vec::with_capacity(curve_points.len());
     let mut seed = None;
     for point in &curve_points {
-        let parameters = seed
-            .and_then(|seed| nurbs_surface_parameter_near_point(surface, *point, Some(seed)))
-            .or_else(|| nurbs_surface_parameter_near_point(surface, *point, None))?
-            .get();
+        let projected = match seed {
+            Some(seed) => nurbs_surface_parameter_near_point(surface, *point, Some(seed))?,
+            None => None,
+        };
+        let parameters = match projected {
+            Some(parameters) => Some(parameters),
+            None => nurbs_surface_parameter_near_point(surface, *point, None)?,
+        };
+        let Some(parameters) = parameters else {
+            return Ok(None);
+        };
+        let parameters = parameters.get();
         seed = Some(parameters);
         control_points.push(parameters);
     }
-    let parameters = nurbs_curve_sample_parameters(curve, range)?;
+    let Some(parameters) = nurbs_curve_sample_parameters(curve, range) else {
+        return Ok(None);
+    };
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
-        let model_point = nurbs_curve_point_at(curve, parameter).ok()?;
-        let uv = nurbs_pcurve_uv(1, curve.knots(), &control_points, None, parameter).ok()?;
-        let mapped_point = nurbs_surface_point(surface, uv.u, uv.v).ok()?;
+        let Some(model_point) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, parameter))?
+        else {
+            return Ok(None);
+        };
+        let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(nurbs_pcurve_uv(
+            1,
+            curve.knots(),
+            &control_points,
+            None,
+            parameter,
+        ))?
+        else {
+            return Ok(None);
+        };
+        let Some(mapped_point) =
+            cadmpeg_ir::eval::finite_or_refusal(nurbs_surface_point(surface, uv.u, uv.v))?
+        else {
+            return Ok(None);
+        };
         fit_tolerance = fit_tolerance.max(Point3::distance(model_point.get(), mapped_point.get()));
     }
     if !fit_tolerance.is_finite() {
-        return None;
+        return Ok(None);
     }
-    Some((control_points, fit_tolerance))
+    Ok(Some((control_points, fit_tolerance)))
 }
 
 fn nurbs_degree_one_cache_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<(PcurveGeometry, f64)>, cadmpeg_ir::geometry::nurbs::NurbsError> {
-    let Some((control_points, fit_tolerance)) = nurbs_degree_one_cache_lanes(surface, curve, range)
+) -> Result<Option<(PcurveGeometry, f64)>, NurbsPcurveFailure> {
+    let Some((control_points, fit_tolerance)) =
+        nurbs_degree_one_cache_lanes(surface, curve, range)?
     else {
         return Ok(None);
     };
@@ -5220,11 +5366,11 @@ fn derive_nurbs_edge_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<NurbsPcurveResolution, cadmpeg_ir::geometry::nurbs::NurbsError> {
-    if nurbs_edge_endpoint_parameters(surface, curve, range).is_none() {
+) -> Result<NurbsPcurveResolution, NurbsPcurveFailure> {
+    if nurbs_edge_endpoint_parameters(surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::OffSurface);
     }
-    if nurbs_curve_surface_deviation(surface, curve, range).is_none() {
+    if nurbs_curve_surface_deviation(surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::NoMatch);
     }
     Ok(match nurbs_isocurve_pcurve(surface, curve)? {
@@ -6342,6 +6488,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .expect("support parameterization");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6369,6 +6516,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
+        .expect("resource allocation did not fail")
         .is_none());
 
         let malformed = super::super::intersection::IntersectionSupportData {
@@ -6383,6 +6531,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
+        .expect("resource allocation did not fail")
         .is_none());
     }
 
@@ -6421,6 +6570,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .expect("analytic support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6448,6 +6598,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new()
         )
+        .expect("resource allocation did not fail")
         .is_none());
     }
 
@@ -6487,6 +6638,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .expect("torus support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6541,6 +6693,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .expect("NURBS support inversion");
         let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = geometry else {
             panic!("expected solved UV NURBS");
@@ -6590,6 +6743,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .is_none());
         assert!(super::intersection_support_pcurve(
             &support_data(0.34),
@@ -6599,6 +6753,7 @@ mod tests {
             endpoints,
             &mut crate::lane_refusal::LaneRefusals::new(),
         )
+        .expect("resource allocation did not fail")
         .is_some());
     }
 
@@ -7109,6 +7264,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
+        .expect("resource allocation did not fail")
         .expect("surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }
@@ -7164,6 +7320,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
+        .expect("resource allocation did not fail")
         .expect("quadratic surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }
@@ -7216,6 +7373,7 @@ mod tests {
             cadmpeg_ir::geometry::nurbs::SurfaceParameterAxis::U,
             0.5,
         )
+        .expect("resource allocation did not fail")
         .expect("rational surface isocurve");
         assert!(super::nurbs_representation_matches(&expected, &clamped));
     }

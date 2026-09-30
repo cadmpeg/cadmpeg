@@ -72,7 +72,7 @@ fn double_xar_records<'a>(
             ),
             "creo native double-xar IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native double-xar records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native double-xar records")?;
         records.push(CreoDoubleXarTableRecord { id, table });
     }
     Ok(records)
@@ -92,7 +92,7 @@ fn primitive_scalar_array_records<'a>(
             ),
             "creo native scalar-array IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native scalar-array records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native scalar-array records")?;
         records.push(CreoPrimitiveScalarArrayRecord {
             id,
             field: array.field.as_str(),
@@ -120,7 +120,7 @@ pub(super) fn feature_surface_replay_associations(
                 ),
                 "creo native surface replay IDs",
             )?;
-            ctx.try_reserve_items(&mut associations, 1, "creo native surface replay records")?;
+            ctx.reserve_vec(&mut associations, 1, "creo native surface replay records")?;
             associations.push(CreoFeatureSurfaceReplayAssociation {
                 id,
                 owner_feature_id,
@@ -280,7 +280,7 @@ pub(super) fn fc05_circle_records<'a>(
             format_args!("creo:curve:fc05_circle#{}", record.curve_id),
             "creo native FC05 circle IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native FC05 circle records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native FC05 circle records")?;
         records.push(CreoFc05CircleRecord {
             id,
             curve_id: record.curve_id,
@@ -308,7 +308,7 @@ pub(super) fn fc05_cylinder_cap_pair_records<'a>(
             format_args!("creo:surface:fc05_cylinder_cap_pair#{}", record.surface_id),
             "creo native FC05 cap pair IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native FC05 cap pair records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native FC05 cap pair records")?;
         records.push(CreoFc05CylinderCapPairRecord {
             id,
             surface_id: record.surface_id,

@@ -77,7 +77,7 @@ enum GroupBody<R> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct StateGroupMembers<R>(GroupBody<R>);
+pub(crate) struct StateGroupMembers<R>(GroupBody<R>, OperationStateGroupCount);
 
 impl<R> StateGroupMembers<R> {
     pub(crate) fn new(count: OperationStateGroupCount, rows: Vec<R>) -> Result<Self, &'static str> {
@@ -89,15 +89,11 @@ impl<R> StateGroupMembers<R> {
             OperationStateGroupCount::Counted(0) => GroupBody::CountedZero,
             OperationStateGroupCount::Counted(_) => GroupBody::Counted(rows),
         };
-        Ok(Self(body))
+        Ok(Self(body, count))
     }
 
     pub(crate) fn count(&self) -> OperationStateGroupCount {
-        match &self.0 {
-            GroupBody::Empty => OperationStateGroupCount::Empty,
-            GroupBody::CountedZero => OperationStateGroupCount::Counted(0),
-            GroupBody::Counted(rows) => OperationStateGroupCount::Counted(rows.len() as u8 + 1),
-        }
+        self.1
     }
 
     pub(crate) fn rows(&self) -> &[R] {
@@ -107,6 +103,7 @@ impl<R> StateGroupMembers<R> {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn into_rows(self) -> Vec<R> {
         match self.0 {
             GroupBody::Empty | GroupBody::CountedZero => Vec::new(),
@@ -118,29 +115,36 @@ impl<R> StateGroupMembers<R> {
         self,
         mut map: impl FnMut(u8, R) -> Result<U, E>,
     ) -> Result<StateGroupMembers<U>, E> {
-        Ok(StateGroupMembers(match self.0 {
-            GroupBody::Empty => GroupBody::Empty,
-            GroupBody::CountedZero => GroupBody::CountedZero,
-            GroupBody::Counted(rows) => GroupBody::Counted(
-                rows.into_iter()
-                    .enumerate()
-                    .map(|(ordinal, row)| map(ordinal as u8, row))
-                    .collect::<Result<_, _>>()?,
-            ),
-        }))
+        Ok(StateGroupMembers(
+            match self.0 {
+                GroupBody::Empty => GroupBody::Empty,
+                GroupBody::CountedZero => GroupBody::CountedZero,
+                GroupBody::Counted(rows) => GroupBody::Counted(
+                    rows.into_iter()
+                        .zip(0u8..=u8::MAX)
+                        .map(|(row, ordinal)| map(ordinal, row))
+                        .collect::<Result<_, _>>()?,
+                ),
+            },
+            self.1,
+        ))
     }
 
+    #[cfg(test)]
     pub(super) fn map_rows<U>(self, mut map: impl FnMut(u8, R) -> U) -> StateGroupMembers<U> {
-        StateGroupMembers(match self.0 {
-            GroupBody::Empty => GroupBody::Empty,
-            GroupBody::CountedZero => GroupBody::CountedZero,
-            GroupBody::Counted(rows) => GroupBody::Counted(
-                rows.into_iter()
-                    .enumerate()
-                    .map(|(ordinal, row)| map(ordinal as u8, row))
-                    .collect(),
-            ),
-        })
+        StateGroupMembers(
+            match self.0 {
+                GroupBody::Empty => GroupBody::Empty,
+                GroupBody::CountedZero => GroupBody::CountedZero,
+                GroupBody::Counted(rows) => GroupBody::Counted(
+                    rows.into_iter()
+                        .zip(0u8..=u8::MAX)
+                        .map(|(row, ordinal)| map(ordinal, row))
+                        .collect(),
+                ),
+            },
+            self.1,
+        )
     }
 }
 

@@ -355,7 +355,7 @@ revolution_collection_limit_test!(
 );
 revolution_collection_limit_test!(
     revolution_ring_validation_nodes_refuse_limit,
-    "creo revolution loop validation nodes"
+    "loop ring members"
 );
 revolution_collection_limit_test!(revolution_loops_refuse_limit, "creo model revolution loops");
 revolution_collection_limit_test!(

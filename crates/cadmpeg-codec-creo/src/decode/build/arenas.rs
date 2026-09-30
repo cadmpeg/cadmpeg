@@ -596,7 +596,7 @@ pub(super) fn emit_geometry_arenas(
         )?;
     }
     let mut pcurve_endpoint_payload = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut pcurve_endpoint_payload,
         pcurve_endpoints.len(),
         "creo native pcurve endpoint payload references",

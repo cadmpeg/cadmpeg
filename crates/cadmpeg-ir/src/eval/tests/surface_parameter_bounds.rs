@@ -19,25 +19,27 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
     };
     let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
     let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
-    assert!(rational_patch_parameter_segment(&patch, start, end).is_none());
+    assert!(rational_patch_parameter_segment(&patch, start, end)
+        .expect("resource allocation did not fail")
+        .is_none());
 }
 
 #[test]
 fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let mut surface = bilinear_surface();
-    let mut visited = 0;
     surface
-        .edit_control_points(|point| {
-            if visited == 3 {
-                point.z = 1.0;
+        .try_map_control_points(|index, point| {
+            let mut mapped = point.get();
+            if index == 3 {
+                mapped.z = 1.0;
             }
-            visited += 1;
-            Ok(())
+            crate::features::FinitePoint3::new(mapped).ok_or(())
         })
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
     let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)
+        .expect("resource allocation did not fail")
         .expect("rational Bézier residual bound");
 
     assert!(bound >= 1.0 / 3.0);
@@ -47,6 +49,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
         [parameters[1], parameters[0]],
         [chord[1], chord[0]],
     )
+    .expect("resource allocation did not fail")
     .expect("reversed rational Bézier residual bound");
     assert!((reverse_bound - bound).abs() < 1.0e-12);
     for index in 0..=100 {

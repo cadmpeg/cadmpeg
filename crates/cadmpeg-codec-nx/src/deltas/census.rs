@@ -4,19 +4,18 @@
 use super::record_kind::RecordKind;
 use super::tails::{TermUseNumericTail, TerminalNullReferences};
 use super::{
-    body_revision_prefix, compact_tombstone, consume_attdef_list, consume_fixed,
-    consume_intersection_auxiliary, consume_intersection_data, consume_nurbs_auxiliary,
-    consume_shared_record, consume_type_101, consume_type_141, consume_type_45, consume_type_67,
-    consume_type_70, consume_variable, fixed_signature, inline_body_states,
-    inline_schema_declaration, inline_schema_declarations, is_value_family, merged_event_spans,
-    reference_marker_packets, reference_state_packets, reference_type_map, reference_type_maps,
-    schema_reference_preamble, schema_reference_preambles, tagged_reference_lanes,
-    term_use_numeric_tails, transmit_header, type_150_state_packets, uncovered_spans, BodyRevision,
-    InlineBodyState, InlineSchemaDeclaration, Record, ReferenceMarkerPacket, ReferenceStatePacket,
-    ReferenceTypeMap, ReferenceTypeMapLimit, SchemaReferencePreamble, TaggedReferenceLane,
-    Tombstone, TransmitHeader, Type150StatePacket,
+    body_revision_prefix, compact_tombstone, consume_fixed, consume_intersection_auxiliary,
+    consume_shared_record, consume_variable, first_complete_record, fixed_signature,
+    inline_body_states, inline_schema_declaration, inline_schema_declarations, is_value_family,
+    merged_event_spans, reference_marker_packets, reference_state_packets, reference_type_map,
+    reference_type_maps, schema_reference_preamble, schema_reference_preambles,
+    tagged_reference_lanes, term_use_numeric_tails, transmit_header, type_150_state_packets,
+    uncovered_spans, BodyRevision, InlineBodyState, InlineSchemaDeclaration, Record,
+    ReferenceMarkerPacket, ReferenceStatePacket, ReferenceTypeMap, ReferenceTypeMapLimit,
+    SchemaReferencePreamble, TaggedReferenceLane, Tombstone, TransmitHeader, Type150StatePacket,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Result of a deterministic deltas record walk.
@@ -77,33 +76,50 @@ impl Census {
     }
 
     /// Complete-record counts keyed by Parasolid family name.
-    pub(crate) fn full_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn full_counts(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
         for record in &self.records {
-            *counts.entry(record.family_name()).or_default() += 1;
+            let family = record.family_name();
+            if !counts.contains_key(family) {
+                ctx.charge_collection_items(1, "NX deltas full count families")?;
+            }
+            *counts.entry(family).or_default() += 1;
         }
-        counts
+        Ok(counts)
     }
 
     /// Compact tombstone counts keyed by Parasolid family name.
-    pub(crate) fn tombstone_counts(&self) -> BTreeMap<&'static str, usize> {
+    pub(crate) fn tombstone_counts(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<BTreeMap<&'static str, usize>, CodecError> {
         let mut counts = BTreeMap::new();
         for tombstone in &self.tombstones {
-            *counts.entry(tombstone.kind.name()).or_default() += 1;
+            let family = tombstone.kind.name();
+            if !counts.contains_key(family) {
+                ctx.charge_collection_items(1, "NX deltas tombstone count families")?;
+            }
+            *counts.entry(family).or_default() += 1;
         }
-        counts
+        Ok(counts)
     }
 
     /// Return the sorted disjoint union of every admitted event byte span.
-    pub(crate) fn covered_spans(&self) -> Vec<(usize, usize)> {
-        merged_event_spans(self, true)
+    pub(crate) fn covered_spans(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<(usize, usize)>, CodecError> {
+        merged_event_spans(ctx, self, true)
     }
 }
 
 /// Walk all accepted records, revisions, tombstones, and numeric tails in an
 /// inflated deltas stream.
-pub(crate) fn walk(stream: &[u8]) -> Census {
-    let transmit_header = transmit_header(stream);
+pub(crate) fn walk(ctx: &DecodeContext<'_>, stream: &[u8]) -> Result<Census, CodecError> {
+    let transmit_header = transmit_header(ctx, stream)?;
     let header_byte_len = transmit_header.as_ref().map_or(0, |header| header.end);
     let terminal_null_references = TerminalNullReferences::at_end(stream);
     let trailer_byte_len = terminal_null_references
@@ -125,51 +141,66 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
     let mut referenced_value_offsets = None::<BTreeSet<usize>>;
     let mut intersection_schema_anchor_seen = false;
     while offset + 4 <= stream.len() {
+        ctx.charge_work(1, "walk NX deltas census")?;
         intersection_schema_anchor_seen |=
             crate::topology::intersection_data_schema_header_at(stream, offset);
-        if let Some(preamble) = schema_reference_preamble(stream, offset, stream.len()) {
+        if let Some(preamble) = schema_reference_preamble(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += preamble.end - preamble.offset;
             offset = preamble.end;
             value_boundary = true;
-            census.events.schema_reference_preambles.push(preamble);
+            ctx.push_vec(
+                &mut census.events.schema_reference_preambles,
+                preamble,
+                "NX deltas schema preambles",
+            )?;
             continue;
         }
-        if let Some(declaration) = inline_schema_declaration(stream, offset, stream.len()) {
+        if let Some(declaration) = inline_schema_declaration(ctx, stream, offset, stream.len())? {
             census.bytes_decoded += declaration.end - declaration.offset;
             offset = declaration.end;
             value_boundary = true;
-            census.events.inline_schema_declarations.push(declaration);
+            ctx.push_vec(
+                &mut census.events.inline_schema_declarations,
+                declaration,
+                "NX deltas schema declarations",
+            )?;
             continue;
         }
         if let Some(map) =
-            reference_type_map(stream, offset, ReferenceTypeMapLimit::TargetTerminated)
+            reference_type_map(ctx, stream, offset, ReferenceTypeMapLimit::TargetTerminated)?
         {
             census.bytes_decoded += map.end - map.offset;
             offset = map.end;
             value_boundary = true;
-            census.events.reference_type_maps.push(map);
+            ctx.push_vec(
+                &mut census.events.reference_type_maps,
+                map,
+                "NX deltas reference type maps",
+            )?;
             continue;
         }
-        let complete_record = consume_shared_record(
+        let shared_record = consume_shared_record(
+            ctx,
             stream,
             offset,
             &census.records,
             intersection_schema_anchor_seen,
-        )
-        .or_else(|| consume_intersection_auxiliary(stream, offset))
-        .or_else(|| consume_nurbs_auxiliary(stream, offset))
-        .or_else(|| consume_type_141(stream, offset))
-        .or_else(|| consume_type_45(stream, offset))
-        .or_else(|| consume_type_67(stream, offset))
-        .or_else(|| consume_type_70(stream, offset))
-        .or_else(|| consume_attdef_list(stream, offset))
-        .or_else(|| consume_type_101(stream, offset))
-        .or_else(|| consume_intersection_data(stream, offset, intersection_schema_anchor_seen));
+        )?;
+        let complete_record = if shared_record.is_some() {
+            shared_record
+        } else {
+            consume_intersection_auxiliary(ctx, stream, offset)?
+        };
+        let complete_record = if complete_record.is_some() {
+            complete_record
+        } else {
+            first_complete_record(ctx, stream, offset, intersection_schema_anchor_seen, true)?
+        };
         if let Some(record) = complete_record {
             census.bytes_decoded += record.end - offset;
             offset = record.end;
             value_boundary = true;
-            census.events.records.push(record);
+            ctx.push_vec(&mut census.events.records, record, "NX deltas records")?;
             continue;
         }
         let Some(kind) = View::u16_be_at(stream, offset) else {
@@ -185,19 +216,29 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
                 census.bytes_decoded += revision.prefix_end - revision.offset;
                 offset = revision.prefix_end;
                 value_boundary = true;
-                census.events.body_revisions.push(revision);
+                ctx.push_vec(
+                    &mut census.events.body_revisions,
+                    revision,
+                    "NX deltas body revisions",
+                )?;
                 continue;
             }
+        }
+        if is_value_family(kind) && !value_boundary && referenced_value_offsets.is_none() {
+            let mut offsets = BTreeSet::new();
+            for event_offset in crate::parasolid::referenced_value_event_offsets(stream) {
+                if !offsets.contains(&event_offset) {
+                    ctx.charge_collection_items(1, "NX referenced value offsets")?;
+                }
+                offsets.insert(event_offset);
+            }
+            referenced_value_offsets = Some(offsets);
         }
         let value_owned = !is_value_family(kind)
             || value_boundary
             || referenced_value_offsets
-                .get_or_insert_with(|| {
-                    crate::parasolid::referenced_value_event_offsets(stream)
-                        .into_iter()
-                        .collect()
-                })
-                .contains(&offset);
+                .as_ref()
+                .is_some_and(|offsets| offsets.contains(&offset));
         if !value_owned {
             if let Some((parsed_kind, _, byte_len)) =
                 crate::parasolid::value_records::entity_value_record_identity_at(stream, offset)
@@ -208,18 +249,21 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
                 }
             }
         }
-        let decoded = fixed_signature(kind)
-            .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .or_else(|| {
-                value_owned
-                    .then(|| consume_variable(stream, offset, kind))
-                    .flatten()
-            });
+        let fixed = if let Some(signature) = fixed_signature(kind) {
+            consume_fixed(ctx, stream, offset, kind, signature)?
+        } else {
+            None
+        };
+        let decoded = if fixed.is_some() || !value_owned {
+            fixed
+        } else {
+            consume_variable(ctx, stream, offset, kind)?
+        };
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
             offset = record.end;
             value_boundary = true;
-            census.events.records.push(record);
+            ctx.push_vec(&mut census.events.records, record, "NX deltas records")?;
             continue;
         }
         if let Some(xmt) = (kind != 98)
@@ -227,11 +271,15 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
             .flatten()
         {
             if xmt > 1 {
-                census.events.tombstones.push(Tombstone {
-                    kind: record_kind,
-                    xmt,
-                    offset,
-                });
+                ctx.push_vec(
+                    &mut census.events.tombstones,
+                    Tombstone {
+                        kind: record_kind,
+                        xmt,
+                        offset,
+                    },
+                    "NX deltas tombstones",
+                )?;
                 census.bytes_decoded += 6;
                 offset += 6;
                 value_boundary = true;
@@ -241,60 +289,87 @@ pub(crate) fn walk(stream: &[u8]) -> Census {
         offset += 1;
         value_boundary = false;
     }
-    census.events.term_use_numeric_tails = term_use_numeric_tails(stream, &census);
+    census.events.term_use_numeric_tails = term_use_numeric_tails(ctx, stream, &census)?;
     census.bytes_decoded += census
         .term_use_numeric_tails
         .iter()
         .map(|tail| tail.values().byte_len())
         .sum::<usize>();
-    census.bytes_decoded += populate_gap_events(stream, &mut census);
-    let body_revision_state_bytes = populate_body_revision_state_tails(stream, &mut census);
+    census.bytes_decoded += populate_gap_events(ctx, stream, &mut census)?;
+    let body_revision_state_bytes = populate_body_revision_state_tails(ctx, stream, &mut census)?;
     census.bytes_decoded += body_revision_state_bytes;
-    census
+    Ok(census)
 }
 
-fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
+fn populate_gap_events(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &mut Census,
+) -> Result<usize, CodecError> {
     let mut admitted_bytes = 0;
     loop {
-        let covered_before = merged_event_spans(census, true)
+        let covered_before = merged_event_spans(ctx, census, true)?
             .into_iter()
             .map(|(start, end)| end - start)
             .sum::<usize>();
 
-        let lanes = tagged_reference_lanes(stream, census);
-        census.events.tagged_reference_lanes.extend(lanes);
+        let lanes = tagged_reference_lanes(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.tagged_reference_lanes,
+            lanes,
+            "NX tagged reference lanes",
+        )?;
 
-        let maps = reference_type_maps(stream, census);
-        census.events.reference_type_maps.extend(maps);
+        let maps = reference_type_maps(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.reference_type_maps,
+            maps,
+            "NX reference type maps",
+        )?;
 
-        let state_packets = reference_state_packets(stream, census);
-        census.events.reference_state_packets.extend(state_packets);
+        let state_packets = reference_state_packets(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.reference_state_packets,
+            state_packets,
+            "NX reference state packets",
+        )?;
 
-        let preambles = schema_reference_preambles(stream, census);
-        census.events.schema_reference_preambles.extend(preambles);
+        let preambles = schema_reference_preambles(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.schema_reference_preambles,
+            preambles,
+            "NX schema reference preambles",
+        )?;
 
-        let declarations = inline_schema_declarations(stream, census);
-        census
-            .events
-            .inline_schema_declarations
-            .extend(declarations);
+        let declarations = inline_schema_declarations(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.inline_schema_declarations,
+            declarations,
+            "NX inline schema declarations",
+        )?;
 
-        let body_states = inline_body_states(stream, census);
-        census.events.inline_body_states.extend(body_states);
+        let body_states = inline_body_states(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.inline_body_states,
+            body_states,
+            "NX inline body states",
+        )?;
 
-        let marker_packets = reference_marker_packets(stream, census);
-        census
-            .events
-            .reference_marker_packets
-            .extend(marker_packets);
+        let marker_packets = reference_marker_packets(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.reference_marker_packets,
+            marker_packets,
+            "NX reference marker packets",
+        )?;
 
-        let type_150_packets = type_150_state_packets(stream, census);
-        census
-            .events
-            .type_150_state_packets
-            .extend(type_150_packets);
+        let type_150_packets = type_150_state_packets(ctx, stream, census)?;
+        ctx.extend_vec(
+            &mut census.events.type_150_state_packets,
+            type_150_packets,
+            "NX type 150 state packets",
+        )?;
 
-        let covered_after = merged_event_spans(census, true)
+        let covered_after = merged_event_spans(ctx, census, true)?
             .into_iter()
             .map(|(start, end)| end - start)
             .sum::<usize>();
@@ -337,24 +412,25 @@ fn populate_gap_events(stream: &[u8], census: &mut Census) -> usize {
         .events
         .type_150_state_packets
         .sort_unstable_by_key(|packet| packet.offset);
-    admitted_bytes
+    Ok(admitted_bytes)
 }
 
-fn populate_body_revision_state_tails(stream: &[u8], census: &mut Census) -> usize {
-    let tails = uncovered_spans(stream.len(), census, true)
-        .filter_map(|(start, end)| {
-            census
-                .body_revisions
-                .iter()
-                .position(|revision| revision.prefix_end == start)
-                .map(|index| (index, start, end))
-        })
-        .collect::<Vec<_>>();
+fn populate_body_revision_state_tails(
+    ctx: &DecodeContext<'_>,
+    stream: &[u8],
+    census: &mut Census,
+) -> Result<usize, CodecError> {
     let mut byte_len = 0;
-    for (index, start, end) in tails {
-        let revision = &mut census.events.body_revisions[index];
-        revision.end = end;
-        byte_len += end - start;
+    for (start, end) in uncovered_spans(ctx, stream.len(), census, true)? {
+        if let Some(revision) = census
+            .events
+            .body_revisions
+            .iter_mut()
+            .find(|revision| revision.prefix_end == start)
+        {
+            revision.end = end;
+            byte_len += end - start;
+        }
     }
-    byte_len
+    Ok(byte_len)
 }

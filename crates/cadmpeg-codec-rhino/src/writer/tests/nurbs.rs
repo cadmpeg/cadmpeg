@@ -131,7 +131,7 @@ fn shared_rational_nurbs_edge_round_trips_c3_and_reversed_c2() {
                 cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
             ));
         }
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -240,7 +240,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
                     cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
                 )
         }));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -471,7 +471,7 @@ fn rational_nurbs_surface_patch_round_trips_exact_boundaries() {
             .fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get)
             == Some(0.001)));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -562,7 +562,7 @@ fn mixed_plane_and_nurbs_faces_round_trip_shared_edge() {
             planar_shared_pcurve.geometry,
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { .. }
         ));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 
@@ -644,7 +644,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
             .fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get)
             == Some(0.0001)));
-        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).is_ok());
+        assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").is_ok());
     }
 }
 

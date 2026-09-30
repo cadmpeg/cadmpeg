@@ -3,6 +3,8 @@
 
 use super::identity::Located;
 use super::references::DesignClassTag;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::transform::Transform;
@@ -210,11 +212,59 @@ pub(crate) struct DesignMeshTextureTable {
     resources: Vec<DesignMeshTextureResource>,
 }
 
+enum TextureTableError {
+    Payload(String),
+    Resource(CodecError),
+}
+
+impl From<&'static str> for TextureTableError {
+    fn from(message: &'static str) -> Self {
+        Self::Payload(message.into())
+    }
+}
+
+fn reserve_texture_index<T: Eq + std::hash::Hash>(
+    ctx: Option<&DecodeContext<'_>>,
+    index: &mut std::collections::HashSet<T>,
+    operation: &'static str,
+) -> Result<(), TextureTableError> {
+    if let Some(ctx) = ctx {
+        ctx.charge_collection_items(1, operation)
+            .map_err(TextureTableError::Resource)?;
+        index
+            .try_reserve(1)
+            .map_err(|_| TextureTableError::Resource(ctx.refuse_codec_limit(operation, 0, 1)))?;
+    }
+    Ok(())
+}
+
 impl DesignMeshTextureTable {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, String> {
+        Self::new_inner(None, record, resources).map_err(|error| match error {
+            TextureTableError::Payload(message) => message,
+            TextureTableError::Resource(error) => error.to_string(),
+        })
+    }
+
+    pub(crate) fn new_charged(
+        ctx: &DecodeContext<'_>,
+        record: DesignMeshRecordIdentity,
+        resources: Vec<DesignMeshTextureResource>,
+    ) -> Result<Self, CodecError> {
+        Self::new_inner(Some(ctx), record, resources).map_err(|error| match error {
+            TextureTableError::Payload(message) => CodecError::Malformed(message),
+            TextureTableError::Resource(error) => error,
+        })
+    }
+
+    fn new_inner(
+        ctx: Option<&DecodeContext<'_>>,
+        record: DesignMeshRecordIdentity,
+        resources: Vec<DesignMeshTextureResource>,
+    ) -> Result<Self, TextureTableError> {
         let count =
             u32::try_from(resources.len()).map_err(|_| "textures exceeds the u32 map count")?;
         let expected = crate::layout::paramesh_texture_table_prefix::LEN as u64
@@ -230,15 +280,23 @@ impl DesignMeshTextureTable {
         let mut filenames = std::collections::HashSet::new();
         let mut guids = std::collections::HashSet::new();
         for resource in &resources {
-            if resource.ordinal >= count || !flags.insert(resource.ordinal) {
+            if resource.ordinal >= count || flags.contains(&resource.ordinal) {
                 return Err("textures.ordinal must be a complete map permutation".into());
             }
-            if resource.filename_ordinal >= count || !filenames.insert(resource.filename_ordinal) {
+            if resource.filename_ordinal >= count || filenames.contains(&resource.filename_ordinal)
+            {
                 return Err("textures.filename_ordinal must be a complete map permutation".into());
             }
-            if !guids.insert(resource.resource_guid.as_str().to_ascii_uppercase()) {
+            let guid = resource.resource_guid.as_str().to_ascii_uppercase();
+            if guids.contains(&guid) {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
+            reserve_texture_index(ctx, &mut flags, "index F3D texture flag ordinals")?;
+            reserve_texture_index(ctx, &mut filenames, "index F3D texture filename ordinals")?;
+            reserve_texture_index(ctx, &mut guids, "index F3D texture GUIDs")?;
+            flags.insert(resource.ordinal);
+            filenames.insert(resource.filename_ordinal);
+            guids.insert(guid);
         }
         Ok(Self { record, resources })
     }
@@ -249,10 +307,30 @@ impl DesignMeshTextureTable {
         &self.resources
     }
     /// Borrow resources in the serialized flags-map order.
-    pub(crate) fn resources_in_flags_order(&self) -> Vec<&DesignMeshTextureResource> {
-        let mut resources = self.resources.iter().collect::<Vec<_>>();
-        resources.sort_by_key(|resource| resource.ordinal);
+    pub(crate) fn resources_in_flags_order(
+        &self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<Vec<&DesignMeshTextureResource>, CodecError> {
+        let operation = "order F3D mesh texture resources";
+        let count = u64::try_from(self.resources.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut resources = Vec::new();
         resources
+            .try_reserve(self.resources.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+        resources.extend(&self.resources);
+        let passes = if self.resources.len() < 2 {
+            0
+        } else {
+            u64::from(usize::BITS - (self.resources.len() - 1).leading_zeros())
+        };
+        let work = count
+            .checked_mul(passes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        resources.sort_by_key(|resource| resource.ordinal);
+        Ok(resources)
     }
     fn flags_count_offset(&self) -> u64 {
         self.record.byte_offset()
@@ -326,6 +404,7 @@ impl DesignMeshTextureTable {
         }
         Ok(table)
     }
+    #[cfg(test)]
     fn into_wire(
         self,
     ) -> (
@@ -1241,6 +1320,7 @@ impl DesignMeshCollection {
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
+    #[cfg(test)]
     fn base_record(&self) -> DesignMeshRecordIdentity {
         let prefix = crate::layout::paramesh_mesh_collection_prefix::LEN as u64;
         DesignMeshRecordIdentity {
@@ -1267,9 +1347,11 @@ impl DesignMeshCollection {
 }
 
 /// One complete `Base Mesh Feature` Design graph.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "DesignMeshFeatureWire", into = "DesignMeshFeatureWire")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DesignMeshFeatureWire")]
 pub(crate) struct DesignMeshFeature {
+    #[cfg(test)]
+    clone_probe: MeshFeatureCloneProbe,
     /// Globally unique deterministic identity keyed by the feature-scope record.
     pub(crate) id: String,
     /// Feature scope and its closing owner reference.
@@ -1282,6 +1364,23 @@ pub(crate) struct DesignMeshFeature {
     pub(crate) collection_owner: DesignMeshCollectionOwner,
     /// Mesh bodies in the source collection order.
     bodies: Vec<DesignMeshBody>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static MESH_FEATURE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+#[derive(Debug, PartialEq, Eq)]
+struct MeshFeatureCloneProbe;
+
+#[cfg(test)]
+impl Clone for MeshFeatureCloneProbe {
+    fn clone(&self) -> Self {
+        MESH_FEATURE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self
+    }
 }
 
 impl DesignMeshFeature {
@@ -1304,6 +1403,8 @@ impl DesignMeshFeature {
             return Err("bodies reference run must end before scope_base_record".into());
         }
         Ok(Self {
+            #[cfg(test)]
+            clone_probe: MeshFeatureCloneProbe,
             id,
             scope,
             collection,
@@ -1476,6 +1577,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
     }
 }
 
+#[cfg(test)]
 impl From<DesignMeshFeature> for DesignMeshFeatureWire {
     // Output cardinalities are bounded by already-materialized input vectors.
     #[allow(clippy::disallowed_methods)]
@@ -1522,16 +1624,32 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
 }
 
 /// Exact identity and source extent of one indexed Design mesh record.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignMeshRecordIdentityWire",
-    into = "DesignMeshRecordIdentityWire"
-)]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignMeshRecordIdentityWire")]
 pub(crate) struct DesignMeshRecordIdentity {
     class_tag: DesignClassTag,
     record_index: std::num::NonZeroU32,
     byte_offset: u64,
     frame_length: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static MESH_RECORD_IDENTITY_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignMeshRecordIdentity {
+    fn clone(&self) -> Self {
+        MESH_RECORD_IDENTITY_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            class_tag: self.class_tag.clone(),
+            record_index: self.record_index,
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+        }
+    }
 }
 
 impl DesignMeshRecordIdentity {
@@ -1583,6 +1701,25 @@ struct DesignMeshRecordIdentityWire {
     frame_length: u64,
 }
 
+impl Serialize for DesignMeshRecordIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            class_tag: &'a str,
+            record_index: u32,
+            byte_offset: u64,
+            frame_length: u64,
+        }
+        WireRef {
+            class_tag: self.class_tag.as_str(),
+            record_index: self.record_index.get(),
+            byte_offset: self.byte_offset,
+            frame_length: self.frame_length,
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
     type Error = String;
     fn try_from(wire: DesignMeshRecordIdentityWire) -> Result<Self, Self::Error> {
@@ -1595,6 +1732,7 @@ impl TryFrom<DesignMeshRecordIdentityWire> for DesignMeshRecordIdentity {
     }
 }
 
+#[cfg(test)]
 impl From<DesignMeshRecordIdentity> for DesignMeshRecordIdentityWire {
     fn from(record: DesignMeshRecordIdentity) -> Self {
         Self {
@@ -1650,3 +1788,5 @@ impl<const LENGTH: u64> From<DesignMeshFixedRecord<LENGTH>> for DesignMeshRecord
 
 #[cfg(test)]
 mod tests;
+
+mod serialize;

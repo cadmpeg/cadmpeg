@@ -52,7 +52,11 @@ fn decode_projects_part_attributes_to_document_attributes() {
             "Steel".to_string()
         )]
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]

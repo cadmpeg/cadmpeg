@@ -4,13 +4,37 @@
 use crate::om::compact::{CompactIndexAtom, LocatedCompactIndex};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ObjectFrameWire", into = "ObjectFrameWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ObjectFrameWire")]
 pub(in crate::native) struct DataBlockObjectFrame {
     pub(in crate::native) id: String,
     pub(super) data_block: String,
     pub(super) ordinal: u32,
     pub(in crate::native) object: LocatedCompactIndex<u64>,
+}
+
+#[derive(Serialize)]
+struct ObjectFrameRef<'a> {
+    id: &'a str,
+    data_block: &'a str,
+    ordinal: u32,
+    object_id: u32,
+    raw_object_id: &'a [u8],
+    source_offset: u64,
+}
+
+impl Serialize for DataBlockObjectFrame {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ObjectFrameRef {
+            id: &self.id,
+            data_block: &self.data_block,
+            ordinal: self.ordinal,
+            object_id: self.object.atom.value(),
+            raw_object_id: self.object.atom.raw(),
+            source_offset: self.object.offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,6 +47,7 @@ struct ObjectFrameWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockObjectFrame> for ObjectFrameWire {
     fn from(value: DataBlockObjectFrame) -> Self {
         Self {
@@ -74,6 +99,10 @@ mod tests {
             let frame: DataBlockObjectFrame = serde_json::from_str(&wire).unwrap();
             assert_eq!(frame.object.atom.value(), value);
             assert_eq!(serde_json::to_string(&frame).unwrap(), wire);
+            assert_eq!(
+                serde_json::to_vec(&frame).unwrap(),
+                serde_json::to_vec(&super::ObjectFrameWire::from(frame.clone())).unwrap()
+            );
             let mut invalid = serde_json::to_value(frame).unwrap();
             invalid["object_id"] = serde_json::json!(value + 1);
             assert!(serde_json::from_value::<DataBlockObjectFrame>(invalid)
@@ -90,5 +119,16 @@ mod tests {
                 .to_string()
                 .contains("object_id/raw_object_id"));
         }
+    }
+
+    #[test]
+    fn object_frame_native_limit_refuses_before_raw_token_copy() {
+        let wire = serde_json::json!({
+            "id": "nx:feature:object-frame#0", "data_block": "nx:om:data-block#0",
+            "ordinal": 1, "object_id": 370, "raw_object_id": [129, 114],
+            "source_offset": 100
+        });
+        let frame: DataBlockObjectFrame = serde_json::from_value(wire.clone()).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(&frame, wire);
     }
 }

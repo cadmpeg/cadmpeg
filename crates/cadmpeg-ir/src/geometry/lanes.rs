@@ -260,7 +260,7 @@ impl OffsetExtension {
         Some(match self {
             Self::Legacy { flags, cache } => OffsetExtension::Legacy { flags, cache },
             Self::Revision { form } => OffsetExtension::Revision {
-                form: form.admit()?,
+                form: Box::new((*form).admit()?),
             },
         })
     }
@@ -276,7 +276,7 @@ impl OffsetExtension<FiniteReal> {
                 cache: *cache,
             },
             Self::Revision { form } => OffsetExtension::Revision {
-                form: form.to_raw(),
+                form: Box::new(form.to_raw()),
             },
         }
     }
@@ -331,7 +331,7 @@ impl ExactSpline {
             } => ExactSpline::Revision {
                 intervals: FiniteReal::optional_grid(intervals)?,
                 extension,
-                form: form.admit()?,
+                form: Box::new((*form).admit()?),
             },
         })
     }
@@ -358,7 +358,7 @@ impl ExactSpline<FiniteReal> {
             } => ExactSpline::Revision {
                 intervals: FiniteReal::raw_optional_grid(*intervals),
                 extension: *extension,
-                form: form.to_raw(),
+                form: Box::new(form.to_raw()),
             },
         }
     }
@@ -900,6 +900,8 @@ impl LoftSubdataTable {
     fn admit(self) -> Option<LoftSubdataTable<FiniteReal>> {
         Some(LoftSubdataTable {
             type_code: self.type_code,
+            row_count: self.row_count,
+            column_count: self.column_count,
             rows: self
                 .rows
                 .into_iter()
@@ -915,6 +917,8 @@ impl LoftSubdataTable<FiniteReal> {
     pub fn to_raw(&self) -> LoftSubdataTable {
         LoftSubdataTable {
             type_code: self.type_code,
+            row_count: self.row_count,
+            column_count: self.column_count,
             rows: self.rows.iter().map(LoftSubdataRow::to_raw).collect(),
         }
     }
@@ -3362,7 +3366,7 @@ impl SpringLayout {
                 let [first, second] = supports;
                 SpringLayout::ContextFirst {
                     supports: [first.admit()?, second.admit()?],
-                    first_pcurve: first_pcurve.admit()?,
+                    first_pcurve: Box::new((*first_pcurve).admit()?),
                     second_pcurve,
                     parameter_range: ParameterInterval::new(parameter_range).ok()?,
                     discontinuities: FiniteReal::lanes(discontinuities)?,
@@ -3394,7 +3398,7 @@ impl SpringLayout<FiniteReal, ParameterInterval> {
                 cache,
             } => SpringLayout::ContextFirst {
                 supports: [supports[0].to_raw(), supports[1].to_raw()],
-                first_pcurve: first_pcurve.to_raw(),
+                first_pcurve: Box::new(first_pcurve.to_raw()),
                 second_pcurve: second_pcurve.clone(),
                 parameter_range: parameter_range.endpoints(),
                 discontinuities: FiniteReal::raw_lanes(discontinuities),

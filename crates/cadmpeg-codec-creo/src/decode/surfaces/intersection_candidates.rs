@@ -923,8 +923,8 @@ fn meridian_circle_intersections(
     second_center: [f64; 2],
     second_radius: f64,
 ) -> FixedCandidates<[f64; 2]> {
-    use cadmpeg_ir::math::{planar::circle_intersections_fixed, Point2};
-    circle_intersections_fixed(
+    use cadmpeg_ir::math::{planar::circle_intersections, Point2};
+    circle_intersections(
         Point2::new(first_center[0], first_center[1]),
         first_radius,
         Point2::new(second_center[0], second_center[1]),

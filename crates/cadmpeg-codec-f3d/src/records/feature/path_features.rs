@@ -32,7 +32,7 @@ pub(crate) enum DesignPathFeatureConstruction {
 }
 
 /// Fixed construction of a `Revolve` scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(
     try_from = "DesignRevolveConstructionWire",
     into = "DesignRevolveConstructionWire"

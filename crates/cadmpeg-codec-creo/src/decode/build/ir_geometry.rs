@@ -68,7 +68,7 @@ fn append_borrowed_curve_ids<'a>(
             continue;
         }
         ctx.charge_collection_items(1, "creo derived intersection curve IDs")?;
-        target.insert(id.copy_admitted(ctx, "creo derived intersection curve ID copies")?);
+        target.insert(id.try_clone_for_decode(ctx, "creo derived intersection curve ID copies")?);
     }
     Ok(())
 }

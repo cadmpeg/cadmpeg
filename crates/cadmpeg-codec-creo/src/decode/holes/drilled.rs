@@ -163,7 +163,7 @@ fn split_patch_table_is_counterbore(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.try_reserve_items(group, 1, "creo split-patch cylinder IDs")?;
+            ctx.reserve_vec(group, 1, "creo split-patch cylinder IDs")?;
             group.push(entry.entity_id);
         } else if row.kind == crate::surface::SurfaceKind::Plane {
             let group = match plane_ids_by_source.entry(source_id) {
@@ -173,7 +173,7 @@ fn split_patch_table_is_counterbore(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.try_reserve_items(group, 1, "creo split-patch plane IDs")?;
+            ctx.reserve_vec(group, 1, "creo split-patch plane IDs")?;
             group.push(entry.entity_id);
         }
     }
@@ -275,7 +275,7 @@ fn paired_hole_replay_surfaces_by_source(
             }
             index += 1;
         }
-        ctx.try_reserve_items(&mut runs, 1, "creo paired-hole runs")?;
+        ctx.reserve_vec(&mut runs, 1, "creo paired-hole runs")?;
         runs.push(run);
     }
     if !(source_zero_count <= 1
@@ -489,7 +489,7 @@ pub(in crate::decode) fn simple_drilled_hole_axis_placement(
         return Ok(None);
     };
     let mut frames = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut frames,
         frame_records.len(),
         "creo drilled cylinder frame copies",

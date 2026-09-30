@@ -27,8 +27,8 @@ fn push_prototype_loss(
     code: crate::loss::CreoLossCode,
     message: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(message, "creo prototype loss text")?;
-    ctx.try_reserve_items(losses, 1, "creo prototype losses")?;
+    let message = ctx.format_retained(format_args!("{message}"), "creo prototype loss text")?;
+    ctx.reserve_vec(losses, 1, "creo prototype losses")?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -64,7 +64,7 @@ fn prototype_vector_array(
         let [Some(x), Some(y), Some(z)] = coordinates else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut triples, 1, "creo prototype vector triples")?;
+        ctx.reserve_vec(&mut triples, 1, "creo prototype vector triples")?;
         triples.push([*x, *y, *z]);
     }
     Ok(Some(triples))
@@ -86,7 +86,7 @@ fn prototype_parameter_array(
         let Some(value) = value else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut parameters, 1, "creo prototype parameter values")?;
+        ctx.reserve_vec(&mut parameters, 1, "creo prototype parameter values")?;
         parameters.push(*value);
     }
     Ok(Some(parameters))
@@ -358,7 +358,7 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut associations, 1, "creo surface prototype associations")?;
+        ctx.reserve_vec(&mut associations, 1, "creo surface prototype associations")?;
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
@@ -566,7 +566,7 @@ fn relative_surface_rows(
         let Some(offset) = candidate.offset.checked_sub(section.offset()) else {
             continue;
         };
-        ctx.try_reserve_items(&mut relative, 1, "creo positional replay section rows")?;
+        ctx.reserve_vec(&mut relative, 1, "creo positional replay section rows")?;
         let mut row = candidate.clone();
         row.offset = offset;
         relative.push(row);

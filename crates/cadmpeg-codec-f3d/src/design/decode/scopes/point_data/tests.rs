@@ -1,13 +1,53 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::exact_work_point_construction;
+use super::exact_work_point_construction as exact_work_point_construction_with_ctx;
 use super::POINT_DATA_TYPE_GUID;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointRule;
 use crate::test_support::lp_utf16;
 use std::collections::HashMap;
+
+fn exact_work_point_construction(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<crate::records::feature::work_geometry::DesignWorkPointConstruction> {
+    exact_work_point_construction_with_ctx(
+        &cadmpeg_test_support::service_decode_context(),
+        bytes,
+        records,
+        scope,
+        stream_types,
+    )
+    .unwrap()
+}
+
+#[test]
+fn work_point_counted_inputs_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 2);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result = exact_work_point_construction_with_ctx(
+        &ctx,
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([(55, (POINT_DATA_TYPE_GUID, 2))]),
+    );
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+            if failure.dimension == ResourceDimension::CollectionItems
+                && failure.operation == "f3d point-data inputs"
+    ));
+}
 
 /// A `WorkPoint` scope record, its paired header, and one point-data record
 /// frame: the indexed header, the payload prologue with an optional property
@@ -102,12 +142,14 @@ fn work_point_stream(
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("WorkPoint scope");
     (bytes, scope, position_at)
 }
@@ -116,7 +158,7 @@ fn work_point_stream(
 fn work_point_reads_the_class_version_its_type_table_stores() {
     let (bytes, scope, position_at) =
         work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let frame = exact_work_point_construction(
         &bytes,
         &records,
@@ -161,7 +203,7 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
     for class_tag in ["282", "316", "364", "409", "424", "460", "468"] {
         let (bytes, scope, position_at) =
             work_point_stream(class_tag, 2, false, None, [7.5, 8.5, 9.5], 5, 1);
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
         let frame = exact_work_point_construction(
             &bytes,
@@ -189,7 +231,7 @@ fn work_point_position_survives_a_property_block_and_a_present_pick_point() {
 
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -210,7 +252,7 @@ fn work_point_position_reads_every_class_version_that_stores_one() {
 
         let frame = exact_work_point_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &HashMap::new(),
         )
@@ -232,7 +274,7 @@ fn work_point_rejects_a_registered_entity_of_another_type() {
     // The tag says `282`, but the type table names a different class for
     // this entity, so the record is not point data whatever its tag reads.
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
 
     assert_eq!(
         exact_work_point_construction(
@@ -252,7 +294,7 @@ fn work_point_uses_the_serialized_input_count_for_every_rule() {
     // constructions.
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 1);
 
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(work_point_input_indices(&frame.rule), [70]);
@@ -260,7 +302,7 @@ fn work_point_uses_the_serialized_input_count_for_every_rule() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -270,7 +312,7 @@ fn work_point_uses_the_serialized_input_count_for_every_rule() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 8, 3);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -280,7 +322,7 @@ fn work_point_uses_the_serialized_input_count_for_every_rule() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 18, 2);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -302,7 +344,7 @@ fn work_point_rule_codes_select_typed_input_arities() {
         );
         let frame = exact_work_point_construction(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
             &HashMap::new(),
         )
@@ -331,7 +373,7 @@ fn work_point_rule_code_with_wrong_arity_remains_native() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 5, 2);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -351,7 +393,7 @@ fn work_point_rule_rejects_an_incompatible_input_carrier() {
     let (bytes, scope, _) = work_point_stream("282", 2, false, None, [1.0, 2.0, 3.0], 14, 2);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -418,16 +460,18 @@ fn work_point_direct_record_carries_model_space_position() {
         byte_offset: 0,
     };
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("WorkPoint scope");
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -444,7 +488,7 @@ fn work_point_direct_record_carries_model_space_position() {
     bytes.drain(point_at + 197..point_at + 208);
     let frame = exact_work_point_construction(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
     )
@@ -514,14 +558,16 @@ fn work_point_input_count_frames_the_rule_inputs() {
         class_tag: crate::records::references::DesignClassTag::try_from("427".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let scope = parse_parameter_scope(
+        &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &records,
         header.record_index,
         &header.class_tag,
         header.byte_offset,
     )
+    .unwrap()
     .expect("WorkPoint scope");
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
@@ -529,7 +575,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
     assert_eq!(work_point_input_indices(&frame.rule), [56, 57]);
 
     bytes[count_at..count_at + 4].copy_from_slice(&1u32.to_le_bytes());
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(frame.rule.reference_type(), 18);
@@ -538,7 +584,7 @@ fn work_point_input_count_frames_the_rule_inputs() {
     // A rule above the values the shipped range check admitted still names a
     // coordinate when its input arity agrees.
     bytes[position_at + 24..position_at + 28].copy_from_slice(&64u32.to_le_bytes());
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let frame = exact_work_point_construction(&bytes, &records, &scope, &HashMap::new())
         .expect("work point frame");
     assert_eq!(

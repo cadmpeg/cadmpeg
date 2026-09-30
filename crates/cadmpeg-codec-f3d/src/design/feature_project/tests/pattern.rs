@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_rectangular_pattern_scalars;
+use crate::design::feature_project::{
+    project_circular_pattern, project_rectangular_pattern_scalars,
+};
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
     topology::{
@@ -94,6 +96,106 @@ fn rectangular_scope() -> DesignParameterScope {
     scope
 }
 
+fn circular_scope() -> DesignParameterScope {
+    use crate::records::feature::patterns::{
+        DesignCircularPatternAxis, DesignCircularPatternConstruction,
+    };
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::CPattern,
+        10,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = Some(DesignCircularPatternConstruction {
+            count: 3,
+            count_record_index: 11,
+            count_offset: 0,
+            angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+            angle_record_index: 12,
+            angle_offset: 0,
+            axis: DesignCircularPatternAxis::Inline {
+                origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+                origin_offset: 0,
+                direction: cadmpeg_ir::units::UnitVector3::normalized(
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                )
+                .unwrap(),
+                direction_offset: 0,
+            },
+            axis_record_index: 13,
+            selection_record_index: 14,
+        });
+    }
+    scope
+}
+
+#[test]
+fn circular_pattern_seed_role_selects_body_or_face() {
+    for (role, expected_seed) in [
+        (
+            DesignOperandRole::BODIES_B,
+            PatternSeed::Bodies(BodySelection::Native(
+                "f3d:Design/BulkStream.dat:design-construction-operand-group#20".into(),
+            )),
+        ),
+        (
+            DesignOperandRole::BODIES_A,
+            PatternSeed::Faces(FaceSelection::Native(
+                "f3d:Design/BulkStream.dat:design-construction-operand-group#20".into(),
+            )),
+        ),
+    ] {
+        let definition =
+            project_circular_pattern(None, &circular_scope(), &[group(10, 20, role)], &[])
+                .unwrap()
+                .expect("circular pattern");
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+        else {
+            panic!("circular pattern definition");
+        };
+        assert_eq!(seeds, vec![expected_seed]);
+        assert!(matches!(
+            pattern.definition(),
+            PatternTransform::Circular { .. }
+        ));
+    }
+}
+
+fn assert_circular_seed_refusal(role: DesignOperandRole, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = circular_scope();
+    let seed_group = group(10, 20, role);
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_circular_pattern(Some(&ctx), &scope, std::slice::from_ref(&seed_group), &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no circular pattern seed refusal at {operation}");
+}
+
+#[test]
+fn circular_body_seed_id_refuses_retained_limit() {
+    assert_circular_seed_refusal(DesignOperandRole::BODIES_B, "f3d circular body seed id");
+}
+
+#[test]
+fn circular_face_seed_id_refuses_retained_limit() {
+    assert_circular_seed_refusal(DesignOperandRole::BODIES_A, "f3d circular face seed id");
+}
+
 fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed) {
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
     else {
@@ -119,8 +221,10 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
     let body_group = group(10, 20, DesignOperandRole::BODIES_B);
-    let body_definition = project_rectangular_pattern_scalars(&body_scope, &[body_group], &[])
-        .expect("body rectangular pattern");
+    let body_definition =
+        project_rectangular_pattern_scalars(None, &body_scope, &[body_group], &[])
+            .unwrap()
+            .expect("body rectangular pattern");
     assert_linear_seed(
         body_definition,
         PatternSeed::Bodies(BodySelection::Native(
@@ -130,12 +234,64 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
 
     let face_scope = rectangular_scope();
     let face_group = group(10, 30, DesignOperandRole::BODIES_A);
-    let face_definition = project_rectangular_pattern_scalars(&face_scope, &[face_group], &[])
-        .expect("face rectangular pattern");
+    let face_definition =
+        project_rectangular_pattern_scalars(None, &face_scope, &[face_group], &[])
+            .unwrap()
+            .expect("face rectangular pattern");
     assert_linear_seed(
         face_definition,
         PatternSeed::Faces(FaceSelection::Native(
             "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
         )),
+    );
+}
+
+fn assert_rectangular_seed_refusal(role: DesignOperandRole, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = rectangular_scope();
+    let seed_group = group(10, 20, role);
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(project_rectangular_pattern_scalars(Some(&ctx), &scope,
+            std::slice::from_ref(&seed_group), &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation)
+        {
+            return;
+        }
+    }
+    panic!("no rectangular pattern seed refusal at {operation}");
+}
+
+#[test]
+fn rectangular_face_seed_id_refuses_retained_limit() {
+    assert_rectangular_seed_refusal(DesignOperandRole::BODIES_A, "f3d rectangular face seed id");
+}
+
+#[test]
+fn rectangular_body_seed_id_refuses_retained_limit() {
+    assert_rectangular_seed_refusal(DesignOperandRole::BODIES_B, "f3d rectangular body seed id");
+}
+
+#[test]
+fn rectangular_pattern_seed_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scope = rectangular_scope();
+    let seed_group = group(10, 20, DesignOperandRole::BODIES_B);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    assert!(
+        matches!(project_rectangular_pattern_scalars(Some(&ctx), &scope,
+        std::slice::from_ref(&seed_group), &[]), Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d rectangular pattern seeds")
     );
 }

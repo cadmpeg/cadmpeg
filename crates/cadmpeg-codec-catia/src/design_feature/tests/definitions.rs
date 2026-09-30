@@ -155,7 +155,7 @@ fn transfers_exact_definition_values_as_typed_feature_properties() {
         HashSet::from(["definition-record".to_string()])
     );
     assert_eq!(
-        transfer.consumed_records(),
+        transfer.consumed_records().cloned().collect::<HashSet<_>>(),
         HashSet::from([
             "operation-record".to_string(),
             "definition-record".to_string()
@@ -320,7 +320,7 @@ fn transfers_exact_definition_chains_as_typed_feature_properties() {
         HashSet::from(["definition-chain-record".to_string()])
     );
     assert_eq!(
-        transfer.consumed_records(),
+        transfer.consumed_records().cloned().collect::<HashSet<_>>(),
         HashSet::from([
             "operation-record".to_string(),
             "definition-chain-record".to_string()

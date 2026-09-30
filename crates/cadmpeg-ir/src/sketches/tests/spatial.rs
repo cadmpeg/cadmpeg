@@ -475,7 +475,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             native_ref: None,
         });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).findings.is_empty());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings
+        .is_empty());
     let mut non_curve_offset = ir.clone();
     let point_entity = non_curve_offset
         .model
@@ -505,6 +508,7 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         })
         .unwrap();
     assert!(validate_neutral(&non_curve_offset, Vec::new())
+        .expect("resource allocation did not fail")
         .findings
         .iter()
         .any(
@@ -518,7 +522,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         .find(|parameter| parameter.id == distance)
         .expect("spatial distance parameter")
         .value = Some(ParameterValue::Length(Length::new(3.0).unwrap()));
-    let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new()).findings;
+    let invalid_distance_findings = validate_neutral(&invalid_distance, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(invalid_distance_findings.iter().any(|finding| finding
         .message
         .contains("spatial distance requires parallel lines")));
@@ -694,13 +700,13 @@ fn spatial_nurbs_preserves_wire_fields_and_checked_point_edits() {
     let wire = serde_json::json!({"kind": "nurbs", "curve": &curve});
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
-    let mut first = true;
     assert!(curve
-        .edit_control_points(|point| {
-            if std::mem::take(&mut first) {
-                point.x = f64::NAN;
+        .try_map_control_points(|index, point| {
+            let mut mapped = point.get();
+            if index == 0 {
+                mapped.x = f64::NAN;
             }
-            Ok(())
+            crate::features::FinitePoint3::new(mapped).ok_or(())
         })
         .is_err());
     assert_eq!(curve, before);
@@ -728,8 +734,7 @@ fn a_refused_spatial_sketch_pole_edit_keeps_the_prior_poles() {
     .unwrap();
     let mut curve = SpatialSketchNurbsCurve::try_from(curve).unwrap();
     let before = curve.clone();
-    let refusal = curve.edit_control_points(|point| {
-        point.z = 9.0;
+    let refusal = curve.try_map_control_points(|_, _| {
         Err(NurbsError::EditRefused("caller refused this pole".into()))
     });
     assert_eq!(

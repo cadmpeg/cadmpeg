@@ -50,7 +50,8 @@ use crate::test_support::test_surface_fixtures::{
 };
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("iges").is_some());
 }
@@ -271,54 +272,59 @@ fn expected_counts(name: &str) -> (usize, usize, usize) {
 fn decode_matrix(
     fixtures: Vec<(&'static str, Vec<u8>, i64, ExpectedArena)>,
 ) -> Vec<EditableDecodeResult> {
-    let matrix_path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/iges-envelope-a.toml");
-    let source = std::fs::read_to_string(matrix_path).unwrap();
-    let matrix = toml::from_str::<toml::Value>(&source).unwrap();
-    fixtures
-        .into_iter()
-        .map(|(name, bytes, subject_type, expected_arena)| {
-            assert_matrix_destination(&matrix, subject_type, expected_arena);
-            let (expected_subjects, expected_total, expected_associated) = expected_counts(name);
-            let scan = crate::card::scan(&bytes).expect("integration fixture cards");
-            let (global, _global_losses) =
-                crate::test_support::parse_global(&scan).expect("integration global");
-            let (directory, _quarantined) = crate::directory::parse(&scan, global.global_table());
-            let subject_count = directory
-                .iter()
-                .filter(|entry| entry.entity_type == subject_type)
-                .count();
-            let subject_sequences = directory
-                .iter()
-                .filter(|entry| entry.entity_type == subject_type)
-                .map(|entry| entry.sequence)
-                .collect::<Vec<_>>();
-            let result = EditableDecodeResult::from(detect_and_decode(bytes));
-            let subject_output_count = arena_ids(&result, expected_arena)
-                .into_iter()
-                .filter(|identity| {
-                    subject_sequences
-                        .iter()
-                        .any(|sequence| identity_mentions_sequence(identity, *sequence))
-                })
-                .count();
-            assert_eq!(
-                subject_count, expected_subjects,
-                "fixture {name} subject entity count"
-            );
-            assert_eq!(
-                arena_count(&result, expected_arena),
-                expected_total,
-                "fixture {name} exact arena count for {expected_arena:?}"
-            );
-            assert_eq!(
-                subject_output_count, expected_associated,
-                "fixture {name} outputs associated with entity type {subject_type}"
-            );
-            assert_valid(&result);
-            result
-        })
-        .collect()
+    crate::test_support::with_service_context(&[], |decode_ctx| {
+        let matrix_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../corpus/iges-envelope-a.toml");
+        let source = std::fs::read_to_string(matrix_path).unwrap();
+        let matrix = toml::from_str::<toml::Value>(&source).unwrap();
+        fixtures
+            .into_iter()
+            .map(|(name, bytes, subject_type, expected_arena)| {
+                assert_matrix_destination(&matrix, subject_type, expected_arena);
+                let (expected_subjects, expected_total, expected_associated) =
+                    expected_counts(name);
+                let scan = crate::test_support::scan(&bytes).expect("integration fixture cards");
+                let (global, _global_losses) =
+                    crate::test_support::parse_global(&scan).expect("integration global");
+                let (directory, _quarantined) =
+                    crate::directory::parse(&scan, global.global_table(), decode_ctx)
+                        .expect("integration directory");
+                let subject_count = directory
+                    .iter()
+                    .filter(|entry| entry.entity_type == subject_type)
+                    .count();
+                let subject_sequences = directory
+                    .iter()
+                    .filter(|entry| entry.entity_type == subject_type)
+                    .map(|entry| entry.sequence)
+                    .collect::<Vec<_>>();
+                let result = EditableDecodeResult::from(detect_and_decode(bytes));
+                let subject_output_count = arena_ids(&result, expected_arena)
+                    .into_iter()
+                    .filter(|identity| {
+                        subject_sequences
+                            .iter()
+                            .any(|sequence| identity_mentions_sequence(identity, *sequence))
+                    })
+                    .count();
+                assert_eq!(
+                    subject_count, expected_subjects,
+                    "fixture {name} subject entity count"
+                );
+                assert_eq!(
+                    arena_count(&result, expected_arena),
+                    expected_total,
+                    "fixture {name} exact arena count for {expected_arena:?}"
+                );
+                assert_eq!(
+                    subject_output_count, expected_associated,
+                    "fixture {name} outputs associated with entity type {subject_type}"
+                );
+                assert_valid(&result);
+                result
+            })
+            .collect()
+    })
 }
 
 fn matrix_destination(arena: ExpectedArena) -> &'static str {
@@ -973,7 +979,8 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
             result.ir(),
             result.source_fidelity(),
             Vec::new(),
-        );
+        )
+        .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{name}: {:#?}", validation.findings);
     }
 }

@@ -20,15 +20,17 @@ pub(super) fn validate_configuration_projection(
     native: &F3dNative,
 ) -> Result<(), CodecError> {
     let mut projected =
-        crate::design::configurations::project_configurations(&native.design_configurations)?;
+        crate::design::configurations::project_configurations(None, &native.design_configurations)?;
     crate::design::configurations::bind_configuration_parameter_overrides(
+        None,
         &mut projected,
         &target.model.parameters,
-    );
+    )?;
     crate::design::configurations::bind_configuration_suppressed_features(
+        None,
         &mut projected,
         &target.model.features,
-    );
+    )?;
     if target.model.configurations != projected {
         return Err(CodecError::Malformed(
             "neutral F3D configurations must equal the projection of native configuration tables"
@@ -55,6 +57,7 @@ pub(crate) fn validate_assembly_projection(
             });
     };
     let projected = crate::design::assembly::project_assembly_joints(
+        None,
         &native.design_parameter_scopes,
         &native.design_component_occurrences,
         &target.model.features,

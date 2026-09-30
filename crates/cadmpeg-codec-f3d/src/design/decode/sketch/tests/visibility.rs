@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::decode_sketch_visibilities_in_stream;
 use crate::design::decode::sketch::decode_sketch_visibility_member;
 use crate::design::decode::sketch::CURRENT_SKETCH_CONTAINER_VERSION;
 use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID;
@@ -9,6 +8,21 @@ use crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID;
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
+
+fn decode_sketch_visibilities_in_stream(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    cadmpeg_core::CodecError,
+> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::sketch::decode_sketch_visibilities_in_stream(ctx, bytes, meta)
+    })
+}
 
 fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -52,8 +66,7 @@ fn sketch_visibility_member_rejects_invalid_ordinal_or_owner() {
     assert!(decode_sketch_visibility_member(&external_owner, 0, ENTITY_SUFFIX).is_none());
 }
 
-#[test]
-fn sketch_visibility_accepts_settled_container_header() {
+fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"256");
@@ -120,9 +133,36 @@ fn sketch_visibility_accepts_settled_container_header() {
         secondary_records: Vec::new(),
     };
 
+    (bytes, metadata)
+}
+
+#[test]
+fn sketch_visibility_accepts_settled_container_header() {
+    let (bytes, metadata) = visibility_stream();
+
     let visibilities =
         decode_sketch_visibilities_in_stream(&bytes, &metadata).expect("settled header");
     assert_eq!(visibilities.len(), 1);
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert!(visibilities[0].1.visible);
+}
+
+#[test]
+fn sketch_visibility_output_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let (bytes, metadata) = visibility_stream();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 7;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::design::decode::sketch::decode_sketch_visibilities_in_stream(
+        &ctx, &bytes, &metadata,
+    )
+    .expect_err("collection limit must refuse decoded visibility");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch visibility records")
+    );
 }

@@ -65,7 +65,11 @@ impl TryFrom<i32> for SketchFontWeight {
 
 impl From<SketchFontWeight> for i32 {
     fn from(value: SketchFontWeight) -> Self {
-        value as Self
+        match value {
+            SketchFontWeight::Regular => 400,
+            SketchFontWeight::Medium => 500,
+            SketchFontWeight::Bold => 750,
+        }
     }
 }
 
@@ -548,7 +552,7 @@ pub struct SketchGeometry(
 
 impl SketchGeometry {
     /// Copy geometry after charging each retained nested allocation.
-    pub fn copy_admitted(
+    pub fn try_clone_for_decode(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
@@ -556,7 +560,7 @@ impl SketchGeometry {
         use SketchGeometryDefinition as Definition;
         let definition = match self.definition() {
             Definition::Nurbs { curve } => Definition::Nurbs {
-                curve: curve.copy_admitted(ctx, operation, operation)?,
+                curve: curve.try_clone_for_decode(ctx, operation)?,
             },
             Definition::Text {
                 text,
@@ -568,8 +572,8 @@ impl SketchGeometry {
                 horizontal_alignment,
                 vertical_alignment,
             } => Definition::Text {
-                text: text.copy_admitted(ctx, operation)?,
-                font_family: font_family.copy_admitted(ctx, operation)?,
+                text: text.try_clone_for_decode(ctx, operation)?,
+                font_family: font_family.try_clone_for_decode(ctx, operation)?,
                 font_weight: *font_weight,
                 height: *height,
                 width_factor: *width_factor,
@@ -586,9 +590,9 @@ impl SketchGeometry {
                     .as_deref()
                     .map(|document| ctx.copy_retained_text(document, operation))
                     .transpose()?;
-                let object = object.copy_admitted(ctx, operation)?;
+                let object = object.try_clone_for_decode(ctx, operation)?;
                 let mut copied_subelements = Vec::new();
-                ctx.try_reserve_items(&mut copied_subelements, subelements.len(), operation)?;
+                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
                 for subelement in subelements {
                     copied_subelements.push(ctx.copy_retained_text(subelement, operation)?);
                 }
@@ -599,7 +603,7 @@ impl SketchGeometry {
                 }
             }
             Definition::Native { native_kind } => Definition::Native {
-                native_kind: native_kind.copy_admitted(ctx, operation)?,
+                native_kind: native_kind.try_clone_for_decode(ctx, operation)?,
             },
             Definition::Point { .. }
             | Definition::Line { .. }
@@ -1345,6 +1349,56 @@ impl SpatialSketchProfile {
         Self::from_parts(origin, normal, u_axis, boundary)
     }
 
+    /// Admit a decoded profile after charging and reserving its uniqueness index.
+    pub fn try_new_charged(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+        boundary: Vec<SpatialSketchEntityUse>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        let Some(origin) = FinitePoint3::new(origin) else {
+            return Ok(Err("spatial profile origin must be finite"));
+        };
+        let Some(normal) = UnitVector3::new(normal) else {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        };
+        let Some(u_axis) = UnitVector3::new(u_axis) else {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        };
+        let [n, u] = [normal.as_raw(), u_axis.as_raw()];
+        let dot = n.x * u.x + n.y * u.y + n.z * u.z;
+        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        }
+        if boundary.is_empty() {
+            return Ok(Err(
+                "spatial profile boundary must be nonempty and contain distinct entities",
+            ));
+        }
+        let count =
+            u64::try_from(boundary.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = std::collections::HashSet::new();
+        unique
+            .try_reserve(boundary.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for use_ in &boundary {
+            if !unique.insert(&use_.entity) {
+                return Ok(Err(
+                    "spatial profile boundary must be nonempty and contain distinct entities",
+                ));
+            }
+        }
+        Ok(Ok(Self {
+            origin,
+            normal,
+            u_axis,
+            boundary,
+        }))
+    }
+
     /// Build a profile from an admitted origin and unit axes. The argument
     /// types state finiteness and unit length, so only the axis
     /// orthogonality and the boundary are tested.
@@ -1954,14 +2008,12 @@ impl std::ops::Deref for SpatialSketchNurbsCurve {
 }
 
 impl SpatialSketchNurbsCurve {
-    /// Atomically edit control points and preserve finite coordinates.
-    ///
-    /// The closure states its own refusal, which discards the whole edit.
-    pub fn edit_control_points(
+    /// Map pole positions after every result passes admission.
+    pub fn try_map_control_points<E>(
         &mut self,
-        edit: impl FnMut(&mut Point3) -> Result<(), crate::geometry::nurbs::NurbsError>,
-    ) -> Result<(), crate::geometry::nurbs::NurbsError> {
-        self.0.edit_control_points(edit)
+        map: impl Fn(usize, FinitePoint3) -> Result<FinitePoint3, E>,
+    ) -> Result<(), E> {
+        self.0.try_map_control_points(map)
     }
 }
 
@@ -2510,7 +2562,9 @@ impl SketchRectangularPattern {
         let column_count = u32::try_from(rows.first()?.len()).ok()?;
         if row_count == 0
             || column_count == 0
-            || rows.iter().any(|row| row.len() != column_count as usize)
+            || rows
+                .iter()
+                .any(|row| row.len() != cadmpeg_core::decode::index_from_u32(column_count))
         {
             return None;
         }
@@ -3050,6 +3104,34 @@ impl SketchPolygon {
         Ok(Self { entities })
     }
 
+    /// Admit decoded polygon members after charging the uniqueness index.
+    pub fn try_new_charged(
+        entities: Vec<SketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if entities.len() < 3 {
+            return Ok(Err(
+                "entities requires at least three distinct polygon members",
+            ));
+        }
+        let count =
+            u64::try_from(entities.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = std::collections::HashSet::new();
+        unique
+            .try_reserve(entities.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for entity in &entities {
+            if !unique.insert(entity) {
+                return Ok(Err(
+                    "entities requires at least three distinct polygon members",
+                ));
+            }
+        }
+        Ok(Ok(Self { entities }))
+    }
+
     /// Returns the ordered polygon members.
     pub fn entities(&self) -> &[SketchEntityId] {
         &self.entities
@@ -3171,6 +3253,16 @@ impl SketchConstraintDefinition {
     #[must_use]
     pub fn kind(&self) -> &SketchConstraintDefinitionInput {
         &self.0
+    }
+
+    /// Set the driving parameter of an admitted planar offset relation.
+    /// The parameter does not change offset-pair admission.
+    pub fn set_offset_parameter(&mut self, driving: OffsetParameter) -> bool {
+        let SketchConstraintDefinitionInput::Offset { parameter, .. } = &mut self.0 else {
+            return false;
+        };
+        *parameter = Some(driving);
+        true
     }
 
     /// Consume the admitted definition and return its kind.

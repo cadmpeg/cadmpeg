@@ -20,6 +20,14 @@ use cadmpeg_ir::annotations::StreamHandle;
 
 #[test]
 fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge_id = ir.model.edges[0].id.clone();
     let expected_endpoints = [&ir.model.edges[0].start, &ir.model.edges[0].end].map(|vertex_id| {
@@ -66,12 +74,15 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
         .position(|window| window == [0, 17])
         .expect("fin record");
     put_ref(&mut stream, fin + 18, 1);
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut off_support_ir = ir.clone();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
     attach_tolerant_edge_intersections(
+        &geometry_ctx,
         &mut ir,
         &graph,
         &edges,
@@ -162,6 +173,7 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
     attach_tolerant_edge_intersections(
+        &geometry_ctx,
         &mut off_support_ir,
         &graph,
         &edges,
@@ -174,6 +186,14 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
 
 #[test]
 fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
+
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let edge_id = ir.model.edges[0].id.clone();
     ir.model.edges[0].set_curve(None).unwrap();
@@ -187,11 +207,14 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
         .position(|window| window == [0, 16])
         .expect("edge record");
     put_ref(&mut stream, edge + 24, 1);
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
     let source_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:test"));
 
     attach_tolerant_edge_intersections(
+        &geometry_ctx,
         &mut ir,
         &graph,
         &edges,
@@ -213,9 +236,21 @@ fn tolerant_edge_does_not_replace_a_serialized_fin_curve() {
 
 #[test]
 fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
+
     let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -245,9 +280,21 @@ fn opposite_intersection_chart_transfers_adaptively_within_edge_tolerance() {
 fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
     const TIGHT_EDGE_TOLERANCE: f64 = 0.0001;
 
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
+
     let mut ir =
         cylinder_plane_transfer_fixture(std::f64::consts::TAU * 10_000.0, TIGHT_EDGE_TOLERANCE);
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -261,6 +308,14 @@ fn opposite_intersection_chart_transfer_fails_closed_at_sample_budget() {
 fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget() {
     const CONTACT_FIT_TOLERANCE: f64 = 1.0e-8;
     const CANDIDATE_COUNT: usize = 300;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let source_pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
@@ -276,7 +331,11 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
         true,
     );
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -290,6 +349,14 @@ fn opposite_intersection_blend_contact_transfers_many_candidates_within_budget()
 #[test]
 fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     const CONTACT_FIT_TOLERANCE: f64 = 1.0e-2;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let source_pcurve = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(
@@ -307,7 +374,11 @@ fn opposite_intersection_blend_contact_keeps_adaptive_fit_certification() {
     };
     let mut ir = blend_contact_transfer_fixture(1, &source_pcurve, CONTACT_FIT_TOLERANCE, true);
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[1].definition()
@@ -340,6 +411,14 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
     const BLEND_BOUNDARY_FIT_TOLERANCE: f64 = 1.0e-8;
     const CANDIDATE_COUNT: usize = 300;
 
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
+
     let source_pcurve = PcurveGeometry::Line(
         cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
             Point2::new(0.0, 0.0),
@@ -354,7 +433,11 @@ fn opposite_intersection_complete_blend_boundary_transfers_many_candidates_witho
         false,
     );
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     assert!(ir.model.procedural_curves[1..].iter().all(|procedural| {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
@@ -404,10 +487,22 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
     let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
         crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
     );
-    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::new(
-        crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
     );
+
     crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
         &mut ir,
         1,
         &transfer_budget,
@@ -427,6 +522,52 @@ fn opposite_intersection_chart_transfer_scopes_to_new_procedural_curves() {
         unreachable!()
     };
     assert!(later.sides()[1].pcurve.is_some());
+}
+
+fn opposite_chart_completion_limit_error(
+    policy: &cadmpeg_core::decode::DecodePolicy,
+) -> cadmpeg_core::CodecError {
+    let mut ir = cylinder_plane_transfer_fixture(std::f64::consts::TAU, 0.01);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, policy)
+        .expect("test context");
+    let transfer_budget = cadmpeg_core::decode::WorkBudget::new(
+        crate::decode::pcurves::MAX_COMPLETION_TRANSFER_SAMPLES,
+    );
+    let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
+        &ctx,
+        cadmpeg_core::decode::u64_from_index(
+            crate::decode::geometry_work::MAX_ADAPTIVE_GEOMETRY_WORK,
+        ),
+    );
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts_with_budget(
+        &ctx,
+        &mut ir,
+        0,
+        &transfer_budget,
+        &geometry_budget,
+    )
+    .expect_err("opposite chart limit refusal")
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
+}
+
+#[test]
+fn opposite_chart_completion_route_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(
+        opposite_chart_completion_limit_error(&policy),
+        cadmpeg_core::CodecError::ResourceLimit(_)
+    ));
 }
 
 fn cylinder_plane_transfer_fixture(
@@ -629,7 +770,7 @@ fn blend_contact_transfer_fixture(
         other_support.clone()
     };
     let _attached = ir.model.add_procedural_curve(
-        spine.clone(),
+        &spine,
         ProceduralCurve::new(
             ProceduralCurveId::mint("test:model:entity#synthetic:blend-contact-spine-construction")
                 .expect("identity grammar"),
@@ -722,7 +863,7 @@ fn blend_contact_transfer_fixture(
                 ),
             },
         );
-        ir.model.add_procedural_curve(curve, procedural).unwrap();
+        ir.model.add_procedural_curve(&curve, procedural).unwrap();
     }
     ir
 }
@@ -738,6 +879,14 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
     };
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::Edge;
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let source = SurfaceId::mint("test:model:entity#synthetic:unevaluable-source-blend")
@@ -829,7 +978,7 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        curve.clone(),
+        &curve,
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::Intersection {
@@ -874,7 +1023,11 @@ fn blend_boundary_chart_uses_the_solved_curve_when_the_source_blend_is_unevaluab
         ),
     });
 
-    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(&mut ir).unwrap();
+    crate::decode::pcurves::complete_intersection_pcurves_from_opposite_charts(
+        &geometry_ctx,
+        &mut ir,
+    )
+    .unwrap();
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         ir.model.procedural_curves[0].definition()
@@ -901,6 +1054,14 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let nurbs =
@@ -967,7 +1128,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_curve(
-        curve.clone(),
+        &curve,
         ProceduralCurve::new(
             construction,
             ProceduralCurveDefinition::TolerantIntersection {
@@ -1034,7 +1195,11 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
     });
 
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(&mut ir, &mut annotations);
+    crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
+        &geometry_ctx,
+        &mut ir,
+        &mut annotations,
+    );
 
     let ProceduralCurveDefinition::TolerantIntersection {
         construction: intersection,
@@ -1076,6 +1241,7 @@ fn tolerant_nurbs_boundary_establishes_both_intersection_charts() {
             evaluated.get(),
             parameter,
         )
+        .expect("resource allocation did not fail")
         .expect("charted tolerant intersection inverts");
         assert!((inverted.get() - parameter).abs() < 1.0e-8);
         let points: [Point3; 2] = std::array::from_fn(|side| {
@@ -1111,6 +1277,14 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, SurfaceId, VertexId};
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::{Edge, Point, Vertex};
+
+    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &geometry_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("empty geometry root is admitted");
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let first_support =
@@ -1225,9 +1399,10 @@ fn exact_boundary_completion_preserves_existing_cache_fit_tolerance() {
             cache: Some(cadmpeg_ir::geometry::LegacyCache::try_new(0.25).expect("fit tolerance")),
         },
     );
-    ir.model.add_procedural_curve(curve, procedural).unwrap();
+    ir.model.add_procedural_curve(&curve, procedural).unwrap();
 
     crate::decode::pcurves::complete_exact_boundary_intersection_pcurves(
+        &geometry_ctx,
         &mut ir,
         &mut cadmpeg_ir::AnnotationBuilder::new(),
     );

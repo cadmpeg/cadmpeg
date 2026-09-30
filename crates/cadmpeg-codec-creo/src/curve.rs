@@ -818,7 +818,7 @@ pub(crate) fn prototypes(
                     .all(|direction| matches!(direction, 0x01 | 0xf6))
                     .then_some(directions)
             });
-        ctx.try_reserve_items(&mut result, 1, "creo curve prototypes")?;
+        ctx.reserve_vec(&mut result, 1, "creo curve prototypes")?;
         result.push(CurvePrototype {
             id,
             type_byte,
@@ -905,7 +905,7 @@ pub(crate) fn prototype_topology_rows(
         let Some(directions) = prototype.directions else {
             continue;
         };
-        ctx.try_reserve_items(&mut rows, 1, "creo promoted prototype topology rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo promoted prototype topology rows")?;
         rows.push(CurveTopologyRow {
             id: topology.curve_id,
             type_byte: prototype.type_byte,
@@ -950,7 +950,7 @@ pub(crate) fn expression_records_with_model_name(
     for (label, backup) in [(PRIMARY, false), (BACKUP, true)] {
         let mut start = 0;
         while let Some(offset) = find(payload, label, start) {
-            ctx.try_reserve_items(&mut labels, 1, "creo expression record labels")?;
+            ctx.reserve_vec(&mut labels, 1, "creo expression record labels")?;
             labels.push((offset, label.len(), backup));
             start = offset + label.len();
         }
@@ -1025,7 +1025,7 @@ pub(crate) fn expression_records_with_model_name(
                 lines.clear();
                 break;
             };
-            ctx.try_reserve_items(&mut lines, 1, "creo expression record lines")?;
+            ctx.reserve_vec(&mut lines, 1, "creo expression record lines")?;
             lines.push(CurveExpressionLine {
                 text: ctx.copy_retained_text(text, "creo expression record line text")?,
                 offset: cursor,
@@ -1053,7 +1053,7 @@ pub(crate) fn expression_records_with_model_name(
                 &evaluation.assignments,
                 &evaluation.solve_solutions,
             )?;
-            ctx.try_reserve_items(&mut records, 1, "creo expression records")?;
+            ctx.reserve_vec(&mut records, 1, "creo expression records")?;
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -1193,7 +1193,7 @@ fn curve_equation_prohibited_constructs(
         }
     }
     let mut ordered = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut ordered,
         prohibited.len(),
         "creo prohibited construct records",
@@ -1260,7 +1260,7 @@ fn expression_assignment(
         column,
     } = &target
     {
-        ctx.try_reserve_items(&mut dependencies, 1, "creo expression dependency names")?;
+        ctx.reserve_vec(&mut dependencies, 1, "creo expression dependency names")?;
         dependencies.push(ctx.copy_retained_text(parameter, "creo expression dependency text")?);
         if extend_expression_dependencies(ctx, &mut dependencies, row)?.is_none() {
             return Ok(None);
@@ -1362,7 +1362,7 @@ fn extend_expression_dependencies(
                     .iter()
                     .any(|existing| existing.eq_ignore_ascii_case(dependency))
             {
-                ctx.try_reserve_items(dependencies, 1, "creo expression dependency names")?;
+                ctx.reserve_vec(dependencies, 1, "creo expression dependency names")?;
                 dependencies
                     .push(ctx.copy_retained_text(dependency, "creo expression dependency text")?);
             }
@@ -1473,16 +1473,16 @@ fn curve_expression_solve_program(
                             .iter()
                             .any(|unknown| unknown.name.eq_ignore_ascii_case(dependency))
                     }) {
-                        ctx.try_reserve_items(&mut equations, 1, "creo solve equations")?;
+                        ctx.reserve_vec(&mut equations, 1, "creo solve equations")?;
                         equations.push(statement.equation);
                     } else if let Some(assignment) = statement.assignment {
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut assignment_line_indices,
                             1,
                             "creo solve assignment indices",
                         )?;
                         assignment_line_indices.push(statement.line_index);
-                        ctx.try_reserve_items(&mut assignments, 1, "creo solve assignments")?;
+                        ctx.reserve_vec(&mut assignments, 1, "creo solve assignments")?;
                         assignments.push(assignment);
                     } else {
                         block.valid = false;
@@ -1496,7 +1496,7 @@ fn curve_expression_solve_program(
                         program.executable_line_indices.insert(index);
                     }
                 }
-                ctx.try_reserve_items(&mut program.blocks, 1, "creo solve blocks")?;
+                ctx.reserve_vec(&mut program.blocks, 1, "creo solve blocks")?;
                 program.blocks.push(CurveExpressionSolveBlock {
                     equations,
                     assignments,
@@ -1532,7 +1532,7 @@ fn curve_expression_solve_program(
             block.valid = false;
             continue;
         }
-        ctx.try_reserve_items(&mut block.statements, 1, "creo pending solve statements")?;
+        ctx.reserve_vec(&mut block.statements, 1, "creo pending solve statements")?;
         block.statements.push(PendingCurveExpressionSolveStatement {
             equation: CurveExpressionEquation {
                 left: ctx.copy_retained_text(left, "creo solve equation left")?,
@@ -1572,7 +1572,7 @@ fn curve_expression_solve_unknowns(
         {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut unknowns, 1, "creo solve unknowns")?;
+        ctx.reserve_vec(&mut unknowns, 1, "creo solve unknowns")?;
         unknowns.push(SolveUnknown {
             name: ctx.copy_retained_text(name, "creo solve unknown names")?,
             solution: None,
@@ -1606,7 +1606,7 @@ fn expression_assignment_target(
         }
         let mut retained_arguments = Vec::new();
         for argument in arguments {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut retained_arguments,
                 1,
                 "creo expression target arguments",
@@ -1780,7 +1780,7 @@ fn split_assignment_target_arguments<'a>(
                 if argument.is_empty() {
                     return Ok(None);
                 }
-                ctx.try_reserve_items(&mut arguments, 1, "creo expression parsed arguments")?;
+                ctx.reserve_vec(&mut arguments, 1, "creo expression parsed arguments")?;
                 arguments.push(argument);
                 start = offset + 1;
             }
@@ -1797,7 +1797,7 @@ fn split_assignment_target_arguments<'a>(
     if argument.is_empty() {
         return Ok(None);
     }
-    ctx.try_reserve_items(&mut arguments, 1, "creo expression parsed arguments")?;
+    ctx.reserve_vec(&mut arguments, 1, "creo expression parsed arguments")?;
     arguments.push(argument);
     Ok(Some(arguments))
 }
@@ -1880,7 +1880,7 @@ impl ConditionalStack {
                 frame: parent,
                 parents,
             } => {
-                ctx.try_reserve_items(parents, 1, "creo expression conditional parents")?;
+                ctx.reserve_vec(parents, 1, "creo expression conditional parents")?;
                 parents.push(std::mem::replace(parent, frame));
             }
         }
@@ -1945,7 +1945,7 @@ fn expression_program_control_is_valid(
             if conditional_keyword_expression(source, "if").is_none() {
                 return Ok(false);
             }
-            ctx.try_reserve_items(&mut else_seen, 1, "creo expression conditional validation")?;
+            ctx.reserve_vec(&mut else_seen, 1, "creo expression conditional validation")?;
             else_seen.push(false);
         } else if starts_relation_keyword(source, "else") {
             if !source.eq_ignore_ascii_case("else") {
@@ -2027,7 +2027,7 @@ fn evaluate_expression_program_details(
         let mut assignments = Vec::new();
         for mut assignment in parsed_assignments.into_iter().flatten() {
             assignment.activation = CurveExpressionActivation::Conditional;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut assignments,
                 1,
                 "creo conditional expression assignments",
@@ -2109,8 +2109,10 @@ fn evaluate_expression_program_details(
                 .zip(&mut initial_values)
                 .zip(&block.unknowns)
             {
-                let (mut key, _key_guard) =
-                    ctx.copy_scoped_text(&unknown.name, "creo solve snapshot lookup")?;
+                let (mut key, _key_guard) = ctx.format_scoped(
+                    format_args!("{}", unknown.name),
+                    "creo solve snapshot lookup",
+                )?;
                 key.make_ascii_lowercase();
                 let value = values.get(&key);
                 *dimension = value
@@ -2246,7 +2248,7 @@ fn evaluate_expression_program_details(
         };
         assignment.activation = activity;
         let Some((name, declared_unit)) = assignment.scalar_target() else {
-            ctx.try_reserve_items(&mut assignments, 1, "creo evaluated assignments")?;
+            ctx.reserve_vec(&mut assignments, 1, "creo evaluated assignments")?;
             assignments.push(assignment);
             continue;
         };
@@ -2286,7 +2288,7 @@ fn evaluate_expression_program_details(
                 values.remove(&key);
             }
         }
-        ctx.try_reserve_items(&mut assignments, 1, "creo evaluated assignments")?;
+        ctx.reserve_vec(&mut assignments, 1, "creo evaluated assignments")?;
         assignments.push(assignment);
     }
     Ok(CurveExpressionEvaluation {
@@ -3240,7 +3242,7 @@ impl ExpressionValue for SimultaneousAffineValue {
             let Some(value) = argument.as_curve_value() else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut numeric_arguments,
                 1,
                 "creo affine function numeric arguments",
@@ -3936,7 +3938,7 @@ impl DimensionProbeValue {
         right: SymbolicRelationDimension,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.try_reserve_items(&mut self.constraints, 1, "creo dimension constraint growth")?;
+        ctx.reserve_vec(&mut self.constraints, 1, "creo dimension constraint growth")?;
         self.constraints.push(DimensionEquality { left, right });
         Ok(self)
     }
@@ -3970,7 +3972,7 @@ impl DimensionProbeValue {
     ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
         let mut constraints = Vec::new();
         for constraint in left.constraints.iter().chain(&right.constraints) {
-            ctx.try_reserve_items(&mut constraints, 1, "creo dimension merged constraints")?;
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension merged constraints")?;
             constraints.push(constraint.copy_admitted(ctx)?);
         }
         Ok(constraints)
@@ -3989,7 +3991,7 @@ impl DimensionProbeValue {
     ) -> Result<Vec<DimensionEquality>, cadmpeg_core::CodecError> {
         let mut constraints = Vec::new();
         for constraint in arguments.iter().flat_map(|argument| &argument.constraints) {
-            ctx.try_reserve_items(&mut constraints, 1, "creo dimension function constraints")?;
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension function constraints")?;
             constraints.push(constraint.copy_admitted(ctx)?);
         }
         Ok(constraints)
@@ -4001,7 +4003,7 @@ impl DimensionProbeValue {
         left: &SymbolicRelationDimension,
         right: &SymbolicRelationDimension,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.try_reserve_items(constraints, 1, "creo dimension operation constraints")?;
+        ctx.reserve_vec(constraints, 1, "creo dimension operation constraints")?;
         constraints.push(DimensionEquality {
             left: left.copy_admitted(ctx)?,
             right: right.copy_admitted(ctx)?,
@@ -4370,7 +4372,7 @@ impl DimensionProbeValue {
                     .clone_admitted(ctx)?
                     .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
                 for constraint in &decimal_places.constraints {
-                    ctx.try_reserve_items(
+                    ctx.reserve_vec(
                         &mut constraints,
                         1,
                         "creo dimension function control constraints",
@@ -4408,7 +4410,7 @@ impl ExpressionValue for DimensionProbeValue {
             DimensionProbeKind::Text(None) => DimensionProbeKind::Text(None),
         };
         let mut constraints = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut constraints,
             self.constraints.len(),
             "creo relation dimension clone constraints",
@@ -4471,7 +4473,7 @@ impl ExpressionValue for DimensionProbeValue {
         else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut constraints, 1, "creo dimension unit constraints")?;
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension unit constraints")?;
         constraints.push(DimensionEquality {
             left: dimension,
             right: SymbolicRelationDimension::default(),
@@ -4969,7 +4971,7 @@ impl ExpressionValue for DimensionProbeValue {
             return Ok(None);
         };
         let mut constraints = self.constraints;
-        ctx.try_reserve_items(&mut constraints, 1, "creo dimension negation constraints")?;
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension negation constraints")?;
         constraints.push(DimensionEquality {
             left: self.dimension,
             right: SymbolicRelationDimension::default(),
@@ -5474,7 +5476,7 @@ impl ExpressionValue for DimensionProbeValue {
                         .clone_admitted(ctx)?
                         .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
                     for constraint in &control.constraints {
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut constraints,
                             1,
                             "creo dimension function control constraints",
@@ -5522,8 +5524,10 @@ impl ExpressionValue for DimensionProbeValue {
             (CreoMathFunction::Exists, [argument]) => {
                 let value = match (argument.text_value(), context.existing_symbols) {
                     (Some(name), Some(symbols)) => {
-                        let (mut key, _reservation) =
-                            ctx.copy_scoped_text(name, "creo dimension exists lookup key")?;
+                        let (mut key, _reservation) = ctx.format_scoped(
+                            format_args!("{name}"),
+                            "creo dimension exists lookup key",
+                        )?;
                         key.make_ascii_lowercase();
                         symbols.contains(&key).then_some(1.0)
                     }
@@ -5563,7 +5567,7 @@ impl ExpressionValue for DimensionProbeValue {
                         .clone_admitted(ctx)?
                         .constrain_to_admitted(SymbolicRelationDimension::default(), ctx)?;
                     for constraint in &control.constraints {
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut constraints,
                             1,
                             "creo dimension function control constraints",
@@ -5907,7 +5911,7 @@ impl ExpressionValue for CurveExpressionValue {
                     return Ok(None);
                 };
                 let (mut key, _reservation) =
-                    ctx.copy_scoped_text(name, "creo relation exists lookup key")?;
+                    ctx.format_scoped(format_args!("{name}"), "creo relation exists lookup key")?;
                 key.make_ascii_lowercase();
                 Ok(symbols.contains(&key).then_some(Number(1.0)))
             }
@@ -6381,8 +6385,10 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
             if let Some(value) = V::reserved(name) {
                 return Some(value);
             }
-            let (mut key, _reservation) =
-                self.admit(self.ctx.copy_scoped_text(name, "creo relation lookup key"))?;
+            let (mut key, _reservation) = self.admit(
+                self.ctx
+                    .format_scoped(format_args!("{name}"), "creo relation lookup key"),
+            )?;
             key.make_ascii_lowercase();
             let copied = self.values.get(&key)?.clone_admitted(self.ctx);
             return self.admit(copied);
@@ -6398,7 +6404,7 @@ impl<V: ExpressionValue> ExpressionParser<'_, V> {
         if self.source.get(self.cursor) != Some(&b')') {
             loop {
                 let argument = self.logical_or()?;
-                self.admit(self.ctx.try_reserve_items(
+                self.admit(self.ctx.reserve_vec(
                     &mut arguments,
                     1,
                     "creo relation function arguments",
@@ -7065,7 +7071,7 @@ fn infer_solve_variable_dimensions(
     }
     let mut variable_keys = Vec::new();
     for unknown in &block.unknowns {
-        ctx.try_reserve_items(&mut variable_keys, 1, "creo dimension variable keys")?;
+        ctx.reserve_vec(&mut variable_keys, 1, "creo dimension variable keys")?;
         let mut key = ctx.copy_retained_text(&unknown.name, "creo dimension variable key text")?;
         key.make_ascii_lowercase();
         ctx.charge_work(
@@ -7134,10 +7140,10 @@ fn infer_solve_variable_dimensions(
             return Ok(None);
         };
         for constraint in left.constraints.iter().chain(&right.constraints) {
-            ctx.try_reserve_items(&mut constraints, 1, "creo dimension constraint rows")?;
+            ctx.reserve_vec(&mut constraints, 1, "creo dimension constraint rows")?;
             constraints.push(constraint.copy_admitted(ctx)?);
         }
-        ctx.try_reserve_items(&mut constraints, 1, "creo dimension constraint rows")?;
+        ctx.reserve_vec(&mut constraints, 1, "creo dimension constraint rows")?;
         constraints.push(DimensionEquality {
             left: left.dimension,
             right: right.dimension,
@@ -7149,7 +7155,7 @@ fn infer_solve_variable_dimensions(
     let mut axis_variable_keys: [Vec<String>; 5] = std::array::from_fn(|_| Vec::new());
     for (axis, keys) in axis_variable_keys.iter_mut().enumerate() {
         for variable in &variable_keys {
-            ctx.try_reserve_items(keys, 1, "creo dimension axis variable keys")?;
+            ctx.reserve_vec(keys, 1, "creo dimension axis variable keys")?;
             keys.push(dimension_variable_key(
                 ctx,
                 variable,
@@ -7184,7 +7190,7 @@ fn infer_solve_variable_dimensions(
             }
             let rhs = -difference.constant.as_f64();
             if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
-                ctx.try_reserve_items(rows, 1, "creo dimension equation rows")?;
+                ctx.reserve_vec(rows, 1, "creo dimension equation rows")?;
                 rows.push(AffineEquationRow { coefficients, rhs });
             }
         }
@@ -7280,7 +7286,7 @@ fn solve_dimension_axis(
         }
         rows[pivot_row].rhs /= divisor;
         eliminate_pivot_column(rows, pivot_row, column, coefficient_tolerance);
-        ctx.try_reserve_items(&mut pivot_rows, 1, "creo solve dimension pivot rows")?;
+        ctx.reserve_vec(&mut pivot_rows, 1, "creo solve dimension pivot rows")?;
         pivot_rows.push((column, pivot_row));
         pivot_row += 1;
     }
@@ -7320,7 +7326,7 @@ fn solve_affine_expression_block(
     }
     let mut variable_keys = Vec::new();
     for unknown in &block.unknowns {
-        ctx.try_reserve_items(&mut variable_keys, 1, "creo affine variable keys")?;
+        ctx.reserve_vec(&mut variable_keys, 1, "creo affine variable keys")?;
         let mut key = ctx.copy_retained_text(&unknown.name, "creo affine variable names")?;
         key.make_ascii_lowercase();
         variable_keys.push(key);
@@ -7390,7 +7396,7 @@ fn solve_affine_expression_block(
                 .copied()
                 .unwrap_or(0.0);
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo affine equation rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo affine equation rows")?;
         rows.push(AffineEquationRow {
             coefficients,
             rhs: -difference.constant,
@@ -7400,7 +7406,7 @@ fn solve_affine_expression_block(
         return Ok(None);
     };
     let mut values = Vec::new();
-    ctx.try_reserve_items(&mut values, solution.len(), "creo affine solved values")?;
+    ctx.reserve_vec(&mut values, solution.len(), "creo affine solved values")?;
     for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
         values.push(quantity_value(value, *dimension));
     }
@@ -7474,7 +7480,7 @@ fn solve_nonlinear_expression_block(
         }
     }
     let mut solved = Vec::new();
-    ctx.try_reserve_items(&mut solved, solution.len(), "creo nonlinear solved values")?;
+    ctx.reserve_vec(&mut solved, solution.len(), "creo nonlinear solved values")?;
     for (value, dimension) in solution.into_iter().zip(variable_dimensions) {
         solved.push(quantity_value(value, dimension));
     }
@@ -7549,7 +7555,7 @@ fn nonlinear_initial_guesses(
     let mut seeds = Vec::new();
     let mut add_seed = |seed: Vec<f64>| -> Result<(), cadmpeg_core::CodecError> {
         if seed.iter().all(|value| value.is_finite()) && !seeds.iter().any(|known| known == &seed) {
-            ctx.try_reserve_items(&mut seeds, 1, "creo solve seed rows")?;
+            ctx.reserve_vec(&mut seeds, 1, "creo solve seed rows")?;
             seeds.push(seed);
         }
         Ok(())
@@ -7722,7 +7728,7 @@ fn nonlinear_jacobian_rows(
     let mut rows = Vec::new();
     for (row_index, residual) in residuals.iter().enumerate() {
         let mut coefficients = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut coefficients,
             variable_count,
             "creo nonlinear Jacobian coefficients",
@@ -7774,7 +7780,7 @@ fn nonlinear_jacobian_rows(
             }
             coefficients.push(derivative);
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo nonlinear Jacobian rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo nonlinear Jacobian rows")?;
         rows.push(AffineEquationRow {
             coefficients,
             rhs: 0.0,
@@ -7854,7 +7860,7 @@ fn evaluate_nonlinear_residuals(
         if !value.is_finite() || !scale.is_finite() {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut residuals, 1, "creo nonlinear residual rows")?;
+        ctx.reserve_vec(&mut residuals, 1, "creo nonlinear residual rows")?;
         residuals.push(SolveResidual {
             value,
             scale,
@@ -8109,7 +8115,7 @@ pub(crate) fn topology_rows_with_face_ids(
             row.suffix_start,
             row.suffix,
         ) {
-            ctx.try_reserve_items(&mut rows, 1, "creo topology curve rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo topology curve rows")?;
             rows.push(parsed);
         }
     }
@@ -8162,9 +8168,7 @@ pub(crate) fn depdb_cross_section_rows(
         return Ok(Vec::new());
     };
     let mut rows = Vec::new();
-    ctx.try_collection(capacity, "creo cross-section curve rows", || {
-        rows.try_reserve(capacity)
-    })?;
+    ctx.reserve_vec(&mut rows, capacity, "creo cross-section curve rows")?;
     let mut boundaries = Vec::new();
     for (marker, length) in [
         (b"\xe1\xe3".as_slice(), 2),
@@ -8173,7 +8177,7 @@ pub(crate) fn depdb_cross_section_rows(
     ] {
         let mut search = cursor;
         while let Some(offset) = find(payload, marker, search) {
-            ctx.try_reserve_items(&mut boundaries, 1, "creo cross-section row boundaries")?;
+            ctx.reserve_vec(&mut boundaries, 1, "creo cross-section row boundaries")?;
             boundaries.push((offset, length));
             search = offset + marker.len();
         }
@@ -8344,12 +8348,12 @@ fn framed_rows_with_face_ids(
     let mut arrays = Vec::new();
     let mut search = 0;
     while let Some(array) = find(payload, b"crv_array\0", search) {
-        ctx.try_reserve_items(&mut arrays, 1, "creo curve namespace starts")?;
+        ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(array + b"crv_array\0".len());
         search = array + b"crv_array\0".len();
     }
     if arrays.is_empty() {
-        ctx.try_reserve_items(&mut arrays, 1, "creo curve namespace starts")?;
+        ctx.reserve_vec(&mut arrays, 1, "creo curve namespace starts")?;
         arrays.push(0);
     }
     for (index, &namespace_start) in arrays.iter().enumerate() {
@@ -8365,13 +8369,13 @@ fn framed_rows_with_face_ids(
         let mut boundary_anchored = false;
         let mut segments = Vec::new();
         while let Some((terminator, length)) = row_terminator(payload, cursor, namespace_end) {
-            ctx.try_reserve_items(&mut segments, 1, "creo framed curve segments")?;
+            ctx.reserve_vec(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, terminator, boundary_anchored));
             cursor = terminator + length;
             boundary_anchored = true;
         }
         if cursor < namespace_end {
-            ctx.try_reserve_items(&mut segments, 1, "creo framed curve segments")?;
+            ctx.reserve_vec(&mut segments, 1, "creo framed curve segments")?;
             segments.push((cursor, namespace_end, boundary_anchored));
         }
         let known_face_ids = if let Some(face_ids) = face_ids {
@@ -8405,7 +8409,7 @@ fn framed_rows_with_face_ids(
                 face_ids,
                 known_face_ids.as_ref(),
             )? {
-                ctx.try_reserve_items(&mut result, 1, "creo framed curve rows")?;
+                ctx.reserve_vec(&mut result, 1, "creo framed curve rows")?;
                 result.push(row);
             }
         }
@@ -8437,7 +8441,7 @@ fn framed_segment_with_face_ids(
     let mut prefixes = Vec::new();
     for row_start in 0..segment.len() {
         if let Some(prefix) = topology_prefix_fields(segment, row_start) {
-            ctx.try_reserve_items(&mut prefixes, 1, "creo framed curve prefixes")?;
+            ctx.reserve_vec(&mut prefixes, 1, "creo framed curve prefixes")?;
             prefixes.push((row_start, prefix.end));
         }
     }
@@ -8558,7 +8562,7 @@ fn curve_scalar_lane(
     while cursor < body.len() {
         if body[cursor] == psb::token::ENTITY_REF {
             if let Ok((reference, next)) = reference_id(body, cursor + 1) {
-                ctx.try_reserve_items(&mut references, 1, "creo curve parameter references")?;
+                ctx.reserve_vec(&mut references, 1, "creo curve parameter references")?;
                 references.push(CurveParameterReference {
                     entity_id: reference,
                     offset: cursor,
@@ -8575,7 +8579,7 @@ fn curve_scalar_lane(
             && scalars.len() < 8
         {
             let raw = ctx.copy_retained(&body[cursor..=cursor], "creo curve zero raw token")?;
-            ctx.try_reserve_items(&mut scalars, 1, "creo curve parameter scalars")?;
+            ctx.reserve_vec(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value: 0.0,
                 raw,
@@ -8592,7 +8596,7 @@ fn curve_scalar_lane(
         };
         if let Some((value, next)) = decoded {
             let raw = ctx.copy_retained(&body[cursor..next], "creo curve scalar raw token")?;
-            ctx.try_reserve_items(&mut scalars, 1, "creo curve parameter scalars")?;
+            ctx.reserve_vec(&mut scalars, 1, "creo curve parameter scalars")?;
             scalars.push(CurveParameterScalar {
                 value,
                 raw,
@@ -8616,7 +8620,7 @@ fn curve_scalar_lane(
             cursor += 1;
         }
         let raw = ctx.copy_retained(&body[start..cursor], "creo curve opaque raw span")?;
-        ctx.try_reserve_items(&mut opaque_spans, 1, "creo curve opaque spans")?;
+        ctx.reserve_vec(&mut opaque_spans, 1, "creo curve opaque spans")?;
         opaque_spans.push(CurveParameterOpaqueSpan { raw, offset: start });
     }
     Ok(CurveScalarLane {
@@ -8669,7 +8673,7 @@ pub(crate) fn parameter_records_with_face_ids(
             references,
             opaque_spans,
         } = curve_scalar_lane(ctx, &body, type_byte, &cache)?;
-        ctx.try_reserve_items(&mut records, 1, "creo curve parameter records")?;
+        ctx.reserve_vec(&mut records, 1, "creo curve parameter records")?;
         records.push(CurveParameterRecord {
             curve_id,
             type_byte,
@@ -8752,7 +8756,7 @@ pub(crate) fn pcurve_endpoints(
         if matching.next().is_some() || topology.type_byte != record.type_byte {
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo pcurve endpoint rows")?;
+        ctx.reserve_vec(&mut result, 1, "creo pcurve endpoint rows")?;
         result.push(PcurveEndpoints {
             curve_id: record.curve_id,
             faces: topology.faces,
@@ -8802,7 +8806,7 @@ fn complete_two_chart_samples(
     }
     let mut cursor = start;
     let mut samples = Vec::new();
-    ctx.try_reserve_items(&mut samples, sample_count, "creo two-chart sample points")?;
+    ctx.reserve_vec(&mut samples, sample_count, "creo two-chart sample points")?;
     for _ in 0..sample_count {
         let mut sample = [[0.0; 2]; 2];
         for (slot, value) in sample.iter_mut().flatten().enumerate() {
@@ -8909,7 +8913,7 @@ pub(crate) fn two_chart_pcurve_samples(
         let Some(samples) = samples else {
             continue;
         };
-        ctx.try_reserve_items(&mut result, 1, "creo two-chart sample rows")?;
+        ctx.reserve_vec(&mut result, 1, "creo two-chart sample rows")?;
         result.push(TwoChartPcurveSamples {
             curve_id: prefix.id,
             faces: [row.suffix[0], row.suffix[1]],
@@ -8999,7 +9003,7 @@ pub(crate) fn fc02_short_pcurve_endpoints(
         if matching.next().is_some() || topology.type_byte != record.type_byte {
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo FC02 short pcurve endpoints")?;
+        ctx.reserve_vec(&mut result, 1, "creo FC02 short pcurve endpoints")?;
         result.push(Fc02ShortPcurveEndpoints {
             curve_id: record.curve_id,
             faces: topology.faces.map(stored_face_reference),
@@ -9036,7 +9040,7 @@ pub(crate) fn fc_coordinates(
         while cursor < lane.len() {
             if matches!(lane[cursor], 0x46 | 0x2d) {
                 if let Some((value, next)) = scalar::decode(lane, cursor) {
-                    ctx.try_reserve_items(&mut tokens, 1, "creo fc coordinate tokens")?;
+                    ctx.reserve_vec(&mut tokens, 1, "creo fc coordinate tokens")?;
                     tokens.push(FcCurveCoordinateToken {
                         value_mm: value,
                         raw: ctx
@@ -9054,7 +9058,7 @@ pub(crate) fn fc_coordinates(
             let mut unclaimed = 0;
             for token in &tokens {
                 if unclaimed < token.offset {
-                    ctx.try_reserve_items(&mut opaque_spans, 1, "creo fc opaque spans")?;
+                    ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                     opaque_spans.push(FcCurveOpaqueSpan {
                         raw: ctx.copy_retained(
                             &record.body[unclaimed..token.offset],
@@ -9066,7 +9070,7 @@ pub(crate) fn fc_coordinates(
                 unclaimed = token.offset + token.raw.len();
             }
             if unclaimed < record.body.len() {
-                ctx.try_reserve_items(&mut opaque_spans, 1, "creo fc opaque spans")?;
+                ctx.reserve_vec(&mut opaque_spans, 1, "creo fc opaque spans")?;
                 opaque_spans.push(FcCurveOpaqueSpan {
                     raw: ctx
                         .copy_retained(&record.body[unclaimed..], "creo fc opaque span bytes")?,
@@ -9074,10 +9078,10 @@ pub(crate) fn fc_coordinates(
                 });
             }
             let mut values_mm = Vec::new();
-            ctx.try_reserve_items(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
+            ctx.reserve_vec(&mut values_mm, tokens.len(), "creo fc coordinate values")?;
             values_mm.extend(tokens.iter().map(|token| token.value_mm));
             let body = ctx.copy_retained(&record.body, "creo fc coordinate body")?;
-            ctx.try_reserve_items(&mut result, 1, "creo fc coordinate rows")?;
+            ctx.reserve_vec(&mut result, 1, "creo fc coordinate rows")?;
             result.push(FcCurveCoordinates {
                 curve_id: record.curve_id,
                 subtype,
@@ -9162,7 +9166,7 @@ pub(crate) fn fc05_circles(
             let Some((ordinate, next)) = fc05_scalar(&record.body, next) else {
                 break;
             };
-            ctx.try_reserve_items(&mut points, 1, "creo fc05 point rows")?;
+            ctx.reserve_vec(&mut points, 1, "creo fc05 point rows")?;
             points.push((x, z, parameter, ordinate));
             cursor = next;
         }
@@ -9266,7 +9270,7 @@ pub(crate) fn fc05_circles(
         else {
             continue;
         };
-        ctx.try_reserve_items(&mut circles, 1, "creo fc05 circles")?;
+        ctx.reserve_vec(&mut circles, 1, "creo fc05 circles")?;
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],
@@ -9353,7 +9357,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(group, 1, "creo fc05 cylinder group members")?;
+        ctx.reserve_vec(group, 1, "creo fc05 cylinder group members")?;
         group.push((circle, plane, ordinate));
     }
 
@@ -9397,7 +9401,7 @@ pub(crate) fn fc05_cylinder_cap_pairs(
                 .iter()
                 .all(|existing: &f64| (*existing - ordinate).abs() > tolerance)
             {
-                ctx.try_reserve_items(&mut ordinates, 1, "creo fc05 distinct cap ordinates")?;
+                ctx.reserve_vec(&mut ordinates, 1, "creo fc05 distinct cap ordinates")?;
                 ordinates.push(ordinate);
             }
         }
@@ -9405,13 +9409,13 @@ pub(crate) fn fc05_cylinder_cap_pairs(
             continue;
         }
         let mut cap_edges = Vec::new();
-        ctx.try_reserve_items(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
+        ctx.reserve_vec(&mut cap_edges, group.len(), "creo fc05 cap edges")?;
         cap_edges.extend(group.iter().map(|(circle, plane, ordinate)| Fc05CapEdge {
             curve_id: circle.curve_id,
             cap_plane_id: *plane,
             cap_ordinate_row_frame: *ordinate,
         }));
-        ctx.try_reserve_items(&mut result, 1, "creo fc05 cylinder cap pairs")?;
+        ctx.reserve_vec(&mut result, 1, "creo fc05 cylinder cap pairs")?;
         result.push(Fc05CylinderCapPair {
             surface_id,
             cap_edges,
@@ -9486,7 +9490,7 @@ pub(crate) fn prototype_pcurve_endpoints(
             && values.iter().all(|value| value.is_finite())
             && array_is_bounded
         {
-            ctx.try_reserve_items(&mut result, 1, "creo prototype pcurve endpoints")?;
+            ctx.reserve_vec(&mut result, 1, "creo prototype pcurve endpoints")?;
             result.push(PrototypePcurveEndpoints {
                 curve_id,
                 face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
@@ -9539,7 +9543,7 @@ pub(crate) fn prototype_topology(
         let Some(next_1) = reference(b"next_crv_hdr_ptr[1]\0") else {
             continue;
         };
-        ctx.try_reserve_items(&mut result, 1, "creo prototype topology rows")?;
+        ctx.reserve_vec(&mut result, 1, "creo prototype topology rows")?;
         result.push(CurvePrototypeTopology {
             curve_id,
             faces: [face_0, face_1].map(NonZeroU32::new),
@@ -9596,7 +9600,7 @@ pub(crate) fn bind_prototype_pcurves(
         let Some(topology) = topology else {
             continue;
         };
-        ctx.try_reserve_items(&mut result, 1, "creo bound prototype pcurves")?;
+        ctx.reserve_vec(&mut result, 1, "creo bound prototype pcurves")?;
         result.push(BoundPrototypePcurve {
             curve_id: pcurve.curve_id,
             faces: topology.faces,

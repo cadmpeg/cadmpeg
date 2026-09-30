@@ -118,6 +118,20 @@ fn admitted_hex_coverage_refuses_retained_name_limit() {
     assert_eq!(coverage.get("type_0a_count"), Some(&7));
 }
 
+#[test]
+fn owned_coverage_record_preserves_declared_key() {
+    let key = crate::report::decode::CoverageKey::new("decoded_entities");
+    let mut coverage = crate::report::decode::Coverage::default();
+    assert!(coverage
+        .record_owned(key, "other_entities".to_owned(), 3)
+        .is_err());
+    assert!(coverage.is_empty());
+    coverage
+        .record_owned(key, "decoded_entities".to_owned(), 3)
+        .expect("declared key is admitted");
+    assert_eq!(coverage.get("decoded_entities"), Some(&3));
+}
+
 #[cfg(feature = "schema")]
 #[test]
 fn current_decode_report_schema_requires_its_format_identity() {

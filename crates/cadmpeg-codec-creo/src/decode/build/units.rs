@@ -20,7 +20,10 @@ pub(in crate::decode) fn malformed_refusal(
     ctx: &DecodeContext<'_>,
     message: impl std::fmt::Display,
 ) -> CodecError {
-    match ctx.format_retained(message, "creo unit normalization refusal text") {
+    match ctx.format_retained(
+        format_args!("{message}"),
+        "creo unit normalization refusal text",
+    ) {
         Ok(message) => CodecError::Malformed(message),
         Err(error) => error,
     }
@@ -30,7 +33,10 @@ pub(in crate::decode) fn not_implemented_refusal(
     ctx: &DecodeContext<'_>,
     message: impl std::fmt::Display,
 ) -> CodecError {
-    match ctx.format_retained(message, "creo unit normalization refusal text") {
+    match ctx.format_retained(
+        format_args!("{message}"),
+        "creo unit normalization refusal text",
+    ) {
         Ok(message) => CodecError::NotImplemented(message),
         Err(error) => error,
     }
@@ -316,7 +322,7 @@ fn scale_feature_operation(
         }
         FeatureOperation::Polyline { chain } => {
             let mut points = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut points,
                 chain.points().len(),
                 "creo scaled feature polyline points",

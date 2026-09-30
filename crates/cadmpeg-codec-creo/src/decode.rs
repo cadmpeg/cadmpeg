@@ -23,7 +23,7 @@ pub(crate) fn collect_items<T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for value in values {
-        ctx.try_reserve_items(&mut result, 1, operation)?;
+        ctx.reserve_vec(&mut result, 1, operation)?;
         result.push(value);
     }
     Ok(result)
@@ -37,7 +37,7 @@ pub(crate) fn project_items<I, T>(
 ) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for value in values {
-        ctx.try_reserve_items(&mut result, 1, operation)?;
+        ctx.reserve_vec(&mut result, 1, operation)?;
         result.push(project(value)?);
     }
     Ok(result)
@@ -110,14 +110,14 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         &brep_diagnostics,
         ctx.container_only(),
     )?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut body.losses,
         transfer_losses.len(),
         "creo transfer report losses",
     )?;
     body.losses.extend(transfer_losses);
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::with_annotations(annotations);
-    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns)?;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", unknowns, ctx)?;
     Ok(Decoded {
         ir,
         body,

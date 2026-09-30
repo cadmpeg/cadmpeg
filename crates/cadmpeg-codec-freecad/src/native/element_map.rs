@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted native element-map nodes and persistent-name bindings.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -119,7 +121,7 @@ impl TryFrom<Vec<ElementMapNodeWire>> for ElementMapNodes {
     type Error = String;
 
     fn try_from(wire_nodes: Vec<ElementMapNodeWire>) -> Result<Self, Self::Error> {
-        let mut nodes = Vec::with_capacity(wire_nodes.len());
+        let mut nodes = Vec::new();
         for (position, wire) in wire_nodes.into_iter().enumerate() {
             // Every position is below the vector's representable length.
             let expected_index = position + 1;
@@ -166,20 +168,24 @@ impl From<ElementMapNodes> for Vec<ElementMapNode> {
 impl ElementMapNodes {
     /// Construct one root from legacy name groups, which have no child maps.
     pub(crate) fn from_root_names(
+        ctx: &DecodeContext<'_>,
         map_id: u64,
         groups: BTreeMap<String, Vec<Vec<ElementMappedName>>>,
-    ) -> Self {
-        Self(vec![ElementMapNode {
+    ) -> Result<Self, CodecError> {
+        let mut root_groups = ctx.collection_vec(groups.len(), "FreeCAD legacy root map groups")?;
+        for (indexed_name, names) in groups {
+            root_groups.push(ElementMapGroup {
+                indexed_name,
+                children: Vec::new(),
+                names,
+            });
+        }
+        let mut nodes = ctx.collection_vec(1, "FreeCAD legacy root map node")?;
+        nodes.push(ElementMapNode {
             map_id,
-            groups: groups
-                .into_iter()
-                .map(|(indexed_name, names)| ElementMapGroup {
-                    indexed_name,
-                    children: Vec::new(),
-                    names,
-                })
-                .collect(),
-        }])
+            groups: root_groups,
+        });
+        Ok(Self(nodes))
     }
 
     /// Returns the owning shape map.
@@ -188,7 +194,13 @@ impl ElementMapNodes {
     }
 
     /// Add a topology binding without exposing child-map descriptors for mutation.
-    pub(crate) fn bind_root_topology(&mut self, indexed_name: &str, source_index: usize, id: &str) {
+    pub(crate) fn bind_root_topology(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        indexed_name: &str,
+        source_index: usize,
+        id: &str,
+    ) -> Result<(), CodecError> {
         let index = self.0.len() - 1;
         for group in &mut self.0[index].groups {
             if group.indexed_name != indexed_name {
@@ -199,10 +211,17 @@ impl ElementMapNodes {
             };
             for name in names {
                 if !name.topology_ids.iter().any(|existing| existing == id) {
-                    name.topology_ids.push(id.to_owned());
+                    ctx.reserve_vec(
+                        &mut name.topology_ids,
+                        1,
+                        "FreeCAD element topology bindings",
+                    )?;
+                    name.topology_ids
+                        .push(ctx.copy_retained_text(id, "FreeCAD element topology identity")?);
                 }
             }
         }
+        Ok(())
     }
 
     /// Returns nodes in serialized order.

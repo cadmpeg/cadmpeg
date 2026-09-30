@@ -45,7 +45,7 @@ pub(in super::super) fn feature_dependencies(
         let id = IrFeatureId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo feature ID is invalid".into()))?;
         if ir.model.features.iter().any(|feature| feature.id == id) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo feature dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo feature dependencies")?;
             dependencies.push(id);
         }
     }
@@ -87,7 +87,7 @@ pub(in super::super) fn native_feature_dependency_ids(
         .chain(transition_dependencies)
     {
         if !dependencies.contains(&dependency) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo native feature dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo native feature dependencies")?;
             dependencies.push(dependency);
         }
     }
@@ -123,7 +123,7 @@ pub(in super::super) fn feature_output_surface_dependencies(
             continue;
         };
         if row.feature_id != feature_id && !dependencies.contains(&row.feature_id) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo output surface dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo output surface dependencies")?;
             dependencies.push(row.feature_id);
         }
     }
@@ -148,7 +148,7 @@ pub(in super::super) fn feature_entity_dependencies(
                 continue;
             }
             if !dependencies.contains(&producer) {
-                ctx.try_reserve_items(&mut dependencies, 1, "creo feature entity dependencies")?;
+                ctx.reserve_vec(&mut dependencies, 1, "creo feature entity dependencies")?;
                 dependencies.push(producer);
             }
         }
@@ -298,7 +298,7 @@ pub(in super::super) fn surface_merge_entity_dependencies(
             continue;
         };
         if owner != feature_id && !dependencies.contains(&owner) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo surface merge dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo surface merge dependencies")?;
             dependencies.push(owner);
         }
     }
@@ -341,7 +341,7 @@ fn agreed_feature_parent_ids(
         }
         *emitted = true;
         if let Some(agreed) = agreed_feature_affected_ids(records, feature_id, record.kind) {
-            ctx.try_reserve_items(&mut ids, agreed.len(), "creo agreed feature parent IDs")?;
+            ctx.reserve_vec(&mut ids, agreed.len(), "creo agreed feature parent IDs")?;
             ids.extend_from_slice(agreed);
         }
     }
@@ -396,7 +396,7 @@ pub(in super::super) fn add_surface_prototype_feature_dependencies(
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         if !producers.contains(&producer) {
-            ctx.try_reserve_items(producers, 1, "creo prototype dependency producers")?;
+            ctx.reserve_vec(producers, 1, "creo prototype dependency producers")?;
             producers.push(producer);
         }
     }
@@ -443,11 +443,11 @@ pub(in super::super) fn reconcile_feature_links(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(
             super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.try_reserve_items(&mut output_updates, 1, "creo reconciled output update rows")?;
+        ctx.reserve_vec(&mut output_updates, 1, "creo reconciled output update rows")?;
         output_updates.push((index, outputs));
     }
     let mut emitted = BTreeSet::new();
@@ -504,7 +504,7 @@ pub(in super::super) fn reconcile_feature_links(
             )?;
             let id = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
             if emitted.contains(&id) && id != feature.id {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut native_dependencies,
                     1,
                     "creo reconciled native dependencies",
@@ -521,7 +521,7 @@ pub(in super::super) fn reconcile_feature_links(
                 "creo reconciled generated dependency IDs",
             )?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut generated_ids,
                 1,
                 "creo reconciled generated dependencies",
@@ -529,7 +529,7 @@ pub(in super::super) fn reconcile_feature_links(
             generated_ids.push(id);
         }
         feature.dependencies =
-            cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(reconciled_dependencies(
+            cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(reconciled_dependencies(
                 ctx,
                 &feature.id,
                 &feature.dependencies,
@@ -550,7 +550,7 @@ pub(in super::super) fn reconcile_feature_links(
                     ctx.copy_retained_text(feature.id.as_str(), "creo regeneration child IDs")?,
                 )
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-                ctx.try_reserve_items(&mut regeneration_edges, 1, "creo regeneration edges")?;
+                ctx.reserve_vec(&mut regeneration_edges, 1, "creo regeneration edges")?;
                 regeneration_edges.push((child, parent));
             }
         }
@@ -564,14 +564,14 @@ pub(in super::super) fn reconcile_feature_links(
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
     let mut remaining = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut remaining,
         ir.model.features.len(),
         "creo remaining feature order",
     )?;
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut ordered,
         remaining.len(),
         "creo ordered feature indices",
@@ -609,7 +609,7 @@ pub(in super::super) fn feature_generated_dependencies<'a>(
     let mut dependencies = Vec::new();
     let mut push_unique = |dependency: &'a IrFeatureId| -> Result<(), cadmpeg_core::CodecError> {
         if !dependencies.contains(&dependency) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo generated dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo generated dependencies")?;
             dependencies.push(dependency);
         }
         Ok(())
@@ -673,7 +673,7 @@ pub(in super::super) fn reconciled_dependencies(
             ctx.copy_retained_text(dependency.as_str(), "creo established dependency IDs")?,
         )
         .map_err(CodecError::malformed)?;
-        ctx.try_reserve_items(&mut dependencies, 1, "creo reconciled dependencies")?;
+        ctx.reserve_vec(&mut dependencies, 1, "creo reconciled dependencies")?;
         dependencies.push(id);
     }
     for dependency in native {
@@ -681,7 +681,7 @@ pub(in super::super) fn reconciled_dependencies(
             && dependency != *feature_id
             && !dependencies.contains(&dependency)
         {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo reconciled dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo reconciled dependencies")?;
             dependencies.push(dependency);
         }
     }

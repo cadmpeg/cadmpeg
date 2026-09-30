@@ -50,7 +50,7 @@ fn unique_model_surface_geometries(
         ctx.charge_collection_items(1, "creo counterbore model surface nodes")?;
         let geometry = surface
             .geometry
-            .copy_admitted(ctx, "creo counterbore model geometry")?;
+            .try_clone_for_decode(ctx, "creo counterbore model geometry")?;
         geometries.insert(surface_id, geometry);
     }
     Ok(Some(geometries))
@@ -93,7 +93,7 @@ pub(in crate::decode) fn counterbore_dimensions(
             Some(radius)
         })
     {
-        ctx.try_reserve_items(&mut generated_radii, 1, "creo counterbore generated radii")?;
+        ctx.reserve_vec(&mut generated_radii, 1, "creo counterbore generated radii")?;
         generated_radii.push(radius);
     }
     let dimension_tables = || {
@@ -364,7 +364,7 @@ pub(in crate::decode) fn counterbore_patch_geometries<'a>(
             let Some(row) = crate::surface::unique_surface_row(&scan.surfaces.rows, id) else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(&mut rows, 1, "creo counterbore patch rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo counterbore patch rows")?;
             rows.push((row, geometry));
         }
         Ok(Some(rows))
@@ -443,14 +443,14 @@ pub(in crate::decode) fn counterbore_cylinder_sources(
                 ctx.charge_collection_items(1, "creo counterbore source nodes")?;
             }
             let ids = cylinders_by_source.entry(source_id).or_default();
-            ctx.try_reserve_items(ids, 1, "creo counterbore source cylinder IDs")?;
+            ctx.reserve_vec(ids, 1, "creo counterbore source cylinder IDs")?;
             ids.push(entry.entity_id);
         }
     }
     let mut sources = Vec::new();
     for (_, ids) in cylinders_by_source {
         if ids.len() == 2 {
-            ctx.try_reserve_items(&mut sources, 1, "creo counterbore source groups")?;
+            ctx.reserve_vec(&mut sources, 1, "creo counterbore source groups")?;
             sources.push(ids);
         }
     }
@@ -486,7 +486,7 @@ fn counterbore_source_corner_envelopes(
         let Some(candidate) = candidate else {
             return Ok(None);
         };
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut envelopes,
             1,
             "creo counterbore source corner envelopes",
@@ -1056,7 +1056,7 @@ pub(in crate::decode) fn counterbore_source_patch_geometries(
         .map(|id| (*id, counterbore_geometry))
         .chain(bore_source.iter().map(|id| (*id, bore_geometry)))
     {
-        ctx.try_reserve_items(&mut patches, 1, "creo counterbore source patches")?;
+        ctx.reserve_vec(&mut patches, 1, "creo counterbore source patches")?;
         patches.push((id, geometry));
     }
     Ok(Some(patches))
@@ -1139,7 +1139,7 @@ fn counterbore_source_corner_patch_geometries(
             ids.iter().copied().map(move |id| (id, geometry))
         })
     {
-        ctx.try_reserve_items(&mut patches, 1, "creo counterbore corner patches")?;
+        ctx.reserve_vec(&mut patches, 1, "creo counterbore corner patches")?;
         patches.push((id, geometry));
     }
     Ok(Some(patches))

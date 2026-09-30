@@ -65,7 +65,7 @@ fn brep_ring_validation_nodes_refuse_collection_limit() {
     assert_refusal(
         &ring_result(2, u64::MAX).expect_err("validation node refused"),
         ResourceDimension::CollectionItems,
-        "creo native loop ring validation nodes",
+        "loop ring members",
     );
 }
 

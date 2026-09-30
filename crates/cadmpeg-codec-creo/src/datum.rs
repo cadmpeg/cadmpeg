@@ -132,7 +132,7 @@ pub(crate) fn planes(
             .get(index + 1)
             .map_or(*frame_end, |(next, _)| (*frame_end).min(next.offset));
         if let Some(plane) = positional_plane(ctx, payload, row, row_end, &cache)? {
-            ctx.try_reserve_items(&mut planes, 1, "creo datum plane records")?;
+            ctx.reserve_vec(&mut planes, 1, "creo datum plane records")?;
             planes.push(plane);
         }
     }
@@ -166,7 +166,7 @@ pub(crate) fn cylinders(
             .positional_cylinder_frame()
             .or_else(|| active_cylinder_frame(row, parameter))
         {
-            ctx.try_reserve_items(&mut cylinders, 1, "creo datum cylinders")?;
+            ctx.reserve_vec(&mut cylinders, 1, "creo datum cylinders")?;
             cylinders.push(DatumCylinder {
                 id: row.id,
                 feature_id: row.feature_id,
@@ -492,7 +492,7 @@ fn named_outline_slots<'a>(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<DatumSlot<'a>>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, 6, "creo named datum outline slots")?;
+    ctx.reserve_vec(&mut slots, 6, "creo named datum outline slots")?;
     let mut cursor = crate::psb::Cursor::at(data, offset);
     while slots.len() < 6 {
         let start = cursor.pos();
@@ -550,7 +550,7 @@ fn datum_slots<'a>(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<Vec<DatumSlot<'a>>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo positional datum slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo positional datum slots")?;
     let mut cursor = offset;
     while slots.len() < count {
         let start = cursor;

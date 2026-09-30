@@ -202,7 +202,7 @@ pub(crate) fn double_xar_tables(
                     }
                 },
             };
-            ctx.try_reserve_items(&mut entries, 1, "creo double_xar slots")?;
+            ctx.reserve_vec(&mut entries, 1, "creo double_xar slots")?;
             entries.push(slot);
             cursor = end;
         }
@@ -211,7 +211,7 @@ pub(crate) fn double_xar_tables(
                 .last()
                 .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
         {
-            ctx.try_reserve_items(&mut tables, 1, "creo double_xar tables")?;
+            ctx.reserve_vec(&mut tables, 1, "creo double_xar tables")?;
             tables.push(DoubleXarTable { offset, entries });
         }
         search = count_offset + 1;
@@ -291,8 +291,7 @@ impl ScalarCache {
             if seen.contains(&raw) {
                 continue;
             }
-            ctx.try_collection(1, "creo scalar cache unique images", || seen.try_reserve(1))?;
-            seen.insert(raw);
+            ctx.insert_hash_set(&mut seen, raw, "creo scalar cache unique images")?;
             let mut ieee = raw;
             ieee[0] = 0x40;
             let tail = [raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]];
@@ -307,7 +306,7 @@ impl ScalarCache {
                     }
                 }
             }
-            ctx.try_reserve_items(&mut entries, 1, "creo scalar cache entries")?;
+            ctx.reserve_vec(&mut entries, 1, "creo scalar cache entries")?;
             // endian-exception: reconstructed-scalar
             entries.push(f64::from_be_bytes(ieee));
         }

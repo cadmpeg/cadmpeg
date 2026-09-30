@@ -228,7 +228,7 @@ where
 {
     let mut output = Vec::new();
     for value in values {
-        ctx.try_reserve_items(&mut output, 1, operation)?;
+        ctx.reserve_vec(&mut output, 1, operation)?;
         output.push(value?);
     }
     Ok(output)
@@ -337,7 +337,7 @@ impl NurbsSurface {
                 weight_lane(ctx, "pole grid", control_points.len(), weights.len())?;
                 let mut rows = Vec::new();
                 for (points, weights) in control_points.into_iter().zip(weights) {
-                    ctx.try_reserve_items(&mut rows, 1, "IR NURBS paired grid rows")?;
+                    ctx.reserve_vec(&mut rows, 1, "IR NURBS paired grid rows")?;
                     let points = pair(ctx, points, weights, "pole grid row")?;
                     rows.push(points);
                 }
@@ -352,7 +352,7 @@ impl NurbsSurface {
                 NurbsPoleGrid::Polynomial { rows } => {
                     let mut output = Vec::new();
                     for points in rows {
-                        ctx.try_reserve_items(&mut output, 1, "IR NURBS admitted grid rows")?;
+                        ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
                         let points = collect(
                             ctx,
                             points.into_iter().map(|point| finite_point(ctx, point)),
@@ -365,7 +365,7 @@ impl NurbsSurface {
                 NurbsPoleGrid::Rational { rows } => {
                     let mut output = Vec::new();
                     for points in rows {
-                        ctx.try_reserve_items(&mut output, 1, "IR NURBS admitted grid rows")?;
+                        ctx.reserve_vec(&mut output, 1, "IR NURBS admitted grid rows")?;
                         let points = collect(
                             ctx,
                             points.into_iter().map(|pole| {

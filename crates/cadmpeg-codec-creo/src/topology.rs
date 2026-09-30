@@ -317,7 +317,7 @@ pub(crate) fn vertex_orbits(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.try_reserve_items(previous, 1, "creo predecessor group members")?;
+            ctx.reserve_vec(previous, 1, "creo predecessor group members")?;
             previous.push(edge.id);
         }
     }
@@ -357,7 +357,7 @@ pub(crate) fn vertex_orbits(
         }
         let mut orbit = BTreeSet::new();
         let mut pending = Vec::new();
-        ctx.try_reserve_items(&mut pending, 1, "creo vertex orbit pending edges")?;
+        ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges")?;
         pending.push(start);
         while let Some(half_edge) = pending.pop() {
             if visited.contains(&half_edge) {
@@ -374,7 +374,7 @@ pub(crate) fn vertex_orbits(
                 .filter(|next| !visited.contains(next))
                 .copied()
             {
-                ctx.try_reserve_items(&mut pending, 1, "creo vertex orbit pending edges")?;
+                ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges")?;
                 pending.push(next);
             }
         }
@@ -382,14 +382,14 @@ pub(crate) fn vertex_orbits(
         else {
             // `start` is the half-edge the orbit was grown from, so it names
             // the orbit no identifier could be stated for.
-            ctx.try_reserve_items(&mut unstatable_orbits, 1, "creo unstatable vertex orbits")?;
+            ctx.reserve_vec(&mut unstatable_orbits, 1, "creo unstatable vertex orbits")?;
             unstatable_orbits.push(start);
             continue;
         };
         let mut half_edges = Vec::new();
-        ctx.try_reserve_items(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
+        ctx.reserve_vec(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
         half_edges.extend(orbit);
-        ctx.try_reserve_items(&mut vertices, 1, "creo topological vertices")?;
+        ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
         vertices.push(TopologicalVertex { id, half_edges });
     }
     let mut start_vertex = BTreeMap::new();
@@ -409,7 +409,7 @@ pub(crate) fn vertex_orbits(
     let mut incidence = Vec::new();
     for edge in edges {
         if let Some(start_vertex_id) = start_vertex.get(&edge.id) {
-            ctx.try_reserve_items(&mut incidence, 1, "creo half-edge vertex incidence")?;
+            ctx.reserve_vec(&mut incidence, 1, "creo half-edge vertex incidence")?;
             incidence.push(HalfEdgeVertexIncidence {
                 half_edge: edge.id,
                 start_vertex_id: *start_vertex_id,
@@ -489,7 +489,7 @@ pub(crate) fn face_components(
         ctx.charge_collection_items(1, "creo seen component faces")?;
         seen.insert(start);
         let mut pending = Vec::new();
-        ctx.try_reserve_items(&mut pending, 1, "creo pending component faces")?;
+        ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
         pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
@@ -506,18 +506,18 @@ pub(crate) fn face_components(
                 if !seen.contains(&neighbour) {
                     ctx.charge_collection_items(1, "creo seen component faces")?;
                     seen.insert(neighbour);
-                    ctx.try_reserve_items(&mut pending, 1, "creo pending component faces")?;
+                    ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
                     pending.push(neighbour);
                 }
             }
         }
         let mut face_ids = Vec::new();
-        ctx.try_reserve_items(&mut face_ids, faces.len(), "creo component face IDs")?;
+        ctx.reserve_vec(&mut face_ids, faces.len(), "creo component face IDs")?;
         face_ids.extend(faces);
         let mut curve_ids = Vec::new();
-        ctx.try_reserve_items(&mut curve_ids, curves.len(), "creo component curve IDs")?;
+        ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
         curve_ids.extend(curves);
-        ctx.try_reserve_items(&mut components, 1, "creo face components")?;
+        ctx.reserve_vec(&mut components, 1, "creo face components")?;
         components.push(FaceComponent {
             face_ids,
             curve_ids,
@@ -579,7 +579,7 @@ pub(crate) fn build(
                     entry.insert(Vec::new())
                 }
             };
-            ctx.try_reserve_items(sides, 1, "creo face-side group members")?;
+            ctx.reserve_vec(sides, 1, "creo face-side group members")?;
             sides.push(HalfEdgeId {
                 curve_id: row.id,
                 side,
@@ -588,7 +588,7 @@ pub(crate) fn build(
     }
     let mut edges = Vec::new();
     for row in rows {
-        ctx.try_reserve_items(&mut edges, 2, "creo topology half-edges")?;
+        ctx.reserve_vec(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
             let mut candidates = face_sides
@@ -641,7 +641,7 @@ pub(crate) fn build(
                             consumed.insert(id);
                         }
                     }
-                    ctx.try_reserve_items(&mut loops, 1, "creo topology loops")?;
+                    ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
                     loops.push(Loop {
                         face_id: edge.face_id,
                         half_edges: ring,
@@ -651,7 +651,7 @@ pub(crate) fn build(
             }
             ctx.charge_collection_items(1, "creo topology ring visit nodes")?;
             seen.insert(current);
-            ctx.try_reserve_items(&mut ring, 1, "creo topology ring half-edges")?;
+            ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
             let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 break;

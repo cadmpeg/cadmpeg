@@ -2,6 +2,8 @@
 //! Fixed binary64 pairs with derived payload positions.
 
 use super::scalar::ShiftedBinary64;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use std::borrow::Cow;
 use std::num::NonZeroU8;
 use std::ops::Add;
@@ -93,11 +95,15 @@ pub(crate) struct Binary64Pair<F, O = usize> {
     form: F,
     offset: O,
     values: [ShiftedBinary64; 2],
+    discriminator_byte_len: u16,
+    separator_width: u16,
 }
 
 impl<F: Binary64PairForm> Binary64Pair<F> {
     fn read(bytes: &[u8], offset: usize, form: F) -> Option<Self> {
         let discriminator = form.discriminator();
+        let discriminator_byte_len = u16::try_from(discriminator.len()).ok()?;
+        let separator_width = u16::try_from(form.separator_width()).ok()?;
         let first = offset.checked_add(discriminator.len())?;
         (bytes.get(offset..first)? == discriminator.as_ref()).then_some(())?;
         let separator = first.checked_add(8)?;
@@ -114,6 +120,8 @@ impl<F: Binary64PairForm> Binary64Pair<F> {
             form,
             offset,
             values,
+            discriminator_byte_len,
+            separator_width,
         })
     }
 
@@ -133,22 +141,26 @@ impl<F: Binary64PairForm, O: Copy + Add<Output = O> + From<u16>> Binary64Pair<F,
         self.values
     }
     pub(crate) fn value_offsets(&self) -> [O; 2] {
-        let first = self.offset + O::from(self.form.discriminator().len() as u16);
-        [
-            first,
-            first + O::from(8 + self.form.separator_width() as u16),
-        ]
+        let first = self.offset + O::from(self.discriminator_byte_len);
+        [first, first + O::from(8 + self.separator_width)]
     }
 }
 
 impl<F: Binary64PairForm> Binary64Pair<F, u64> {
     pub(crate) fn new(form: F, offset: u64, values: [ShiftedBinary64; 2]) -> Option<Self> {
-        offset
-            .checked_add(form.discriminator().len() as u64 + 16 + form.separator_width() as u64)?;
+        let discriminator_byte_len = u16::try_from(form.discriminator().len()).ok()?;
+        let separator_width = u16::try_from(form.separator_width()).ok()?;
+        offset.checked_add(
+            cadmpeg_core::decode::u64_from_index(form.discriminator().len())
+                + 16
+                + cadmpeg_core::decode::u64_from_index(form.separator_width()),
+        )?;
         Some(Self {
             form,
             offset,
             values,
+            discriminator_byte_len,
+            separator_width,
         })
     }
 }
@@ -179,32 +191,60 @@ impl TryFrom<&[u8]> for SketchBinary64PairForm {
     }
 }
 
-pub(crate) fn datum_plane_pairs(bytes: &[u8]) -> Vec<Binary64Pair<DatumPlanePairForm>> {
-    (0..bytes.len())
-        .filter_map(|offset| Binary64Pair::read(bytes, offset, DatumPlanePairForm))
-        .collect()
+pub(crate) fn datum_plane_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<DatumPlanePairForm>>, CodecError> {
+    ctx.charge_work(u64_from_index(bytes.len()), "scan NX datum-plane pairs")?;
+    let mut pairs = Vec::new();
+    for offset in 0..bytes.len() {
+        if let Some(pair) = Binary64Pair::read(bytes, offset, DatumPlanePairForm) {
+            ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
+        }
+    }
+    Ok(pairs)
 }
 
-pub(crate) fn object_pairs(bytes: &[u8]) -> Vec<Binary64Pair<ObjectPairForm>> {
-    let mut pairs: Vec<_> = ObjectPairForm::ALL
-        .into_iter()
-        .flat_map(|form| {
-            (0..bytes.len()).filter_map(move |offset| Binary64Pair::read(bytes, offset, form))
-        })
-        .collect();
+pub(crate) fn object_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<ObjectPairForm>>, CodecError> {
+    let work = u64_from_index(bytes.len())
+        .checked_mul(u64_from_index(ObjectPairForm::ALL.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX object pairs", u64::MAX, u64::MAX))?;
+    ctx.charge_work(work, "scan NX object pairs")?;
+    let mut pairs = Vec::new();
+    for form in ObjectPairForm::ALL {
+        for offset in 0..bytes.len() {
+            if let Some(pair) = Binary64Pair::read(bytes, offset, form) {
+                ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
+            }
+        }
+    }
+    ctx.charge_work(u64_from_index(pairs.len()), "sort NX object pairs")?;
     pairs.sort_by_key(Binary64Pair::offset);
-    pairs
+    Ok(pairs)
 }
 
-pub(crate) fn sketch_pairs(bytes: &[u8]) -> Vec<Binary64Pair<SketchBinary64PairForm>> {
-    let mut pairs: Vec<_> = object_pairs(bytes)
-        .into_iter()
-        .map(|pair| Binary64Pair {
-            form: SketchBinary64PairForm::Object(pair.form),
-            offset: pair.offset,
-            values: pair.values,
-        })
-        .collect();
+pub(crate) fn sketch_pairs(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+) -> Result<Vec<Binary64Pair<SketchBinary64PairForm>>, CodecError> {
+    let mut pairs = Vec::new();
+    for pair in object_pairs(ctx, bytes)? {
+        ctx.push_retained_vec(
+            &mut pairs,
+            Binary64Pair {
+                form: SketchBinary64PairForm::Object(pair.form),
+                offset: pair.offset,
+                values: pair.values,
+                discriminator_byte_len: pair.discriminator_byte_len,
+                separator_width: pair.separator_width,
+            },
+            "NX binary64 pairs",
+        )?;
+    }
+    ctx.charge_work(u64_from_index(bytes.len()), "scan NX sketch pairs")?;
     for (offset, window) in bytes.windows(3).enumerate() {
         let [code, repeated, 0x41] = window else {
             continue;
@@ -218,16 +258,45 @@ pub(crate) fn sketch_pairs(bytes: &[u8]) -> Vec<Binary64Pair<SketchBinary64PairF
         if let Some(pair) =
             Binary64Pair::read(bytes, offset, SketchBinary64PairForm::Repeated(code))
         {
-            pairs.push(pair);
+            ctx.push_retained_vec(&mut pairs, pair, "NX binary64 pairs")?;
         }
     }
+    ctx.charge_work(u64_from_index(pairs.len()), "sort NX sketch pairs")?;
     pairs.sort_by_key(Binary64Pair::offset);
-    pairs
+    Ok(pairs)
 }
 
 #[cfg(test)]
 mod tests {
+    fn datum_plane_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::DatumPlanePairForm>> {
+        crate::test_support::with_decode_context(|ctx| super::datum_plane_pairs(ctx, bytes))
+            .unwrap()
+    }
+    fn object_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::ObjectPairForm>> {
+        crate::test_support::with_decode_context(|ctx| super::object_pairs(ctx, bytes)).unwrap()
+    }
+    fn sketch_pairs(bytes: &[u8]) -> Vec<super::Binary64Pair<super::SketchBinary64PairForm>> {
+        crate::test_support::with_decode_context(|ctx| super::sketch_pairs(ctx, bytes)).unwrap()
+    }
+
     use crate::test_support::test_bytes::shifted_f64_bytes;
+
+    #[test]
+    fn object_binary64_pairs_refuse_collection_limit() {
+        let mut bytes = vec![8, 2, 3, 1, 3, 1, 0xc0, 0x45, 4, 0, 0x80, 0x86, 2, 0, 3];
+        bytes.extend_from_slice(&shifted_f64_bytes(10.0));
+        bytes.push(0);
+        bytes.extend_from_slice(&shifted_f64_bytes(20.0));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
+        let error = super::object_pairs(&ctx, &bytes).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
 
     #[test]
     fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
@@ -239,7 +308,7 @@ mod tests {
         bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
         bytes.push(0);
         bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-        let pairs = crate::om::binary64_pair::datum_plane_pairs(&bytes);
+        let pairs = datum_plane_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), 4);
         assert_eq!(pairs[0].value_offsets(), [22, 31]);
@@ -250,7 +319,7 @@ mod tests {
         assert_eq!(pairs[0].atoms()[0].raw(), [0x30, 0x24, 0, 0, 0, 0, 0, 0]);
         assert_eq!(pairs[0].atoms()[1].raw(), [0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
         bytes[10] ^= 1;
-        assert!(crate::om::binary64_pair::datum_plane_pairs(&bytes).is_empty());
+        assert!(datum_plane_pairs(&bytes).is_empty());
     }
 
     #[test]
@@ -263,7 +332,7 @@ mod tests {
         bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
         bytes.push(0);
         bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-        let pairs = crate::om::binary64_pair::object_pairs(&bytes);
+        let pairs = object_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), 6);
         assert_eq!(pairs[0].value_offsets(), [21, 30]);
@@ -282,7 +351,7 @@ mod tests {
         extended.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
         extended.push(0);
         extended.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-        let extended_pairs = crate::om::binary64_pair::object_pairs(&extended);
+        let extended_pairs = object_pairs(&extended);
         assert_eq!(extended_pairs.len(), 1);
         assert_eq!(extended_pairs[0].discriminator().len(), 16);
         assert_eq!(extended_pairs[0].value_offsets(), [16, 25]);
@@ -292,7 +361,7 @@ mod tests {
         );
 
         bytes[29] = 1;
-        assert!(crate::om::binary64_pair::object_pairs(&bytes).is_empty());
+        assert!(object_pairs(&bytes).is_empty());
     }
 
     #[test]
@@ -310,7 +379,7 @@ mod tests {
         let second_offset = bytes.len();
         bytes.extend_from_slice(&shifted_f64_bytes(-20.0));
 
-        let pairs = crate::om::binary64_pair::sketch_pairs(&bytes);
+        let pairs = sketch_pairs(&bytes);
         assert_eq!(pairs.len(), 1);
         assert_eq!(pairs[0].offset(), discriminator_offset);
         assert_eq!(pairs[0].value_offsets(), [first_offset, second_offset]);
@@ -320,13 +389,13 @@ mod tests {
             pairs[0].discriminator(),
             bytes[discriminator_offset..first_offset].to_vec()
         );
-        assert!(crate::om::binary64_pair::object_pairs(&bytes).is_empty());
+        assert!(object_pairs(&bytes).is_empty());
 
         bytes[discriminator_offset + 1] = 0x15;
-        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+        assert!(sketch_pairs(&bytes).is_empty());
         bytes[discriminator_offset + 1] = 0x14;
         bytes.truncate(second_offset + 7);
-        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+        assert!(sketch_pairs(&bytes).is_empty());
     }
 
     #[test]
@@ -338,6 +407,6 @@ mod tests {
         bytes.extend_from_slice(&[0x30, 0x42, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]);
         bytes.extend_from_slice(&[0xd0, 0x29, 0x33, 0x32, 0x50, 0x20, 0x00, 0x00]);
 
-        assert!(crate::om::binary64_pair::sketch_pairs(&bytes).is_empty());
+        assert!(sketch_pairs(&bytes).is_empty());
     }
 }

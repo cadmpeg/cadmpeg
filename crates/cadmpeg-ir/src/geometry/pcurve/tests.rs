@@ -9,6 +9,89 @@ use crate::{
 };
 
 #[test]
+fn admitted_pcurve_parts_keep_rational_pole_storage() {
+    use crate::geometry::pcurve::PcurveNurbsPoles;
+
+    let original = pcurve();
+    let poles = original.pole_rows().clone();
+    let PcurveNurbsPoles::Rational { points } = &poles else {
+        panic!("fixture must be rational");
+    };
+    let storage = points.as_ptr();
+    let rebuilt = PcurveNurbs::from_admitted_rows(
+        original.degree(),
+        original.knots().clone(),
+        poles,
+        original.periodic(),
+    )
+    .unwrap();
+    let PcurveNurbsPoles::Rational { points } = rebuilt.pole_rows() else {
+        panic!("rebuilt pcurve must be rational");
+    };
+    assert_eq!(points.as_ptr(), storage);
+    assert_eq!(rebuilt, original);
+}
+
+#[test]
+fn admitted_pcurve_point_replacement_preserves_weights_and_rejects_short_lanes() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let prior = curve.clone();
+    assert!(!curve.replace_admitted_control_points(&[]));
+    assert_eq!(curve, prior);
+    let mut positions = Vec::new();
+    let mut index = 0;
+    while curve.pole_rows().point_at(index).is_some() {
+        positions.push(
+            FinitePoint2::new(Point2::new(
+                cadmpeg_core::convert::f64_from_index(index)
+                    .expect("test index is exactly representable"),
+                2.0,
+            ))
+            .unwrap(),
+        );
+        index += 1;
+    }
+    let weights = curve.weights();
+    assert!(curve.replace_admitted_control_points(&positions));
+    assert_eq!(curve.control_points(), positions);
+    assert_eq!(curve.weights(), weights);
+}
+
+#[test]
+fn pcurve_copy_refuses_knot_and_pole_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let source = pcurve();
+    let knot_count = u64::try_from(source.knots().len()).unwrap();
+    for (dimension, limit) in [
+        (ResourceDimension::CollectionItems, knot_count - 1),
+        (ResourceDimension::CollectionItems, knot_count + 1),
+        (ResourceDimension::RetainedBytes, knot_count * 8 - 1),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+            _ => panic!("unexpected test dimension"),
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test input fits input limit");
+        let error = source
+            .try_clone_for_decode(&ctx, "copy pcurve")
+            .expect_err("copy exceeds resource limit");
+        let CodecError::ResourceLimit(refusal) = error else {
+            panic!("expected resource refusal, got {error:?}");
+        };
+        assert_eq!(refusal.dimension, dimension);
+        assert_eq!(refusal.operation, "copy pcurve");
+    }
+}
+
+#[test]
 fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
     use crate::geometry::pcurve::{CirclePcurve, EllipsePcurve, HyperbolaPcurve, ParabolaPcurve};
     use crate::scalar::PositiveReal;
@@ -50,8 +133,7 @@ fn hypot_axes_build_pcurves_without_changing_admitted_coordinates() {
 fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
     let mut pcurve = pcurve();
     let original = pcurve.clone();
-    let refusal = pcurve.edit_control_points(|point| {
-        point.u = 9.0;
+    let refusal = pcurve.try_map_control_points(|_, _| {
         Err(crate::geometry::nurbs::NurbsError::EditRefused(
             "caller refused this pole".into(),
         ))
@@ -67,6 +149,9 @@ fn a_refused_pcurve_pole_edit_keeps_the_prior_poles() {
 
 #[test]
 fn in_place_pcurve_pole_scale_refuses_atomically() {
+    use crate::geometry::nurbs::NurbsError;
+    use crate::units::FinitePoint2;
+
     let mut nurbs = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -77,13 +162,86 @@ fn in_place_pcurve_pole_scale_refuses_atomically() {
     .expect("finite source poles");
     let original = nurbs.clone();
     let error = nurbs
-        .scale_control_points_in_place(crate::scalar::PositiveReal::new(2.0).unwrap())
+        .try_map_control_points(|_, point| {
+            let raw = point.get();
+            FinitePoint2::new(Point2::new(raw.u * 2.0, raw.v * 2.0))
+                .ok_or_else(|| NurbsError::Structure("non-finite control point".into()))
+        })
         .expect_err("second pole overflows");
-    assert!(matches!(
-        error,
-        crate::geometry::nurbs::NurbsError::Structure(_)
-    ));
+    assert!(matches!(error, NurbsError::Structure(_)));
     assert_eq!(nurbs, original);
+}
+
+#[test]
+fn polynomial_pcurve_map_updates_all_poles_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let original = curve.clone();
+    let refusal = curve.try_map_control_points(|index, point| {
+        if index == 1 {
+            Err("last pole")
+        } else {
+            FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                .ok_or("non-finite point")
+        }
+    });
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(|index, point| {
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
+        })
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), None);
+}
+
+#[test]
+fn rational_pcurve_map_updates_all_poles_keeps_weights_and_refuses_last_atomically() {
+    use crate::units::FinitePoint2;
+
+    let mut curve = pcurve();
+    let original = curve.clone();
+    let weights = curve.weights();
+    let refusal = curve.try_map_control_points(|index, point| {
+        if index == 1 {
+            Err("last pole")
+        } else {
+            FinitePoint2::new(Point2::new(point.get().u + 5.0, point.get().v))
+                .ok_or("non-finite point")
+        }
+    });
+    assert_eq!(refusal, Err("last pole"));
+    assert_eq!(curve, original);
+    curve
+        .try_map_control_points(|index, point| {
+            FinitePoint2::new(Point2::new(
+                point.get().u + if index == 0 { 0.0 } else { 1.0 },
+                point.get().v * 2.0,
+            ))
+            .ok_or("non-finite point")
+        })
+        .unwrap();
+    assert_eq!(
+        curve.control_points(),
+        vec![Point2::new(1.0, 4.0), Point2::new(4.0, 8.0)]
+    );
+    assert_eq!(curve.weights(), weights);
 }
 
 #[test]
@@ -115,7 +273,11 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     use crate::geometry::pcurve::{PcurveNurbsPoles, WeightedPole2};
     use crate::scalar::NonZeroReal;
     use crate::units::FinitePoint2;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let knots = vec![0.0, 0.0, 1.0, 1.0];
     let points = [Point2::new(1.0, 2.0), Point2::new(3.0, 4.0)];
     let weights = [1.0, 2.0];
@@ -127,7 +289,7 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
         false,
     )
     .expect("raw pcurve");
-    let admitted = PcurveNurbs::from_admitted_parts(
+    let admitted = PcurveNurbs::from_admitted_rows(
         1,
         KnotValue::admit(knots).expect("admitted knots"),
         PcurveNurbsPoles::Rational {
@@ -145,13 +307,17 @@ fn admitted_pcurve_nurbs_parts_keep_the_raw_constructor_geometry() {
     .expect("admitted pcurve");
     assert_eq!(admitted, raw);
     assert_eq!(
-        admitted.try_clone().expect("fallible rational copy"),
+        admitted
+            .try_clone_for_decode(&ctx, "copy rational pcurve")
+            .expect("charged rational copy"),
         admitted
     );
 }
 
 #[test]
 fn polynomial_pcurve_nurbs_try_clone_keeps_its_admitted_lanes() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
     let polynomial = PcurveNurbs::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],
@@ -160,8 +326,13 @@ fn polynomial_pcurve_nurbs_try_clone_keeps_its_admitted_lanes() {
         false,
     )
     .expect("polynomial pcurve");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     assert_eq!(
-        polynomial.try_clone().expect("fallible polynomial copy"),
+        polynomial
+            .try_clone_for_decode(&ctx, "copy polynomial pcurve")
+            .expect("charged polynomial copy"),
         polynomial
     );
 }

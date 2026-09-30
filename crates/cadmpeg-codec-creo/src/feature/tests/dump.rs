@@ -138,7 +138,7 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -189,7 +189,7 @@ fn decode_resolves_feature_dependencies_independently_of_storage_order() {
             .collect::<Vec<_>>(),
         vec!["creo:model:feature#1", "creo:model:feature#2"]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -515,7 +515,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
         ]
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -834,7 +834,7 @@ fn decode_retains_bounded_unresolved_dimension_value_tokens() {
                  scalar encodings remain unresolved",
             )
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -902,7 +902,7 @@ fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
                 cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
             ))
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

@@ -105,7 +105,7 @@ pub(super) fn thicken_feature_definition(
     )?;
     let faces = if let Some(transitions) = transitions.as_ref() {
         let mut source_ids = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut source_ids,
             transitions.len(),
             "creo thicken source surface IDs",
@@ -131,7 +131,7 @@ pub(super) fn thicken_feature_definition(
                 "creo thicken face IDs",
             )?;
             let face = FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-            ctx.try_reserve_items(&mut faces, 1, "creo thicken face identities")?;
+            ctx.reserve_vec(&mut faces, 1, "creo thicken face identities")?;
             faces.push(face);
         }
         if faces
@@ -204,7 +204,7 @@ fn hole_face_selection(
         drop(candidate_id);
         drop(candidate_reservation);
         let mut faces = Vec::new();
-        ctx.try_reserve_items(&mut faces, 1, "creo hole face identities")?;
+        ctx.reserve_vec(&mut faces, 1, "creo hole face identities")?;
         faces.push(face);
         return Ok(FaceSelection::Resolved { faces, native });
     }
@@ -237,7 +237,7 @@ fn admitted_hole_placements(
 ) -> Result<Vec<HolePlacement>, cadmpeg_core::CodecError> {
     let mut placements = Vec::new();
     for placement in candidates {
-        ctx.try_reserve_items(&mut placements, 1, "creo hole placements")?;
+        ctx.reserve_vec(&mut placements, 1, "creo hole placements")?;
         placements.push(placement);
     }
     Ok(placements)
@@ -607,7 +607,7 @@ pub(in super::super) fn schema_feature_definition(
     if schema_class == Some(SchemaClass::Round) {
         let mut observed_radii = round_observed_radii(ctx, scan, feature_id)?;
         let placed_radii = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut observed_radii,
             placed_radii.len(),
             "creo feature round samples",

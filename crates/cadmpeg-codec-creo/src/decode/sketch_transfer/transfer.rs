@@ -247,7 +247,7 @@ pub(in super::super) fn transfer_sketches(
                     .get(&segment.offset)
                     .and_then(Option::as_ref)
                     .map(|geometry| {
-                        geometry.copy_admitted(ctx, "creo resolved section geometry copy")
+                        geometry.try_clone_for_decode(ctx, "creo resolved section geometry copy")
                     })
                     .transpose()?
             };
@@ -373,7 +373,7 @@ pub(in super::super) fn transfer_sketches(
                 ),
                 "creo unresolved saved section loss text",
             )?;
-            ctx.try_reserve_items(losses, 1, "creo unresolved saved section losses")?;
+            ctx.reserve_vec(losses, 1, "creo unresolved saved section losses")?;
             losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
         }
         coverage.record_resolved_geometry(resolved_segment_offsets.len());
@@ -497,14 +497,14 @@ pub(in super::super) fn transfer_sketches(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             ) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut generated_profile_geometries,
                     1,
                     "creo generated profile geometry rows",
                 )?;
                 generated_profile_geometries.push((
                     segment.external_id,
-                    geometry.copy_admitted(ctx, "creo generated profile geometry copy")?,
+                    geometry.try_clone_for_decode(ctx, "creo generated profile geometry copy")?,
                 ));
             }
         }
@@ -530,14 +530,14 @@ pub(in super::super) fn transfer_sketches(
                 &scan.features.entity_tables,
                 &scan.surfaces.rows,
             ) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut generated_profile_geometries,
                     1,
                     "creo generated profile geometry rows",
                 )?;
                 generated_profile_geometries.push((
                     segment.external_id,
-                    geometry.copy_admitted(ctx, "creo generated profile geometry copy")?,
+                    geometry.try_clone_for_decode(ctx, "creo generated profile geometry copy")?,
                 ));
             }
         }
@@ -548,7 +548,7 @@ pub(in super::super) fn transfer_sketches(
                 profile_entities.insert(
                     entity_use
                         .entity
-                        .copy_admitted(ctx, "creo profile entity identities")?,
+                        .try_clone_for_decode(ctx, "creo profile entity identities")?,
                 );
             }
         }
@@ -563,11 +563,11 @@ pub(in super::super) fn transfer_sketches(
                         profile_entities.insert(
                             entity_use
                                 .entity
-                                .copy_admitted(ctx, "creo profile entity identities")?,
+                                .try_clone_for_decode(ctx, "creo profile entity identities")?,
                         );
                     }
                 }
-                ctx.try_reserve_items(&mut profiles, 1, "creo merged sketch profile rows")?;
+                ctx.reserve_vec(&mut profiles, 1, "creo merged sketch profile rows")?;
                 profiles.push(profile);
             }
         }
@@ -616,7 +616,7 @@ pub(in super::super) fn transfer_sketches(
                 Exactness::ByteExact,
             )?;
             ctx.charge_entities(1, "admit Creo model sketch_entities")?;
-            ctx.try_reserve_items(&mut entities, 1, "creo solver-only sketch entities")?;
+            ctx.reserve_vec(&mut entities, 1, "creo solver-only sketch entities")?;
             let native_kind = match solver_only_section_entity_family(definition, external_id) {
                 Some(SectionEntityIncidenceFamily::Point) => "point",
                 Some(SectionEntityIncidenceFamily::BoundedCurve) => "bounded_curve",
@@ -629,7 +629,8 @@ pub(in super::super) fn transfer_sketches(
             entities.push(
                 SketchEntity::new(
                     id,
-                    sketch_id.copy_admitted(ctx, "creo solver-only entity sketch identity")?,
+                    sketch_id
+                        .try_clone_for_decode(ctx, "creo solver-only entity sketch identity")?,
                     SketchGeometry::native(
                         cadmpeg_core::text::NonBlankString::new(
                             ctx.copy_retained_text(native_kind, "creo solver-only native kind")?,
@@ -674,7 +675,10 @@ pub(in super::super) fn transfer_sketches(
             .flat_map(|table| table.rows.centered_lines())
         {
             let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+                ctx.format_retained(
+                    format_args!("{}", segment.external_id),
+                    "creo verhor entity suffix",
+                )?
             } else {
                 ctx.format_retained(
                     format_args!("centered_line:offset:{}", segment.offset),
@@ -710,7 +714,10 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             };
             let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+                ctx.format_retained(
+                    format_args!("{}", segment.external_id),
+                    "creo verhor entity suffix",
+                )?
             } else {
                 ctx.format_retained(
                     format_args!("bounded_curve:offset:{}", segment.offset),
@@ -746,7 +753,10 @@ pub(in super::super) fn transfer_sketches(
                 continue;
             };
             let suffix = if unique_segment_ids.contains(&segment.external_id) {
-                ctx.format_retained(segment.external_id, "creo verhor entity suffix")?
+                ctx.format_retained(
+                    format_args!("{}", segment.external_id),
+                    "creo verhor entity suffix",
+                )?
             } else {
                 ctx.format_retained(
                     format_args!("reference_line:offset:{}", segment.offset),
@@ -933,7 +943,7 @@ pub(in super::super) fn transfer_sketches(
                 )?;
                 continue;
             }
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut reconciled_equation_constraints,
                 1,
                 "creo reconciled equation rows",
@@ -1024,7 +1034,7 @@ pub(in super::super) fn transfer_sketches(
             ctx,
             ir,
             Sketch {
-                id: sketch_id.copy_admitted(ctx, "creo model sketch identity copy")?,
+                id: sketch_id.try_clone_for_decode(ctx, "creo model sketch identity copy")?,
                 name: None,
                 configuration: None,
                 visible: None,
@@ -1063,7 +1073,10 @@ pub(in super::super) fn transfer_sketches(
                 evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                     IrFeatureDefinition::Operation(IrFeatureOperation::Sketch {
                         sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(
-                            sketch_id.copy_admitted(ctx, "creo sketch feature binding identity")?,
+                            sketch_id.try_clone_for_decode(
+                                ctx,
+                                "creo sketch feature binding identity",
+                            )?,
                         )),
                     }),
                 ),
@@ -1092,16 +1105,16 @@ fn emitted_entity_views(
         ids.insert(
             entity
                 .id()
-                .copy_admitted(ctx, "creo emitted sketch entity IDs")?,
+                .try_clone_for_decode(ctx, "creo emitted sketch entity IDs")?,
         );
         ctx.charge_collection_items(1, "creo emitted sketch geometry nodes")?;
         geometry.insert(
             entity
                 .id()
-                .copy_admitted(ctx, "creo emitted sketch geometry keys")?,
+                .try_clone_for_decode(ctx, "creo emitted sketch geometry keys")?,
             entity
                 .geometry
-                .copy_admitted(ctx, "creo emitted sketch geometry")?,
+                .try_clone_for_decode(ctx, "creo emitted sketch geometry")?,
         );
     }
     Ok((ids, geometry))
@@ -1113,7 +1126,7 @@ fn admit_constraint_row(
     constraint: SketchConstraint,
 ) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_entities(1, "admit Creo model sketch_constraints")?;
-    ctx.try_reserve_items(rows, 1, "creo sketch constraint rows")?;
+    ctx.reserve_vec(rows, 1, "creo sketch constraint rows")?;
     rows.push(constraint);
     Ok(())
 }
@@ -1152,7 +1165,7 @@ fn emit_verhor_constraint(
     )?;
     let constraint = SketchConstraint {
         id,
-        sketch: sketch.copy_admitted(ctx, "creo constraint sketch identity")?,
+        sketch: sketch.try_clone_for_decode(ctx, "creo constraint sketch identity")?,
         definition,
         name: None,
         driving: None,
@@ -1177,7 +1190,7 @@ fn available_parameter_ids<'a>(
     for id in existing {
         if !ids.contains(id) {
             ctx.charge_collection_items(1, "creo available parameter ID nodes")?;
-            ids.insert(id.copy_admitted(ctx, "creo available parameter identities")?);
+            ids.insert(id.try_clone_for_decode(ctx, "creo available parameter identities")?);
         }
     }
     for id in planned {

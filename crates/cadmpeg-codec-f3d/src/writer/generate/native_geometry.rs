@@ -2613,7 +2613,7 @@ fn encode_native_skin_surface(
     native_enum(bytes, construction.surface_direction);
     native_i64(bytes, construction.count);
     native_f64(bytes, construction.parameter);
-    native_i64(bytes, construction.layout.inner_count());
+    native_i64(bytes, construction.layout.inner_count()?);
     match &construction.layout {
         SkinSurfaceLayout::Profiles {
             profiles,
@@ -5448,7 +5448,7 @@ pub(crate) fn native_procedural_curve(
                 }
             }
         }
-        match first_pcurve {
+        match first_pcurve.as_ref() {
             cadmpeg_ir::geometry::SpringPcurve::Pcurve(pcurve) => {
                 native_spring_pcurve(bytes, target, &supports[0], pcurve)?;
             }
@@ -5984,7 +5984,7 @@ mod pcurve_chart_tests {
                 let SpringLayout::ContextFirst { first_pcurve, .. } = &mut layout else {
                     panic!("fixture must retain its context-first spring layout");
                 };
-                *first_pcurve = SpringPcurve::Pcurve(PcurveGeometry::Line(
+                **first_pcurve = SpringPcurve::Pcurve(PcurveGeometry::Line(
                     LinePcurve::try_new(Point2::new(origin, 0.0), Point2::new(direction, 0.0))
                         .expect("finite nonzero line parameters"),
                 ));
@@ -6984,7 +6984,16 @@ mod revision_surface_tail_tests {
         )
         .expect("valid single-record byte fixture");
         let mut cur = cadmpeg_asm::nurbs::toks::Cur::at(&toks, 0);
-        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&mut cur)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .expect("test decode context");
+        let tail = cadmpeg_asm::nurbs::proc_surface::revision_surface_tail(&ctx, &mut cur)
+            .transpose()
+            .expect("resource allocation")
             .expect("decoded parameterized tail");
         assert_eq!(cur.pos(), toks.len());
         let cadmpeg_asm::nurbs::proc_surface::RevisionSurfaceCache::Parameterized(actual) =

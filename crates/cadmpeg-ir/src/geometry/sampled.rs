@@ -4,6 +4,8 @@
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -62,21 +64,25 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
-    /// Copy admitted vertices and triangle rows through the caller's budget.
-    pub fn copy_admitted(
+    /// Admitted polygon vertices in source order.
+    pub fn vertices(&self) -> &[FinitePoint3] {
+        &self.vertices
+    }
+
+    /// Triangle vertex indexes in source order.
+    pub fn triangles(&self) -> &[[u32; 3]] {
+        &self.triangles
+    }
+
+    /// Copy both sampled lanes through the decode collection budget.
+    pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let mut vertices = Vec::new();
-        ctx.try_reserve_items(&mut vertices, self.vertices.len(), operation)?;
-        vertices.extend_from_slice(&self.vertices);
-        let mut triangles = Vec::new();
-        ctx.try_reserve_items(&mut triangles, self.triangles.len(), operation)?;
-        triangles.extend_from_slice(&self.triangles);
+    ) -> Result<Self, CodecError> {
         Ok(Self {
-            vertices,
-            triangles,
+            vertices: super::copy_decode_slice(&self.vertices, ctx, operation)?,
+            triangles: super::copy_decode_slice(&self.triangles, ctx, operation)?,
             chordal_deflection: self.chordal_deflection,
         })
     }
@@ -485,31 +491,23 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
-    /// Copy admitted sample rows through the caller's budget.
-    pub fn copy_admitted(
+    /// Copy the sample lane through the decode collection budget.
+    pub fn try_clone_for_decode(
         &self,
-        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        ctx: &DecodeContext<'_>,
         operation: &'static str,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<Self, CodecError> {
         let samples = match &self.samples {
-            PolylineSamples::Unparameterized { points } => {
-                let mut copy = Vec::new();
-                ctx.try_reserve_items(&mut copy, points.len(), operation)?;
-                copy.extend_from_slice(points);
-                PolylineSamples::Unparameterized {
-                    points: crate::features::NonEmptyMembers::try_from(copy)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                }
-            }
-            PolylineSamples::Parameterized { vertices } => {
-                let mut copy = Vec::new();
-                ctx.try_reserve_items(&mut copy, vertices.len(), operation)?;
-                copy.extend_from_slice(vertices);
-                PolylineSamples::Parameterized {
-                    vertices: crate::features::NonEmptyMembers::try_from(copy)
-                        .map_err(cadmpeg_core::CodecError::malformed)?,
-                }
-            }
+            PolylineSamples::Unparameterized { points } => PolylineSamples::Unparameterized {
+                points: super::copy_decode_slice(points, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
+            PolylineSamples::Parameterized { vertices } => PolylineSamples::Parameterized {
+                vertices: super::copy_decode_slice(vertices, ctx, operation)?
+                    .try_into()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, 0, 0))?,
+            },
         };
         Ok(Self {
             samples,
@@ -639,9 +637,9 @@ impl PolylineCurve {
     #[must_use]
     pub fn parameter_at(&self, index: usize) -> Option<FiniteReal> {
         match &self.samples {
-            PolylineSamples::Unparameterized { points } => {
-                points.get(index).map(|_| FiniteReal::from_index(index))
-            }
+            PolylineSamples::Unparameterized { points } => points
+                .get(index)
+                .and_then(|_| FiniteReal::from_index(index)),
             PolylineSamples::Parameterized { vertices } => {
                 vertices.get(index).map(|row| row.parameter)
             }

@@ -333,7 +333,7 @@ fn generated_null_support_spring_decodes_and_writes_source_less() {
         cadmpeg_ir::geometry::SpringSupport::Ranges([[-6.0, 7.0], [-8.0, 9.0]])
     );
     assert_eq!(
-        *first_pcurve,
+        **first_pcurve,
         cadmpeg_ir::geometry::SpringPcurve::Range([-10.0, 11.0])
     );
     assert_eq!(*second_pcurve, None);
@@ -705,10 +705,18 @@ fn nurbs_pcurve_block_decodes_without_length_scaling() {
 
 #[test]
 fn ref_pcurve_resolves_intcurve_uv_slot() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut intcurve = generated_curve_block();
     intcurve.extend_from_slice(&generated_pcurve_block());
 
     let (pcurve, _) = cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+        &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &intcurve,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -721,11 +729,14 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
         )
         .expect("valid single-record byte fixture"),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .expect("intcurve slot 2 carries the UV cache");
     assert_eq!(pcurve.control_points()[0].u, 0.25);
     assert_eq!(pcurve.control_points()[1].v, 1.5);
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+            &ctx,
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &intcurve,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
@@ -738,12 +749,21 @@ fn ref_pcurve_resolves_intcurve_uv_slot() {
             )
             .expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .is_none()
     );
 }
 
 #[test]
 fn ref_pcurve_rejects_orphan_typed_slot() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let mut target = b"\x0f\x0d\x0bint_int_cur".to_vec();
     target.extend_from_slice(&generated_curve_block());
     target.extend_from_slice(&generated_pcurve_block());
@@ -756,6 +776,7 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
 
     assert!(
         cadmpeg_asm::nurbs::proc_curve::pcurve_for_selector_with_chart(
+            &ctx,
             &cadmpeg_asm::nurbs::toks::lex_test_span(
                 &source,
                 cadmpeg_asm::kernel_header::RefWidth::Eight
@@ -768,6 +789,8 @@ fn ref_pcurve_rejects_orphan_typed_slot() {
             )
             .expect("valid single-record byte fixture"),
         )
+        .transpose()
+        .expect("resource allocation did not fail")
         .is_none(),
         "a pcurve without its typed support surface is not a carrier"
     );
@@ -792,7 +815,8 @@ fn decode_attaches_generated_pcurve_to_its_coedge() {
             .count(),
         1
     );
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -1163,14 +1187,13 @@ fn generated_f3d_scopes_inline_pcurve_edits() {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected NURBS pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.75;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     let cadmpeg_ir::geometry::pcurve::PcurveMetadata::AsmInline { form: inline } =
@@ -1202,14 +1225,13 @@ fn generated_f3d_rewrites_rational_pcurve_weights() {
     else {
         panic!("expected rational pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.25;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     let mut weights = nurbs.pole_rows().weights();
@@ -1262,17 +1284,16 @@ fn generated_f3d_rewrites_ref_form_pcurve_geometry_and_range() {
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
         panic!("expected ref-form NURBS pcurve")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
+        .try_map_control_points(|pole_index, point| {
+            let mut point = point.get();
             if pole_index == 0 {
                 point.u = -0.75;
             }
             if pole_index == 1 {
                 point.v = 3.5;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::units::FinitePoint2::new(point).ok_or(())
         })
         .unwrap();
     edit::replace(nurbs, |previous| {

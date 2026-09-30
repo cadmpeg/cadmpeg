@@ -2,6 +2,43 @@
 //! Absence spellings of the flattened scope-record readers.
 
 #[test]
+fn sketch_entity_binding_borrowed_wire_matches_owned_wire_bytes() {
+    let binding: super::DesignSketchEntityBinding = serde_json::from_str(
+        r#"{"entity_id":"0_35","entity_suffix":35,"entity_reference_offset":12}"#,
+    )
+    .unwrap();
+    let owned = super::DesignSketchEntityBindingWire::from(binding.clone());
+    assert_eq!(
+        serde_json::to_vec(&binding).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+}
+
+#[test]
+fn sketch_entity_binding_native_retained_limit_refuses_before_record_clone() {
+    #[derive(serde::Serialize)]
+    struct NativeRecord<'a> {
+        id: &'static str,
+        binding: &'a super::DesignSketchEntityBinding,
+    }
+
+    let binding: super::DesignSketchEntityBinding = serde_json::from_str(
+        r#"{"entity_id":"0_35","entity_suffix":35,"entity_reference_offset":12}"#,
+    )
+    .unwrap();
+    let record = NativeRecord {
+        id: "f3d:native:sketch-binding#0",
+        binding: &binding,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::SKETCH_ENTITY_BINDING_CLONE_COUNT.with(|count| count.set(0)),
+        || super::SKETCH_ENTITY_BINDING_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
+#[test]
 fn parameter_scope_borrowed_wire_matches_owned_json_bytes() {
     let scope = super::DesignParameterScope::empty(
         "f3d:design:scope#1",

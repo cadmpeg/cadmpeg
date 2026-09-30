@@ -35,6 +35,73 @@ macro_rules! selection_field_deserializer {
     };
 }
 
+macro_rules! clone_copy_for_decode {
+    ($type:ty) => {
+        impl crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                _operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                Ok(*self)
+            }
+        }
+    };
+}
+
+macro_rules! clone_record_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; { $($field:ident),* }) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self { $($field),* } = self;
+                Ok(Self { $($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),* })
+            }
+        }
+    };
+    ($type:ty $(, [$($generic:ident),+])?; ( $($field:ident),* )) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                let Self($($field),*) = self;
+                Ok(Self($(crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*))
+            }
+        }
+    };
+}
+
+macro_rules! clone_enum_for_decode {
+    ($type:ty $(, [$($generic:ident),+])?; {
+        $($variant:ident $( ( $($tuple:ident),* ) )? $( { $($field:ident),* } )?),* $(,)?
+    }) => {
+        impl $(<$($generic: crate::features::decode_clone::CloneForDecode),+>)?
+            crate::features::decode_clone::CloneForDecode for $type {
+            fn clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                clone_operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                match self {
+                    $(Self::$variant $(($($tuple),*))? $({$($field),*})? => Ok(Self::$variant
+                        $(($(crate::features::decode_clone::CloneForDecode::clone_for_decode($tuple, ctx, clone_operation)?),*))?
+                        $({$($field: crate::features::decode_clone::CloneForDecode::clone_for_decode($field, ctx, clone_operation)?),*})?
+                    ),)*
+                }
+            }
+        }
+    };
+}
+
+mod decode_clone;
+
 pub mod edge_treatments;
 use edge_treatments::{ChamferGroup, FilletGroup, FullRoundFilletGroup, RadiusSpec};
 
@@ -4036,6 +4103,15 @@ impl FeatureOperation {
 }
 
 impl FeatureDefinition {
+    /// Copy the admitted definition after charging each owned field allocation.
+    pub fn clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        decode_clone::CloneForDecode::clone_for_decode(self, ctx, operation)
+    }
+
     /// The operation this definition performs, its post-processing layer aside.
     #[must_use]
     pub const fn operation(&self) -> &FeatureOperation {
@@ -6416,16 +6492,16 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for DistinctMembers<T> {
 }
 
 impl<T: PartialEq> DistinctMembers<T> {
-    /// Validates source-order uniqueness without allocating another collection.
-    ///
-    /// The caller owns admission and fallible reservation of `values`.
-    pub fn try_from_reserved_vec(values: Vec<T>) -> Result<Self, &'static str> {
-        for (index, member) in values.iter().enumerate() {
-            if values[..index].contains(member) {
-                return Err("members must be distinct");
-            }
+    /// Wrap an already allocated sequence after checking distinctness without allocating.
+    pub fn try_from_unique_vec(value: Vec<T>) -> Result<Self, &'static str> {
+        if value
+            .iter()
+            .enumerate()
+            .any(|(index, member)| value[..index].contains(member))
+        {
+            return Err("members must be distinct");
         }
-        Ok(Self(values))
+        Ok(Self(value))
     }
 
     /// Inserts a member unless it is already present, and returns whether it was added.
@@ -6449,6 +6525,14 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
+    /// Reserve storage before inserting already admitted members.
+    pub fn try_reserve(
+        &mut self,
+        additional: usize,
+    ) -> Result<(), std::collections::TryReserveError> {
+        self.0.try_reserve(additional)
+    }
+
     /// Removes all members.
     pub fn clear(&mut self) {
         self.0.clear();
@@ -6526,6 +6610,32 @@ impl<T: Eq + std::hash::Hash> TryFrom<Vec<T>> for SelectionMembers<T> {
     }
 }
 
+impl<T: Eq + std::hash::Hash> SelectionMembers<T> {
+    /// Admit decoded members after charging the temporary uniqueness index.
+    pub fn try_from_charged(
+        value: Vec<T>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        let count =
+            u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = HashSet::new();
+        unique
+            .try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for member in &value {
+            if !unique.insert(member) {
+                return Ok(Err(BodySelectionError::RepeatedBody));
+            }
+        }
+        Ok(Ok(Self(value)))
+    }
+}
+
 impl<T> SelectionMembers<T> {
     /// The selected members in source order.
     pub fn as_slice(&self) -> &[T] {
@@ -6585,6 +6695,33 @@ impl TryFrom<Vec<String>> for NativeSelections {
 }
 
 impl NativeSelections {
+    /// Admit decoded native names after charging the temporary uniqueness index.
+    pub fn try_from_charged(
+        value: Vec<String>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, BodySelectionError>, cadmpeg_core::CodecError> {
+        if value.is_empty() {
+            return Ok(Err(BodySelectionError::Empty));
+        }
+        if value.iter().any(|name| name.trim().is_empty()) {
+            return Ok(Err(BodySelectionError::BlankNativeMember));
+        }
+        let count =
+            u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = HashSet::new();
+        unique
+            .try_reserve(value.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for name in &value {
+            if !unique.insert(name) {
+                return Ok(Err(BodySelectionError::RepeatedNativeMember));
+            }
+        }
+        Ok(Ok(Self(value)))
+    }
+
     /// The native names in source order.
     pub fn as_slice(&self) -> &[String] {
         &self.0

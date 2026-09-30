@@ -179,7 +179,7 @@ fn expression_dependency_reaches(
         }
         if !visited[index] {
             visited[index] = true;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut pending,
                 dependencies[index].len(),
                 "creo curve-expression pending dependencies",
@@ -202,8 +202,10 @@ fn curve_expression_parameter_order(
     )?;
     for (row, assignment) in dependencies.iter_mut().zip(&record.assignments) {
         for name in &assignment.dependencies {
-            let (mut key, _reservation) =
-                ctx.copy_scoped_text(name, "creo curve-expression ordering lookup")?;
+            let (mut key, _reservation) = ctx.format_scoped(
+                format_args!("{name}"),
+                "creo curve-expression ordering lookup",
+            )?;
             key.make_ascii_lowercase();
             let Some(&index) = unique_assignment_indices.get(&key) else {
                 continue;
@@ -211,7 +213,7 @@ fn curve_expression_parameter_order(
             if row.contains(&index) {
                 continue;
             }
-            ctx.try_reserve_items(row, 1, "creo curve-expression dependency indices")?;
+            ctx.reserve_vec(row, 1, "creo curve-expression dependency indices")?;
             row.push(index);
         }
     }
@@ -219,10 +221,11 @@ fn curve_expression_parameter_order(
     for (consumer, dependency_indices) in dependencies.iter().enumerate() {
         for &dependency in dependency_indices {
             if expression_dependency_reaches(ctx, &dependencies, dependency, consumer)? {
-                ctx.try_collection(1, "creo curve-expression cyclic edges", || {
-                    cyclic_edges.try_reserve(1)
-                })?;
-                cyclic_edges.insert((consumer, dependency));
+                ctx.insert_hash_set(
+                    &mut cyclic_edges,
+                    (consumer, dependency),
+                    "creo curve-expression cyclic edges",
+                )?;
             }
         }
     }
@@ -321,7 +324,7 @@ fn curve_expression_parameter_names(
         } else {
             None
         };
-        ctx.try_reserve_items(&mut names, 1, "creo curve-expression parameter name slots")?;
+        ctx.reserve_vec(&mut names, 1, "creo curve-expression parameter name slots")?;
         names.push(name);
     }
     Ok(names)
@@ -379,7 +382,7 @@ fn curve_expression_emitted_ordinals(
         .filter(|assignment| assignment.parameter_target().is_some())
         .count();
     let mut indices = Vec::new();
-    ctx.try_reserve_items(&mut indices, count, "creo curve-expression emitted indices")?;
+    ctx.reserve_vec(&mut indices, count, "creo curve-expression emitted indices")?;
     for (index, assignment) in record.assignments.iter().enumerate() {
         if assignment.parameter_target().is_some() {
             indices.push(index);
@@ -532,8 +535,10 @@ fn curve_expression_properties(
         ctx,
         &assignment.dependencies,
         |name| {
-            let (mut key, _reservation) =
-                ctx.copy_scoped_text(name, "creo curve-expression external lookup")?;
+            let (mut key, _reservation) = ctx.format_scoped(
+                format_args!("{name}"),
+                "creo curve-expression external lookup",
+            )?;
             key.make_ascii_lowercase();
             Ok(key != "t"
                 && !assignment_indices_by_name.contains_key(&key)
@@ -545,8 +550,10 @@ fn curve_expression_properties(
         ctx,
         &assignment.dependencies,
         |name| {
-            let (mut key, _reservation) =
-                ctx.copy_scoped_text(name, "creo curve-expression ambiguous lookup")?;
+            let (mut key, _reservation) = ctx.format_scoped(
+                format_args!("{name}"),
+                "creo curve-expression ambiguous lookup",
+            )?;
             key.make_ascii_lowercase();
             Ok(matches!(assignment_indices_by_name.get(&key), Some(None)))
         },
@@ -624,14 +631,16 @@ fn curve_expression_properties(
     }
     let mut cyclic_dependencies = Vec::new();
     for name in &assignment.dependencies {
-        let (mut key, _reservation) =
-            ctx.copy_scoped_text(name, "creo curve-expression cyclic lookup")?;
+        let (mut key, _reservation) = ctx.format_scoped(
+            format_args!("{name}"),
+            "creo curve-expression cyclic lookup",
+        )?;
         key.make_ascii_lowercase();
         if unique_assignment_indices
             .get(&key)
             .is_some_and(|dependency| cyclic_edges.contains(&(assignment_ordinal, *dependency)))
         {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut cyclic_dependencies,
                 1,
                 "creo curve-expression cyclic dependency names",
@@ -711,8 +720,10 @@ fn curve_expression_parameter_dependencies(
     let mut dependencies = Vec::new();
     let mut dimension_dependencies = Vec::new();
     for name in &assignment.dependencies {
-        let (mut key, _key_reservation) =
-            ctx.copy_scoped_text(name, "creo curve-expression dependency key")?;
+        let (mut key, _key_reservation) = ctx.format_scoped(
+            format_args!("{name}"),
+            "creo curve-expression dependency key",
+        )?;
         key.make_ascii_lowercase();
         if let Some(&dependency) = unique_assignment_indices.get(&key) {
             if cyclic_edges.contains(&(assignment_ordinal, dependency))
@@ -722,7 +733,7 @@ fn curve_expression_parameter_dependencies(
             }
             ctx.charge_collection_items(1, "creo curve-expression seen dependencies")?;
             seen.insert(dependency);
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut dependencies,
                 1,
                 "creo curve-expression parameter dependencies",
@@ -743,7 +754,7 @@ fn curve_expression_parameter_dependencies(
         if dependencies.contains(parameter) || dimension_dependencies.contains(&parameter) {
             continue;
         }
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut dimension_dependencies,
             1,
             "creo curve-expression dimension candidates",
@@ -751,7 +762,7 @@ fn curve_expression_parameter_dependencies(
         dimension_dependencies.push(parameter);
     }
     for parameter in dimension_dependencies {
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut dependencies,
             1,
             "creo curve-expression dimension dependencies",
@@ -813,7 +824,7 @@ pub(super) fn transfer_curve_expression_features(
         let parameter_names = curve_expression_parameter_names(ctx, &record.assignments)?;
         let emitted_ordinals = curve_expression_emitted_ordinals(ctx, record, &parameter_ordinals)?;
         let mut source_content = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut source_content,
             emitted_ordinals.len(),
             "creo curve-expression source content",
@@ -918,7 +929,7 @@ pub(super) fn transfer_curve_expression_features(
                     )?,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+                    dependencies: cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(
                         dependencies,
                     )
                     .map_err(CodecError::malformed)?,

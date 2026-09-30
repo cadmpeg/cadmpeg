@@ -1495,7 +1495,7 @@ fn geometry_signal_excludes_opaque_carriers() {
     assert!(!has_transferred_geometry(&ir));
 
     let _attached = ir.model.add_procedural_surface(
-        surface_id,
+        &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:entity#procedural".to_string())
                 .expect("identity grammar"),

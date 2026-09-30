@@ -1,6 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn work_point_rule_moves_resolved_input_without_cloning_carrier() {
+    use crate::records::feature::work_geometry::{
+        DesignWorkPointInput, DesignWorkPointInputCarrier, DesignWorkPointRule,
+        WORK_GEOMETRY_CLONE_COUNT,
+    };
+
+    let input = DesignWorkPointInput::try_new(
+        7,
+        14,
+        Some(Box::new(DesignWorkPointInputCarrier::EdgeRecipe {
+            operand_id: "f3d:Design/BulkStream.dat:edge#7".to_owned(),
+        })),
+    )
+    .unwrap();
+    WORK_GEOMETRY_CLONE_COUNT.with(|count| count.set(0));
+    let rule = DesignWorkPointRule::from_serialized(5, vec![input]).unwrap();
+    assert!(matches!(
+        rule.inputs()[0].carrier(),
+        Some(DesignWorkPointInputCarrier::EdgeRecipe { operand_id })
+            if operand_id == "f3d:Design/BulkStream.dat:edge#7"
+    ));
+    WORK_GEOMETRY_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+}
+
+#[test]
 fn work_point_rules_preserve_supported_and_native_forms_without_aliases() {
     use crate::records::feature::work_geometry::DesignWorkPointRule;
 

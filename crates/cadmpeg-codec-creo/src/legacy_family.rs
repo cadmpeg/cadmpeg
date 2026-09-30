@@ -225,13 +225,13 @@ impl<'a> Index<'a> {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         ctx.charge_collection_items(1, "creo legacy family child index nodes")?;
                         let mut rows = Vec::new();
-                        ctx.try_reserve_items(&mut rows, 1, "creo legacy family child index rows")?;
+                        ctx.reserve_vec(&mut rows, 1, "creo legacy family child index rows")?;
                         rows.push(object);
                         entry.insert(rows);
                     }
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         let rows = entry.get_mut();
-                        ctx.try_reserve_items(rows, 1, "creo legacy family child index rows")?;
+                        ctx.reserve_vec(rows, 1, "creo legacy family child index rows")?;
                         rows.push(object);
                     }
                 }
@@ -299,13 +299,13 @@ fn add_typed_field_names<'a, K: legacy::LegacyCode>(
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     ctx.charge_collection_items(1, "creo legacy family typed-name nodes")?;
                     let mut names = Vec::new();
-                    ctx.try_reserve_items(&mut names, 1, "creo legacy family typed names")?;
+                    ctx.reserve_vec(&mut names, 1, "creo legacy family typed names")?;
                     names.push(record.name.as_str());
                     entry.insert(names);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let names = entry.get_mut();
-                    ctx.try_reserve_items(names, 1, "creo legacy family typed names")?;
+                    ctx.reserve_vec(names, 1, "creo legacy family typed names")?;
                     names.push(record.name.as_str());
                 }
             }
@@ -342,7 +342,7 @@ fn array_elements<'a>(
         return Ok(None);
     }
     let mut rows = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut rows,
         elements.len(),
         "creo legacy family array elements",
@@ -552,7 +552,7 @@ fn parse_indexed(
     }
 
     let mut items = Vec::new();
-    ctx.try_reserve_items(&mut items, item_rows.len(), "creo legacy family items")?;
+    ctx.reserve_vec(&mut items, item_rows.len(), "creo legacy family items")?;
     for item in item_rows {
         if !matches!(item.payload, ObjectPayload::Inline) {
             return Ok(None);
@@ -583,7 +583,7 @@ fn parse_indexed(
 
     let mut instance_names = BTreeSet::new();
     let mut instances = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut instances,
         instance_rows.len(),
         "creo legacy family instances",
@@ -624,7 +624,7 @@ fn parse_indexed(
             return Ok(None);
         }
         let mut values = Vec::new();
-        ctx.try_reserve_items(&mut values, value_rows.len(), "creo legacy family values")?;
+        ctx.reserve_vec(&mut values, value_rows.len(), "creo legacy family values")?;
         for value_row in value_rows {
             if !matches!(value_row.payload, ObjectPayload::Inline) {
                 return Ok(None);

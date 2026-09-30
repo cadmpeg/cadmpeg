@@ -22,12 +22,14 @@ impl<S: AsRef<str>> PrintableString<S> {
         self.0.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn into_inner(self) -> S {
         self.0
     }
 }
 
 impl PrintableString<&str> {
+    #[cfg(test)]
     pub(crate) fn into_owned(self) -> PrintableString<String> {
         PrintableString(self.0.to_owned())
     }

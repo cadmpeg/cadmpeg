@@ -73,7 +73,12 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
         });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message
@@ -111,7 +116,12 @@ fn typed_native_operands_are_reported_as_design_losses() {
     });
     let mut report = super::empty_report(true);
 
-    append_design_losses(&ir, &mut report);
+    append_design_losses(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &mut report,
+    )
+    .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
         loss.message

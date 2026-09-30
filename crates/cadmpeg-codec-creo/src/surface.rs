@@ -557,7 +557,7 @@ fn take_spline_scalars(
         if next <= *cursor {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut values, 1, "creo spline replay scalar values")?;
+        ctx.reserve_vec(&mut values, 1, "creo spline replay scalar values")?;
         values.push(value);
         *cursor = next;
     }
@@ -572,7 +572,7 @@ fn spline_vectors(
         return Ok(None);
     }
     let mut vectors = Vec::new();
-    ctx.try_reserve_items(&mut vectors, values.len() / 3, "creo spline replay vectors")?;
+    ctx.reserve_vec(&mut vectors, values.len() / 3, "creo spline replay vectors")?;
     for chunk in values.chunks_exact(3) {
         vectors.push([chunk[0], chunk[1], chunk[2]]);
     }
@@ -2596,7 +2596,7 @@ fn outline_planes(
         } else {
             UnitVector3::X_AXIS
         };
-        ctx.try_reserve_items(&mut result, 1, "creo held-coordinate outline planes")?;
+        ctx.reserve_vec(&mut result, 1, "creo held-coordinate outline planes")?;
         result.push(OutlinePlane {
             surface_id: record.surface_id,
             origin,
@@ -2774,7 +2774,7 @@ pub(crate) fn positional_frame_planes(
             } else {
                 UnitVector3::X_AXIS
             };
-            ctx.try_reserve_items(&mut candidates, 1, "creo positional plane candidates")?;
+            ctx.reserve_vec(&mut candidates, 1, "creo positional plane candidates")?;
             candidates.push(OutlinePlane {
                 surface_id: record.surface_id,
                 origin,
@@ -2789,7 +2789,7 @@ pub(crate) fn positional_frame_planes(
                 && first.u_axis == second.u_axis
         });
         if let [candidate] = candidates.as_slice() {
-            ctx.try_reserve_items(&mut result, 1, "creo positional frame planes")?;
+            ctx.reserve_vec(&mut result, 1, "creo positional frame planes")?;
             result.push(candidate.clone());
         }
     }
@@ -2875,7 +2875,7 @@ pub(crate) fn placed_outline_planes(
     let mut frame_bound = Vec::new();
     for record in envelopes {
         if let Some(plane) = frame_bound_outline_plane(record, frames) {
-            ctx.try_reserve_items(&mut frame_bound, 1, "creo frame-bound outline planes")?;
+            ctx.reserve_vec(&mut frame_bound, 1, "creo frame-bound outline planes")?;
             frame_bound.push(plane);
         }
     }
@@ -2908,7 +2908,7 @@ pub(crate) fn placed_outline_planes(
             && !matrix_frame_ids.contains(&plane.surface_id)
     });
     for plane in frame_bound {
-        ctx.try_reserve_items(&mut result, 1, "creo placed outline planes")?;
+        ctx.reserve_vec(&mut result, 1, "creo placed outline planes")?;
         result.push(plane);
     }
     crate::sort::stable_sort_by_key(
@@ -3005,7 +3005,7 @@ pub(crate) fn counted_row_bounds(
                 .iter()
                 .filter(|row| row.offset >= frame.start && row.offset < frame.end)
             {
-                ctx.try_reserve_items(&mut result, 1, "creo counted surface row bounds")?;
+                ctx.reserve_vec(&mut result, 1, "creo counted surface row bounds")?;
                 result.push((row.clone(), frame.end));
             }
         }
@@ -3042,7 +3042,7 @@ pub(crate) fn complete_surface_array_bounds(
                 .count()
                 == frame.count
         {
-            ctx.try_reserve_items(&mut bounds, 1, "creo complete surface array bounds")?;
+            ctx.reserve_vec(&mut bounds, 1, "creo complete surface array bounds")?;
             bounds.push((frame.start, frame.end));
         }
     }
@@ -3099,7 +3099,7 @@ fn rows_with_boundaries(
             else {
                 continue;
             };
-            ctx.try_reserve_items(&mut result, 1, "creo surface rows")?;
+            ctx.reserve_vec(&mut result, 1, "creo surface rows")?;
             result.push(SurfaceRow {
                 id,
                 kind,
@@ -3141,7 +3141,7 @@ fn rows_with_boundaries(
         if end == pos {
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo surface rows")?;
+        ctx.reserve_vec(&mut result, 1, "creo surface rows")?;
         result.push(SurfaceRow {
             id,
             kind,
@@ -3173,7 +3173,7 @@ fn rows_with_boundaries(
     let mut prototype_parameter_spans = Vec::new();
     for frame in named_prototype_frames(ctx, payload)? {
         for parameter in frame.parameters {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut prototype_parameter_spans,
                 1,
                 "creo prototype parameter spans",
@@ -3209,7 +3209,7 @@ fn rows_with_boundaries(
                     .iter()
                     .filter(|row| row.offset >= frame.start && row.offset < frame.end)
                 {
-                    ctx.try_reserve_items(&mut framed, 1, "creo framed surface rows")?;
+                    ctx.reserve_vec(&mut framed, 1, "creo framed surface rows")?;
                     framed.push(row.clone());
                 }
             }
@@ -3383,7 +3383,7 @@ fn parsed_named_surface_value(
                         if let Some(end_id) = start_id.checked_add(count) {
                             let mut references = Vec::new();
                             let count = usize::try_from(count).ok()?;
-                            if let Err(error) = ctx.try_reserve_items(
+                            if let Err(error) = ctx.reserve_vec(
                                 &mut references,
                                 count,
                                 "creo contiguous surface references",
@@ -3430,8 +3430,7 @@ fn parsed_named_surface_value(
                 if next == cursor {
                     break;
                 }
-                if let Err(error) =
-                    ctx.try_reserve_items(&mut values, 1, "creo compact surface integers")
+                if let Err(error) = ctx.reserve_vec(&mut values, 1, "creo compact surface integers")
                 {
                     return Some(Err(error));
                 }
@@ -3548,9 +3547,7 @@ fn parsed_named_surface_value(
             values.clear();
             break;
         };
-        if let Err(error) =
-            ctx.try_reserve_items(&mut values, 1, "creo named surface scalar sequence")
-        {
+        if let Err(error) = ctx.reserve_vec(&mut values, 1, "creo named surface scalar sequence") {
             return Some(Err(error));
         }
         values.push(value);
@@ -3627,7 +3624,7 @@ fn named_prototype_frames<'a>(
                 Ok,
             )?,
             Err(_) => SurfacePrototypeFamily::Other(ctx.format_retained(
-                LossyPrototypeName(family_bytes),
+                format_args!("{}", LossyPrototypeName(family_bytes)),
                 "creo prototype family name",
             )?),
         };
@@ -3649,7 +3646,7 @@ fn named_prototype_frames<'a>(
             if token.kind == psb::TokenKind::NamedRecord
                 && named_record_length(payload, token_offset) == Some(token.length)
             {
-                ctx.try_reserve_items(&mut named, 1, "creo named prototype field positions")?;
+                ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")?;
                 named.push((token_offset, token.length));
             }
         }
@@ -3661,7 +3658,7 @@ fn named_prototype_frames<'a>(
             let name_end = token_offset + length - 1;
             let name = std::str::from_utf8(&payload[name_start..name_end]).ok();
             if name.is_some_and(|name| prototype_parameter_allowed(&family, name)) {
-                ctx.try_reserve_items(&mut named, 1, "creo named prototype field positions")?;
+                ctx.reserve_vec(&mut named, 1, "creo named prototype field positions")?;
                 named.push((token_offset, length));
             }
         }
@@ -3715,7 +3712,7 @@ fn named_prototype_frames<'a>(
             {
                 value_end = value_offset + compound_close.offset;
             }
-            ctx.try_reserve_items(&mut parameters, 1, "creo named prototype field ranges")?;
+            ctx.reserve_vec(&mut parameters, 1, "creo named prototype field ranges")?;
             parameters.push(NamedPrototypeParameterRange {
                 name,
                 offset: token_offset,
@@ -3723,7 +3720,7 @@ fn named_prototype_frames<'a>(
                 value_end,
             });
         }
-        ctx.try_reserve_items(&mut frames, 1, "creo named prototype frames")?;
+        ctx.reserve_vec(&mut frames, 1, "creo named prototype frames")?;
         frames.push(NamedPrototypeFrame {
             family,
             parameters,
@@ -3756,7 +3753,7 @@ pub(crate) fn named_prototype_records(
     for frame in named_prototype_frames(ctx, payload)? {
         let mut parameters = Vec::new();
         for range in frame.parameters {
-            ctx.try_reserve_items(&mut parameters, 1, "creo named prototype parameters")?;
+            ctx.reserve_vec(&mut parameters, 1, "creo named prototype parameters")?;
             let body = ctx.copy_retained(
                 &payload[range.value_offset..range.value_end],
                 "creo named prototype parameter body",
@@ -3782,7 +3779,7 @@ pub(crate) fn named_prototype_records(
                 value_offset: range.value_offset,
             });
         }
-        ctx.try_reserve_items(&mut records, 1, "creo named prototype records")?;
+        ctx.reserve_vec(&mut records, 1, "creo named prototype records")?;
         records.push(SurfacePrototypeRecord {
             family: frame.family,
             parameters,
@@ -3926,7 +3923,7 @@ fn scalar_tokens(
     let mut outline_markers = Vec::new();
     if kind == SurfaceKind::TorusOrSphere {
         for marker in torus_outline_markers(body) {
-            ctx.try_reserve_items(&mut outline_markers, 1, "creo torus outline marker items")?;
+            ctx.reserve_vec(&mut outline_markers, 1, "creo torus outline marker items")?;
             outline_markers.push(marker);
         }
     }
@@ -3947,7 +3944,7 @@ fn scalar_tokens(
             .and_then(|corners| corners.iter().find(|(_, start, _)| *start == cursor))
         {
             let raw = ctx.copy_retained(&body[start..end], "creo surface scalar token bytes")?;
-            ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
+            ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
                 raw,
@@ -3979,7 +3976,7 @@ fn scalar_tokens(
                     &body[layout.start..layout.end],
                     "creo surface scalar token bytes",
                 )?;
-                ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
+                ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
                 tokens.push(SurfaceParameterScalar {
                     value: Some(layout.value.get().get()),
                     raw,
@@ -4016,7 +4013,7 @@ fn scalar_tokens(
                 continue;
             }
             let raw = ctx.copy_retained(&body[cursor..next], "creo surface scalar token bytes")?;
-            ctx.try_reserve_items(&mut tokens, 1, "creo surface scalar token items")?;
+            ctx.reserve_vec(&mut tokens, 1, "creo surface scalar token items")?;
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
                 raw,
@@ -4085,7 +4082,7 @@ fn opaque_spans(
                 &body[cursor..token.offset],
                 "creo surface opaque span bytes",
             )?;
-            ctx.try_reserve_items(&mut spans, 1, "creo surface opaque span items")?;
+            ctx.reserve_vec(&mut spans, 1, "creo surface opaque span items")?;
             spans.push(SurfaceParameterOpaqueSpan {
                 raw,
                 offset: cursor,
@@ -4095,7 +4092,7 @@ fn opaque_spans(
     }
     if cursor < body.len() {
         let raw = ctx.copy_retained(&body[cursor..], "creo surface opaque span bytes")?;
-        ctx.try_reserve_items(&mut spans, 1, "creo surface opaque span items")?;
+        ctx.reserve_vec(&mut spans, 1, "creo surface opaque span items")?;
         spans.push(SurfaceParameterOpaqueSpan {
             raw,
             offset: cursor,
@@ -4118,7 +4115,7 @@ fn scalar_frames(
             end += 1;
         }
         let mut slots = Vec::new();
-        ctx.try_reserve_items(&mut slots, end - start, "creo surface scalar frame slots")?;
+        ctx.reserve_vec(&mut slots, end - start, "creo surface scalar frame slots")?;
         for token in &tokens[start..end] {
             slots.push(SurfaceParameterScalar {
                 value: token.value,
@@ -4126,7 +4123,7 @@ fn scalar_frames(
                 offset: token.offset,
             });
         }
-        ctx.try_reserve_items(&mut frames, 1, "creo surface scalar frame items")?;
+        ctx.reserve_vec(&mut frames, 1, "creo surface scalar frame items")?;
         frames.push(SurfaceParameterScalarFrame {
             offset: tokens[start].offset,
             slots,
@@ -5246,7 +5243,7 @@ fn parameter_records_for_rows(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut headers, 1, "creo surface parameter headers")?;
+        ctx.reserve_vec(&mut headers, 1, "creo surface parameter headers")?;
         headers.push((row.clone(), body_start));
     }
     let mut records = Vec::new();
@@ -5359,7 +5356,7 @@ fn parameter_records_for_rows(
         if let Some(carrier) = carrier {
             record.carrier = SurfaceParameterCarrier::Resolved(carrier);
         }
-        ctx.try_reserve_items(&mut records, 1, "creo surface parameter records")?;
+        ctx.reserve_vec(&mut records, 1, "creo surface parameter records")?;
         records.push(record);
     }
     Ok(records)
@@ -5391,7 +5388,7 @@ fn contour_records_for_rows(
     let cache = scalar::ScalarCache::from_section_checked(ctx, payload)?;
     let mut frames = Vec::new();
     for frame in surface_array_frames(payload) {
-        ctx.try_reserve_items(&mut frames, 1, "creo contour surface frames")?;
+        ctx.reserve_vec(&mut frames, 1, "creo contour surface frames")?;
         frames.push(frame);
     }
     let mut records = Vec::new();
@@ -5455,7 +5452,7 @@ fn contour_records_for_rows(
         else {
             continue;
         };
-        ctx.try_reserve_items(&mut records, chain.len(), "creo contour record aggregation")?;
+        ctx.reserve_vec(&mut records, chain.len(), "creo contour record aggregation")?;
         records.extend(chain);
     }
     crate::sort::stable_sort_by_key(
@@ -5535,7 +5532,7 @@ fn parse_surface_contour_chain(
             } else {
                 None
             };
-        ctx.try_reserve_items(&mut chain, 1, "creo contour chain entries")?;
+        ctx.reserve_vec(&mut chain, 1, "creo contour chain entries")?;
         let body = ctx.copy_retained(
             &payload[contour_start..contour_end],
             "creo contour chain body",
@@ -5908,7 +5905,7 @@ pub(crate) fn tabulated_cylinder_curve_replays(
     let mut signatures = Vec::new();
     let mut search = 0;
     while let Some(offset) = find(payload, SIGNATURE, search) {
-        ctx.try_reserve_items(&mut signatures, 1, "creo tabulated curve signatures")?;
+        ctx.reserve_vec(&mut signatures, 1, "creo tabulated curve signatures")?;
         signatures.push(offset);
         search = offset + SIGNATURE.len();
     }
@@ -6024,7 +6021,7 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         )?;
         let parameter_body =
             ctx.copy_retained(&[0x18, 0xe6, 0x0f, 0xe6], "creo tabulated parameter body")?;
-        ctx.try_reserve_items(&mut replays, 1, "creo tabulated curve replays")?;
+        ctx.reserve_vec(&mut replays, 1, "creo tabulated curve replays")?;
         replays.push(TabulatedCylinderCurveReplay {
             body,
             surface_id: owner.id,
@@ -6170,7 +6167,7 @@ fn named_spline_scalar_slots(
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo named spline scalar slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo named spline scalar slots")?;
     let mut cursor = psb::Cursor::new(body);
     let mut continued_tuple = false;
     while slots.len() < count {
@@ -6294,7 +6291,7 @@ fn counted_parameter_scalar_slots(
 ) -> Result<Option<Vec<ScalarTokenSlot>>, CodecError> {
     let state_count = body.len() + 1;
     let mut states = Vec::new();
-    ctx.try_reserve_items(&mut states, state_count, "creo_counted_parameter_slots")?;
+    ctx.reserve_vec(&mut states, state_count, "creo_counted_parameter_slots")?;
     states.resize_with(state_count, BTreeMap::new);
     ctx.charge_collection_items(1, "creo counted parameter initial state")?;
     states[0].insert(0, CountedParameterParse::Unique(Vec::new()));
@@ -6316,11 +6313,7 @@ fn counted_parameter_scalar_slots(
                 {
                     let mut slots =
                         counted_parameter_suffix(ctx, Some(0.0), &body[cursor..=cursor])?;
-                    ctx.try_reserve_items(
-                        &mut slots,
-                        run - 1,
-                        "creo counted parameter zero-run slots",
-                    )?;
+                    ctx.reserve_vec(&mut slots, run - 1, "creo counted parameter zero-run slots")?;
                     slots.extend(std::iter::repeat_n((Some(0.0), Vec::new()), run - 1));
                     add_counted_parameter_state(
                         ctx,
@@ -6398,7 +6391,7 @@ fn advance_counted_parameter_parse(
 ) -> Result<CountedParameterParse, CodecError> {
     match parse {
         CountedParameterParse::Unique(mut slots) => {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut slots,
                 suffix.len(),
                 "creo counted parameter accumulated slots",
@@ -6418,7 +6411,7 @@ fn clone_counted_parameter_parse(
         return Ok(CountedParameterParse::Ambiguous);
     };
     let mut copy = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut copy,
         slots.len(),
         "creo counted parameter branch slots",
@@ -6439,7 +6432,7 @@ fn counted_parameter_suffix(
 ) -> Result<Vec<ScalarTokenSlot>, CodecError> {
     let token = ctx.copy_retained(token, "creo counted parameter token bytes")?;
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, 1, "creo counted parameter suffix slot")?;
+    ctx.reserve_vec(&mut slots, 1, "creo counted parameter suffix slot")?;
     slots.push((value, token));
     Ok(slots)
 }
@@ -6591,7 +6584,7 @@ fn scalar_slots(
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo scalar body slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo scalar body slots")?;
     let mut cursor = 0;
     while slots.len() < count {
         let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
@@ -6681,7 +6674,7 @@ fn scalar_slots_with_tokens_and_end<'a>(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<ScalarTokenTable<'a>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo surface scalar token slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo surface scalar token slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
@@ -6720,7 +6713,7 @@ fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<ScalarTokenTable<'a>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo plane envelope token slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo plane envelope token slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body[cursor] == 0x0e {
@@ -6785,7 +6778,7 @@ fn complete_plane_envelope_slots_with_final_positive_dict<'a>(
     else {
         return Ok(None);
     };
-    ctx.try_reserve_items(&mut slots.slots, 1, "creo plane envelope final token slot")?;
+    ctx.reserve_vec(&mut slots.slots, 1, "creo plane envelope final token slot")?;
     slots.slots.push((Some(value), &body[positive_start..end]));
     slots.consumed = body.len();
     Ok(Some(slots))
@@ -6823,7 +6816,7 @@ fn plane_envelope_compound_close(
             continue;
         };
         let mut slots = slots;
-        ctx.try_reserve_items(&mut slots.slots, 1, "creo plane envelope close token slot")?;
+        ctx.reserve_vec(&mut slots.slots, 1, "creo plane envelope close token slot")?;
         slots
             .slots
             .push((Some(positive_value), &body[positive_start..positive_end]));
@@ -6897,7 +6890,7 @@ fn sequential_named_local_system_slots(
     refusal: &mut ScalarBodyRefusal,
 ) -> Result<Option<Vec<Option<f64>>>, CodecError> {
     let mut slots = Vec::new();
-    ctx.try_reserve_items(&mut slots, count, "creo local-system scalar slots")?;
+    ctx.reserve_vec(&mut slots, count, "creo local-system scalar slots")?;
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body.get(cursor) == Some(&0xe7) {
@@ -7218,9 +7211,7 @@ fn complete_plane_local_system(
         let _reservation =
             ctx.reserve_scoped(u64_from_index(count), "creo normalized plane frame bytes")?;
         let mut normalized = Vec::new();
-        ctx.try_collection(count, "creo normalized plane frame items", || {
-            normalized.try_reserve(count)
-        })?;
+        ctx.reserve_vec(&mut normalized, count, "creo normalized plane frame items")?;
         normalized.extend_from_slice(prefix);
         normalized.push(0x0f);
         return scalar::decode_plane_support_local_system(ctx, &normalized, cache);
@@ -7312,7 +7303,7 @@ fn plane_local_systems_for_rows(
                 && !frame_body
                     .iter()
                     .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
-            ctx.try_reserve_items(&mut row_systems, 1, "creo plane row systems")?;
+            ctx.reserve_vec(&mut row_systems, 1, "creo plane row systems")?;
             row_systems.push(Candidate {
                 scanner_owned: Some(envelope_close) == scanner_close,
                 fallback_owned: Some(envelope_close) == scanner_close.or(parameter_close),
@@ -7339,7 +7330,7 @@ fn plane_local_systems_for_rows(
             };
             if selected {
                 let body = ctx.copy_retained(candidate.body, "creo plane local-system body")?;
-                ctx.try_reserve_items(&mut systems, 1, "creo plane local systems")?;
+                ctx.reserve_vec(&mut systems, 1, "creo plane local systems")?;
                 systems.push(PlaneLocalSystem {
                     surface_id: row.id,
                     body,
@@ -7380,7 +7371,7 @@ fn copied_plane_envelope_tokens(
     slots: &ScalarTokenTable<'_>,
 ) -> Result<Vec<Vec<u8>>, CodecError> {
     let mut tokens = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut tokens,
         slots.slots.len(),
         "creo plane envelope scalar token items",
@@ -7496,7 +7487,7 @@ fn plane_envelopes_for_rows(
         };
         let scalar_tokens = copied_plane_envelope_tokens(ctx, &slots)?;
         let body = ctx.copy_retained(body, "creo plane envelope body")?;
-        ctx.try_reserve_items(&mut envelopes, 1, "creo plane envelopes")?;
+        ctx.reserve_vec(&mut envelopes, 1, "creo plane envelopes")?;
         envelopes.push(PlaneEnvelopeRecord {
             surface_id: row.id,
             body,
@@ -7557,7 +7548,7 @@ fn plane_envelopes_for_rows(
             &payload[scalar_start..scalar_start + consumed],
             "creo plane envelope body",
         )?;
-        ctx.try_reserve_items(&mut envelopes, 1, "creo plane envelopes")?;
+        ctx.reserve_vec(&mut envelopes, 1, "creo plane envelopes")?;
         envelopes.push(PlaneEnvelopeRecord {
             surface_id: row.id,
             body,

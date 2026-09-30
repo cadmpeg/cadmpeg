@@ -102,7 +102,7 @@ pub(crate) fn source_object_id_checked(
     value: impl Display,
     operation: &'static str,
 ) -> Result<NonBlankString, CodecError> {
-    NonBlankString::new(ctx.format_retained(value, operation)?)
+    NonBlankString::new(ctx.format_retained(format_args!("{value}"), operation)?)
         .ok_or_else(|| CodecError::malformed("source object_id must not be empty"))
 }
 
@@ -125,7 +125,7 @@ pub(crate) fn uniquely_identified_rows_checked<'a, T>(
     let mut unique = Vec::new();
     for row in rows {
         if counts.get(&id(row)) == Some(&1) {
-            ctx.try_reserve_items(&mut unique, 1, "creo unique-row projection")?;
+            ctx.reserve_vec(&mut unique, 1, "creo unique-row projection")?;
             unique.push(row);
         }
     }

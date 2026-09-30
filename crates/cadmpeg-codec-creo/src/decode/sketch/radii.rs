@@ -49,7 +49,7 @@ fn append_radius_candidate(
         ctx.charge_collection_items(1, "creo radius candidate nodes")?;
     }
     let values = candidates.entry(radius_id).or_default();
-    ctx.try_reserve_items(values, 1, "creo radius candidate values")?;
+    ctx.reserve_vec(values, 1, "creo radius candidate values")?;
     values.push(value);
     Ok(())
 }
@@ -336,15 +336,13 @@ pub(in crate::decode) fn resolved_section_radii(
         ctx.charge_collection_items(1, "creo radius component nodes")?;
         component.insert(seed);
         let mut pending = std::collections::VecDeque::new();
-        ctx.try_collection(1, "creo pending radius nodes", || pending.try_reserve(1))?;
-        pending.push_back(seed);
+        ctx.push_back(&mut pending, seed, "creo pending radius nodes")?;
         while let Some(radius_id) = pending.pop_front() {
             for neighbor in adjacency.get(&radius_id).into_iter().flatten() {
                 if !component.contains(neighbor) {
                     ctx.charge_collection_items(1, "creo radius component nodes")?;
                     component.insert(*neighbor);
-                    ctx.try_collection(1, "creo pending radius nodes", || pending.try_reserve(1))?;
-                    pending.push_back(*neighbor);
+                    ctx.push_back(&mut pending, *neighbor, "creo pending radius nodes")?;
                 }
             }
         }

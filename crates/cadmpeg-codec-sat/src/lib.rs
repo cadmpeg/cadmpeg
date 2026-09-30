@@ -25,7 +25,6 @@ mod coverage;
 mod decode;
 mod detect;
 mod dialect;
-#[allow(dead_code)] // Loss catalog is consumed by tests.
 mod loss;
 
 include!("dialect/registry_ids.rs");

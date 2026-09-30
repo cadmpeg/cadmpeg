@@ -1,44 +1,63 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use crate::directory::{DirectoryEntry, SourceStatus};
+use crate::directory::DirectoryEntry;
+use crate::directory::SourceStatus;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::DecodeArena;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::DecodeMode;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::decode::ResourceDimension;
+use cadmpeg_ir::codec::Codec;
+use cadmpeg_ir::codec::DecodeOptions;
 
 use super::flow_join_target_valid;
 use super::functional_level_identifier_valid;
 use super::line_font_property_code_valid;
 use super::signal_string_geometry_target;
 use crate::loss::IgesLossCode;
-use crate::test_support::test_drawing_and_trimming::{
-    associativity_definition_file, bounded_associativity_forms_file,
-    bounded_associativity_forms_file_with_global, flow_associativity_forms_file,
-    label_display_without_leader_file, legacy_associativity_forms_file,
-    legacy_associativity_forms_file_with_global, legacy_generic_single_parent_file,
-    legacy_perforated_plane_file,
-};
-use crate::test_support::test_owned::{
-    owned_test_file, owned_test_file_with_global, OwnedTestEntity,
-};
-use crate::test_support::test_solids_and_structure::{
-    attribute_definition_forms_file, attribute_instance_forms_file,
-    attribute_instance_ignored_structures_file, closure_property_file,
-    dimension_property_forms_file, drawing_metadata_property_forms_file,
-    equal_drilled_hole_layer_range_file, external_reference_forms_file, grid_property_file,
-    group_forms_file, group_type_property_file, invalid_drilled_hole_layer_order_file,
-    lep_property_forms_file, patterned_instance_file, product_property_file,
-    scalar_property_forms_file, solid_instance_file, structure_target_rules_file,
-    text_score_property_forms_file, variable_schema_property_forms_file,
-};
+use crate::test_support::test_drawing_and_trimming::admitted_containing_network_file;
+use crate::test_support::test_drawing_and_trimming::associativity_definition_file;
+use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file;
+use crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file_with_global;
+use crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file;
+use crate::test_support::test_drawing_and_trimming::flow_associativity_forms_file;
+use crate::test_support::test_drawing_and_trimming::legacy_perforated_plane_file;
+use crate::test_support::test_drawing_and_trimming::nested_subfigure_file;
+use crate::test_support::test_drawing_and_trimming::network_subfigure_file;
+use crate::test_support::test_drawing_and_trimming::units_data_file;
+use crate::test_support::test_owned::owned_test_file;
+use crate::test_support::test_owned::owned_test_file_with_global;
+use crate::test_support::test_owned::OwnedTestEntity;
+use crate::test_support::test_solids_and_structure::attribute_definition_forms_file;
+use crate::test_support::test_solids_and_structure::attribute_instance_forms_file;
+use crate::test_support::test_solids_and_structure::attribute_instance_ignored_structures_file;
+use crate::test_support::test_solids_and_structure::closure_property_file;
+use crate::test_support::test_solids_and_structure::dimension_property_forms_file;
+use crate::test_support::test_solids_and_structure::drawing_metadata_property_forms_file;
+use crate::test_support::test_solids_and_structure::equal_drilled_hole_layer_range_file;
+use crate::test_support::test_solids_and_structure::external_reference_forms_file;
+use crate::test_support::test_solids_and_structure::grid_property_file;
+use crate::test_support::test_solids_and_structure::group_forms_file;
+use crate::test_support::test_solids_and_structure::group_type_property_file;
+use crate::test_support::test_solids_and_structure::invalid_drilled_hole_layer_order_file;
+use crate::test_support::test_solids_and_structure::lep_property_forms_file;
+use crate::test_support::test_solids_and_structure::patterned_instance_file;
+use crate::test_support::test_solids_and_structure::product_property_file;
+use crate::test_support::test_solids_and_structure::scalar_property_forms_file;
+use crate::test_support::test_solids_and_structure::solid_assembly_file;
+use crate::test_support::test_solids_and_structure::solid_instance_file;
+use crate::test_support::test_solids_and_structure::structure_target_rules_file;
+use crate::test_support::test_solids_and_structure::text_score_property_forms_file;
+use crate::test_support::test_solids_and_structure::variable_schema_property_forms_file;
 use crate::IgesCodec;
 mod bounded_planes;
 mod definitions;
 mod dialect;
 mod network;
-const LEGACY_TEXT_ANGLE_TOLERANCE: f64 = 1.0e-4;
 
 #[test]
 fn signal_string_geometry_accepts_composite_constituents_and_copious_forms() {
@@ -194,12 +213,12 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
         .map(|sequence| (sequence, sequence + 1))
         .collect::<BTreeMap<_, _>>();
     let mut visited = std::collections::BTreeSet::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
 
-    assert!(!crate::entities::structure::single_target_cycle(
-        1,
-        &targets,
-        &mut visited
-    ));
+    assert!(
+        !crate::entities::structure::single_target_cycle(1, &targets, &mut visited, &ctx,).unwrap()
+    );
     assert_eq!(visited.len(), 100_000);
 
     let mut cyclic = targets;
@@ -207,8 +226,136 @@ fn single_target_cycle_detection_handles_long_file_controlled_chains_iteratively
     assert!(crate::entities::structure::single_target_cycle(
         1,
         &cyclic,
-        &mut std::collections::BTreeSet::new()
-    ));
+        &mut std::collections::BTreeSet::new(),
+        &ctx,
+    )
+    .unwrap());
+}
+
+#[test]
+fn single_target_cycle_refuses_path_and_tree_nodes_before_storage() {
+    let targets = BTreeMap::from([(1_u32, 2_u32), (2, 3)]);
+    for operation in [
+        "iges structure active cycle nodes",
+        "iges structure cycle path",
+        "iges structure visited cycle nodes",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..32 {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+            match crate::entities::structure::single_target_cycle(
+                1,
+                &targets,
+                &mut std::collections::BTreeSet::new(),
+                &ctx,
+            ) {
+                Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("expected cycle storage refusal at {operation}: {other:?}"),
+            }
+        }
+        assert!(
+            reached,
+            "cycle storage refusal was not reached: {operation}"
+        );
+    }
+}
+
+#[test]
+fn array_and_solid_instance_indexes_refuse_unadmitted_nodes() {
+    for (bytes, operation) in [
+        (patterned_instance_file(), "iges array target index nodes"),
+        (patterned_instance_file(), "iges array mask positions"),
+        (solid_instance_file(), "iges solid instance index nodes"),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure collection refusal at {operation}"),
+            }
+        }
+        assert!(
+            reached,
+            "structure collection refusal was not reached: {operation}"
+        );
+        assert!(IgesCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .is_ok());
+    }
+}
+
+#[test]
+fn flow_associativity_refuses_pointer_lanes_and_index_node() {
+    let bytes = flow_associativity_forms_file();
+    for operation in [
+        "iges flow connection pointers",
+        "iges flow join pointers",
+        "iges flow display pointers",
+        "iges flow continuation pointers",
+        "iges flow index nodes",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected flow collection refusal at {operation}"),
+            }
+        }
+        assert!(
+            reached,
+            "flow collection refusal was not reached: {operation}"
+        );
+    }
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
 }
 
 #[test]
@@ -384,7 +531,7 @@ fn decode_reports_an_unresolvable_required_trailing_back_pointer() {
     assert_eq!(loss.code, IgesLossCode::PointerUnresolved.kind());
     assert_eq!(
         loss.provenance.as_ref().unwrap().offset,
-        pointer_offset as u64
+        cadmpeg_core::decode::u64_from_index(pointer_offset)
     );
 }
 
@@ -1392,315 +1539,257 @@ fn decode_projects_legacy_single_parent_plane_holes_in_v4_and_v5_profiles() {
                 || !loss.message.contains("IGES entity type 402 form 9")
         }));
         assert!(
-            cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).is_ok(),
+            cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok(),
             "IGES {version} legacy hole topology is invalid"
         );
     }
 }
 
 #[test]
-fn decode_keeps_nonplane_single_parent_relations_native_and_transfers_the_bounded_parent() {
-    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(legacy_generic_single_parent_file(global)),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
-        assert_eq!(result.ir().model.faces.len(), 1, "IGES {version}");
-        assert_eq!(
-            result.ir().model.faces[0].surface,
-            "iges:model:surface#D1".try_into().expect("valid identity"),
-            "IGES {version}"
-        );
-        assert!(result.report().losses.iter().all(|loss| {
-            loss.code != IgesLossCode::EntityNotProjected.kind()
-                || !loss.message.contains("IGES entity type 402 form 9")
-        }));
-        let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
-            .iter()
-            .find(|value| value.fields()["kind"] == "single_parent")
-            .expect("generic single-parent association");
-        assert_eq!(association.fields()["parent"], "iges:entity:directory#1");
-        assert_eq!(
-            association.fields()["children"][0],
-            "iges:entity:directory#5"
-        );
-    }
-}
-
-#[test]
-fn decode_preserves_legacy_dimensioned_geometry_roles_in_v4_and_v5_profiles() {
-    let global_v4 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let global_v5 = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
-    for (version, global) in [("4.0", &global_v4[..]), ("5.0", &global_v5[..])] {
-        let result = IgesCodec
-            .decode(
-                &mut Cursor::new(bounded_associativity_forms_file_with_global(global)),
-                &DecodeOptions::default(),
-            )
-            .unwrap();
-        let association = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
-            .iter()
-            .find(|value| value.fields()["kind"] == "dimensioned_geometry")
-            .expect("legacy dimensioned-geometry association");
-        assert_eq!(
-            association.fields()["dimension"],
-            "iges:entity:directory#21"
-        );
-        assert_eq!(
-            association.fields()["geometry"][0],
-            "iges:entity:directory#9"
-        );
-        assert!(
-            result.report().losses.iter().all(|loss| {
-                loss.code != IgesLossCode::EntityNotProjected.kind()
-                    || !loss.message.contains("IGES entity type 402 form 13")
-            }),
-            "IGES {version}: {:#?}",
-            result.report().losses
-        );
-    }
-}
-
-#[test]
-fn decode_rejects_label_display_without_leader() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(label_display_without_leader_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-    let loss = result
-        .report()
-        .losses
-        .iter()
-        .find(|loss| loss.code == IgesLossCode::EntityNotProjected.kind())
-        .unwrap();
-    assert_eq!(
-        loss.provenance
-            .as_ref()
-            .and_then(|provenance| provenance.tag.as_deref()),
-        Some("directory_entry:D5")
-    );
-    let label_display = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
-        .iter()
-        .find(|associativity| associativity.fields()["kind"] == "label_display")
-        .unwrap();
-    assert!(label_display.fields()["placements"][0]["leader"].is_null());
-}
-
-#[test]
-fn decode_preserves_signal_and_piping_flow_class_order() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(flow_associativity_forms_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let associativities =
-        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
-    let signal = associativities
-        .iter()
-        .find(|value| {
-            value.fields()["kind"] == "flow"
-                && value.fields()["form"] == 18
-                && value.fields()["connections"].as_array().unwrap().len() == 1
-        })
-        .unwrap();
-    assert_eq!(signal.fields()["type_flag"], 1);
-    assert_eq!(signal.fields()["declared_associated_flow_count"], 0);
-    assert_eq!(signal.fields()["declared_connection_count"], 1);
-    assert_eq!(signal.fields()["declared_join_count"], 1);
-    assert_eq!(signal.fields()["declared_name_count"], 1);
-    assert_eq!(signal.fields()["declared_name_display_count"], 1);
-    assert_eq!(signal.fields()["declared_continuation_count"], 1);
-    assert_eq!(signal.fields()["function_flag"], 2);
-    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#1");
-    assert_eq!(signal.fields()["joins"][0], "iges:entity:directory#3");
-    assert_eq!(signal.fields()["names"][0][0], 70);
-    assert_eq!(
-        signal.fields()["name_displays"][0],
-        "iges:entity:directory#5"
-    );
-    assert_eq!(
-        signal.fields()["continuations"][0],
-        "iges:entity:directory#9"
-    );
-    let pipe = associativities
-        .iter()
-        .find(|value| {
-            value.fields()["kind"] == "flow"
-                && value.fields()["form"] == 20
-                && value.fields()["connections"].as_array().unwrap().len() == 1
-        })
-        .unwrap();
-    assert_eq!(pipe.fields()["type_flag"], 2);
-    assert_eq!(pipe.fields()["declared_associated_flow_count"], 0);
-    assert_eq!(pipe.fields()["declared_connection_count"], 1);
-    assert_eq!(pipe.fields()["declared_join_count"], 1);
-    assert_eq!(pipe.fields()["declared_name_count"], 1);
-    assert_eq!(pipe.fields()["declared_name_display_count"], 0);
-    assert_eq!(pipe.fields()["declared_continuation_count"], 1);
-    assert!(pipe.fields()["function_flag"].is_null());
-    assert_eq!(pipe.fields()["connections"][0], "iges:entity:directory#11");
-    assert_eq!(
-        pipe.fields()["continuations"][0],
-        "iges:entity:directory#17"
-    );
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
-}
-
-#[test]
-fn decode_rejects_a_non_geometry_flow_join_target() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(owned_test_file(&[
-                OwnedTestEntity {
-                    entity_type: 132,
-                    form: 0,
-                    label: "PIPEPT".into(),
-                    status: "00000400",
-                    parameters: "132,0,0,0,0,101,1,2HP1,0,4HPIPE,0,1,1,0,0;".into(),
-                },
-                OwnedTestEntity {
-                    entity_type: 410,
-                    form: 0,
-                    label: "VIEW".into(),
-                    status: "00000100",
-                    parameters: "410,1,1,0,0,0,0,0,0;".into(),
-                },
-                OwnedTestEntity {
-                    entity_type: 402,
-                    form: 20,
-                    label: "PIPEFLOW".into(),
-                    status: "00000200",
-                    parameters: "402,1,0,1,1,0,0,2,1,3,4HPIPE;".into(),
-                },
-            ])),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::EntityNotProjected.kind()));
-    let flow = result.ir().native.namespace("iges").unwrap().arenas()["associativities"]
-        .iter()
-        .find(|value| value.fields()["kind"] == "flow")
-        .unwrap();
-    assert!(flow.fields()["joins"][0].is_null());
-}
-
-#[test]
-fn decode_preserves_legacy_signal_text_and_connect_associativities() {
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(legacy_associativity_forms_file()),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let associativities =
-        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
-
-    let signal = associativities
-        .iter()
-        .find(|value| value.fields()["kind"] == "legacy_signal_string")
-        .unwrap();
-    assert_eq!(signal.fields()["declared_signal_name_count"], 1);
-    assert_eq!(signal.fields()["declared_connection_count"], 1);
-    assert_eq!(signal.fields()["declared_schematic_count"], 1);
-    assert_eq!(signal.fields()["declared_physical_count"], 1);
-    assert_eq!(
-        signal.fields()["signal_names"][0],
-        serde_json::json!([78, 69, 84])
-    );
-    assert_eq!(signal.fields()["connections"][0], "iges:entity:directory#3");
-    assert_eq!(
-        signal.fields()["schematic_entities"][0],
-        "iges:entity:directory#11"
-    );
-    assert_eq!(
-        signal.fields()["physical_entities"][0],
-        "iges:entity:directory#11"
-    );
-
-    let text = associativities
-        .iter()
-        .find(|value| value.fields()["kind"] == "legacy_text_node")
-        .unwrap();
-    assert_eq!(text.fields()["declared_geometry_count"], 1);
-    assert_eq!(text.fields()["declared_text_description_count"], 1);
-    assert_eq!(text.fields()["geometry"][0], "iges:entity:directory#5");
-    assert_eq!(text.fields()["box_width"], 1.0);
-    assert_eq!(text.fields()["box_height"], 2.0);
-    assert_eq!(text.fields()["font_characteristic"], 1);
-    assert!(
-        (text.fields()["slant_angle"].as_f64().unwrap() - std::f64::consts::FRAC_PI_2).abs()
-            <= LEGACY_TEXT_ANGLE_TOLERANCE
-    );
-    assert_eq!(text.fields()["rotation_angle"], 0.0);
-    assert_eq!(text.fields()["mirror_flag"], 0);
-    assert_eq!(text.fields()["rotate_internal_flag"], 0);
-
-    let connect = associativities
-        .iter()
-        .find(|value| value.fields()["kind"] == "legacy_connect_node")
-        .unwrap();
-    assert_eq!(connect.fields()["declared_point_count"], 1);
-    assert_eq!(connect.fields()["declared_data_count"], 2);
-    assert_eq!(connect.fields()["points"][0], "iges:entity:directory#1");
-    assert_eq!(connect.fields()["data"][0]["kind"], "string");
-    assert_eq!(
-        connect.fields()["data"][0]["value"],
-        serde_json::json!([67, 79, 78, 83, 84, 82])
-    );
-    assert_eq!(connect.fields()["data"][1]["kind"], "integer");
-    assert_eq!(connect.fields()["data"][1]["value"], 42);
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
-    );
-}
-
-#[test]
-fn decode_preserves_v4_legacy_signal_text_and_connect_associativities() {
-    const GLOBAL_V4: &[u8] = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
-    let result = IgesCodec
-        .decode(
-            &mut Cursor::new(legacy_associativity_forms_file_with_global(GLOBAL_V4)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-    let associativities =
-        &result.ir().native.namespace("iges").unwrap().arenas()["associativities"];
-    for kind in [
-        "legacy_signal_string",
-        "legacy_text_node",
-        "legacy_connect_node",
+fn legacy_single_parent_face_refuses_nested_topology_storage() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,8,0,0H;";
+    let bytes = legacy_perforated_plane_file(global);
+    for operation in [
+        "iges legacy plane child pointers",
+        "iges legacy plane boundary pointers",
+        "iges legacy plane boundary edges",
+        "iges legacy plane sequence list",
+        "iges legacy plane loop IDs",
+        "iges legacy plane ring coedges",
+        "iges legacy plane shell faces",
+        "iges legacy plane region shells",
+        "iges legacy plane body regions",
+        "iges legacy plane sequence nodes",
+        "iges legacy face candidates",
     ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected legacy plane collection refusal at {operation}"),
+            }
+        }
         assert!(
-            associativities
-                .iter()
-                .any(|value| value.fields()["kind"] == kind),
-            "missing V4 associativity kind {kind}"
+            reached,
+            "legacy plane collection refusal was not reached: {operation}"
         );
     }
-    assert!(result.report().losses.is_empty(), "{:#?}", result.report());
+    let mut cap = 0_u64;
+    let mut reached = false;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                cadmpeg_core::CodecError::ResourceLimit(limit),
+            )) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges plane boundary active curve ID" {
+                    reached = true;
+                    break;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            _ => panic!("expected legacy plane retained refusal before the active curve copy"),
+        }
+    }
+    assert!(
+        reached,
+        "legacy plane active curve identity copy was not reached"
+    );
 }
 
+#[test]
+fn structure_lists_and_indexes_refuse_unadmitted_storage() {
+    for (bytes, operation) in [
+        (product_property_file(), "iges property owner sequences"),
+        (units_data_file(), "iges unit type nodes"),
+        (solid_assembly_file(), "iges solid assembly items"),
+        (solid_assembly_file(), "iges solid assembly index nodes"),
+        (nested_subfigure_file(), "iges subfigure definition members"),
+        (
+            nested_subfigure_file(),
+            "iges subfigure definition index nodes",
+        ),
+        (
+            admitted_containing_network_file(),
+            "iges network definition members",
+        ),
+        (
+            network_subfigure_file(),
+            "iges network definition index nodes",
+        ),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure storage refusal at {operation}"),
+            }
+        }
+        assert!(
+            reached,
+            "structure storage refusal was not reached: {operation}"
+        );
+        assert!(IgesCodec
+            .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+            .is_ok());
+    }
+}
+
+#[test]
+fn structure_projection_refuses_attribute_and_occurrence_nodes() {
+    for (bytes, operation) in [
+        (
+            attribute_definition_forms_file(),
+            "iges attribute type nodes",
+        ),
+        (
+            attribute_definition_forms_file(),
+            "iges attribute shape descriptors",
+        ),
+        (
+            attribute_definition_forms_file(),
+            "iges attribute shape index nodes",
+        ),
+        (nested_subfigure_file(), "iges subfigure instance nodes"),
+        (
+            nested_subfigure_file(),
+            "iges valid subfigure instance nodes",
+        ),
+        (network_subfigure_file(), "iges network instance nodes"),
+        (
+            network_subfigure_file(),
+            "iges valid network instance nodes",
+        ),
+        (
+            owned_test_file(&[OwnedTestEntity {
+                entity_type: 408,
+                form: 0,
+                label: "MISSING".into(),
+                status: "00000000",
+                parameters: "408,99,0,0,0,1;".into(),
+            }]),
+            "iges placement rejection nodes",
+        ),
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                _ => panic!("expected structure index refusal at {operation}"),
+            }
+        }
+        assert!(
+            reached,
+            "structure index refusal was not reached: {operation}"
+        );
+    }
+}
+
+#[test]
+fn network_connect_point_lists_refuse_per_item_storage() {
+    let bytes = connected_network_subfigure_file();
+    for operation in [
+        "iges network definition connect points",
+        "iges network instance connect points",
+    ] {
+        let mut cap = 0_u64;
+        let mut reached = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            match IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            ) {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(
+                    cadmpeg_core::CodecError::ResourceLimit(limit),
+                )) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        reached = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                other => panic!("expected network connect-point refusal at {operation}: {other:?}"),
+            }
+        }
+        assert!(
+            reached,
+            "network connect-point refusal was not reached: {operation}"
+        );
+    }
+    assert!(IgesCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .is_ok());
+}
+
+mod flow;
 mod legacy_and_network;

@@ -388,6 +388,7 @@ macro_rules! design_feature_kinds {
         /// Mutable construction fields with a fixed feature family.
         pub(crate) enum DesignScopePayloadMut<'a> {
             $($variant(&'a mut $payload),)+
+            $($fixed(&'a mut $fixed_payload),)+
             Other,
         }
 
@@ -395,6 +396,7 @@ macro_rules! design_feature_kinds {
             fn fields_mut(&mut self) -> DesignScopePayloadMut<'_> {
                 match self {
                     $(Self::$variant(value) => DesignScopePayloadMut::$variant(value),)+
+                    $(Self::$fixed(value) => DesignScopePayloadMut::$fixed(value),)+
                     _ => DesignScopePayloadMut::Other,
                 }
             }
@@ -1245,16 +1247,30 @@ struct DesignPathFeatureWire {
 }
 
 /// Sketch-module entity named by a sketch parameter scope.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignSketchEntityBindingWire",
-    into = "DesignSketchEntityBindingWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DesignSketchEntityBindingWire")]
 pub(crate) struct DesignSketchEntityBinding {
     /// Full Design entity id of a sketch scope.
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the sketch entity suffix.
     pub(crate) entity_reference_offset: u64,
+}
+
+#[cfg(test)]
+thread_local! {
+    static SKETCH_ENTITY_BINDING_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DesignSketchEntityBinding {
+    fn clone(&self) -> Self {
+        SKETCH_ENTITY_BINDING_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            entity_id: self.entity_id.clone(),
+            entity_reference_offset: self.entity_reference_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1267,6 +1283,26 @@ struct DesignSketchEntityBindingWire {
     entity_suffix: u64,
     /// Byte offset of the sketch entity suffix.
     entity_reference_offset: u64,
+}
+
+impl Serialize for DesignSketchEntityBinding {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            #[serde(rename = "entity_id")]
+            id: &'a str,
+            #[serde(rename = "entity_suffix")]
+            suffix: u64,
+            #[serde(rename = "entity_reference_offset")]
+            reference_offset: u64,
+        }
+        WireRef {
+            id: self.entity_id.as_str(),
+            suffix: self.entity_id.suffix(),
+            reference_offset: self.entity_reference_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
@@ -1284,6 +1320,7 @@ impl TryFrom<DesignSketchEntityBindingWire> for DesignSketchEntityBinding {
     }
 }
 
+#[cfg(test)]
 impl From<DesignSketchEntityBinding> for DesignSketchEntityBindingWire {
     fn from(value: DesignSketchEntityBinding) -> Self {
         let entity_suffix = value.entity_id.suffix();
@@ -2145,6 +2182,7 @@ impl DesignParameterScope {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn into_draft(self) -> DesignParameterScopeDraft {
         DesignParameterScopeDraft {
             id: self.id,
@@ -2167,6 +2205,7 @@ impl DesignParameterScope {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn try_edit(
         &mut self,
         edit: impl FnOnce(&mut DesignParameterScopeDraft),

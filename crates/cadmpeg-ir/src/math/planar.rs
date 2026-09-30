@@ -395,20 +395,8 @@ pub fn line_line_parameters(a: Point2, b: Point2, c: Point2, d: Point2) -> Optio
 
 /// The finite intersections of two positive-radius circles.
 /// Coincident circles and invalid or unrepresentable results return `None`.
-/// Disjoint circles return an empty vector; a tangent returns one point.
+/// Disjoint circles return two empty slots; a tangent returns one point.
 pub fn circle_intersections(
-    first: Point2,
-    first_radius: f64,
-    second: Point2,
-    second_radius: f64,
-) -> Option<Vec<FinitePoint2>> {
-    circle_intersections_fixed(first, first_radius, second, second_radius)
-        .map(|points| points.into_iter().flatten().collect())
-}
-
-/// At most two circle intersection points in the same order as
-/// [`circle_intersections`], held without a collection allocation.
-pub fn circle_intersections_fixed(
     first: Point2,
     first_radius: f64,
     second: Point2,
@@ -426,12 +414,12 @@ pub fn circle_intersections_fixed(
     // Work from the smaller circle so its radius survives independently of the
     // separation and the other radius. The returned point set is unordered.
     if first_radius > second_radius {
-        return circle_intersections_fixed(second, second_radius, first, first_radius);
+        return circle_intersections(second, second_radius, first, first_radius);
     }
     let (delta, scale) = scaled_displacement(first, second, 0.0);
     let distance = delta.u.hypot(delta.v);
     if distance == 0.0 {
-        return (first_radius != second_radius).then_some([None, None]);
+        return (first_radius != second_radius).then_some([None; 2]);
     }
     let mut denominator = ExactSignedSum::default();
     denominator.add_factors([2.0, distance, scale]);
@@ -447,7 +435,7 @@ pub fn circle_intersections_fixed(
     let Some(along) = numerator.finish().map_or(Some(FiniteReal::ZERO), |value| {
         value.quotient(denominator).ok()
     }) else {
-        return Some([None, None]);
+        return Some([None; 2]);
     };
     let along = along.get();
     // `along` is the signed perpendicular distance from the smaller circle's
@@ -459,22 +447,21 @@ pub fn circle_intersections_fixed(
     let radial_scale = first_radius.max(perpendicular);
     let Some(half_chord) = half_chord(first_radius / radial_scale, perpendicular / radial_scale)
     else {
-        return Some([None, None]);
+        return Some([None; 2]);
     };
     let height = radial_scale * half_chord;
     let unit = Point2::new(delta.u / distance, delta.v / distance);
-    let point_at = |height: f64| {
-        Some(FinitePoint2::from_coordinates(
+    let mut points = [None; 2];
+    for (index, height) in [height, -height].into_iter().enumerate() {
+        let point = FinitePoint2::from_coordinates(
             super::sum::finite_dot([1.0, along, -height], [first.u, unit.u, unit.v]).ok()?,
             super::sum::finite_dot([1.0, along, height], [first.v, unit.v, unit.u]).ok()?,
-        ))
-    };
-    let first_point = point_at(height)?;
-    let second_point = point_at(-height)?;
-    Some([
-        Some(first_point),
-        (second_point != first_point).then_some(second_point),
-    ])
+        );
+        if !points.contains(&Some(point)) {
+            points[index] = Some(point);
+        }
+    }
+    Some(points)
 }
 
 #[cfg(test)]
@@ -610,7 +597,10 @@ mod tests {
             1e308,
         )
         .unwrap();
-        assert_eq!(points, vec![Point2::new(0.0, 0.0)]);
+        assert_eq!(
+            points.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0.0, 0.0)]
+        );
     }
 
     #[test]
@@ -619,8 +609,8 @@ mod tests {
             let a = Point2::new(0., 0.);
             let b = Point2::new(r, 0.);
             let points = circle_intersections(a, r, b, r).unwrap();
-            assert_eq!(points.len(), 2);
-            for p in points {
+            assert_eq!(points.iter().flatten().count(), 2);
+            for p in points.into_iter().flatten() {
                 assert!((p.u / r - 0.5).abs() <= 4. * f64::EPSILON);
                 assert!((p.v.abs() / r - 0.75_f64.sqrt()).abs() <= 4. * f64::EPSILON);
             }
@@ -682,6 +672,7 @@ mod tests {
         circle_intersections(Point2::new(0.0, 0.0), 1.0, Point2::new(distance, 0.0), 1.0)
             .unwrap()
             .into_iter()
+            .flatten()
             .map(FinitePoint2::get)
             .collect()
     }
@@ -725,8 +716,8 @@ mod tests {
                     circle_intersections(small_center, 1.0, large_center, large)
                 }
                 .unwrap();
-                assert_eq!(points.len(), 2);
-                for point in points {
+                assert_eq!(points.iter().flatten().count(), 2);
+                for point in points.into_iter().flatten() {
                     assert!((point.u * large - 0.5).abs() <= 8.0 * f64::EPSILON);
                     assert!((point.v.abs() - 1.0).abs() <= 8.0 * f64::EPSILON);
                 }

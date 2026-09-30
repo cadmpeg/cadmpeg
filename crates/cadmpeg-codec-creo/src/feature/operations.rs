@@ -424,7 +424,7 @@ pub(crate) fn reference_names(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut names, 1, "creo reference name entries")?;
+        ctx.reserve_vec(&mut names, 1, "creo reference name entries")?;
         names.push(FeatureReferenceName {
             feature_id,
             name_bytes: ctx.copy_retained(name_bytes, "creo reference name bytes")?,
@@ -483,7 +483,7 @@ fn recipe_bindings(
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
-            ctx.try_reserve_items(&mut bindings, 1, "creo recipe bindings")?;
+            ctx.reserve_vec(&mut bindings, 1, "creo recipe bindings")?;
             bindings.push((
                 feature_id,
                 FeatureRecipeBinding {
@@ -533,13 +533,13 @@ fn conflicting_recipe_features(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "creo recipe feature nodes")?;
                 let mut values = Vec::new();
-                ctx.try_reserve_items(&mut values, 1, "creo recipe feature bindings")?;
+                ctx.reserve_vec(&mut values, 1, "creo recipe feature bindings")?;
                 values.push(*binding);
                 entry.insert(values);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 let values = entry.get_mut();
-                ctx.try_reserve_items(values, 1, "creo recipe feature bindings")?;
+                ctx.reserve_vec(values, 1, "creo recipe feature bindings")?;
                 values.push(*binding);
             }
         }
@@ -652,7 +652,7 @@ pub(crate) fn operation_states(
             &payload[state_offset..separator + separator_bytes.len() + end],
             "creo operation stored name bytes",
         )?;
-        ctx.try_reserve_items(&mut result, 1, "creo feature operation states")?;
+        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::Stored(kind),
@@ -683,7 +683,7 @@ pub(crate) fn operation_states(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo feature operation states")?;
+        ctx.reserve_vec(&mut result, 1, "creo feature operation states")?;
         result.push(FeatureOperation {
             feature_id,
             kind: OperationKind::from_recipe(binding.recipe),
@@ -750,13 +750,13 @@ pub(crate) fn operations(
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_collection_items(1, "creo operation feature nodes")?;
                 let mut states = Vec::new();
-                ctx.try_reserve_items(&mut states, 1, "creo operation feature states")?;
+                ctx.reserve_vec(&mut states, 1, "creo operation feature states")?;
                 states.push(operation);
                 entry.insert(states);
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
                 let states = entry.get_mut();
-                ctx.try_reserve_items(states, 1, "creo operation feature states")?;
+                ctx.reserve_vec(states, 1, "creo operation feature states")?;
                 states.push(operation);
             }
         }
@@ -839,7 +839,7 @@ pub(crate) fn operations(
             }
         };
         if let Some(projection) = projection {
-            ctx.try_reserve_items(&mut current, 1, "creo current operation projections")?;
+            ctx.reserve_vec(&mut current, 1, "creo current operation projections")?;
             current.push(projection);
         }
     }

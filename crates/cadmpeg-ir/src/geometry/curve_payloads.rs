@@ -1039,7 +1039,7 @@ impl SpringCurvePayload {
                 supports.iter().all(|support| match support {
                     SpringSupport::Surface(_) => true,
                     SpringSupport::Ranges(ranges) => ranges.iter().all(ordered),
-                }) && match first_pcurve {
+                }) && match first_pcurve.as_ref() {
                     SpringPcurve::Pcurve(_) => true,
                     SpringPcurve::Range(range) => ordered(range),
                 }

@@ -1726,7 +1726,7 @@ fn variable_table(
             ctx.copy_retained(&payload[value_start..value_end], "creo variable value body")?;
         row.guess_body =
             ctx.copy_retained(&payload[guess_start..guess_end], "creo variable guess body")?;
-        ctx.try_reserve_items(&mut rows, 1, "creo variable rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo variable rows")?;
         rows.push(row);
     }
     // Each row consumes at least one byte, so the declared count cannot admit
@@ -1789,7 +1789,7 @@ fn variable_table(
             uvar_id: trailing[2],
             offset: row_offset,
         };
-        ctx.try_reserve_items(&mut rows, 1, "creo variable rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo variable rows")?;
         rows.push(row);
     }
     Ok(Some(FeatureVariableTable {
@@ -1843,7 +1843,7 @@ fn positional_variable_table(
     let window = payload.get(cursor..end).map_or(0, <[u8]>::len);
     let capacity = bounded_len(u64::from(declared_count), 1, window).unwrap_or(0);
     let mut rows = Vec::new();
-    ctx.try_reserve_items(&mut rows, capacity, "creo variable rows")?;
+    ctx.reserve_vec(&mut rows, capacity, "creo variable rows")?;
     let prototype_separator_len = 2 + reference_bytes.len() + 1;
     'rows: while cursor < end && rows.len() < row_limit {
         let row_offset = cursor;
@@ -2054,7 +2054,7 @@ fn equation_arguments(
         {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut arguments, slot_count, "creo equation arguments")?;
+        ctx.reserve_vec(&mut arguments, slot_count, "creo equation arguments")?;
         arguments.extend_from_slice(&slots[..slot_count]);
     }
     Ok(explicit_count
@@ -2196,7 +2196,7 @@ pub(crate) fn equation_table(
             "creo equation auxiliary body",
         )?;
         let body = ctx.copy_retained(&payload[row_start..row_end], "creo equation row body")?;
-        ctx.try_reserve_items(&mut rows, 1, "creo equation rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo equation rows")?;
         rows.push(FeatureEquation {
             equation_id,
             function_id,
@@ -2410,7 +2410,7 @@ fn segment_table_body(
     .unwrap_or(end);
     let mut rows = Vec::new();
     if let Some(row) = named_row.and_then(typed_segment_row) {
-        ctx.try_reserve_items(&mut rows, 1, "creo segment rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
         rows.push(row);
     }
     let first_row = cursor;
@@ -2512,7 +2512,7 @@ fn segment_table_body(
                     }
                     _ => {}
                 }
-                ctx.try_reserve_items(&mut rows, 1, "creo segment rows")?;
+                ctx.reserve_vec(&mut rows, 1, "creo segment rows")?;
                 rows.push(row);
             }
             cursor = p + 1;
@@ -2722,7 +2722,7 @@ fn trim_entity_table(
                     ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
                     seen.insert(external_id);
                 }
-                ctx.try_reserve_items(&mut rows, 1, "creo trim entity rows")?;
+                ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -2737,7 +2737,7 @@ fn trim_entity_table(
         cursor += 1;
     }
     let mut solved_external_ids = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut solved_external_ids,
         seen.len(),
         "creo trim entity solved IDs",
@@ -2808,7 +2808,7 @@ fn trim_buckets(
         return Ok(Vec::new());
     };
     let mut starts = Vec::new();
-    ctx.try_reserve_items(&mut starts, 1, "creo trim bucket starts")?;
+    ctx.reserve_vec(&mut starts, 1, "creo trim bucket starts")?;
     starts.push(TrimBucketStart {
         index: first,
         declared_entry_count: first_count,
@@ -2832,7 +2832,7 @@ fn trim_buckets(
         else {
             break;
         };
-        ctx.try_reserve_items(&mut starts, 1, "creo trim bucket starts")?;
+        ctx.reserve_vec(&mut starts, 1, "creo trim bucket starts")?;
         starts.push(TrimBucketStart {
             index,
             declared_entry_count,
@@ -2842,7 +2842,7 @@ fn trim_buckets(
         cursor = next;
     }
     let mut buckets = Vec::new();
-    ctx.try_reserve_items(&mut buckets, starts.len(), "creo trim buckets")?;
+    ctx.reserve_vec(&mut buckets, starts.len(), "creo trim buckets")?;
     for (position, start) in starts.iter().enumerate() {
         // Every bucket start after the first follows an 0xe2 separator, so
         // it has a preceding byte.
@@ -3049,7 +3049,7 @@ fn trim_vertex_entry(
         return Ok(None);
     };
     let mut entities = Vec::new();
-    ctx.try_reserve_items(&mut entities, entity_count, "creo trim vertex entities")?;
+    ctx.reserve_vec(&mut entities, entity_count, "creo trim vertex entities")?;
     for _ in 0..entity_count {
         let (value, after_value) = segment_int(payload, cursor);
         let Some(value) = value else {
@@ -3291,7 +3291,7 @@ fn positional_trim_entity_table(
                     ctx.charge_collection_items(1, "creo trim entity ID nodes")?;
                     seen.insert(external_id);
                 }
-                ctx.try_reserve_items(&mut rows, 1, "creo trim entity rows")?;
+                ctx.reserve_vec(&mut rows, 1, "creo trim entity rows")?;
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -3317,7 +3317,7 @@ fn positional_trim_entity_table(
         TrimEntryKind::Entity,
     )?;
     let mut solved_external_ids = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut solved_external_ids,
         seen.len(),
         "creo trim entity solved IDs",
@@ -3413,7 +3413,7 @@ fn trim_vertex_table(
                 if let Some((entities, vertex_id, next)) =
                     trim_vertex_entry(ctx, payload, cursor, region_end)?
                 {
-                    ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
+                    ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                     rows.push(FeatureTrimVertex {
                         section_coordinates: trim_vertex_intersection(
                             ctx, &entities, segments, variables,
@@ -3438,7 +3438,7 @@ fn trim_vertex_table(
                     if let Some((entities, vertex_id, after_entry)) =
                         trim_vertex_entry(ctx, payload, next, region_end)?
                     {
-                        ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
+                        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
                         rows.push(FeatureTrimVertex {
                             section_coordinates: trim_vertex_intersection(
                                 ctx, &entities, segments, variables,
@@ -3467,7 +3467,7 @@ fn trim_vertex_table(
             cursor += 1;
             continue;
         };
-        ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
             section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
@@ -3538,7 +3538,7 @@ fn positional_trim_vertex_table(
             cursor += 1;
             continue;
         };
-        ctx.try_reserve_items(&mut rows, 1, "creo trim vertex rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo trim vertex rows")?;
         rows.push(FeatureTrimVertex {
             section_coordinates: trim_vertex_intersection(ctx, &entities, segments, variables)?,
             vertex_id,
@@ -3857,7 +3857,7 @@ fn entity_intersection(
         let Some(segment) = segments.unique_segment(*entity_id) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut segments_for_intersection,
             1,
             "creo trim intersection segments",
@@ -3884,7 +3884,7 @@ fn entity_intersection(
         let Some(carrier) = trim_carrier(segment, &points, variables) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut carriers, 1, "creo trim intersection carriers")?;
+        ctx.reserve_vec(&mut carriers, 1, "creo trim intersection carriers")?;
         carriers.push(carrier);
     }
     let mut intersections = Vec::new();
@@ -3917,7 +3917,7 @@ fn entity_intersection(
             }) else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(&mut intersections, 1, "creo trim intersections")?;
+            ctx.reserve_vec(&mut intersections, 1, "creo trim intersections")?;
             intersections.push(coordinate);
         }
     }
@@ -4038,7 +4038,7 @@ fn order_table(
         }
         ctx.charge_collection_items(1, "creo order internal ID nodes")?;
         internal_ids.insert(internal_id);
-        ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(FeatureOrderRow {
             external_id,
             internal_id,
@@ -4140,7 +4140,7 @@ fn positional_order_table(
         };
         cursor = next;
         if rows.len() + 1 == row_limit {
-            ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
             rows.push(row);
             break;
         }
@@ -4148,7 +4148,7 @@ fn positional_order_table(
             break;
         }
         cursor += 1;
-        ctx.try_reserve_items(&mut rows, 1, "creo order rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo order rows")?;
         rows.push(row);
     }
     Ok(Some(FeatureOrderTable {
@@ -4228,7 +4228,7 @@ fn section_3d(
                 let Ok((entity_id, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut reference_plane_entity_ids,
                     1,
                     "creo named section reference planes",
@@ -4270,7 +4270,7 @@ fn section_3d(
                 let (Some(value), next) = segment_int(payload, cursor) else {
                     break;
                 };
-                ctx.try_reserve_items(&mut dimension_ids, 1, "creo section dimension IDs")?;
+                ctx.reserve_vec(&mut dimension_ids, 1, "creo section dimension IDs")?;
                 dimension_ids.push(value);
                 cursor = next;
             }
@@ -4404,7 +4404,7 @@ fn positional_section_3d(
             break;
         }
         cursor = next;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut reference_plane_rows,
             1,
             "creo positional section reference planes",
@@ -4528,7 +4528,7 @@ fn dimension_reference_table(
             offset: table,
         }));
     };
-    ctx.try_reserve_items(&mut rows, 1, "creo dimension reference rows")?;
+    ctx.reserve_vec(&mut rows, 1, "creo dimension reference rows")?;
     rows.push(prototype);
     let Some(reference_bytes) = reference_bytes else {
         return Ok(Some(FeatureDimensionReferenceTable {
@@ -4567,7 +4567,7 @@ fn dimension_reference_table(
             break;
         };
         let [first, second] = [point[0], point[1]];
-        ctx.try_reserve_items(&mut rows, 1, "creo dimension reference rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo dimension reference rows")?;
         rows.push(FeatureDimensionReference {
             item_id,
             sense,
@@ -4748,7 +4748,7 @@ fn dimension_table(
     };
     let mut rows = Vec::new();
     if let Some(row) = labeled_dimension(ctx, payload, cursor, first_end, cache)? {
-        ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
     }
     if let Some(class) = reference_bytes {
@@ -4765,7 +4765,7 @@ fn dimension_table(
             else {
                 break;
             };
-            ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
             rows.push(row);
             replay = next_separator;
         }
@@ -4823,7 +4823,7 @@ fn positional_dimension_table(
         let Some(row) = positional_dimension(ctx, payload, cursor, row_end, cache)? else {
             break;
         };
-        ctx.try_reserve_items(&mut rows, 1, "creo dimension rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo dimension rows")?;
         rows.push(row);
         if rows.len() == row_limit {
             break;
@@ -4961,7 +4961,7 @@ fn feature_skamps(
     item_cursor = named_item_end + named_item_close_len;
     let mut prototype_items = Vec::new();
     if let Some(item) = named_item {
-        ctx.try_reserve_items(&mut prototype_items, 1, "creo skamp prototype items")?;
+        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
         prototype_items.push(item);
     }
     while prototype_items.len() < index_from_u32(prototype_item_count) {
@@ -4973,7 +4973,7 @@ fn feature_skamps(
             return Ok(Vec::new());
         };
         item_cursor = next;
-        ctx.try_reserve_items(&mut prototype_items, 1, "creo skamp prototype items")?;
+        ctx.reserve_vec(&mut prototype_items, 1, "creo skamp prototype items")?;
         prototype_items.push(FeatureSkampItem { entity_id, sense });
     }
     if item_cursor != prototype_end {
@@ -4992,7 +4992,7 @@ fn feature_skamps(
         return Ok(Vec::new());
     };
     let mut rows = Vec::new();
-    ctx.try_reserve_items(&mut rows, 1, "creo skamp rows")?;
+    ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
     rows.push(prototype);
     cursor = prototype_end + class_encoding.len() + 2;
     'rows: while rows.len() < index_from_u32(declared_count) {
@@ -5039,7 +5039,7 @@ fn feature_skamps(
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
-            ctx.try_reserve_items(&mut items, 1, "creo skamp items")?;
+            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
             items.push(FeatureSkampItem { entity_id, sense });
             if payload.get(cursor) == Some(&0xf1) {
                 let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
@@ -5061,7 +5061,7 @@ fn feature_skamps(
         } else {
             break;
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo skamp rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(FeatureSkamp {
             id,
             kind,
@@ -5259,7 +5259,7 @@ fn positional_feature_skamps(
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
                 break 'rows;
             };
-            ctx.try_reserve_items(&mut items, 1, "creo skamp items")?;
+            ctx.reserve_vec(&mut items, 1, "creo skamp items")?;
             items.push(FeatureSkampItem { entity_id, sense });
             if items.len() < index_from_u32(item_count) {
                 let Some(next) =
@@ -5286,7 +5286,7 @@ fn positional_feature_skamps(
             };
             cursor = next;
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo skamp rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo skamp rows")?;
         rows.push(row);
     }
     Ok(rows)
@@ -5503,7 +5503,7 @@ fn feature_relation_triples(
     }
     cursor += 1;
     let mut rows = Vec::new();
-    ctx.try_reserve_items(&mut rows, 1, "creo relation triples")?;
+    ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
     rows.push(prototype);
     while rows.len() < index_from_u32(declared_count) {
         let row_offset = cursor;
@@ -5518,7 +5518,7 @@ fn feature_relation_triples(
         if !terminal_named_boundary {
             cursor += 1;
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo relation triples")?;
+        ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
         rows.push(FeatureRelationTriple {
             relation_id,
             equation_id,
@@ -5580,7 +5580,7 @@ fn positional_relation_triples(
             };
             cursor = next;
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo relation triples")?;
+        ctx.reserve_vec(&mut rows, 1, "creo relation triples")?;
         rows.push(row);
     }
     Ok(rows)
@@ -5780,7 +5780,7 @@ fn positional_relation_rows(
         let operands =
             ctx.copy_retained(&payload[after_used..suffix_start], "creo relation operands")?;
         let body = ctx.copy_retained(&payload[cursor..row_end], "creo relation row body")?;
-        ctx.try_reserve_items(&mut rows, 1, "creo relation rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo relation rows")?;
         rows.push(FeatureRelation {
             relation_id,
             used,
@@ -5979,7 +5979,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
-                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload
@@ -5989,7 +5989,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
-                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
             } else if payload.get(cursor) == Some(&0xeb) {
@@ -5998,7 +5998,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
-                ctx.try_reserve_items(&mut attributes, 1, "creo saved line attributes")?;
+                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
             } else {
@@ -6032,7 +6032,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
                     break;
                 };
-                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -6044,7 +6044,7 @@ fn saved_line_block(
                 let Ok((reference, next)) = psb::reference_id(payload, cursor + 2) else {
                     break;
                 };
-                ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
+                ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
                 references.push(reference);
                 cursor = next;
                 continue;
@@ -6055,7 +6055,7 @@ fn saved_line_block(
                 };
                 let mut attribute = [0; 5];
                 attribute.copy_from_slice(bytes);
-                ctx.try_reserve_items(&mut attributes, 1, "creo saved line attributes")?;
+                ctx.reserve_vec(&mut attributes, 1, "creo saved line attributes")?;
                 attributes.push(attribute);
                 cursor += 6;
                 continue;
@@ -6099,7 +6099,7 @@ fn saved_line_block(
             let Ok((reference, next)) = psb::reference_id(payload, reference_start) else {
                 break;
             };
-            ctx.try_reserve_items(&mut references, 1, "creo saved line references")?;
+            ctx.reserve_vec(&mut references, 1, "creo saved line references")?;
             references.push(reference);
             cursor = next;
         }
@@ -6116,7 +6116,7 @@ fn saved_line_block(
         }
         let body =
             ctx.copy_retained(&payload[record_offset..record_end], "creo saved line body")?;
-        ctx.try_reserve_items(&mut entities, 1, "creo saved line block entities")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved line block entities")?;
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -6154,7 +6154,7 @@ fn saved_line_entities(
         .min()
         .unwrap_or(end);
         let block = saved_line_block(ctx, payload, body_start, body_end, cache)?;
-        ctx.try_reserve_items(&mut entities, block.len(), "creo saved line entities")?;
+        ctx.reserve_vec(&mut entities, block.len(), "creo saved line entities")?;
         entities.extend(block);
         search = body_end;
     }
@@ -6319,7 +6319,7 @@ fn saved_positional_generated_entities(
             continue;
         }
         if payload[after_id..header_end].contains(&0xe2) {
-            ctx.try_reserve_items(&mut starts, 1, "creo saved generated row starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo saved generated row starts")?;
             starts.push(row_start);
         }
     }
@@ -6433,7 +6433,7 @@ fn saved_positional_generated_entities(
                         &payload[row_start..body_end],
                         "creo saved generated line body",
                     )?;
-                    ctx.try_reserve_items(&mut entities, 1, "creo saved generated entities")?;
+                    ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
                     entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
                         entity_id,
                         references: Vec::new(),
@@ -6450,7 +6450,7 @@ fn saved_positional_generated_entities(
                     &payload[row_start..body_end],
                     "creo saved generated arc body",
                 )?;
-                ctx.try_reserve_items(&mut entities, 1, "creo saved generated entities")?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved generated entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center: [values[0], values[1], values[2]],
@@ -6533,7 +6533,7 @@ fn saved_circular_entities(
                         .unwrap_or([None])[0];
                 let body =
                     ctx.copy_retained(&payload[body_start..named_body_end], "creo saved arc body")?;
-                ctx.try_reserve_items(&mut entities, 1, "creo saved circular entities")?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center,
@@ -6543,7 +6543,7 @@ fn saved_circular_entities(
                     body,
                     offset: entity_offset,
                 }));
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut entities,
                     positional.len(),
                     "creo saved circular entities",
@@ -6552,7 +6552,7 @@ fn saved_circular_entities(
             } else {
                 let body =
                     ctx.copy_retained(&payload[body_start..body_end], "creo saved circle body")?;
-                ctx.try_reserve_items(&mut entities, 1, "creo saved circular entities")?;
+                ctx.reserve_vec(&mut entities, 1, "creo saved circular entities")?;
                 entities.push(FeatureSavedEntity::Circle(FeatureSavedCircle {
                     entity_id,
                     center,
@@ -6613,7 +6613,7 @@ fn saved_conic_entities(
                 .map(|(frame, _)| frame)
             });
         let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved conic body")?;
-        ctx.try_reserve_items(&mut entities, 1, "creo saved conic entities")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved conic entities")?;
         entities.push(FeatureSavedEntity::Conic(FeatureSavedConic {
             entity_id,
             endpoints: [first, second],
@@ -6641,7 +6641,7 @@ fn saved_dummy_entities(
         let body_start = entity_offset + label.len();
         let body_end = find_bytes(payload, b"\xe0\x00entity(", body_start, end).unwrap_or(end);
         let body = ctx.copy_retained(&payload[body_start..body_end], "creo saved dummy body")?;
-        ctx.try_reserve_items(&mut entities, 1, "creo saved dummy entities")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved dummy entities")?;
         entities.push(FeatureSavedEntity::Dummy(FeatureSavedDummy {
             entity_id: saved_entity_id(payload, body_start, body_end),
             body,
@@ -6701,7 +6701,7 @@ fn saved_spline_entities(
                     admitted_interpolation_point_count(declared, remaining.len())
                 });
                 if let Some(point_count) = point_count {
-                    ctx.try_reserve_items(&mut points, point_count, "creo saved spline points")?;
+                    ctx.reserve_vec(&mut points, point_count, "creo saved spline points")?;
                     for _ in 0..point_count {
                         let mut point = [0.0; 3];
                         let mut next_cursor = cursor;
@@ -6767,7 +6767,7 @@ fn saved_spline_entities(
             }
             None => None,
         };
-        ctx.try_reserve_items(&mut entities, 1, "creo saved spline entities")?;
+        ctx.reserve_vec(&mut entities, 1, "creo saved spline entities")?;
         entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
             entity_id: saved_entity_id(payload, body_start, entity_id_end),
             declared_point_count,
@@ -6802,7 +6802,7 @@ fn saved_spline_parameters(
         return Ok(None);
     }
     let mut values = Vec::new();
-    ctx.try_reserve_items(&mut values, point_count, "creo saved spline parameters")?;
+    ctx.reserve_vec(&mut values, point_count, "creo saved spline parameters")?;
     for _ in 0..count {
         let Some((value, next)) = saved_spline_parameter(payload, cursor, cache) else {
             return Ok(None);
@@ -6879,16 +6879,16 @@ fn saved_section(
     let mut entities = saved_line_entities(ctx, payload, table, table_end, cache)?;
     let circular =
         saved_circular_entities(ctx, payload, table, table_end, cache, order_table, segments)?;
-    ctx.try_reserve_items(&mut entities, circular.len(), "creo saved section entities")?;
+    ctx.reserve_vec(&mut entities, circular.len(), "creo saved section entities")?;
     entities.extend(circular);
     let conic = saved_conic_entities(ctx, payload, table, end, cache)?;
-    ctx.try_reserve_items(&mut entities, conic.len(), "creo saved section entities")?;
+    ctx.reserve_vec(&mut entities, conic.len(), "creo saved section entities")?;
     entities.extend(conic);
     let dummy = saved_dummy_entities(ctx, payload, table, table_end)?;
-    ctx.try_reserve_items(&mut entities, dummy.len(), "creo saved section entities")?;
+    ctx.reserve_vec(&mut entities, dummy.len(), "creo saved section entities")?;
     entities.extend(dummy);
     let spline = saved_spline_entities(ctx, payload, start, end, cache)?;
-    ctx.try_reserve_items(&mut entities, spline.len(), "creo saved section entities")?;
+    ctx.reserve_vec(&mut entities, spline.len(), "creo saved section entities")?;
     entities.extend(spline);
     crate::sort::stable_sort_by_key(
         ctx,
@@ -6921,7 +6921,7 @@ fn positional_saved_section(
         segments,
     )?;
     let conic = saved_conic_entities(ctx, payload, start, end, cache)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut entities,
         conic.len(),
         "creo positional saved section entities",
@@ -6968,7 +6968,7 @@ pub(crate) fn definition_revolution_extents(
         }
         for (offset, window) in definition.body.windows(FULL_TURN.len()).enumerate() {
             if window == FULL_TURN {
-                ctx.try_reserve_items(&mut result, 1, "creo definition revolution extents")?;
+                ctx.reserve_vec(&mut result, 1, "creo definition revolution extents")?;
                 result.push(FeatureRevolutionExtent {
                     feature_id,
                     offset: definition.offset + offset + 6,
@@ -7041,7 +7041,7 @@ fn definitions_in_ranges(
                     &payload[body_start..body_end],
                     "creo feature parameter frame body",
                 )?;
-                ctx.try_reserve_items(&mut parameter_frames, 1, "creo feature parameter frames")?;
+                ctx.reserve_vec(&mut parameter_frames, 1, "creo feature parameter frames")?;
                 parameter_frames.push(FeatureParameterFrame {
                     kind,
                     decoded_values: scalar::decode_feature_local_system_slots(&body, &cache),
@@ -7062,7 +7062,7 @@ fn definitions_in_ranges(
             if let Some(label) = find_bytes(payload, b"outline\0\xf9\x02\x03", info, end) {
                 let scalar_start = label + b"outline\0\xf9\x02\x03".len();
                 let local_scalars = outline_scalars(ctx, &payload[scalar_start..end], &cache)?;
-                ctx.try_reserve_items(&mut outlines, 1, "creo feature outlines")?;
+                ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase: OutlinePhase::PreRollback,
                     local_scalars,
@@ -7092,7 +7092,7 @@ fn definitions_in_ranges(
                     continue;
                 }
                 let local_scalars = outline_scalars(ctx, &payload[after_ref + 4..end], &cache)?;
-                ctx.try_reserve_items(&mut outlines, 1, "creo feature outlines")?;
+                ctx.reserve_vec(&mut outlines, 1, "creo feature outlines")?;
                 outlines.push(FeatureOutline {
                     phase,
                     local_scalars,
@@ -7299,7 +7299,7 @@ fn definitions_in_ranges(
             ids.all(|id| id == first).then_some(first)
         });
         let body = ctx.copy_retained(&payload[start..end], "creo feature definition body")?;
-        ctx.try_reserve_items(&mut result, 1, "creo parsed feature definitions")?;
+        ctx.reserve_vec(&mut result, 1, "creo parsed feature definitions")?;
         result.push(FeatureDefinition {
             identity: DefinitionIdentity::Parsed {
                 schema_id: id,
@@ -7388,7 +7388,7 @@ fn definition_starts(
         let Ok(id) = digits.parse::<u32>() else {
             continue;
         };
-        ctx.try_reserve_items(&mut starts, 1, "creo feature definition starts")?;
+        ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
         starts.push(DefinitionStart {
             offset,
             id: NonZeroU32::new(id),
@@ -7408,7 +7408,7 @@ fn definition_starts(
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
-            ctx.try_reserve_items(&mut starts, 1, "creo feature definition starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo feature definition starts")?;
             starts.push(DefinitionStart {
                 offset,
                 id: NonZeroU32::new(owner),
@@ -7456,7 +7456,7 @@ fn depdb_gsec2d_starts(
         });
     let mut starts = Vec::new();
     for start in candidates {
-        ctx.try_reserve_items(&mut starts, 1, "creo DEPDB section starts")?;
+        ctx.reserve_vec(&mut starts, 1, "creo DEPDB section starts")?;
         starts.push(start);
     }
     Ok(starts)
@@ -7481,7 +7481,7 @@ pub(crate) fn definitions(
     for offset in replay_markers {
         if !claimed_markers.contains(&offset) {
             let id = inherited_definition_id(&starts, offset);
-            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -7506,7 +7506,7 @@ pub(crate) fn depdb_definitions(
 ) -> Result<Vec<FeatureDefinition>, CodecError> {
     let mut starts = definition_starts(ctx, payload)?;
     let depdb_starts = depdb_gsec2d_starts(ctx, payload)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut starts,
         depdb_starts.len(),
         "creo DEPDB definition starts",
@@ -7517,7 +7517,7 @@ pub(crate) fn depdb_definitions(
     for offset in replay_markers {
         if !claimed_markers.contains(&offset) {
             let id = inherited_definition_id(&starts, offset);
-            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -7546,7 +7546,7 @@ fn s2d_replay_starts(ctx: &DecodeContext<'_>, payload: &[u8]) -> Result<Vec<usiz
         });
     let mut starts = Vec::new();
     for offset in candidates {
-        ctx.try_reserve_items(&mut starts, 1, "creo S2D replay starts")?;
+        ctx.reserve_vec(&mut starts, 1, "creo S2D replay starts")?;
         starts.push(offset);
     }
     Ok(starts)
@@ -7606,7 +7606,7 @@ pub(crate) fn positional_replay_definitions(
                 pending_offsets.insert(offset);
             }
             let id = inherited_definition_id(&starts, offset);
-            ctx.try_reserve_items(&mut starts, 1, "creo definition replay starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo definition replay starts")?;
             starts.push(DefinitionStart {
                 offset,
                 id,
@@ -7751,7 +7751,7 @@ pub(crate) fn bind_trimmed_definition_owners(
                 }
             }
         }
-        ctx.try_reserve_items(&mut candidates, 1, "creo trimmed owner candidate rows")?;
+        ctx.reserve_vec(&mut candidates, 1, "creo trimmed owner candidate rows")?;
         candidates.push(owners);
     }
     let mut owner_candidate_counts = BTreeMap::new();
@@ -7839,7 +7839,7 @@ pub(crate) fn bind_replay_definition_owners(
                 }
             }
         }
-        ctx.try_reserve_items(&mut candidates, 1, "creo replay owner candidate rows")?;
+        ctx.reserve_vec(&mut candidates, 1, "creo replay owner candidate rows")?;
         candidates.push(owners);
     }
     let mut owner_candidate_counts = BTreeMap::new();

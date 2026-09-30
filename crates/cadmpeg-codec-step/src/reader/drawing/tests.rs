@@ -12,6 +12,9 @@ use crate::loss::StepLossCode;
 use crate::test_support::exchange::decode_inline;
 use crate::StepCodec;
 
+mod collection_limits;
+mod string_limits;
+
 #[test]
 fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     let result = decode_inline(
@@ -76,7 +79,8 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .iter()
         .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
 
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
@@ -227,7 +231,8 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         loss.code == StepLossCode::DraughtingSemanticDefinitionUntyped.kind()
             || loss.code == StepLossCode::DraughtingAssociatedItemUntyped.kind()
     }));
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(result
         .ir()
@@ -481,18 +486,27 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
         target = item;
     }
     source.push_str("ENDSEC;END-ISO-10303-21;");
-    let (exchange, _) = crate::parse::parse(source.as_bytes()).expect("deep mapped graph");
+    let (exchange, _) =
+        crate::test_support::with_service_context(source.as_bytes(), crate::parse::parse_inner)
+            .expect("deep mapped graph");
     let identities = std::collections::BTreeMap::from([(
         1,
         std::collections::BTreeSet::from(["step:data:surface#1".into()]),
     )]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
+            .expect("root fits service policy");
     let resolved = super::target_resolution(
         target,
         &identities,
         &std::collections::HashSet::new(),
         &exchange,
         &std::collections::BTreeMap::new(),
-    );
+        &ctx,
+    )
+    .expect("target resolution fits service policy");
     let super::TargetResolution::Resolved(resolved) = resolved else {
         panic!("deep mapped graph lost its unique surface target");
     };

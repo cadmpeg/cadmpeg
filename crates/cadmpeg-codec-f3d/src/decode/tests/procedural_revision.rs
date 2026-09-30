@@ -1126,15 +1126,18 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         unreachable!()
     };
     let target = nurbs.v_count();
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|pole| {
-            if pole_index == target {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == target {
                 pole.x = 17.5;
                 pole.z = -3.25;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     edit::replace(&mut nurbs, |previous| {
@@ -1763,15 +1766,18 @@ fn generated_f3d_rewrites_rolling_ball_support_cache() {
     else {
         panic!("expected NURBS blend support")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|pole| {
-            if pole_index == 1 {
+        .try_map_control_points(|index, pole| {
+            let mut pole = pole.get();
+            if index == 1 {
                 pole.x = 6.0;
                 pole.z = 4.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     edit::replace(nurbs, |previous| {
@@ -1841,7 +1847,15 @@ fn subtype_reference_resolves_surface_cache() {
 
     let mut active = target;
     active.extend_from_slice(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
     let decoded = cadmpeg_asm::nurbs::core::surface_cache_resolving_refs(
+        &ctx,
         &cadmpeg_asm::nurbs::toks::lex_test_span(
             &source,
             cadmpeg_asm::kernel_header::RefWidth::Eight,
@@ -1850,6 +1864,8 @@ fn subtype_reference_resolves_surface_cache() {
         &cadmpeg_asm::nurbs::toks::test_table(&active, cadmpeg_asm::kernel_header::RefWidth::Eight)
             .expect("valid single-record byte fixture"),
     )
+    .transpose()
+    .expect("resource allocation")
     .expect("subtype-table reference resolves to its surface cache");
     assert_eq!((decoded.u_count(), decoded.v_count()), (2, 2));
 }
@@ -1863,6 +1879,8 @@ fn a_form_two_par_int_cur_decodes_as_its_support_isoline() {
     // isoline at u = 1 is the patch's far edge.
     let scope = generated_form_two_par_int_cur([1.0, 0.0], [1.0, 1.0]);
     let curve = decode_par_int_cur_isoline(&scope, cadmpeg_asm::kernel_header::RefWidth::Eight)
+        .transpose()
+        .expect("resource allocation did not fail")
         .expect("form-2 isoline");
     assert_eq!(curve.degree(), 1);
     assert_eq!(curve.knots().as_slice(), [0.0, 0.0, 1.0, 1.0]);
@@ -1913,6 +1931,13 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     use cadmpeg_asm::nurbs::proc_surface::{
         procedural_surface_resolving_refs, DecodedProceduralSurfaceDefinition,
     };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )
+    .expect("test decode context");
 
     let bytes = synthetic_cyl_spl_sur_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -1927,9 +1952,13 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     let record = &records[9];
     let owned = bytes[record.offset..record.offset + record.len].to_vec();
     let decoded = procedural_surface_resolving_refs(
+        &ctx,
         &record.tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(std::slice::from_ref(record)),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, std::slice::from_ref(record))
+            .unwrap(),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .expect("the record owns its extrusion");
     assert!(matches!(
         decoded.definition(),
@@ -1955,8 +1984,11 @@ fn a_nested_construction_does_not_claim_its_enclosing_record() {
     )
     .unwrap();
     assert!(procedural_surface_resolving_refs(
+        &ctx,
         &nested_records[0].tokens,
-        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&nested_records),
+        &cadmpeg_asm::nurbs::toks::SubtypeTable::from_records(&ctx, &nested_records).unwrap(),
     )
+    .transpose()
+    .expect("resource allocation did not fail")
     .is_none());
 }

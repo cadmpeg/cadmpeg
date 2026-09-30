@@ -58,6 +58,7 @@ pub(super) struct DataBlockAbrReferenceLaneWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DataBlockCountedIndexLane> for DataBlockCountedIndexLaneWire {
     fn from(value: DataBlockCountedIndexLane) -> Self {
         let anchor = value.frame.anchor();
@@ -146,6 +147,7 @@ impl TryFrom<DataBlockCountedIndexLaneWire> for DataBlockCountedIndexLane {
     }
 }
 
+#[cfg(test)]
 impl From<DataBlockAbrReferenceLane> for DataBlockAbrReferenceLaneWire {
     fn from(value: DataBlockAbrReferenceLane) -> Self {
         let slots = value.frame.slots();

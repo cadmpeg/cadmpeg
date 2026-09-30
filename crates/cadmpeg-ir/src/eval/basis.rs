@@ -3,9 +3,11 @@
 
 use std::borrow::Cow;
 
-use super::{admitted, difference_quotient};
+use super::{admitted, difference_quotient, finite_or_refusal};
 use crate::math::sum::scaled_ratio_products;
 use crate::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_core::convert::f64_from_index;
+use cadmpeg_core::decode::ResourceLimit;
 
 /// Knot span index of `t` for a clamped B-spline basis, or `None` when the
 /// knot vector cannot support `count` poles of the given degree.
@@ -53,19 +55,24 @@ pub(super) fn bspline_basis(
         scratch.work(support.checked_mul(support)?, "IR B-spline basis work")?;
         admitted::SupportValues::Heap(scratch.filled(support, 0.0, "IR B-spline basis")?)
     };
-    bspline_basis_into(knots, degree, span, t, &mut values)?;
+    scratch.admit_limit(fill_bspline_basis(knots, degree, span, t, &mut values))??;
     Some(values)
 }
 
-pub(super) fn bspline_basis_into(
+/// Writes the non-zero basis values at `t` for `span` into `values`, which
+/// holds exactly `degree + 1` entries. `None` states a buffer of another
+/// length, or a term that left the finite range.
+pub(super) fn fill_bspline_basis(
     knots: &[f64],
     degree: usize,
     span: usize,
     t: f64,
     values: &mut [f64],
-) -> Option<()> {
+) -> Result<Option<()>, ResourceLimit> {
+    if Some(values.len()) != degree.checked_add(1) {
+        return Ok(None);
+    }
     let finite_t = FiniteReal::new(t);
-    values.fill(0.0);
     values[0] = 1.0;
     for j in 1..=degree {
         let mut saved = 0.0;
@@ -81,29 +88,59 @@ pub(super) fn bspline_basis_into(
                 Some((right, left, FiniteReal::new(right.get() + left.get())?))
             });
             let [right_term, left_term] = if let Some((right, left, denominator)) = ratio_terms {
-                scaled_ratio_products(FiniteReal::new(value)?, denominator, [right, left])?
-                    .map(FiniteReal::get)
+                let Some(value) = FiniteReal::new(value) else {
+                    return Ok(None);
+                };
+                let Some(terms) = scaled_ratio_products(value, denominator, [right, left]) else {
+                    return Ok(None);
+                };
+                terms.map(FiniteReal::get)
             } else {
-                let t = finite_t?;
-                let [right_knot, left_knot] =
-                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])?;
-                [
-                    value
-                        * difference_quotient(right_knot, t, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                    value
-                        * difference_quotient(t, left_knot, right_knot, left_knot)
-                            .ok()?
-                            .get(),
-                ]
+                let Some(t) = finite_t else {
+                    return Ok(None);
+                };
+                let Some([right_knot, left_knot]) =
+                    FiniteReal::array([knots[span + r + 1], knots[span + 1 - j + r]])
+                else {
+                    return Ok(None);
+                };
+                let Some(right_quotient) =
+                    finite_or_refusal(difference_quotient(right_knot, t, right_knot, left_knot))?
+                else {
+                    return Ok(None);
+                };
+                let Some(left_quotient) =
+                    finite_or_refusal(difference_quotient(t, left_knot, right_knot, left_knot))?
+                else {
+                    return Ok(None);
+                };
+                [value * right_quotient.get(), value * left_quotient.get()]
             };
             values[r] = saved + right_term;
             saved = left_term;
         }
         values[j] = saved;
     }
-    Some(())
+    Ok(Some(()))
+}
+
+/// The quotient of three finite lanes over the exact knot difference, NaN where
+/// a lane or the quotient left the finite range, and `None` with the refusal
+/// recorded when the quotient was refused a resource.
+fn nan_quotient(
+    scratch: &admitted::Scratch<'_, '_>,
+    lanes: Option<[FiniteReal; 3]>,
+) -> Option<f64> {
+    let Some([value, end, start]) = lanes else {
+        return Some(f64::NAN);
+    };
+    let quotient = scratch.admit_limit(finite_or_refusal(difference_quotient(
+        value,
+        FiniteReal::ZERO,
+        end,
+        start,
+    )))?;
+    Some(quotient.map_or(f64::NAN, FiniteReal::get))
 }
 
 pub(super) fn bspline_basis_derivative(
@@ -116,6 +153,7 @@ pub(super) fn bspline_basis_derivative(
     if degree == 0 {
         return scratch.filled(1, 0.0, "IR B-spline derivative basis");
     }
+    let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     scratch.work(degree.checked_add(1)?, "IR B-spline derivative work")?;
     let lower_start = span - (degree - 1);
@@ -134,32 +172,30 @@ pub(super) fn bspline_basis_derivative(
             let left = if left_denominator == 0.0 {
                 0.0
             } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
+                degree_real * lower_at(index) / left_denominator
             } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
+                nan_quotient(
+                    scratch,
+                    FiniteReal::array([
+                        degree_real * lower_at(index),
+                        knots[index + degree],
+                        knots[index],
+                    ]),
+                )?
             };
             let right = if right_denominator == 0.0 {
                 0.0
             } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
+                degree_real * lower_at(index + 1) / right_denominator
             } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
+                nan_quotient(
+                    scratch,
+                    FiniteReal::array([
+                        degree_real * lower_at(index + 1),
+                        knots[index + degree + 1],
+                        knots[index + 1],
+                    ]),
+                )?
             };
             Some(left - right)
         }),
@@ -181,6 +217,7 @@ pub(super) fn bspline_basis_second_derivative(
     if degree == 1 {
         return Some(Cow::Borrowed(&[0.0, 0.0]));
     }
+    let degree_real = f64_from_index(degree)?;
     let lower = bspline_basis_derivative(scratch, knots, degree - 1, span, t)?;
     scratch.work(degree.checked_add(1)?, "IR B-spline second derivative work")?;
     let lower_start = span - (degree - 1);
@@ -199,32 +236,30 @@ pub(super) fn bspline_basis_second_derivative(
             let left = if left_denominator == 0.0 {
                 0.0
             } else if left_denominator.is_finite() {
-                degree as f64 * lower_at(index) / left_denominator
+                degree_real * lower_at(index) / left_denominator
             } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index),
-                    knots[index + degree],
-                    knots[index],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
+                nan_quotient(
+                    scratch,
+                    FiniteReal::array([
+                        degree_real * lower_at(index),
+                        knots[index + degree],
+                        knots[index],
+                    ]),
+                )?
             };
             let right = if right_denominator == 0.0 {
                 0.0
             } else if right_denominator.is_finite() {
-                degree as f64 * lower_at(index + 1) / right_denominator
+                degree_real * lower_at(index + 1) / right_denominator
             } else {
-                FiniteReal::array([
-                    degree as f64 * lower_at(index + 1),
-                    knots[index + degree + 1],
-                    knots[index + 1],
-                ])
-                .and_then(|[value, end, start]| {
-                    difference_quotient(value, FiniteReal::ZERO, end, start).ok()
-                })
-                .map_or(f64::NAN, FiniteReal::get)
+                nan_quotient(
+                    scratch,
+                    FiniteReal::array([
+                        degree_real * lower_at(index + 1),
+                        knots[index + degree + 1],
+                        knots[index + 1],
+                    ]),
+                )?
             };
             Some(left - right)
         }),
@@ -236,6 +271,12 @@ pub(super) fn bspline_basis_second_derivative(
 /// Basis derivatives with respect to a local coordinate whose unit is the
 /// active knot span. This keeps the coefficients finite when derivatives in
 /// the original parameter would exceed binary64 range.
+#[derive(Debug, PartialEq)]
+pub(super) struct ScaledBasisDerivatives {
+    pub(super) first: Vec<f64>,
+    pub(super) second: Vec<f64>,
+}
+
 pub(super) fn bspline_basis_scaled_derivatives(
     scratch: &admitted::Scratch<'_, '_>,
     knots: &[f64],
@@ -243,12 +284,12 @@ pub(super) fn bspline_basis_scaled_derivatives(
     span: usize,
     t: f64,
     scale: PositiveReal,
-) -> Option<(Vec<f64>, Vec<f64>)> {
+) -> Option<ScaledBasisDerivatives> {
     if degree == 0 {
-        return Some((
-            scratch.filled(1, 0.0, "IR scaled B-spline first basis")?,
-            scratch.filled(1, 0.0, "IR scaled B-spline second basis")?,
-        ));
+        return Some(ScaledBasisDerivatives {
+            first: scratch.filled(1, 0.0, "IR scaled B-spline first basis")?,
+            second: scratch.filled(1, 0.0, "IR scaled B-spline second basis")?,
+        });
     }
     let lower = bspline_basis(scratch, knots, degree - 1, span, t)?;
     let first = bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower)?;
@@ -266,7 +307,7 @@ pub(super) fn bspline_basis_scaled_derivatives(
         )?;
         bspline_basis_scaled_derivative_level(scratch, knots, degree, span, scale, &lower_first)?
     };
-    Some((first, second))
+    Some(ScaledBasisDerivatives { first, second })
 }
 
 fn bspline_basis_scaled_derivative_level(
@@ -277,6 +318,7 @@ fn bspline_basis_scaled_derivative_level(
     scale: PositiveReal,
     lower: &[f64],
 ) -> Option<Vec<f64>> {
+    let degree_real = f64_from_index(degree)?;
     let lower_start = span - (degree - 1);
     let mut derivative = scratch.filled(
         degree.checked_add(1)?,
@@ -298,15 +340,20 @@ fn bspline_basis_scaled_derivative_level(
                 Some(0.0)
             } else {
                 let [hi_knot, lo_knot] = FiniteReal::array([knots[hi], knots[lo]])?;
-                difference_quotient(scale.into(), FiniteReal::ZERO, hi_knot, lo_knot)
-                    .ok()
+                scratch
+                    .admit_limit(finite_or_refusal(difference_quotient(
+                        scale.into(),
+                        FiniteReal::ZERO,
+                        hi_knot,
+                        lo_knot,
+                    )))?
                     .map(FiniteReal::get)
             }
         };
         let left = ratio(index + degree, index)?;
         let right = ratio(index + degree + 1, index + 1)?;
         *derivative_value =
-            degree as f64 * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
+            degree_real * (left * lower_at(lower, index) - right * lower_at(lower, index + 1));
         if !derivative_value.is_finite() {
             return None;
         }

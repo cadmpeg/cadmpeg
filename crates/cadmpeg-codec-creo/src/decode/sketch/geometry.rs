@@ -807,7 +807,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
             continue;
         };
         if order.rows.iter().any(|row| row.internal_id == geometry.0) {
-            ctx.try_reserve_items(&mut geometries, 1, "creo missing-line saved geometries")?;
+            ctx.reserve_vec(&mut geometries, 1, "creo missing-line saved geometries")?;
             geometries.push(geometry);
         }
     }
@@ -834,7 +834,7 @@ pub(in crate::decode) fn saved_section_missing_line_geometry(
     let mut endpoints = Vec::new();
     for (_, geometry, _) in &geometries {
         if let Some(pair) = saved_geometry_endpoints(geometry) {
-            ctx.try_reserve_items(&mut endpoints, 2, "creo missing-line endpoints")?;
+            ctx.reserve_vec(&mut endpoints, 2, "creo missing-line endpoints")?;
             endpoints.extend(pair);
         }
     }
@@ -922,7 +922,7 @@ pub(in crate::decode) fn saved_profile_chains(
             }],
             "creo saved circular profile uses",
         )?;
-        ctx.try_reserve_items(&mut profiles, 1, "creo saved profile rows")?;
+        ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
         profiles.push(uses);
     }
     let row_count = geometries
@@ -933,7 +933,7 @@ pub(in crate::decode) fn saved_profile_chains(
     let mut rows = Vec::new();
     for (external_id, geometry) in geometries {
         if let Some(endpoints) = saved_geometry_endpoints(geometry) {
-            ctx.try_reserve_items(&mut rows, 1, "creo saved profile endpoint rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo saved profile endpoint rows")?;
             rows.push((*external_id, endpoints));
         }
     }
@@ -987,7 +987,7 @@ pub(in crate::decode) fn saved_profile_chains(
             let Some(entity) = sketch_entity_id_admitted(ctx, sketch, rows[row].0)? else {
                 continue;
             };
-            ctx.try_reserve_items(&mut uses, 1, "creo saved profile uses")?;
+            ctx.reserve_vec(&mut uses, 1, "creo saved profile uses")?;
             uses.push(SketchEntityUse { entity, reversed });
             let outgoing = usize::from(!reversed);
             let Some((next_row, next_endpoint)) = mates[row][outgoing] else {
@@ -997,7 +997,7 @@ pub(in crate::decode) fn saved_profile_chains(
             reversed = next_endpoint == 1;
             if row == seed {
                 if !reversed {
-                    ctx.try_reserve_items(&mut profiles, 1, "creo saved profile rows")?;
+                    ctx.reserve_vec(&mut profiles, 1, "creo saved profile rows")?;
                     profiles.push(uses);
                 }
                 break;

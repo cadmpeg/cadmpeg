@@ -155,7 +155,7 @@ pub(crate) fn scan(
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
     )?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut carriers,
         nonvisible_carriers.len(),
         "creo legacy nonvisible carrier aggregation",
@@ -208,10 +208,10 @@ fn curve_namespace(
             continue;
         };
         if let Some(pcurve) = curve_pcurve(curve_object, &row, real_fields) {
-            ctx.try_reserve_items(&mut pcurves, 1, "creo legacy pcurve witnesses")?;
+            ctx.reserve_vec(&mut pcurves, 1, "creo legacy pcurve witnesses")?;
             pcurves.push(pcurve);
         }
-        ctx.try_reserve_items(&mut topology_rows, 1, "creo legacy topology rows")?;
+        ctx.reserve_vec(&mut topology_rows, 1, "creo legacy topology rows")?;
         topology_rows.push(row);
     }
     crate::sort::stable_sort_by_key(
@@ -276,7 +276,7 @@ fn geometry_array_elements<'a>(
     }
 
     let mut rows = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut rows,
         elements.len(),
         "creo legacy geometry array elements",
@@ -435,10 +435,10 @@ fn namespace(
             surface_carrier(row_object, &row, children, real_fields, namespace)
         };
         if let Some(carrier) = carrier {
-            ctx.try_reserve_items(&mut carriers, 1, "creo legacy surface carriers")?;
+            ctx.reserve_vec(&mut carriers, 1, "creo legacy surface carriers")?;
             carriers.push(carrier);
         }
-        ctx.try_reserve_items(&mut rows, 1, "creo legacy surface rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo legacy surface rows")?;
         rows.push(row);
     }
     crate::sort::stable_sort_by_key(
@@ -703,7 +703,7 @@ fn real_vector_array(
         return Ok(None);
     };
     let mut vectors = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut vectors,
         values.len() / 3,
         "creo legacy real vector array",
@@ -743,7 +743,7 @@ fn real_array_values(
         return Ok(None);
     };
     let mut values = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut values,
         record.payload.element_count(),
         "creo legacy real array expansion",
@@ -789,13 +789,13 @@ fn child_index<'a>(
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     ctx.charge_collection_items(1, "creo legacy child index nodes")?;
                     let mut children = Vec::new();
-                    ctx.try_reserve_items(&mut children, 1, "creo legacy child index rows")?;
+                    ctx.reserve_vec(&mut children, 1, "creo legacy child index rows")?;
                     children.push(object);
                     entry.insert(children);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let children = entry.get_mut();
-                    ctx.try_reserve_items(children, 1, "creo legacy child index rows")?;
+                    ctx.reserve_vec(children, 1, "creo legacy child index rows")?;
                     children.push(object);
                 }
             }

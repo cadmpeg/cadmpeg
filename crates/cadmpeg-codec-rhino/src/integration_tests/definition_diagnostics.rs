@@ -134,14 +134,15 @@ fn definition_diagnostics_keep_codes_locations_and_prior_failures_in_both_decode
                 &[],
             );
             let scan = crate::container::scan_owned(document.clone()).expect("bounded definition");
-            let source_offset = scan
-                .tables
-                .iter()
-                .find(|table| table.typecode == 0x1000_0021)
-                .unwrap()
-                .records[0]
-                .range
-                .start as u64;
+            let source_offset = cadmpeg_core::decode::u64_from_index(
+                scan.tables
+                    .iter()
+                    .find(|table| table.typecode == 0x1000_0021)
+                    .unwrap()
+                    .records[0]
+                    .range
+                    .start,
+            );
             assert_eq!(
                 scan.definitions.definitions().len(),
                 usize::from(!malformed_tail)
@@ -219,7 +220,7 @@ fn each_failed_definition_keeps_its_own_diagnostic_location() {
         .unwrap()
         .records
         .iter()
-        .map(|record| record.range.start as u64)
+        .map(|record| cadmpeg_core::decode::u64_from_index(record.range.start))
         .collect::<Vec<_>>();
     assert_eq!(offsets.len(), 2);
     for container_only in [false, true] {
@@ -300,7 +301,7 @@ fn definition_field_losses_keep_each_record_location_before_later_failure() {
             .unwrap()
             .records
             .iter()
-            .map(|record| record.range.start as u64)
+            .map(|record| cadmpeg_core::decode::u64_from_index(record.range.start))
             .collect::<Vec<_>>();
         assert_eq!(offsets.len(), 2);
         for container_only in [false, true] {

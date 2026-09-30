@@ -130,7 +130,7 @@ pub(in super::super) fn slot_fillet_cylinder(
             if gap <= EPS_GEOMETRY_AGREEMENT {
                 continue;
             }
-            ctx.try_reserve_items(&mut midplanes, 1, "creo slot fillet midplanes")?;
+            ctx.reserve_vec(&mut midplanes, 1, "creo slot fillet midplanes")?;
             midplanes.push((
                 PlaneEquation {
                     origin: std::array::from_fn(|index| {
@@ -450,7 +450,7 @@ pub(in super::super) fn round_constant_radius(
         .iter()
         .filter(|row| row.feature_id == feature_id)
     {
-        ctx.try_reserve_items(&mut generated_rows, 1, "creo generated round rows")?;
+        ctx.reserve_vec(&mut generated_rows, 1, "creo generated round rows")?;
         generated_rows.push(row);
     }
     if generated_rows.is_empty() {
@@ -525,7 +525,7 @@ fn round_replay_radius(
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
     let mut samples = round_observed_radii(ctx, scan, feature_id)?;
     let placed = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
-    ctx.try_reserve_items(&mut samples, placed.len(), "creo round replay samples")?;
+    ctx.reserve_vec(&mut samples, placed.len(), "creo round replay samples")?;
     samples.extend(placed);
     let Some(radius) = unique_positive_length(&samples) else {
         return Ok(None);
@@ -555,7 +555,7 @@ fn legacy_round_radius_agrees(
     let radius = radius.get();
     let mut samples = round_observed_radii(ctx, scan, feature_id)?;
     let placed = round_placed_cylinder_radii(ctx, scan, ir, source_carriers, feature_id)?;
-    ctx.try_reserve_items(&mut samples, placed.len(), "creo legacy round samples")?;
+    ctx.reserve_vec(&mut samples, placed.len(), "creo legacy round samples")?;
     samples.extend(placed);
     if samples
         .iter()
@@ -610,7 +610,7 @@ fn mixed_round_radius_samples(
         .copied()
         .filter(|row| row.kind == crate::surface::SurfaceKind::TorusOrSphere)
     {
-        ctx.try_reserve_items(&mut torus_rows, 1, "creo mixed torus rows")?;
+        ctx.reserve_vec(&mut torus_rows, 1, "creo mixed torus rows")?;
         torus_rows.push(row);
     }
     if torus_rows.is_empty() || torus_rows.len() == rows.len() {
@@ -626,13 +626,13 @@ fn mixed_round_radius_samples(
         let Some(radius) = round_cylinder_radius(scan, ir, source_carriers, row) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut cylinder_radii, 1, "creo mixed cylinder radii")?;
+        ctx.reserve_vec(&mut cylinder_radii, 1, "creo mixed cylinder radii")?;
         cylinder_radii.push(radius);
     }
     let Some(torus_radii) = mixed_torus_radius_samples(ctx, scan, &torus_rows)? else {
         return Ok(None);
     };
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut cylinder_radii,
         torus_radii.len(),
         "creo mixed round samples",
@@ -665,7 +665,7 @@ fn mixed_torus_radius_samples(
             let Some(overrides) = record.torus_radius_overrides() else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(&mut radii, 1, "creo torus override samples")?;
+            ctx.reserve_vec(&mut radii, 1, "creo torus override samples")?;
             radii.push(overrides.radius2);
         }
         return Ok(Some(radii));
@@ -960,7 +960,7 @@ pub(in super::super) fn round_placed_cylinder_radii(
         row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
     }) {
         if let Some(radius) = round_placed_cylinder_radius(ir, row, source_carriers) {
-            ctx.try_reserve_items(&mut radii, 1, "creo placed round radii")?;
+            ctx.reserve_vec(&mut radii, 1, "creo placed round radii")?;
             radii.push(radius);
         }
     }
@@ -1030,7 +1030,7 @@ pub(in super::super) fn round_observed_radii(
             _ => None,
         };
         if let Some(radius) = radius {
-            ctx.try_reserve_items(&mut radii, 1, "creo observed round radii")?;
+            ctx.reserve_vec(&mut radii, 1, "creo observed round radii")?;
             radii.push(radius);
         }
     }
@@ -1199,7 +1199,7 @@ pub(in super::super) fn chamfer_constant_distance(
         let Some(cone) = chamfer_cone_equation(scan, ir, source_carriers, row) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut cones, 1, "creo chamfer cone witnesses")?;
+        ctx.reserve_vec(&mut cones, 1, "creo chamfer cone witnesses")?;
         cones.push(cone);
     }
     let Some(affected_ids) = agreed_feature_geometry_ids(
@@ -1254,7 +1254,7 @@ pub(in super::super) fn chamfer_constant_distance(
         let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, *id) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut support_planes, 1, "creo chamfer support planes")?;
+        ctx.reserve_vec(&mut support_planes, 1, "creo chamfer support planes")?;
         support_planes.push(plane);
     }
     Ok(equal_distance_chamfer_setback(&cones, &support_planes))

@@ -409,6 +409,22 @@ impl Coverage {
         self.entries.insert(key.0.to_owned(), count);
     }
 
+    /// Records an already-copied declared key without allocating another key.
+    ///
+    /// The caller can reserve and charge the copy before calling this method.
+    pub fn record_owned(
+        &mut self,
+        key: CoverageKey,
+        name: String,
+        count: usize,
+    ) -> Result<(), &'static str> {
+        if name != key.0 {
+            return Err("coverage name does not match its declared key");
+        }
+        self.entries.insert(name, count);
+        Ok(())
+    }
+
     /// Records an observed count under a declared numeric key template.
     pub fn record_indexed(&mut self, key: IndexedCoverageKey, index: u32, count: usize) {
         self.entries.insert(key.wire_name(index), count);

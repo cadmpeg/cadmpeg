@@ -21,8 +21,61 @@ pub(crate) struct Wire {
     paired_byte_offset: u64,
 }
 
+#[cfg(test)]
+thread_local! {
+    pub(crate) static OWNED_WIRE_CONVERSIONS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[derive(Serialize)]
+pub(crate) struct BorrowedWire<'a> {
+    id: &'a str,
+    companion_record_index: u32,
+    governing_companion_record_index: u32,
+    byte_offset: u64,
+    class_tag: &'a str,
+    record_index: u32,
+    frame_length: u64,
+    null_reference_offset: u64,
+    null_role: u32,
+    null_role_offset: u64,
+    geometry_record_index: u32,
+    geometry_reference_offset: u64,
+    geometry_role: u32,
+    geometry_role_offset: u64,
+    paired_class_tag: &'a str,
+    paired_byte_offset: u64,
+}
+
+impl<'a> From<&'a DesignDimensionLocusPair> for BorrowedWire<'a> {
+    fn from(pair: &'a DesignDimensionLocusPair) -> Self {
+        let [first, second] = pair.loci();
+        Self {
+            id: &pair.id,
+            companion_record_index: pair.companion_record_index,
+            governing_companion_record_index: pair.governing_companion_record_index,
+            byte_offset: pair.byte_offset(),
+            class_tag: pair.class_tag.as_str(),
+            record_index: pair.record_index,
+            frame_length: pair.frame_length(),
+            null_reference_offset: first.geometry_reference_offset,
+            null_role: first.role,
+            null_role_offset: first.role_offset,
+            geometry_record_index: second
+                .geometry_record_index
+                .map_or(0, std::num::NonZeroU32::get),
+            geometry_reference_offset: second.geometry_reference_offset,
+            geometry_role: second.role,
+            geometry_role_offset: second.role_offset,
+            paired_class_tag: pair.paired_class_tag.as_str(),
+            paired_byte_offset: pair.paired_byte_offset(),
+        }
+    }
+}
+
 impl From<&DesignDimensionLocusPair> for Wire {
     fn from(pair: &DesignDimensionLocusPair) -> Self {
+        #[cfg(test)]
+        OWNED_WIRE_CONVERSIONS.with(|count| count.set(count.get() + 1));
         let [first, second] = pair.loci();
         Self {
             id: pair.id.clone(),

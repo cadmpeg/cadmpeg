@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
 
 use crate::global::GlobalTable;
 use crate::loss::IgesLossCode;
@@ -24,9 +26,152 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 use super::{
-    general_note_font_valid_for_global_table, mirror_flag_valid, standard_color,
+    general_note_font_valid_for_global_table, mirror_flag_valid, retained_utf8, standard_color,
     vertical_text_flag_valid,
 };
+
+#[test]
+fn presentation_names_refuse_retained_limit_before_copy() {
+    for operation in ["iges color definition name", "iges body property name"] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 4;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = retained_utf8(&ctx, b"COLOR", operation).unwrap_err();
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::RetainedBytes && limit.operation == operation)
+        );
+    }
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert_eq!(
+        retained_utf8(&ctx, b"COLOR", "iges color definition name").unwrap(),
+        Some("COLOR".into())
+    );
+    assert_eq!(
+        retained_utf8(&ctx, b"\xff", "iges color definition name").unwrap(),
+        None
+    );
+}
+
+fn assert_presentation_collection_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+fn assert_presentation_retained_refusal(bytes: &[u8], operation: &str) {
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let result = IgesCodec.decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        );
+        match result {
+            Err(DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == operation {
+                    return;
+                }
+                let next = limit.used.checked_add(limit.additional).unwrap();
+                assert!(next > cap, "limit did not advance from {cap}: {limit:?}");
+                cap = next;
+            }
+            other => panic!("did not reach {operation} at cap {cap}: {other:?}"),
+        }
+    }
+    panic!("did not reach {operation} within 4096 admission boundaries");
+}
+
+#[test]
+fn presentation_appearance_slots_and_copies_refuse_limits() {
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges neutral appearance slots");
+    assert_presentation_retained_refusal(&color, "iges appearance schema");
+
+    let bound = colored_explicit_vertex_loop_file();
+    assert_presentation_collection_refusal(&bound, "iges appearance binding slots");
+    for operation in [
+        "iges appearance body ID copy",
+        "iges appearance face ID copy",
+        "iges appearance ID copy",
+        "iges appearance object type",
+    ] {
+        assert_presentation_retained_refusal(&bound, operation);
+    }
+}
+
+#[test]
+fn presentation_loss_records_refuse_slot_and_message_limits() {
+    let invalid_color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00010200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&invalid_color, "iges entity loss slots");
+    assert_presentation_retained_refusal(&invalid_color, "iges entity loss message");
+}
+
+#[test]
+fn presentation_indexes_and_definition_levels_refuse_collection_limits() {
+    let fonts = text_font_definition_file();
+    for operation in [
+        "iges presentation parameter index",
+        "iges presentation directory index",
+        "iges presentation font index",
+        "iges presentation decoded sequences",
+    ] {
+        assert_presentation_collection_refusal(&fonts, operation);
+    }
+    assert_presentation_collection_refusal(
+        &definition_levels_file(),
+        "iges presentation definition levels",
+    );
+    let color = owned_test_file(&[OwnedTestEntity {
+        entity_type: 314,
+        form: 0,
+        label: "COLOR".into(),
+        status: "00000200",
+        parameters: "314,20,40,60,6Hcustom;".into(),
+    }]);
+    assert_presentation_collection_refusal(&color, "iges presentation defined colors");
+}
 
 const GLOBAL_V4: &[u8] =
     b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,7Hproduct,1.0,2,2HMM,1,1.0,13H260714.000000,0.001,1000.0,6Hauthor,3Horg,6,0;";
@@ -527,7 +672,8 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 

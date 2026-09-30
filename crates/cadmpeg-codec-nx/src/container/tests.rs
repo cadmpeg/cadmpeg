@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 #![allow(clippy::default_trait_access)]
 
+use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_om::offset_only_indexed_om_section_with_index_values;
 use crate::test_support::test_om::segment_index_payload;
 use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
@@ -29,14 +30,14 @@ fn ug_part_segment_index_uses_row_one_self_boundary() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file)).unwrap();
     let (_, index) = container.segment_index().expect("segment index");
-    assert_eq!(index.rows.len() * 12 + index.padding.len(), 28);
-    assert_eq!(index.rows.len(), 2);
-    assert_eq!(index.rows[0].type_code, 7);
-    assert_eq!(index.rows[0].subtype_code, 9);
-    assert_eq!(index.rows[0].value, 11);
-    assert_eq!(index.rows[1].type_code, 1);
-    assert_eq!(index.rows[1].subtype_code, 1);
-    assert_eq!(index.rows[1].value, 28);
+    assert_eq!(index.rows().count() * 12 + index.padding.len(), 28);
+    assert_eq!(index.rows().count(), 2);
+    assert_eq!(index.row(0).expect("first validated row").type_code, 7);
+    assert_eq!(index.row(0).expect("first validated row").subtype_code, 9);
+    assert_eq!(index.row(0).expect("first validated row").value, 11);
+    assert_eq!(index.row(1).expect("second validated row").type_code, 1);
+    assert_eq!(index.row(1).expect("second validated row").subtype_code, 1);
+    assert_eq!(index.row(1).expect("second validated row").value, 28);
     assert_eq!(index.padding, &[0xaa, 0xbb, 0xcc, 0xdd]);
 }
 
@@ -66,11 +67,29 @@ fn container_parses_header_and_directory() {
 }
 
 #[test]
+fn legacy_scan_refuses_work_after_directory_traversal() {
+    let file = legacy_cfb_with_two_streams();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    // The CFB directory has one storage and two streams.
+    policy.limits.max_work_units = 3;
+    let (ctx, root) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container::scan_legacy(&ctx, root)
+        .expect_err("the legacy NX directory scan needs one more work unit");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+                && limit.operation == "scan legacy NX directory"
+    ));
+}
+
+#[test]
 fn container_bounded_entry_tail_stops_at_the_next_stream() {
     let payload = [1, 2, 3, 4, 5, 6];
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: ContainerLayout::LegacyCfb { version: 0 },
         entries: vec![
             DirEntry {
@@ -101,22 +120,24 @@ fn container_cached_operation_labels_preserve_section_materialization() {
     let payload = size_framed_om_section_with_repeated_operations(2);
     let container = Container {
         data: payload.as_slice().into(),
-        physical_size: payload.len() as u64,
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
         layout: test_modern_layout(0),
         entries: vec![DirEntry {
             name: "/Root/om".into(),
             region: Region::Header,
             body: crate::container::DirEntryBody::File {
                 offset: 0,
-                len: payload.len() as u64,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
             },
         }],
         fastload_table: None,
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let direct = crate::om::sections(&payload);
-    let cached = container.om_sections();
+    let direct =
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(ctx, &payload)).unwrap();
+    let cached =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(cached.len(), direct.len());
     assert!(container.om_section_cache.get().is_some());
     for ((entry, section), expected) in cached.iter().zip(direct.iter()) {
@@ -124,11 +145,18 @@ fn container_cached_operation_labels_preserve_section_materialization() {
         assert_eq!(section, expected);
         assert_eq!(section.operation_labels(), expected.operation_labels());
         assert_eq!(
-            section.operation_records_with_label_ordinals(),
-            expected.operation_records_with_label_ordinals()
+            crate::test_support::with_decode_context(
+                |ctx| section.operation_records_with_label_ordinals(ctx)
+            )
+            .unwrap(),
+            crate::test_support::with_decode_context(
+                |ctx| expected.operation_records_with_label_ordinals(ctx)
+            )
+            .unwrap()
         );
     }
-    let repeated = container.om_sections();
+    let repeated =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(repeated, cached);
     assert!(std::sync::Arc::ptr_eq(
         &cached[0].1.types,
@@ -139,10 +167,10 @@ fn container_cached_operation_labels_preserve_section_materialization() {
 #[test]
 fn container_caches_owned_section_layouts() {
     let payload = size_framed_om_section_with_repeated_operations(2);
-    let payload_len = payload.len() as u64;
+    let payload_len = cadmpeg_core::decode::u64_from_index(payload.len());
     let mut file = vec![0xaa; 17];
     file.extend_from_slice(&payload);
-    let physical_size = file.len() as u64;
+    let physical_size = cadmpeg_core::decode::u64_from_index(file.len());
     let container = Container {
         data: file.into(),
         physical_size,
@@ -159,11 +187,19 @@ fn container_caches_owned_section_layouts() {
         indexed_section_layouts: std::sync::OnceLock::new(),
         om_section_cache: std::sync::OnceLock::new(),
     };
-    let first = container.om_sections();
-    let second = container.om_sections();
+    let first = crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let second =
+        crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
     assert_eq!(first.len(), 1);
     assert_eq!(second, first);
-    assert_eq!(first[0].1, crate::om::sections(&container.data[17..])[0]);
+    assert_eq!(
+        first[0].1,
+        crate::test_support::with_decode_context(|ctx| crate::om::sections(
+            ctx,
+            &container.data[17..]
+        ))
+        .unwrap()[0]
+    );
     assert!(container.om_section_cache.get().is_some_and(|cache| {
         matches!(
             cache,
@@ -173,13 +209,66 @@ fn container_caches_owned_section_layouts() {
 }
 
 #[test]
+fn framed_section_cache_reader_refuses_collection_limit() {
+    let payload = size_framed_om_section_with_repeated_operations(2);
+    let container = Container {
+        data: payload.as_slice().into(),
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
+        layout: test_modern_layout(0),
+        entries: vec![DirEntry {
+            name: "/Root/om".into(),
+            region: Region::Header,
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
+            },
+        }],
+        fastload_table: None,
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    };
+    crate::test_support::with_decode_context(|ctx| container.om_sections(ctx)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let error = container
+        .om_sections(&ctx)
+        .expect_err("one cached section exceeds zero items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX framed section readers")
+    );
+}
+
+#[test]
+fn indexed_section_cache_reader_refuses_collection_limit() {
+    let file = prt_with_indexed_om_section();
+    let container =
+        crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
+            .unwrap();
+    crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+    let error = container
+        .indexed_om_sections(&ctx)
+        .expect_err("one cached section exceeds zero items");
+    assert!(
+        matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems && limit.operation == "NX indexed section readers")
+    );
+}
+
+#[test]
 fn container_reuses_materialized_indexed_sections_for_borrowed_input() {
     let file = prt_with_indexed_om_section();
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let first = container.indexed_om_sections();
-    let second = container.indexed_om_sections();
+    let first =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
+    let second =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     assert!(!first.is_empty());
     assert_eq!(first, second);
     assert!(std::sync::Arc::ptr_eq(
@@ -216,7 +305,8 @@ fn container_reuses_borrowed_offset_store_block_index() {
     let container =
         crate::test_support::with_decode_context(|ctx| container::scan_bytes(ctx, file.as_slice()))
             .unwrap();
-    let _ = container.indexed_om_sections();
+    let _ =
+        crate::test_support::with_decode_context(|ctx| container.indexed_om_sections(ctx)).unwrap();
     let first = container
         .cached_offset_data_block_bytes()
         .expect("borrowed indexed sections cache their offset-store blocks");
@@ -306,8 +396,9 @@ fn header_directory_refuses_retained_name_limit_before_copy() {
     let file = single_part_prt();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes =
-        (std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<DirEntry>() + "/Root/UG_PART/UG_PART".len() - 1,
+    );
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error =
         container::scan_bytes(&ctx, file.as_slice()).expect_err("name copy needs one more byte");
@@ -467,7 +558,7 @@ fn fastload_id_table_refuses_retained_limit_before_reserve() {
     let mut policy = DecodePolicy::default();
     let directory_bytes = std::mem::size_of::<DirEntry>() + "/Root/FastLoad/RMFastLoad".len();
     policy.limits.max_retained_bytes =
-        (directory_bytes + 50 * std::mem::size_of::<u32>() - 1) as u64;
+        cadmpeg_core::decode::u64_from_index(directory_bytes + 50 * std::mem::size_of::<u32>() - 1);
     let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
     let error =
         container::scan_bytes(&ctx, file.as_slice()).expect_err("ID copy needs one more byte");
@@ -528,7 +619,11 @@ fn container_bounds_rmfastload_table_at_its_first_product_record() {
 #[test]
 fn external_reference_string_table_is_end_anchored() {
     let table = b"prefix\x01\x02\x00\x00\x00\x09\x00child.prt\x0c\x00nested/b.prt";
-    let (_, strings) = crate::container::parse_extref_string_table(table).expect("string table");
+    let (_, strings) = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, table)
+    })
+    .expect("string table resources")
+    .expect("string table");
     assert_eq!(
         strings
             .into_iter()
@@ -539,8 +634,89 @@ fn external_reference_string_table_is_end_anchored() {
 
     let mut trailed = table.to_vec();
     trailed.push(0);
-    assert!(crate::container::parse_extref_string_table(&trailed).is_none());
-    assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, &trailed)
+    })
+    .expect("string table resources")
+    .is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_string_table(ctx, b"\x01\xff\xff\xff\xff")
+    })
+    .expect("string table resources")
+    .is_none());
+}
+
+#[test]
+fn external_reference_paths_refuse_collection_limit() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = external_reference_path_container(payload);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    let error = container
+        .external_reference_paths(&ctx)
+        .expect_err("one path exceeds zero collection items");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+fn external_reference_path_container(payload: &[u8]) -> Container<'_> {
+    Container {
+        data: payload.into(),
+        physical_size: cadmpeg_core::decode::u64_from_index(payload.len()),
+        layout: ContainerLayout::LegacyCfb { version: 0 },
+        entries: vec![DirEntry {
+            name: "/Root/ExternalReferences".into(),
+            region: Region::Header,
+            body: crate::container::DirEntryBody::File {
+                offset: 0,
+                len: cadmpeg_core::decode::u64_from_index(payload.len()),
+            },
+        }],
+        fastload_table: None,
+        indexed_section_layouts: std::sync::OnceLock::new(),
+        om_section_cache: std::sync::OnceLock::new(),
+    }
+}
+
+#[test]
+fn external_reference_paths_refuse_retained_limit() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = external_reference_path_container(payload);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    let error = container
+        .external_reference_paths(&ctx)
+        .expect_err("one path exceeds zero retained bytes");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+}
+
+#[test]
+fn external_reference_paths_refuse_work_limit() {
+    let payload = b"prefix\x01\x01\x00\x00\x00\x09\x00child.prt";
+    let container = external_reference_path_container(payload);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &policy).unwrap();
+    let error = container
+        .external_reference_paths(&ctx)
+        .expect_err("one path exceeds zero work units");
+    assert!(matches!(
+        error,
+        CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits
+    ));
 }
 
 #[test]
@@ -569,8 +745,15 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
     payload.push(5);
     payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
 
-    let records = crate::container::parse_extref_records(&payload);
-    let indexed = crate::container::parse_extref_record_index(&payload).expect("record index");
+    let records = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_records(ctx, &payload)
+    })
+    .expect("record resources");
+    let indexed = crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_record_index(ctx, &payload)
+    })
+    .expect("index resources")
+    .expect("record index");
     assert_eq!(indexed.len(), 1);
     assert_eq!(indexed[0].record_id, 6);
     assert_eq!(indexed[0].offset, 41);
@@ -591,11 +774,18 @@ fn external_reference_record_parser_accepts_sorted_repeated_handles() {
         .rposition(|window| window == [0xe0, 0x20, 0x30, 0x40, 0x50])
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
-    assert!(crate::container::parse_extref_records(&payload).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::container::parse_extref_records(ctx, &payload)
+    })
+    .expect("record resources")
+    .is_empty());
     assert_eq!(
-        crate::container::parse_extref_record_index(&payload)
-            .expect("opaque indexed record")
-            .len(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::container::parse_extref_record_index(ctx, &payload)
+        })
+        .expect("index resources")
+        .expect("opaque indexed record")
+        .len(),
         1
     );
 }

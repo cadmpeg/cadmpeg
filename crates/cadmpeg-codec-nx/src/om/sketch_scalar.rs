@@ -14,7 +14,7 @@ impl SketchScaledAtom {
         Self(raw)
     }
 
-    fn raw(self) -> [u8; 7] {
+    pub(crate) fn raw(self) -> [u8; 7] {
         self.0
     }
 
@@ -142,6 +142,6 @@ impl SketchScalarLaneForm {
 impl super::scalar_run::ScalarFrame for SketchScalarLaneForm {
     type Atom = super::scalar::ShiftedScalar;
     fn prefix_len(self) -> u64 {
-        self.discriminator().len() as u64
+        cadmpeg_core::decode::u64_from_index(self.discriminator().len())
     }
 }

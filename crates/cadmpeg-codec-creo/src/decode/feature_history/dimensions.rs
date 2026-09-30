@@ -31,7 +31,7 @@ fn insert_dimension_property(
     value: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let key = ctx.copy_retained_text(key, "creo dimension property key")?;
-    let value = ctx.format_retained(value, "creo dimension property value")?;
+    let value = ctx.format_retained(format_args!("{value}"), "creo dimension property value")?;
     if !properties.contains_key(&key) {
         ctx.charge_collection_items(1, "creo dimension property nodes")?;
     }
@@ -55,7 +55,7 @@ fn dimension_expression(
     value: Option<f64>,
 ) -> Result<String, cadmpeg_core::CodecError> {
     value
-        .map(|value| ctx.format_retained(value, "creo dimension expression"))
+        .map(|value| ctx.format_retained(format_args!("{value}"), "creo dimension expression"))
         .transpose()
         .map(std::option::Option::unwrap_or_default)
 }
@@ -308,7 +308,7 @@ pub(in super::super) fn feature_dimension_parameter_layout(
     let mut next_ordinals = BTreeMap::<&SketchId, u32>::new();
     let mut local_occurrences = BTreeMap::<(&SketchId, u32), usize>::new();
     let mut layout = Vec::new();
-    ctx.try_reserve_items(&mut layout, keys.len(), "creo dimension parameter layout")?;
+    ctx.reserve_vec(&mut layout, keys.len(), "creo dimension parameter layout")?;
     for (sketch, external_id) in keys {
         if !next_ordinals.contains_key(sketch) {
             ctx.charge_collection_items(1, "creo dimension layout ordinal nodes")?;
@@ -371,7 +371,7 @@ pub(in super::super) fn transfer_feature_dimensions(
             feature_ids.insert(
                 feature
                     .id
-                    .copy_admitted(ctx, "creo dimension owner feature IDs")?,
+                    .try_clone_for_decode(ctx, "creo dimension owner feature IDs")?,
             );
         }
     }
@@ -391,9 +391,9 @@ pub(in super::super) fn transfer_feature_dimensions(
             continue;
         };
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
-            ctx.try_reserve_items(&mut candidates, 1, "creo dimension candidates")?;
+            ctx.reserve_vec(&mut candidates, 1, "creo dimension candidates")?;
             candidates.push((
-                sketch.copy_admitted(ctx, "creo dimension candidate sketch IDs")?,
+                sketch.try_clone_for_decode(ctx, "creo dimension candidate sketch IDs")?,
                 definition,
                 source_ordinal,
                 dimension,
@@ -409,10 +409,10 @@ pub(in super::super) fn transfer_feature_dimensions(
         "creo transfer feature dimensions candidates ordering",
     )?;
     let mut keys = Vec::new();
-    ctx.try_reserve_items(&mut keys, candidates.len(), "creo dimension layout keys")?;
+    ctx.reserve_vec(&mut keys, candidates.len(), "creo dimension layout keys")?;
     for (sketch, _, _, dimension) in &candidates {
         keys.push((
-            sketch.copy_admitted(ctx, "creo dimension layout sketch IDs")?,
+            sketch.try_clone_for_decode(ctx, "creo dimension layout sketch IDs")?,
             dimension.external_id,
         ));
     }
@@ -452,7 +452,7 @@ pub(in super::super) fn transfer_feature_dimensions(
                     format_args!("d{}", dimension.external_id),
                     "creo relation parameter names",
                 )?,
-                id.copy_admitted(ctx, "creo relation parameter identities")?,
+                id.try_clone_for_decode(ctx, "creo relation parameter identities")?,
             );
         }
         annotate(
@@ -522,8 +522,10 @@ pub(in super::super) fn transfer_feature_dimensions(
             ctx,
             ir,
             DesignParameter {
-                id: id.copy_admitted(ctx, "creo design parameter identity copy")?,
-                owner: Some(owner_id.copy_admitted(ctx, "creo design parameter owner identity")?),
+                id: id.try_clone_for_decode(ctx, "creo design parameter identity copy")?,
+                owner: Some(
+                    owner_id.try_clone_for_decode(ctx, "creo design parameter owner identity")?,
+                ),
                 ordinal,
                 name,
                 expression,

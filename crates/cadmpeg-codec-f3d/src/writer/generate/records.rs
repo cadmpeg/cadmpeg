@@ -732,7 +732,7 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&knot_count.to_le_bytes());
     record.extend_from_slice(&8u32.to_le_bytes());
-    encode_f64_sequence(record, &knots);
+    encode_f64_sequence(record, knots);
     let weight_count = u32::try_from(poles.weights().len())
         .map_err(|_| CodecError::NotImplemented("sketch NURBS has too many weights".into()))?;
     record.extend_from_slice(&weight_count.to_le_bytes());
@@ -761,13 +761,14 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+        None,
         &text.raw_bytes,
         "Design/BulkStream.dat",
         text.class_tag.clone(),
         text.class_version,
         text.record_index,
         0,
-    )
+    )?
     .ok_or_else(|| {
         CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
     })?;

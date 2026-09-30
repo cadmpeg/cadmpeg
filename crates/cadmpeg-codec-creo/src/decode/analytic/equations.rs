@@ -377,7 +377,7 @@ pub(super) fn intersect_two_planes_with_quadric(
                 && point_on_carrier(*point, carrier)
         })
     {
-        ctx.try_reserve_items(&mut points, 1, "creo plane-quadric line intersections")?;
+        ctx.reserve_vec(&mut points, 1, "creo plane-quadric line intersections")?;
         points.push(point);
     }
     Ok(points)
@@ -434,7 +434,7 @@ fn polynomial_interval_value_bound(
 ) -> Result<f64, CodecError> {
     let (_, mut bound) = polynomial_value_and_bound(coefficients, parameter);
     let mut derivative = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut derivative,
         coefficients.len(),
         "creo polynomial interval coefficients",
@@ -444,7 +444,7 @@ fn polynomial_interval_value_bound(
     let mut factorial = 1.0;
     for order in 1..coefficients.len() {
         let mut next_derivative = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut next_derivative,
             derivative.len() - 1,
             "creo polynomial interval derivatives",
@@ -601,7 +601,7 @@ fn real_polynomial_roots(
         normal_scale
     };
     let mut scaled = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut scaled,
         coefficients.len(),
         "creo polynomial scaled coefficients",
@@ -622,7 +622,7 @@ fn real_polynomial_roots(
         return Ok(Vec::new());
     }
     let mut coefficients = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut coefficients,
         scaled.len(),
         "creo polynomial coefficient values",
@@ -639,7 +639,7 @@ fn real_polynomial_roots(
             / (coefficients[1].abs() - scaled[1].bound)
             + cancellation_bound(value);
         let mut roots = Vec::new();
-        ctx.try_reserve_items(&mut roots, 1, "creo polynomial roots")?;
+        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
         roots.push(PolynomialRoot {
             value,
             error,
@@ -650,7 +650,7 @@ fn real_polynomial_roots(
         return Ok(roots);
     }
     let mut derivative = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut derivative,
         degree,
         "creo polynomial derivative coefficients",
@@ -682,7 +682,7 @@ fn real_polynomial_roots(
         root.stationary = true;
     }
     let mut derivative_values = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut derivative_values,
         derivative.len(),
         "creo polynomial derivative values",
@@ -696,7 +696,7 @@ fn real_polynomial_roots(
         let station_lower = station.value - station.error;
         let station_upper = station.value + station.error;
         if gap_lower < station_lower {
-            ctx.try_reserve_items(&mut gaps, 1, "creo polynomial monotone gaps")?;
+            ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
             gaps.push((
                 gap_lower,
                 gap_lower_sign,
@@ -726,7 +726,7 @@ fn real_polynomial_roots(
         let certified_multiple = polynomial_is_exactly_zero(&scaled, station.value)
             && polynomial_is_exactly_zero(&derivative, station.value);
         if certified_crossing || certified_touch || certified_multiple {
-            ctx.try_reserve_items(&mut roots, 1, "creo polynomial roots")?;
+            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 certified: true,
                 multiple: certified_multiple,
@@ -736,7 +736,7 @@ fn real_polynomial_roots(
             && station_value_bound.is_finite()
             && station_value.abs() <= station_value_bound
         {
-            ctx.try_reserve_items(&mut roots, 1, "creo polynomial roots")?;
+            ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
             roots.push(PolynomialRoot {
                 error: (station.value + bound)
                     .abs()
@@ -749,7 +749,7 @@ fn real_polynomial_roots(
         gap_lower = gap_lower.max(station_upper);
         gap_lower_sign = polynomial_sign(&scaled, gap_lower);
     }
-    ctx.try_reserve_items(&mut gaps, 1, "creo polynomial monotone gaps")?;
+    ctx.reserve_vec(&mut gaps, 1, "creo polynomial monotone gaps")?;
     gaps.push((
         gap_lower,
         gap_lower_sign,
@@ -790,7 +790,7 @@ fn real_polynomial_roots(
         } else {
             (value - complete_lower).max(complete_upper - value)
         };
-        ctx.try_reserve_items(&mut roots, 1, "creo polynomial roots")?;
+        ctx.reserve_vec(&mut roots, 1, "creo polynomial roots")?;
         roots.push(PolynomialRoot {
             value,
             error: (0.5 * (upper - lower).abs())
@@ -949,7 +949,7 @@ fn sylvester_polynomial(
         }
         if determinant.len() < term.len() {
             let additional = term.len() - determinant.len();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut determinant,
                 additional,
                 "creo polynomial determinant terms",
@@ -979,7 +979,7 @@ fn conic_resultant(
         f64::abs,
     )?;
     let mut result = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut result,
         values.len().min(terms.len()),
         "creo conic resultant coefficients",
@@ -1333,7 +1333,7 @@ pub(super) fn common_plane_conic_parameters(
                         <= EPS_PARAM_UNIQUE * scale
                 })
             {
-                ctx.try_reserve_items(&mut parameters, 1, "creo conic intersection parameters")?;
+                ctx.reserve_vec(&mut parameters, 1, "creo conic intersection parameters")?;
                 parameters.push(candidate);
             }
         }
@@ -1374,7 +1374,7 @@ pub(in crate::decode) fn intersect_plane_with_two_quadrics(
     let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
     let parameters = common_plane_conic_parameters(ctx, first_conic, second_conic)?;
     let mut intersections = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut intersections,
         parameters.len(),
         "creo plane-quadric intersections",
@@ -1472,7 +1472,7 @@ pub(in crate::decode) fn intersect_two_planes_with_torus(
             coordinate
         });
         if point_on_carrier(point, CarrierEquation::Torus(torus)) {
-            ctx.try_reserve_items(&mut points, 1, "creo torus line intersections")?;
+            ctx.reserve_vec(&mut points, 1, "creo torus line intersections")?;
             points.push(point);
         }
     }
@@ -1524,7 +1524,7 @@ pub(in crate::decode) fn intersect_plane_with_circle(
         let signed_chord = parameter * radius;
         let point = std::array::from_fn(|index| nearest[index] + signed_chord * direction[index]);
         if point.iter().all(|value| value.is_finite()) && !points.contains(&point) {
-            ctx.try_reserve_items(&mut points, 1, "creo plane-circle intersections")?;
+            ctx.reserve_vec(&mut points, 1, "creo plane-circle intersections")?;
             points.push(point);
         }
     }

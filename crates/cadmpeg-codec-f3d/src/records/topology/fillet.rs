@@ -30,11 +30,8 @@ pub(crate) struct DesignFilletRadiusGroup {
 }
 
 /// Parameter records defining one Fillet group's radius law.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignFilletRadiusLawWire",
-    into = "DesignFilletRadiusLawWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignFilletRadiusLawWire")]
 pub(crate) enum DesignFilletRadiusLaw {
     /// One radius applies along the complete edge group.
     Constant {
@@ -62,6 +59,117 @@ pub(crate) enum DesignFilletRadiusLaw {
         /// Midpoint radius and normalized-parameter records in owner-local order.
         middle: Vec<DesignFilletMidpoint>,
     },
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(super) static FILLET_RADIUS_LAW_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignFilletRadiusLaw {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        FILLET_RADIUS_LAW_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        match self {
+            Self::Constant {
+                radius_parameter_record_index,
+            } => Self::Constant {
+                radius_parameter_record_index: *radius_parameter_record_index,
+            },
+            Self::Chordal {
+                chord_length_parameter_record_index,
+            } => Self::Chordal {
+                chord_length_parameter_record_index: *chord_length_parameter_record_index,
+            },
+            Self::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            } => Self::Asymmetric {
+                offset_one_parameter_record_index: *offset_one_parameter_record_index,
+                offset_two_parameter_record_index: *offset_two_parameter_record_index,
+            },
+            Self::Variable {
+                start_radius_parameter_record_index,
+                end_radius_parameter_record_index,
+                middle,
+            } => Self::Variable {
+                start_radius_parameter_record_index: *start_radius_parameter_record_index,
+                end_radius_parameter_record_index: *end_radius_parameter_record_index,
+                middle: middle.clone(),
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum DesignFilletRadiusLawRef<'a> {
+    Constant {
+        radius_parameter_record_index: u32,
+    },
+    Chordal {
+        chord_length_parameter_record_index: u32,
+    },
+    Asymmetric {
+        offset_one_parameter_record_index: u32,
+        offset_two_parameter_record_index: u32,
+    },
+    Variable {
+        start_radius_parameter_record_index: u32,
+        end_radius_parameter_record_index: u32,
+        middle_radius_parameter_record_indices: FilletMiddleRadius<'a>,
+        middle_parameter_record_indices: FilletMiddleParameter<'a>,
+    },
+}
+
+struct FilletMiddleRadius<'a>(&'a [DesignFilletMidpoint]);
+struct FilletMiddleParameter<'a>(&'a [DesignFilletMidpoint]);
+
+impl Serialize for FilletMiddleRadius<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| row.radius_parameter_record_index))
+    }
+}
+
+impl Serialize for FilletMiddleParameter<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| row.parameter_record_index))
+    }
+}
+
+impl Serialize for DesignFilletRadiusLaw {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let borrowed = match self {
+            Self::Constant {
+                radius_parameter_record_index,
+            } => DesignFilletRadiusLawRef::Constant {
+                radius_parameter_record_index: *radius_parameter_record_index,
+            },
+            Self::Chordal {
+                chord_length_parameter_record_index,
+            } => DesignFilletRadiusLawRef::Chordal {
+                chord_length_parameter_record_index: *chord_length_parameter_record_index,
+            },
+            Self::Asymmetric {
+                offset_one_parameter_record_index,
+                offset_two_parameter_record_index,
+            } => DesignFilletRadiusLawRef::Asymmetric {
+                offset_one_parameter_record_index: *offset_one_parameter_record_index,
+                offset_two_parameter_record_index: *offset_two_parameter_record_index,
+            },
+            Self::Variable {
+                start_radius_parameter_record_index,
+                end_radius_parameter_record_index,
+                middle,
+            } => DesignFilletRadiusLawRef::Variable {
+                start_radius_parameter_record_index: *start_radius_parameter_record_index,
+                end_radius_parameter_record_index: *end_radius_parameter_record_index,
+                middle_radius_parameter_record_indices: FilletMiddleRadius(middle),
+                middle_parameter_record_indices: FilletMiddleParameter(middle),
+            },
+        };
+        borrowed.serialize(serializer)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -155,6 +263,7 @@ impl TryFrom<DesignFilletRadiusLawWire> for DesignFilletRadiusLaw {
     }
 }
 
+#[cfg(test)]
 impl From<DesignFilletRadiusLaw> for DesignFilletRadiusLawWire {
     fn from(law: DesignFilletRadiusLaw) -> Self {
         match law {

@@ -5,9 +5,8 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::bytes::is_guid_relaxed;
-use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::text::fixed_guid_end;
 use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
 use crate::layout::shifted_cylinder_primitive_352_frame as shifted_cylinder_352;
@@ -138,8 +137,9 @@ pub(super) fn exact_solid_primitive(
             if scope.frame_length() < 78 || scope.reference_members().len() < 5 {
                 return None;
             }
-            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 5)?;
-            let [length, width, height, offset_x, offset_y] = owners.as_slice() else {
+            let [Some(length), Some(width), Some(height), Some(offset_x), Some(offset_y)] =
+                exact_owned_primitive_parameters::<5>(scope, parameter_owners)?
+            else {
                 return None;
             };
             let length_value = PositiveReal::new(length.evaluated_value().get())?;
@@ -171,8 +171,9 @@ pub(super) fn exact_solid_primitive(
             if scope.frame_length() < 78 || scope.reference_members().len() < 2 {
                 return None;
             }
-            let owners = exact_owned_primitive_parameters(scope, parameter_owners, 2)?;
-            let [height, diameter] = owners.as_slice() else {
+            let [Some(height), Some(diameter)] =
+                exact_owned_primitive_parameters::<2>(scope, parameter_owners)?
+            else {
                 return None;
             };
             let height_value = PositiveReal::new(height.evaluated_value().get())?;
@@ -361,13 +362,9 @@ fn exact_shifted_cylinder_primitive_prologue(
             {
                 return None;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_352::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || bytes.get(
                     start + shifted_cylinder_352::ZERO_RUN_3_AFTER_GUID
                         ..start + shifted_cylinder_352::REFERENCE_COUNT,
@@ -409,13 +406,9 @@ fn exact_shifted_cylinder_primitive_prologue(
             for (ordinal, value) in values.into_iter().enumerate() {
                 transform[ordinal / 4][ordinal % 4] = value;
             }
-            let (guid, guid_end) = lp_utf16_bounded(
-                bytes,
-                start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT,
-                36..=36,
-            )?;
+            let guid_end =
+                fixed_guid_end(bytes, start + shifted_cylinder_502::GUID_CODE_UNIT_COUNT)?;
             if guid_end != start + shifted_cylinder_502::ZERO_RUN_3_AFTER_GUID
-                || !is_guid_relaxed(&guid)
                 || !valid_sketch_transform(&transform)
                 || !cylinder_transform_preserves_projected_geometry(&transform)
             {
@@ -446,33 +439,27 @@ fn cylinder_transform_preserves_projected_geometry(transform: &[[f64; 4]; 4]) ->
         && (transform[2][2] - 1.0).abs() <= EPS_CYLINDER_FRAME
 }
 
-fn exact_owned_primitive_parameters<'a>(
+fn exact_owned_primitive_parameters<'a, const N: usize>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
-    count: usize,
-) -> Option<Vec<&'a DesignParameterOwner>> {
+) -> Option<[Option<&'a DesignParameterOwner>; N]> {
     let stream = native_stream(&scope.id)?;
-    let mut owners = parameter_owners
-        .iter()
-        .filter(|owner| {
-            owner.scope_record_index() == scope.record_index
-                && native_stream(owner.id()) == Some(stream)
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == &owner.record_index())
-        })
-        .collect::<Vec<_>>();
-    owners.sort_by_key(|owner| owner.local_ordinal());
-    if owners.len() != count
-        || owners
-            .windows(2)
-            .any(|pair| pair[0].local_ordinal() == pair[1].local_ordinal())
-        || owners
-            .iter()
-            .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
-    {
+    let mut owners = [None; N];
+    for owner in parameter_owners.iter().filter(|owner| {
+        owner.scope_record_index() == scope.record_index
+            && native_stream(owner.id()) == Some(stream)
+            && scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner.record_index())
+    }) {
+        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
+        let slot = owners.get_mut(ordinal)?;
+        if slot.replace(owner).is_some() {
+            return None;
+        }
+    }
+    if owners.iter().any(Option::is_none) {
         return None;
     }
     Some(owners)

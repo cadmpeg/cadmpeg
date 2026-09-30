@@ -93,32 +93,36 @@ pub fn transfer_into_ir<'ir>(
     } = brep;
 
     let before = ir.model.entity_count();
-    ir.model.bodies.extend(bodies);
-    ir.model.regions.extend(regions);
-    ir.model.shells.extend(shells);
-    ir.model.faces.extend(faces);
-    ir.model.loops.extend(loops);
-    ir.model.coedges.extend(coedges);
-    ir.model.edges.extend(edges);
-    ir.model.vertices.extend(vertices);
-    ir.model.points.extend(points);
-    ir.model.surfaces.extend(surfaces);
-    ir.model.curves.extend(curves);
-    ir.model.pcurves.extend(pcurves);
+    ctx.extend_vec(&mut ir.model.bodies, bodies, "ASM transfer bodies")?;
+    ctx.extend_vec(&mut ir.model.regions, regions, "ASM transfer regions")?;
+    ctx.extend_vec(&mut ir.model.shells, shells, "ASM transfer shells")?;
+    ctx.extend_vec(&mut ir.model.faces, faces, "ASM transfer faces")?;
+    ctx.extend_vec(&mut ir.model.loops, loops, "ASM transfer loops")?;
+    ctx.extend_vec(&mut ir.model.coedges, coedges, "ASM transfer coedges")?;
+    ctx.extend_vec(&mut ir.model.edges, edges, "ASM transfer edges")?;
+    ctx.extend_vec(&mut ir.model.vertices, vertices, "ASM transfer vertices")?;
+    ctx.extend_vec(&mut ir.model.points, points, "ASM transfer points")?;
+    ctx.extend_vec(&mut ir.model.surfaces, surfaces, "ASM transfer surfaces")?;
+    ctx.extend_vec(&mut ir.model.curves, curves, "ASM transfer curves")?;
+    ctx.extend_vec(&mut ir.model.pcurves, pcurves, "ASM transfer pcurves")?;
     for (owner, procedural) in procedural_surfaces {
         ir.model
-            .add_procedural_surface(owner, procedural)
+            .add_procedural_surface(&owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
     for (owner, procedural) in procedural_curves {
         ir.model
-            .add_procedural_curve(owner, procedural)
+            .add_procedural_curve(&owner, procedural)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
     }
-    ir.model.attributes.extend(attributes);
+    ctx.extend_vec(
+        &mut ir.model.attributes,
+        attributes,
+        "ASM transfer attributes",
+    )?;
     // Every transfer above appends entities; procedural attachment removes none.
     ctx.charge_entities(
-        (ir.model.entity_count() - before) as u64,
+        cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
         "admit ASM entities",
     )?;
 
@@ -171,6 +175,35 @@ mod tests {
         assert!(remainder.unknowns.is_empty());
         assert!(remainder.annotation_records.is_empty());
         assert_eq!(namespace.arenas().len(), 12);
+    }
+
+    #[test]
+    fn transfer_regions_refuses_collection_limit() {
+        use cadmpeg_core::decode::ResourceDimension;
+        use cadmpeg_core::CodecError;
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::Region;
+
+        let source = [0_u8];
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
+            .expect("test root fits policy");
+        let mut brep = AsmBrep::default();
+        brep.regions.push(Region {
+            id: RegionId::mint("f3d:brep:region#1").unwrap(),
+            body: BodyId::mint("f3d:brep:body#1").unwrap(),
+            shells: Vec::new(),
+        });
+        let error = transfer_into_ir(&ctx, &mut CadIr::empty(), "test", brep)
+            .err()
+            .expect("one region exceeds zero items");
+        let CodecError::ResourceLimit(limit) = error else {
+            panic!("expected collection refusal: {error:?}");
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, "ASM transfer regions");
     }
 
     #[test]

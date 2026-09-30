@@ -3,12 +3,12 @@
 
 use std::cell::RefCell;
 
-use cadmpeg_core::decode::{alloc_filled, u64_from_index, DecodeContext, DepthGuard};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, DepthGuard, ResourceLimit};
 use cadmpeg_core::CodecError;
 
 use super::{CurveDerivative, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
-use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::nurbs::{scratch, NurbsCurve};
 use crate::geometry::pcurve::PcurveGeometry;
 use crate::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
 use crate::math::{Point2, Point3};
@@ -80,6 +80,40 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         }
     }
 
+    /// Records a resource refusal and returns the value when there is none.
+    pub(super) fn admit_limit<T>(&self, result: Result<T, ResourceLimit>) -> Option<T> {
+        self.admit(result.map_err(CodecError::from))
+    }
+
+    /// The resource refusal recorded by an allocation, charge or evaluation.
+    pub(super) fn refused(&self) -> Option<ResourceLimit> {
+        match &*self.refusal.borrow() {
+            Some(CodecError::ResourceLimit(limit)) => Some(*limit),
+            _ => None,
+        }
+    }
+
+    /// `Err` with the recorded resource refusal, or `Ok` when nothing was refused.
+    pub(super) fn unless_refused(&self) -> Result<(), ResourceLimit> {
+        self.refused().map_or(Ok(()), Err)
+    }
+
+    /// The recorded resource refusal, or `absent` when a value is missing for
+    /// another reason.
+    pub(super) fn failure<R>(&self, absent: EvaluationFailure<R>) -> EvaluationFailure<R> {
+        self.refused()
+            .map_or(absent, EvaluationFailure::ResourceLimit)
+    }
+
+    /// The result, or the recorded resource refusal when one was recorded.
+    pub(super) fn settle<T, R>(
+        &self,
+        result: Result<T, EvaluationFailure<R>>,
+    ) -> Result<T, EvaluationFailure<R>> {
+        self.refused()
+            .map_or(result, |limit| Err(EvaluationFailure::ResourceLimit(limit)))
+    }
+
     pub(super) fn filled<T: Clone>(
         &self,
         count: usize,
@@ -91,7 +125,7 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         }
         match self.context {
             Some(ctx) => self.admit(ctx.alloc_filled(count, value, operation)),
-            None => alloc_filled(count, value, operation).ok(),
+            None => self.admit_limit(scratch::filled(count, value, operation)),
         }
     }
 
@@ -107,8 +141,8 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
         for value in values {
             let value = value?;
             match self.context {
-                Some(ctx) => self.admit(ctx.try_reserve_items(&mut output, 1, operation))?,
-                None => output.try_reserve(1).ok()?,
+                Some(ctx) => self.admit(ctx.reserve_vec(&mut output, 1, operation))?,
+                None => self.admit_limit(scratch::reserve(&mut output, 1, operation))?,
             }
             output.push(value);
         }
@@ -145,6 +179,25 @@ impl<'ctx, 'arena> Scratch<'ctx, 'arena> {
             None => Ok(value),
         }
     }
+
+    /// Finishes an evaluation: a recorded refusal, or a resource refusal the
+    /// evaluation reports, is the outer error.
+    fn finish_evaluation<T, R>(
+        self,
+        result: Result<T, EvaluationFailure<R>>,
+    ) -> Result<Result<T, EvaluationFailure<R>>, CodecError> {
+        outer_refusal(self.finish(result)?)
+    }
+}
+
+/// Moves a resource refusal reported by an evaluation to the outer error.
+fn outer_refusal<T, R>(
+    result: Result<T, EvaluationFailure<R>>,
+) -> Result<Result<T, EvaluationFailure<R>>, CodecError> {
+    match result {
+        Err(EvaluationFailure::ResourceLimit(limit)) => Err(CodecError::from(limit)),
+        result => Ok(result),
+    }
 }
 
 /// Evaluate a stored curve, admitting every scratch allocation and recursive step.
@@ -158,7 +211,7 @@ pub fn curve_point(
         .solved()
         .ok_or(EvaluationFailure::NoValue)
         .and_then(|geometry| curve_point_solved(&scratch, geometry, parameter));
-    scratch.finish(result)
+    scratch.finish_evaluation(result)
 }
 
 fn curve_point_solved(
@@ -212,7 +265,7 @@ pub fn nurbs_curve_point_at(
                 parameter,
             )
         });
-    scratch.finish(result)
+    scratch.finish_evaluation(result)
 }
 
 /// Evaluate a stored curve tangent with caller scratch admission.
@@ -233,7 +286,7 @@ pub fn curve_tangent(
                 CurveDerivative::First,
             )
         });
-    scratch.finish(result)
+    scratch.finish_evaluation(result)
 }
 
 /// Evaluate a stored surface point with caller scratch admission.
@@ -248,7 +301,7 @@ pub fn surface_point(
         .solved()
         .ok_or(EvaluationFailure::NoValue)
         .and_then(|geometry| surface_point_solved(&scratch, geometry, u, v));
-    scratch.finish(result)
+    scratch.finish_evaluation(result)
 }
 
 fn surface_point_solved(
@@ -282,12 +335,14 @@ pub fn pcurve_uv(
     let result = FiniteReal::new(parameter)
         .ok_or(EvaluationFailure::NoValue)
         .and_then(|parameter| {
-            super::pcurve_uv_differential(&scratch, geometry, parameter)
-                .ok_or(EvaluationFailure::NoValue)?
-                .point
-                .map_err(EvaluationFailure::NonFinite)
+            let evaluated = super::pcurve_uv_differential(&scratch, geometry, parameter)
+                .ok_or(EvaluationFailure::NoValue)?;
+            if let Some(limit) = evaluated.resource {
+                return Err(EvaluationFailure::ResourceLimit(limit));
+            }
+            evaluated.point.map_err(EvaluationFailure::NonFinite)
         });
-    scratch.finish(result)
+    scratch.finish_evaluation(result)
 }
 
 /// Reusable point-evaluation storage for repeated parameters on one NURBS curve.
@@ -338,13 +393,14 @@ impl<'curve> NurbsPointEvaluator<'curve> {
             )
             .ok_or(EvaluationFailure::NoValue)?;
             let unreached = EvaluationFailure::NonFinite(super::UNREACHED_POINT);
-            super::basis::bspline_basis_into(
+            super::basis::fill_bspline_basis(
                 self.curve.knots(),
                 degree,
                 span,
                 parameter.get(),
                 &mut self.basis,
             )
+            .map_err(EvaluationFailure::ResourceLimit)?
             .ok_or(unreached)?;
             if !self.basis.iter().all(|value| value.is_finite()) {
                 return Err(unreached);
@@ -366,7 +422,7 @@ impl<'curve> NurbsPointEvaluator<'curve> {
                     .map_err(|[x, y, z]| EvaluationFailure::NonFinite(Point3::new(x, y, z)))?;
             Ok(FinitePoint3::from_coordinates(x, y, z))
         })();
-        Ok(result)
+        outer_refusal(result)
     }
 }
 

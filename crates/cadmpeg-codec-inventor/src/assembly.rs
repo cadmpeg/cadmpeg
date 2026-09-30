@@ -15,7 +15,7 @@ use cadmpeg_ir::transform::Transform;
 use crate::compact_matrix::CompactMatrix;
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxOccurrenceRecord};
 use crate::native::{AssemblyOccurrenceRecord, AssemblyPlacementRecord};
-use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const SUPPRESSED_REFERENCE_STATE: u16 = 0x2000;
@@ -219,21 +219,25 @@ pub(crate) fn project_occurrences(
         ctx.charge_collection_items(1, "project Inventor occurrence")?;
         ctx.charge_entities(1, "project Inventor occurrence")?;
         ctx.charge_retained(
-            ("inventor:assembly:instance#".len()
-                + source.occurrence_id.max(1).ilog10() as usize
-                + 1) as u64,
+            cadmpeg_core::decode::u64_from_index(
+                "inventor:assembly:instance#".len()
+                    + usize::try_from(source.occurrence_id.max(1).ilog10()).map_err(|_| {
+                        CodecError::Malformed("Inventor numeric value exceeds target range".into())
+                    })?
+                    + 1,
+            ),
             "retain projected Inventor occurrence id",
         )?;
         ctx.charge_retained(
-            reference.document_copy_len() as u64,
+            cadmpeg_core::decode::u64_from_index(reference.document_copy_len()),
             "retain projected Inventor external document",
         )?;
         ctx.charge_retained(
-            source.title.as_ref().map_or(0, String::len) as u64,
+            cadmpeg_core::decode::u64_from_index(source.title.as_ref().map_or(0, String::len)),
             "retain projected Inventor occurrence title",
         )?;
         ctx.charge_retained(
-            source.id.len() as u64,
+            cadmpeg_core::decode::u64_from_index(source.id.len()),
             "retain projected Inventor occurrence native reference",
         )?;
         occurrences.push(Occurrence {
@@ -286,7 +290,7 @@ pub(crate) fn inventory<'a>(
                 parse_occurrence(ctx, record.payload).and_then(|mut occurrence| {
                     ctx.charge_collection_items(1, "admit Inventor assembly occurrence record")?;
                     ctx.charge_retained(
-                        segment.pair.token.as_str().len() as u64,
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                         "retain Inventor assembly occurrence token",
                     )?;
                     occurrence.segment_token = segment.pair.token.as_str().into();
@@ -300,7 +304,7 @@ pub(crate) fn inventory<'a>(
                 parse_placement(ctx, record.payload).and_then(|mut placement| {
                     ctx.charge_collection_items(1, "admit Inventor assembly placement record")?;
                     ctx.charge_retained(
-                        segment.pair.token.as_str().len() as u64,
+                        cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                         "retain Inventor assembly placement token",
                     )?;
                     placement.segment_token = segment.pair.token.as_str().into();
@@ -317,9 +321,12 @@ pub(crate) fn inventory<'a>(
                 }
                 ctx.charge_collection_items(1, "admit Inventor assembly issue")?;
                 ctx.charge_entities(1, "admit Inventor assembly issue")?;
-                admit_issue_detail(ctx, &error, "retain Inventor assembly issue detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor assembly issue detail",
+                )?;
                 ctx.charge_retained(
-                    segment.pair.token.as_str().len() as u64,
+                    cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor assembly issue token",
                 )?;
                 issues.push(RecordIssue {
@@ -371,10 +378,13 @@ fn parse_occurrence<'a>(
     )?;
     let related_count = cursor.count32("occurrence related-list count", 65_536)?;
     ctx.charge_collection_items(
-        related_count as u64,
+        cadmpeg_core::decode::u64_from_index(related_count),
         "admit Inventor occurrence related references",
     )?;
-    let mut related_references = Vec::with_capacity(related_count);
+    let mut related_references = DecodeContext::admitted_vec(
+        related_count,
+        "admit Inventor occurrence related references",
+    )?;
     if related_count != 0 {
         cursor.u32("occurrence related-list metadata")?;
         cursor.u32("occurrence related-list metadata")?;
@@ -529,7 +539,10 @@ impl<'a> Cursor<'a> {
         let len = count.checked_mul(2).ok_or_else(|| {
             CodecError::malformed(format_args!("Inventor {field} length overflows"))
         })?;
-        ctx.charge_retained(len as u64, "retain Inventor assembly string")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(len),
+            "retain Inventor assembly string",
+        )?;
         self.source
             .utf16_le(count)
             .ok_or_else(|| CodecError::malformed(format_args!("Inventor {field} is not UTF-16")))
@@ -854,7 +867,8 @@ mod tests {
                     .expect("assembly record is admitted");
             let token_len = admitted.3.as_deref().expect("record token").len();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = (6 + token_len - 1) as u64;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(6 + token_len - 1);
             assert!(matches!(
                 inventory_with_record(kind, type_id, &payload, policy),
                 Err(CodecError::ResourceLimit(limit))
@@ -885,13 +899,13 @@ mod tests {
             ),
         ] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = limit_bytes as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(limit_bytes);
             assert!(matches!(
                 inventory_with_record(SegmentKind::AmDc, OCCURRENCE_TYPE, &[], policy),
                 Err(CodecError::ResourceLimit(limit))
                     if limit.dimension == ResourceDimension::RetainedBytes
                         && limit.operation == operation
-                        && limit.used == used as u64
+                        && limit.used == cadmpeg_core::decode::u64_from_index(used)
             ));
         }
     }
@@ -1217,7 +1231,10 @@ mod tests {
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 5);
         push_u32(&mut bytes, 0x3000_0002);
-        push_u32(&mut bytes, related.len() as u32);
+        push_u32(
+            &mut bytes,
+            u32::try_from(related.len()).expect("fixture value fits u32"),
+        );
         if !related.is_empty() {
             push_u32(&mut bytes, 1);
             push_u32(&mut bytes, 0);

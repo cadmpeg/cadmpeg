@@ -70,8 +70,9 @@ pub(crate) struct ConstructionRecipeDesign<Id> {
 }
 
 /// One source-framed parametric regeneration recipe.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "ConstructionRecipeWire", into = "ConstructionRecipeWire")]
+#[derive(Debug, PartialEq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "ConstructionRecipeWire")]
 pub(crate) struct ConstructionRecipe {
     /// Globally unique deterministic identifier for this native record.
     pub(crate) id: String,
@@ -88,6 +89,26 @@ pub(crate) struct ConstructionRecipe {
     /// the stream too early for the index word to precede it, so the stream
     /// states no record index for this recipe.
     pub(crate) record_index: Option<RecordedValue<i32>>,
+}
+
+#[cfg(test)]
+thread_local! {
+    static CONSTRUCTION_RECIPE_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for ConstructionRecipe {
+    fn clone(&self) -> Self {
+        CONSTRUCTION_RECIPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            byte_offset: self.byte_offset,
+            kind: self.kind,
+            design: self.design.clone(),
+            recipe_index: self.recipe_index,
+            record_index: self.record_index,
+        }
+    }
 }
 
 /// One source-framed parametric regeneration recipe.
@@ -140,6 +161,41 @@ struct ConstructionRecipeWire {
     record_index: Option<i32>,
 }
 
+impl Serialize for ConstructionRecipe {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct WireRef<'a> {
+            id: &'a str,
+            byte_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            record_index_offset: Option<u64>,
+            kind: ConstructionRecipeKind,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            design_id: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            design_id_offset: Option<u64>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            design_selector: Option<ConstructionRecipeSelector>,
+            recipe_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            record_index: Option<i32>,
+        }
+        let design = self.design.as_ref();
+        WireRef {
+            id: &self.id,
+            byte_offset: self.byte_offset,
+            record_index_offset: self.record_index.map(|record| record.offset),
+            kind: self.kind,
+            design_id: design.map(|design| design.id.value.as_str()),
+            design_id_offset: design.map(|design| design.id.offset),
+            design_selector: design.and_then(|design| design.selector),
+            recipe_index: self.recipe_index,
+            record_index: self.record_index.map(|record| record.value),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
     type Error = String;
     fn try_from(wire: ConstructionRecipeWire) -> Result<Self, Self::Error> {
@@ -164,6 +220,7 @@ impl TryFrom<ConstructionRecipeWire> for ConstructionRecipe {
     }
 }
 
+#[cfg(test)]
 impl From<ConstructionRecipe> for ConstructionRecipeWire {
     fn from(value: ConstructionRecipe) -> Self {
         let (design_id, design_id_offset, design_selector) = match value.design {
@@ -200,3 +257,6 @@ pub(crate) struct ConstructionRecipeSelector {
     /// Byte offset of `value`.
     pub(crate) byte_offset: u64,
 }
+
+#[cfg(test)]
+mod tests;

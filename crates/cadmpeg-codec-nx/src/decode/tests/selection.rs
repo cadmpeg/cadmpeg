@@ -47,7 +47,6 @@ use crate::test_support::test_streams::two_support_charted_intersection_curve_st
 
 use crate::decode::build::{rmfastload_allows_terminal_lineage, topology_body_node_ids};
 use crate::decode::feature_completeness::output_free_local_body_construction;
-use crate::decode::report::append_design_intent_losses;
 
 use crate::framing::node_kind::NodeKind;
 use std::{collections::BTreeSet, io::Cursor};
@@ -66,6 +65,16 @@ use cadmpeg_ir::Exactness;
 
 use crate::NxCodec;
 
+fn append_design_intent_losses(
+    ir: &cadmpeg_ir::document::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::decode::report::append_design_intent_losses(ctx, ir, losses)
+    })
+    .unwrap();
+}
+
 #[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
@@ -81,7 +90,11 @@ fn decode_emits_both_intersection_support_pcurves() {
     assert!(context.sides()[0].pcurve.is_some());
     assert!(context.sides()[1].surface.is_some());
     assert!(context.sides()[1].pcurve.is_some());
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -112,7 +125,11 @@ fn decode_discards_serialized_support_uv_lane_that_misses_chart() {
         Some(&Point2::new(0.0, 10.0))
     );
     assert!(nurbs.control_points().iter().all(|point| point.u == 0.0));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -161,7 +178,11 @@ fn decode_retains_uncharted_intersection_without_inventing_a_range() {
         .iter()
         .filter(|edge| edge.curve() == Some(owner))
         .all(|edge| edge.param_range().is_none()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -200,7 +221,11 @@ fn terminal_plane_intersection_without_a_direct_carrier_remains_unresolved() {
         .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
         .expect("carrying edge");
     assert_eq!(edge.param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -233,7 +258,11 @@ fn terminal_cylinder_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 
     let second_point = stream
         .windows(4)
@@ -285,7 +314,11 @@ fn terminal_cone_generator_without_a_direct_carrier_remains_unresolved() {
     else {
         panic!("unresolved tolerant intersection");
     };
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -345,7 +378,11 @@ fn terminal_sphere_and_torus_meridians_without_a_direct_carrier_remain_unresolve
             .find(|edge| edge.curve() == result.ir().model.procedural_curve_owner(&procedural.id))
             .expect("carrying edge");
         assert_eq!(edge.param_range(), None);
-        assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+        assert!(
+            cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+                .expect("resource allocation did not fail")
+                .is_ok()
+        );
     }
 }
 
@@ -388,7 +425,11 @@ fn decode_emits_topology_when_record_xmt_uses_extended_encoding() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.edges.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 1);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -503,7 +544,11 @@ fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs))
             if nurbs.poles().iter().any(|point| point.y == 30.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -519,7 +564,11 @@ fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
             if nurbs.control_points().iter().any(|point| point.y == 10.0)
     )));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -535,7 +584,11 @@ fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
         Some([0.25, 0.75])
     );
     assert_eq!(result.ir().model.coedges.len(), 2);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -548,7 +601,11 @@ fn decode_resolves_forward_trimmed_curve_chain() {
         edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
         Some([0.25, 0.75])
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -574,7 +631,11 @@ fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert_eq!(edge.param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -589,7 +650,11 @@ fn decode_omits_overflowing_line_trim_range() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     assert_eq!(result.ir().model.edges[0].param_range(), None);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -623,7 +688,11 @@ fn decode_tracks_extended_face_reference_shift() {
         result.ir().model.faces[0].surface,
         result.ir().model.surfaces[0].id
     );
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -667,13 +736,19 @@ fn decode_tracks_all_extended_topology_reference_shifts() {
         Some(0.1)
     );
     assert_eq!(result.ir().model.points[0].position().get().x, 10.0);
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
 fn decode_tracks_fully_extended_geometry_header_shift() {
     let stream = topology_with_fully_extended_geometry_headers();
-    let graph = crate::topology::Graph::parse(&stream);
+    let graph =
+        crate::test_support::with_decode_context(|ctx| crate::topology::Graph::parse(ctx, &stream))
+            .unwrap();
     assert!(matches!(
         graph
             .get(NodeKind::Plane, 6)
@@ -717,7 +792,11 @@ fn decode_tracks_geometry_envelope_escape_shift() {
         result.ir().model.curves[0].geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -733,17 +812,20 @@ fn decode_assembly_reports_external_dependency() {
 }
 
 fn directory_retained_bytes(name: &str) -> u64 {
-    (std::mem::size_of::<crate::container::DirEntry>() + name.len()) as u64
+    cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<crate::container::DirEntry>() + name.len(),
+    )
 }
 
 #[test]
 fn metadata_fallback_does_not_retain_discarded_geometry_unknown_copies() {
     let mut stream = b"PS\0\0 (partition) SCH_TEST_1_9999".to_vec();
-    stream.resize(64, b'.');
+    stream.resize(8192, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/UG_PART/UG_PART") + (stream.len() * 2) as u64;
+    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/UG_PART/UG_PART")
+        + cadmpeg_core::decode::u64_from_index(stream.len() * 2)
+        + 4096;
 
     let result = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -761,7 +843,8 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
     stream.resize(64, b'.');
     let file = prt_with_partition(&stream);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = (stream.len() * 2) as u64;
+    options.policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(stream.len() * 2);
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
         .expect_err("directory bytes use part of the retained allowance");
@@ -777,10 +860,10 @@ fn metadata_fallback_old_retained_limit_refuses_inflated_stream_after_directory(
 fn decode_refuses_opaque_container_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 64])]);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", vec![0x5a; 8192])]);
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes =
-        directory_retained_bytes("/Root/FastLoad/Structure") + 1;
+        directory_retained_bytes("/Root/FastLoad/Structure") + 4096;
 
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -816,9 +899,10 @@ fn opaque_container_with_one_retained_byte_refuses_directory_entry() {
 fn decode_refuses_invalid_preview_copy_when_retained_budget_is_exhausted() {
     use cadmpeg_core::decode::ResourceDimension;
 
-    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 64])]);
+    let file = prt_with_named_payloads(&[("/Root/images/preview", vec![0x5a; 8192])]);
     let mut options = DecodeOptions::default();
-    options.policy.limits.max_retained_bytes = directory_retained_bytes("/Root/images/preview") + 1;
+    options.policy.limits.max_retained_bytes =
+        directory_retained_bytes("/Root/images/preview") + 4096;
 
     let error = NxCodec
         .decode(&mut Cursor::new(file), &options)
@@ -871,7 +955,11 @@ fn decode_retains_every_rmfastload_active_body() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -897,8 +985,10 @@ fn rmfastload_membership_declines_when_a_referenced_topology_entity_is_missing()
         .expect("fin record");
     put_ref(&mut stream, fin + 16, 99);
 
-    let graph = crate::topology::Graph::parse(&stream);
-    assert!(topology_body_node_ids(0, &graph).is_empty());
+    crate::test_support::with_decode_context(|ctx| {
+        let graph = crate::topology::Graph::parse(ctx, &stream).unwrap();
+        assert!(topology_body_node_ids(ctx, 0, &graph).unwrap().is_empty());
+    });
 }
 
 #[test]
@@ -913,7 +1003,11 @@ fn decode_preselection_retains_skipped_rmfastload_stream_as_unknown() {
         .unwrap()
         .iter()
         .any(|unknown| unknown.id.as_str() == "nx:container:parasolid#1"));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -947,7 +1041,11 @@ fn decode_resolves_all_terminal_feature_bodies_without_active_selection() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -966,7 +1064,11 @@ fn decode_selects_active_shell_when_body_record_is_absent() {
         .losses
         .iter()
         .all(|loss| !loss.message.contains("sub-body partition")));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1101,10 +1203,10 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .map(cadmpeg_ir::RetainedSourceRecord::byte_len)
             .collect::<Vec<_>>(),
         vec![
-            structure.len() as u64,
-            fast_load_jt.len() as u64,
-            toggle.len() as u64,
-            vendor.len() as u64
+            cadmpeg_core::decode::u64_from_index(structure.len()),
+            cadmpeg_core::decode::u64_from_index(fast_load_jt.len()),
+            cadmpeg_core::decode::u64_from_index(toggle.len()),
+            cadmpeg_core::decode::u64_from_index(vendor.len())
         ]
     );
     assert!(unknowns.iter().all(|unknown| {
@@ -1125,7 +1227,11 @@ fn decode_retains_unsupported_named_stream_payloads() {
             .iter()
             .any(|loss| loss.message.contains(name)));
     }
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1133,7 +1239,9 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
     let member = b"0123456789abcdef0123456789abcdef:Off";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
@@ -1154,7 +1262,11 @@ fn decode_typed_saved_toggle_stream_is_not_retained_as_opaque() {
         .losses
         .iter()
         .all(|loss| loss.code != crate::loss::NxLossCode::ContainerStreamOpaque.kind()));
-    assert!(cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).is_ok());
+    assert!(
+        cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -1162,10 +1274,12 @@ fn container_only_retains_typed_saved_toggle_payload() {
     let member = b"0123456789abcdef0123456789abcdef:On";
     let mut toggle = vec![1];
     toggle.extend_from_slice(&1_u32.to_le_bytes());
-    toggle.extend_from_slice(&(member.len() as u16).to_le_bytes());
+    toggle.extend_from_slice(
+        &(u16::try_from(member.len()).expect("fixture value fits u16")).to_le_bytes(),
+    );
     toggle.extend_from_slice(member);
     toggle.extend_from_slice(&[1, 2, 3, 4]);
-    let toggle_len = toggle.len() as u64;
+    let toggle_len = cadmpeg_core::decode::u64_from_index(toggle.len());
     let file = prt_with_named_payloads(&[("/Root/UG_PART/LastSavedToggleInfoStream", toggle)]);
 
     let result = EditableDecodeResult::from(
@@ -1206,7 +1320,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("test:test:feature#{ordinal}")).expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: None,
             dependencies: Default::default(),
@@ -1284,7 +1398,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("test:test:feature#unresolved-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64 + 4,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal) + 4,
             name: None,
             suppressed: None,
             dependencies: Default::default(),
