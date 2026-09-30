@@ -89,6 +89,10 @@ fn compact_edge_selection_accepts_counted_u16_ids() {
 
 #[test]
 fn compact_surface_selection_ends_with_its_entry_signature() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = Vec::new();
     payload.extend(6u32.to_le_bytes());
     payload.extend([0x04, 0x02, 0, 0]);
@@ -105,7 +109,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
         }
     }
     payload.extend([0; 24]);
-    let components = compact_surface_selection_at(&payload, 12).expect("required invariant");
+    let components = compact_surface_selection_at(&face_path_ctx, &payload, 12).unwrap().expect("required invariant");
     assert_eq!(
         components
             .iter()
@@ -127,7 +131,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[12 + 18 + 24 + 4] ^= 1;
     assert_eq!(
-        compact_surface_selection_at(&payload, 12)
+        compact_surface_selection_at(&face_path_ctx, &payload, 12).unwrap()
             .expect("required invariant")
             .iter()
             .map(|component| component.local_id)
@@ -136,7 +140,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[4] = 0x06;
     assert_eq!(
-        compact_surface_selection_at(&payload, 12)
+        compact_surface_selection_at(&face_path_ctx, &payload, 12).unwrap()
             .expect("nonzero selector subtype")
             .first()
             .and_then(|component| component.local_id),
@@ -144,7 +148,7 @@ fn compact_surface_selection_ends_with_its_entry_signature() {
     );
     payload[4] = 0x7f;
     assert_eq!(
-        compact_surface_selection_at(&payload, 12)
+        compact_surface_selection_at(&face_path_ctx, &payload, 12).unwrap()
             .expect("lane-local selector subtype")
             .first()
             .and_then(|component| component.local_id),
@@ -861,6 +865,10 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
 
 #[test]
 fn component_face_reference_accepts_both_nested_body_flags() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let body_offset = 30;
     let nested_marker =
         body_offset + crate::layout::component_face_nested_reference_prefix::COMPONENT_MARKER;
@@ -876,7 +884,7 @@ fn component_face_reference_accepts_both_nested_body_flags() {
     let mut payload = build_payload(0, marker);
 
     let (actual_marker, components) =
-        component_face_reference_at(&payload, body_offset).expect("required invariant");
+        component_face_reference_at(&face_path_ctx, &payload, body_offset).unwrap().expect("required invariant");
     assert_eq!(actual_marker, marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -884,21 +892,21 @@ fn component_face_reference_accepts_both_nested_body_flags() {
     );
 
     let compact = build_payload(0, body_offset + 68);
-    assert!(component_face_reference_at(&compact, body_offset).is_some());
+    assert!(component_face_reference_at(&face_path_ctx, &compact, body_offset).unwrap().is_some());
 
     let flagged = build_payload(0x40, body_offset + 100);
-    assert!(component_face_reference_at(&flagged, body_offset).is_some());
+    assert!(component_face_reference_at(&face_path_ctx, &flagged, body_offset).unwrap().is_some());
     let flagged_compact = build_payload(0x40, body_offset + 68);
-    assert!(component_face_reference_at(&flagged_compact, body_offset).is_none());
-    assert!(component_face_reference_at_for_operation(&flagged_compact, body_offset).is_some());
+    assert!(component_face_reference_at(&face_path_ctx, &flagged_compact, body_offset).unwrap().is_none());
+    assert!(component_face_reference_at_for_operation(&face_path_ctx, &flagged_compact, body_offset).unwrap().is_some());
     let mut record = CLASS_MARKER.to_vec();
     record.extend((b"moCompFace_c".len() as u16).to_le_bytes());
     record.extend(b"moCompFace_c");
     record.extend_from_slice(&flagged[body_offset..]);
-    assert!(component_face_reference_in_record(&record).is_some());
+    assert!(component_face_reference_in_record(&face_path_ctx, &record).unwrap().is_some());
 
     payload[body_offset + 6] = 1;
-    assert_eq!(component_face_reference_at(&payload, body_offset), None);
+    assert_eq!(component_face_reference_at(&face_path_ctx, &payload, body_offset).unwrap(), None);
 
     let nested_class = b"moFaceRef_c";
     let nested_class_offset = body_offset + 46;
@@ -912,7 +920,7 @@ fn component_face_reference_accepts_both_nested_body_flags() {
         .copy_from_slice(nested_class);
     assert_eq!(selection_vector_tail(&mut nested, &[6]), nested_marker);
     let (actual_marker, components) =
-        component_face_reference_at(&nested, body_offset).expect("nested face reference");
+        component_face_reference_at(&face_path_ctx, &nested, body_offset).unwrap().expect("nested face reference");
     assert_eq!(actual_marker, nested_marker);
     assert_eq!(
         components.last().and_then(|component| component.local_id),
@@ -922,6 +930,10 @@ fn component_face_reference_accepts_both_nested_body_flags() {
 
 #[test]
 fn component_face_reference_accepts_compact_body_frame() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let body_offset = 30;
     let marker = body_offset + 64;
     let count = 6u32;
@@ -941,7 +953,7 @@ fn component_face_reference_accepts_compact_body_frame() {
     }
 
     let (actual_marker, components) =
-        component_face_reference_at_for_full_round_fillet(&payload, body_offset)
+        component_face_reference_at_for_full_round_fillet(&face_path_ctx, &payload, body_offset).unwrap()
             .expect("compact face reference");
     assert_eq!(actual_marker, marker);
     assert_eq!(components.len(), entry_count);
@@ -1409,6 +1421,10 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
 
 #[test]
 fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; marker];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -1430,7 +1446,7 @@ fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
     assert_eq!(path[1].instance, None);
     assert_eq!(path[1].local_id, Some(4));
     assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
-    assert!(surface_reference_matches_at(&payload, marker, &path));
+    assert!(surface_reference_matches_at(&face_path_ctx, &payload, marker, &path).unwrap());
 
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(

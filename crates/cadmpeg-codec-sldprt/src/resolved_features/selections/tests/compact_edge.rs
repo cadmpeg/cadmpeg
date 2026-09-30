@@ -332,6 +332,10 @@ fn compact_edge_selection_accepts_object_terminated_u16_paths() {
 
 #[test]
 fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -346,7 +350,7 @@ fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
     payload[..16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 0).unwrap(), None);
     assert_eq!(compact_edge_component_path_at(&payload, 0), None);
-    assert_eq!(compact_surface_selection_at(&payload, 0), None);
+    assert_eq!(compact_surface_selection_at(&face_path_ctx, &payload, 0).unwrap(), None);
 }
 
 #[test]
@@ -880,6 +884,10 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
 
 #[test]
 fn compact_reference_list_accepts_unframed_surface_cut_targets() {
+    let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let identity_arena = cadmpeg_core::decode::DecodeArena::new();
     let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -918,11 +926,11 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
         [0, 3, 2]
     );
     assert!(compact_component_reference_list_at(&payload, marker).is_none());
-    assert!(surface_reference_matches_at(
+    assert!(surface_reference_matches_at(&face_path_ctx, 
         &payload,
         marker,
         &references.into_iter().flatten().collect::<Vec<_>>()
-    ));
+    ).unwrap());
 
     // SurfaceCut target vectors retain the same role byte with any lane-local
     // low subtype.  The operation scanner must not require subtype zero.

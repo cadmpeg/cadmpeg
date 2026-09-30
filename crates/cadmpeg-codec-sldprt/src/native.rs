@@ -1568,10 +1568,10 @@ fn surface_selection_disagrees_with_payload(
     // the selection states nothing the payload agrees with.
     let matches_payload = match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::surface_reference_matches_at(
-            &lane.native_payload,
+            ctx, &lane.native_payload,
             offset,
             &record.components,
-        ),
+        )?,
         Err(_) => false,
     };
     Ok(!matches_payload
