@@ -21,7 +21,7 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputRelationFamily,
     FeatureInputRelationInstance, SketchInputEntity, SketchInputKind,
 };
-use cadmpeg_core::decode::index_from_u64;
+use cadmpeg_core::decode::{index_from_u64, DecodeContext};
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry,
@@ -3107,26 +3107,27 @@ pub(super) fn same_dimension_length(left: f64, right: f64) -> bool {
 }
 
 pub(super) fn profile_axis_for_relation(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     transforms: Option<&[MarkerTransform]>,
-) -> Option<ProfileAxis> {
+) -> Result<Option<ProfileAxis>, cadmpeg_core::CodecError> {
     let (native_axis, default_axis) = match relation.family {
         FeatureInputRelationFamily::PointPointHorizontalDistance => (0, ProfileAxis::U),
         FeatureInputRelationFamily::PointPointVerticalDistance => (1, ProfileAxis::V),
-        _ => return None,
+        _ => return Ok(None),
     };
-    let Some(transforms) = transforms else {
-        return Some(default_axis);
-    };
-    if transforms.is_empty() {
-        return Some(default_axis);
+    let Some(transforms) = transforms else { return Ok(Some(default_axis)); };
+    if transforms.is_empty() { return Ok(Some(default_axis)); }
+    let mut first = None;
+    let mut disagreement = false;
+    for transform in transforms {
+        ctx.charge_work(64, "resolve SLDPRT relation profile axis")?;
+        let Some(axis) = transform.profile_axis_for_native(native_axis) else { return Ok(None); };
+        if let Some(first) = first {
+            if axis != first { disagreement = true; }
+        } else { first = Some(axis); }
     }
-    let axes = transforms
-        .iter()
-        .map(|transform| transform.profile_axis_for_native(native_axis))
-        .collect::<Option<Vec<_>>>()?;
-    let first = *axes.first()?;
-    axes.iter().all(|axis| *axis == first).then_some(first)
+    Ok(first.filter(|_| !disagreement))
 }
 
 pub(super) fn marker_point_locus(
