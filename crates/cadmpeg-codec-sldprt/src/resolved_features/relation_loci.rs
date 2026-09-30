@@ -538,10 +538,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     let dynamic_roster_point_pair = if roster_has_no_center {
         match relation.family {
             PointPointDistance => {
-                unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)
+                unique_profile_distance_loci_pair(ctx, sketch, parameter, sketch_entities)?
             }
             PointPointHorizontalDistance | PointPointVerticalDistance => {
-                unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, resolved_or_none!(profile_axis))
+                unique_profile_axis_distance_pair(ctx, sketch, parameter, sketch_entities, resolved_or_none!(profile_axis))?
             }
             _ => None,
         }
@@ -711,41 +711,26 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
-                    (Some(known), None) => resolved_or_none!(doubled_profile_distance_loci(
-                        relation,
-                        0,
-                        1,
-                        sketch,
-                        parameter,
-                        sketch_entities,
-                        markers_by_id,
-                    )
-                    .or_else(|| {
-                        let partner = unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?;
-                        Some((known, partner))
-                    })),
-                    (None, Some(known)) => resolved_or_none!(doubled_profile_distance_loci(
-                        relation,
-                        1,
-                        0,
-                        sketch,
-                        parameter,
-                        sketch_entities,
-                        markers_by_id,
-                    )
-                    .or_else(|| {
-                        Some((
-                            unique_profile_distance_locus(
-                                sketch,
-                                &known,
-                                parameter,
-                                sketch_entities,
-                            )?,
-                            known,
-                        ))
-                    })),
+                    (Some(known), None) => match doubled_profile_distance_loci(
+                        relation, 0, 1, sketch, parameter, sketch_entities, markers_by_id,
+                    ) {
+                        Some(pair) => pair,
+                        None => {
+                            let partner = resolved_or_none!(unique_profile_distance_locus(ctx, sketch, &known, parameter, sketch_entities)?);
+                            (known, partner)
+                        }
+                    },
+                    (None, Some(known)) => match doubled_profile_distance_loci(
+                        relation, 1, 0, sketch, parameter, sketch_entities, markers_by_id,
+                    ) {
+                        Some(pair) => pair,
+                        None => {
+                            let partner = resolved_or_none!(unique_profile_distance_locus(ctx, sketch, &known, parameter, sketch_entities)?);
+                            (partner, known)
+                        }
+                    },
                     (None, None) => {
-                        resolved_or_none!(unique_profile_distance_loci_pair(sketch, parameter, sketch_entities))
+                        resolved_or_none!(unique_profile_distance_loci_pair(ctx, sketch, parameter, sketch_entities)?)
                     }
                 },
             };
@@ -800,13 +785,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             parameter: parameter_id,
                         }));
                     }
-                    (first, second) = resolved_or_none!(unique_repaired_profile_distance_loci_pair(
+                    (first, second) = resolved_or_none!(unique_repaired_profile_distance_loci_pair(ctx, 
                         sketch,
                         &first,
                         &second,
                         parameter,
                         sketch_entities,
-                    ));
+                    )?);
                 }
             }
             Some(SketchConstraintDefinitionInput::DistanceLoci {
@@ -828,27 +813,27 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
                     (Some(known), None) => {
-let partner = resolved_or_none!(unique_profile_axis_distance_locus(
+let partner = resolved_or_none!(unique_profile_axis_distance_locus(ctx, 
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
                             axis,
-                        ));
+                        )?);
 (known, partner)
 },
                     (None, Some(known)) => (
-                        resolved_or_none!(unique_profile_axis_distance_locus(
+                        resolved_or_none!(unique_profile_axis_distance_locus(ctx, 
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
                             axis,
-                        )),
+                        )?),
                         known,
                     ),
                     (None, None) => {
-                        resolved_or_none!(unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, axis))
+                        resolved_or_none!(unique_profile_axis_distance_pair(ctx, sketch, parameter, sketch_entities, axis)?)
                     }
                 },
             };
@@ -873,14 +858,14 @@ let partner = resolved_or_none!(unique_profile_axis_distance_locus(
                         return Ok(None);
                     }
                     if !authoritative {
-                        (first, second) = resolved_or_none!(unique_repaired_profile_axis_distance_pair(
+                        (first, second) = resolved_or_none!(unique_repaired_profile_axis_distance_pair(ctx, 
                             sketch,
                             &first,
                             &second,
                             parameter,
                             sketch_entities,
                             axis,
-                        ));
+                        )?);
                     }
                 }
             }
@@ -1371,45 +1356,54 @@ fn sole_locus_pair(
 // unordered pair of canonical profile loci is a candidate; `measure` is the
 // only axis of variation between the distance and axis-distance resolvers.
 fn unique_profile_measured_loci_pair(
-    sketch: &SketchId,
+    ctx: &DecodeContext<'_>, sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-    measure: impl Fn(&Point2, &Point2) -> f64,
-) -> Option<(SketchLocus, SketchLocus)> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let loci = canonical_profile_loci(sketch, sketch_entities);
-    let mut candidates = Vec::new();
+    sketch_entities: &[SketchEntity], measure: impl Fn(&Point2, &Point2) -> f64,
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT measured profile locus pair";
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let loci = canonical_profile_loci(ctx, sketch, sketch_entities)?;
+    let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
     for (first_index, (first_point, first)) in loci.iter().enumerate() {
         for (second_point, second) in &loci[first_index + 1..] {
-            if same_dimension_length(measure(first_point, second_point), distance.get()) {
-                candidates.push((first.clone(), second.clone()));
-            }
+            let (selected_first, selected_second) = selected.map_or(("", ""), |(first, second)| (locus_entity(first).as_str(), locus_entity(second).as_str()));
+            charge_relation_identity_work(ctx, [locus_entity(first).as_str(), locus_entity(second).as_str(), selected_first, selected_second], 256, OPERATION)?;
+            if !same_dimension_length(measure(first_point, second_point), distance.get()) { continue; }
+            let pair = (first, second);
+            if selected.is_some_and(|selected| selected != pair) { return Ok(None); }
+            selected = Some(pair);
         }
     }
-    sole_locus_pair(candidates)
+    let Some((first, second)) = selected else { return Ok(None); };
+    Ok(Some((super::transforms::SketchLocusRole::of_locus(first).copy_locus(ctx, locus_entity(first), OPERATION)?,
+        super::transforms::SketchLocusRole::of_locus(second).copy_locus(ctx, locus_entity(second), OPERATION)?)))
 }
+
 
 // Repair a candidate pair by resolving each supplied locus to its unique
 // partner via `partner`, forming the sorted pair, and keeping it only when the
 // two starting loci agree on exactly one pair.
 fn unique_repaired_profile_pair(
-    first: &SketchLocus,
-    second: &SketchLocus,
-    partner: impl Fn(&SketchLocus) -> Option<SketchLocus>,
-) -> Option<(SketchLocus, SketchLocus)> {
-    let candidates = [first, second]
-        .into_iter()
-        .filter_map(|known| {
-            let mut pair = [known.clone(), partner(known)?];
-            pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-            let [first, second] = pair;
-            Some((first, second))
-        })
-        .collect::<Vec<_>>();
-    sole_locus_pair(candidates)
+    ctx: &DecodeContext<'_>, first: &SketchLocus, second: &SketchLocus,
+    partner: impl Fn(&SketchLocus) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError>,
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "repair SLDPRT measured profile locus pair";
+    let mut selected: Option<(SketchLocus, SketchLocus)> = None;
+    for known in [first, second] {
+        let Some(partner) = partner(known)? else { continue; };
+        let (selected_first, selected_second) = selected.as_ref().map_or(("", ""), |(first, second)| (locus_entity(first).as_str(), locus_entity(second).as_str()));
+        charge_relation_identity_work(ctx, [locus_entity(known).as_str(), locus_entity(&partner).as_str(), selected_first, selected_second], 16, OPERATION)?;
+        let known = super::transforms::SketchLocusRole::of_locus(known).copy_locus(ctx, locus_entity(known), OPERATION)?;
+        let mut pair = [known, partner];
+        pair.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        let [first, second] = pair;
+        let pair = (first, second);
+        if selected.as_ref().is_some_and(|selected| selected != &pair) { return Ok(None); }
+        selected = Some(pair);
+    }
+    Ok(selected)
 }
+
 
 // Find the unique profile locus at a given dimension from `known`, where
 // `measure` reports the dimension between the known point and a candidate
@@ -1417,37 +1411,33 @@ fn unique_repaired_profile_pair(
 // is the sole axis of variation between the straight-distance and axis-distance
 // forms.
 fn unique_profile_measured_locus(
-    sketch: &SketchId,
-    known: &SketchLocus,
+    ctx: &DecodeContext<'_>, sketch: &SketchId, known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
-    measure: impl Fn(&Point2, &Point2) -> f64,
-) -> Option<SketchLocus> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let known_point = profile_locus_point(known, sketch_entities)?;
-    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
-        .into_iter()
-        .filter_map(|(candidate_point, candidate)| {
-            (candidate != *known
-                && same_dimension_length(measure(&known_point, &candidate_point), distance.get()))
-            .then_some(candidate)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-    candidates.dedup();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
+    sketch_entities: &[SketchEntity], measure: impl Fn(&Point2, &Point2) -> f64,
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT measured profile locus";
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let Some(known_point) = profile_locus_point_charged(ctx, known, sketch_entities, OPERATION)? else { return Ok(None); };
+    let mut selected: Option<SketchLocus> = None;
+    for (candidate_point, candidate) in canonical_profile_loci(ctx, sketch, sketch_entities)? {
+        let selected_id = selected.as_ref().map_or("", |locus| locus_entity(locus).as_str());
+        charge_relation_identity_work(ctx, [locus_entity(&candidate).as_str(), locus_entity(known).as_str(), selected_id], 256, OPERATION)?;
+        if candidate == *known || !same_dimension_length(measure(&known_point, &candidate_point), distance.get()) { continue; }
+        if selected.as_ref().is_some_and(|selected| selected != &candidate) { return Ok(None); }
+        selected = Some(candidate);
+    }
+    Ok(selected)
 }
 
+
 pub(super) fn unique_profile_distance_locus(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-) -> Option<SketchLocus> {
-    unique_profile_measured_locus(
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    unique_profile_measured_locus(ctx, 
         sketch,
         known,
         parameter,
@@ -1525,25 +1515,27 @@ pub(super) fn doubled_profile_distance_loci(
 }
 
 fn unique_repaired_profile_distance_loci_pair(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     first: &SketchLocus,
     second: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchLocus)> {
-    unique_repaired_profile_pair(first, second, |known| {
-        unique_profile_distance_locus(sketch, known, parameter, sketch_entities)
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    unique_repaired_profile_pair(ctx, first, second, |known| {
+        unique_profile_distance_locus(ctx, sketch, known, parameter, sketch_entities)
     })
 }
 
 fn unique_profile_axis_distance_locus(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     known: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
-) -> Option<SketchLocus> {
-    unique_profile_measured_locus(
+) -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+    unique_profile_measured_locus(ctx, 
         sketch,
         known,
         parameter,
@@ -1559,25 +1551,27 @@ fn unique_profile_axis_distance_locus(
 }
 
 fn unique_repaired_profile_axis_distance_pair(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     first: &SketchLocus,
     second: &SketchLocus,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
-) -> Option<(SketchLocus, SketchLocus)> {
-    unique_repaired_profile_pair(first, second, |known| {
-        unique_profile_axis_distance_locus(sketch, known, parameter, sketch_entities, axis)
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    unique_repaired_profile_pair(ctx, first, second, |known| {
+        unique_profile_axis_distance_locus(ctx, sketch, known, parameter, sketch_entities, axis)
     })
 }
 
 fn unique_profile_axis_distance_pair(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
     axis: ProfileAxis,
-) -> Option<(SketchLocus, SketchLocus)> {
-    unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    unique_profile_measured_loci_pair(ctx, sketch, parameter, sketch_entities, |first, second| {
         if axis == ProfileAxis::U {
             (second.u - first.u).abs()
         } else {
@@ -1587,35 +1581,53 @@ fn unique_profile_axis_distance_pair(
 }
 
 fn unique_profile_distance_loci_pair(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch_entities: &[SketchEntity],
-) -> Option<(SketchLocus, SketchLocus)> {
-    unique_profile_measured_loci_pair(sketch, parameter, sketch_entities, |first, second| {
+) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    unique_profile_measured_loci_pair(ctx, sketch, parameter, sketch_entities, |first, second| {
         (second.u - first.u).hypot(second.v - first.v)
     })
 }
 
 pub(super) fn canonical_profile_loci(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
-) -> Vec<(Point2, SketchLocus)> {
+) -> Result<Vec<(Point2, SketchLocus)>, cadmpeg_core::CodecError> {
     const QUANTUM: f64 = 1e-8;
-    let mut loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .collect::<Vec<_>>();
-    loci.sort_by(|(left_point, left_locus), (right_point, right_locus)| {
-        quantize(*left_point, QUANTUM)
-            .cmp(&quantize(*right_point, QUANTUM))
+    const OPERATION: &str = "collect SLDPRT canonical profile loci";
+    let mut indexed = Vec::new();
+    for (source_index, entity) in sketch_entities.iter().enumerate() {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 256, OPERATION)?;
+        if entity.sketch != *sketch { continue; }
+        for (point, role) in sketch_entity_locus_points(entity).into_iter().flatten() {
+            ctx.reserve_collection_vec(&mut indexed, 1, OPERATION)?;
+            indexed.push((source_index, point, role.copy_locus(ctx, entity.id(), OPERATION)?));
+        }
+    }
+    let count = cadmpeg_core::decode::u64_from_index(indexed.len());
+    ctx.charge_work(count, OPERATION)?;
+    let max_bytes = indexed.iter().map(|(_, _, locus)| locus_entity(locus).as_str().len()).max().unwrap_or(0);
+    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
+    ctx.charge_work(count.checked_mul(levels).and_then(|work| work.checked_mul(64))
+        .and_then(|work| cadmpeg_core::decode::u64_from_index(max_bytes).checked_mul(8)
+            .and_then(|bytes| bytes.checked_add(256)).and_then(|bytes| work.checked_mul(bytes)))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    // Source order breaks equal geometric and identity keys without sort scratch.
+    indexed.sort_unstable_by(|(left_index, left_point, left_locus), (right_index, right_point, right_locus)| {
+        quantize(*left_point, QUANTUM).cmp(&quantize(*right_point, QUANTUM))
             .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
+            .then_with(|| left_index.cmp(right_index))
     });
-    loci.dedup_by(|(left_point, _), (right_point, _)| {
-        quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
-    });
-    loci
+    indexed.dedup_by(|(_, left_point, _), (_, right_point, _)| quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM));
+    let mut loci = Vec::new();
+    ctx.reserve_collection_vec(&mut loci, indexed.len(), OPERATION)?;
+    for (_, point, locus) in indexed { loci.push((point, locus)); }
+    Ok(loci)
 }
+
 
 // Reduce candidate entity matches to the sole survivor by natural order:
 // sort, drop duplicates, and yield the value only when exactly one remains.
@@ -2768,7 +2780,7 @@ pub(super) fn profile_locus_point(
         .find_map(|(point, role)| role.matches(locus).then_some(point))
 }
 
-fn profile_locus_point_charged(
+pub(super) fn profile_locus_point_charged(
     ctx: &DecodeContext<'_>,
     locus: &SketchLocus,
     sketch_entities: &[SketchEntity],

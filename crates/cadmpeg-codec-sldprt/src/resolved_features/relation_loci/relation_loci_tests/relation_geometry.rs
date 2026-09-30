@@ -505,7 +505,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
     let second = point("synthetic:test:id#second", 3.0, 4.0);
     let unrelated = point("synthetic:test:id#unrelated", 20.0, 20.0);
     assert_eq!(
-        unique_profile_distance_loci_pair(
+        unique_profile_distance_loci_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &parameter,
             &[
@@ -514,7 +514,7 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
                 second.clone(),
                 unrelated.clone(),
             ],
-        ),
+        ).unwrap(),
         Some((
             SketchLocus::Entity(first.id().clone()),
             SketchLocus::Entity(second.id().clone()),
@@ -523,11 +523,11 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
 
     let ambiguous = point("synthetic:test:id#ambiguous", 23.0, 24.0);
     assert_eq!(
-        unique_profile_distance_loci_pair(
+        unique_profile_distance_loci_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-        ),
+        ).unwrap(),
         None
     );
 }
@@ -565,28 +565,28 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second_locus = SketchLocus::Entity(second.id().clone());
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_axis_distance_locus(
+        unique_profile_axis_distance_locus(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &first_locus,
             &parameter,
             &entities,
             ProfileAxis::U,
-        ),
+        ).unwrap(),
         Some(second_locus.clone())
     );
     assert_eq!(
-        unique_profile_axis_distance_pair(&sketch, &parameter, &entities, ProfileAxis::U),
+        unique_profile_axis_distance_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities, ProfileAxis::U).unwrap(),
         Some((first_locus, second_locus))
     );
 
     let ambiguous = point("synthetic:test:id#ambiguous", 10.0, 30.0);
     assert_eq!(
-        unique_profile_axis_distance_pair(
+        unique_profile_axis_distance_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
             ProfileAxis::U,
-        ),
+        ).unwrap(),
         None
     );
 }
@@ -1037,7 +1037,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
         vec![SketchLocus::Entity(first_entity.id().clone())],
     )]);
     assert_eq!(
-        unique_axis_aligned_linked_loci(
+        unique_axis_aligned_linked_loci(&cadmpeg_test_support::service_decode_context(), 
             &relation,
             &sketch,
             &[
@@ -1048,7 +1048,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             &markers,
             &loci,
             ProfileAxis::U,
-        ),
+        ).unwrap(),
         Some(vec![
             SketchLocus::Entity(first_entity.id().clone()),
             SketchLocus::Entity(second_entity.id().clone()),
@@ -1057,14 +1057,14 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
 
     let ambiguous = point("synthetic:test:id#ambiguous", 6.0, 2.0);
     assert_eq!(
-        unique_axis_aligned_linked_loci(
+        unique_axis_aligned_linked_loci(&cadmpeg_test_support::service_decode_context(), 
             &relation,
             &sketch,
             &[first_entity, second_entity, unrelated, ambiguous],
             &markers,
             &loci,
             ProfileAxis::U,
-        ),
+        ).unwrap(),
         None
     );
 }
