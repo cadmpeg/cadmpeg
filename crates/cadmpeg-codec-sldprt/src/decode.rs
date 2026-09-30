@@ -751,23 +751,22 @@ fn append_design_losses(
             continue;
         };
         const OPERATION: &str = "index SLDPRT feature names";
-        ctx.charge_work(1, OPERATION)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()), OPERATION)?;
         if !feature_names.contains_key(&feature.id) {
             ctx.charge_collection_items(1, OPERATION)?;
             feature_names.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
             })?;
         }
-        let bytes = feature.id.as_str().len().checked_add(name.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
-        ctx.charge_retained(bytes as u64, OPERATION)?;
-        feature_names.insert(feature.id.clone(), name.clone());
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), OPERATION)?)
+            .map_err(CodecError::malformed)?;
+        let name = copy_retained_string(ctx, name, OPERATION)?;
+        feature_names.insert(id, name);
     }
     let mut global_parameter_owners = HashSet::new();
     for feature in &ir.model.features {
         const OPERATION: &str = "index SLDPRT global parameter owners";
-        ctx.charge_work(1, OPERATION)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()), OPERATION)?;
         if !crate::history::parameters::is_global_parameter_owner(feature)
             || global_parameter_owners.contains(&feature.id)
         {
@@ -777,8 +776,9 @@ fn append_design_losses(
         global_parameter_owners.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
         })?;
-        ctx.charge_retained(feature.id.as_str().len() as u64, OPERATION)?;
-        global_parameter_owners.insert(feature.id.clone());
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), OPERATION)?)
+            .map_err(CodecError::malformed)?;
+        global_parameter_owners.insert(id);
     }
     let incomplete_parameters = ir
         .model
