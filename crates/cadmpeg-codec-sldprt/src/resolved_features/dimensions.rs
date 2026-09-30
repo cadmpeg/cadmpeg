@@ -637,7 +637,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     const QUANTUM: f64 = 1.0e-8;
 
     const OPERATION: &str = "project SLDPRT dimensioned sketch circles";
-    let mut sketches_by_feature = HashMap::new();
+    let mut sketches_by_feature = HashMap::<&str, _>::new();
     for feature in features {
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Sketch {
@@ -649,18 +649,30 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !sketches_by_feature.contains_key(native) {
             ctx.charge_collection_items(1, OPERATION)?;
+            if sketches_by_feature.len() == sketches_by_feature.capacity() {
+                for key in sketches_by_feature.keys() {
+                    ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
             sketches_by_feature.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         sketches_by_feature.insert(native, sketch);
     }
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let mut parameters_by_id = HashMap::new();
+    let mut parameters_by_id = HashMap::<&cadmpeg_ir::features::ParameterId, _>::new();
     let mut parameter_key_bytes = 0usize;
     for parameter in parameters {
         ctx.charge_work(u64::try_from(parameter.id.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !parameters_by_id.contains_key(&parameter.id) {
             ctx.charge_collection_items(1, OPERATION)?;
+            if parameters_by_id.len() == parameters_by_id.capacity() {
+                for key in parameters_by_id.keys() {
+                    ctx.charge_work(u64::try_from(key.as_str().len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
             parameters_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         parameter_key_bytes = parameter_key_bytes.max(parameter.id.as_str().len());
@@ -673,19 +685,25 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             .and_then(|parameter| parameters_by_id.get(parameter))
             .copied()
     };
-    let mut markers_by_id = HashMap::new();
+    let mut markers_by_id = HashMap::<&str, _>::new();
     for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
         ctx.charge_work(u64::try_from(marker.id().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         if !markers_by_id.contains_key(marker.id()) {
             ctx.charge_collection_items(1, OPERATION)?;
+            if markers_by_id.len() == markers_by_id.capacity() {
+                for key in markers_by_id.keys() {
+                    ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
             markers_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         markers_by_id.insert(marker.id(), marker);
     }
     let marker_transforms =
         marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
-    let mut transforms = HashMap::new();
+    let mut transforms = HashMap::<&str, _>::new();
     for (feature, sketch_id) in &sketches_by_feature {
         let mut circles = Vec::new();
         for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
@@ -725,6 +743,12 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         let Some(transform) = dimensioned_circle_transform(ctx, &candidates, &circles)? else { continue; };
         ctx.charge_work(u64::try_from(feature.len()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
         ctx.charge_collection_items(1, OPERATION)?;
+        if transforms.len() == transforms.capacity() {
+            for key in transforms.keys() {
+                ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            }
+        }
         transforms.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         transforms.insert(*feature, transform);
     }
