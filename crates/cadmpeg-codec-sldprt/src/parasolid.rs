@@ -149,7 +149,10 @@ pub(crate) fn extract_streams_with_offsets(
                         if let Some(header) = stream_header(ctx, view.window())? {
                             Some(ExtractedStream {
                                 offset: i,
-                                payload: ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?,
+                                payload: {
+                                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(view.window().len()), "retain Parasolid zlib candidate")?;
+                                    ctx.copy_retained(view.window(), "retain Parasolid zlib candidate")?
+                                },
                                 header,
                             })
                         } else {
@@ -309,6 +312,10 @@ fn chained_wrapped_stream(
     let stream = if frame_outputs.len() == 1 {
         frame_outputs.remove(0)
     } else {
+        let work = frame_outputs.iter().try_fold(0u64, |work, frame| {
+            work.checked_add(cadmpeg_core::decode::u64_from_index(frame.len()))
+        }).ok_or_else(|| ctx.refuse_codec_limit("retain concatenated Parasolid stream", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, "retain concatenated Parasolid stream")?;
         ctx.concat_retained(&frame_outputs, "retain concatenated Parasolid stream")?
     };
     extracted_stream(ctx, chain_len_at, stream)
@@ -355,6 +362,9 @@ fn inflate_zlib_frame_budgeted(
         ));
     }
     let reservation = ctx.reserve_scoped(declared, "inflate Parasolid frame")?;
+    let work = declared.checked_add(cadmpeg_core::decode::u64_from_index(member.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("inflate Parasolid frame", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "inflate Parasolid frame")?;
     let mut decoder = Decompress::new(true);
     let mut input_at = 0usize;
     let mut chunk = [0_u8; 8192];
