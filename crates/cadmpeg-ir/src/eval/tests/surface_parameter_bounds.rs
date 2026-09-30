@@ -16,6 +16,7 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
         u_degree: 1,
         v_degree: 1,
         controls: [[0.0, 0.0, 0.0, 1.0]; 4].to_vec(),
+        _scratch: cadmpeg_core::decode::WorkBudget::new(0).reserve_scratch(0, "test patch controls").unwrap(),
     };
     let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
     let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
