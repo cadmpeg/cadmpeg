@@ -1109,7 +1109,7 @@ impl<T> SolverSubtable<T> {
 
     pub(crate) fn is_complete(&self) -> bool {
         match self {
-            Self::Declared { header, rows } => header.declared_rows() == rows.len(),
+            Self::Declared { header, rows } => cadmpeg_core::decode::index_from_u32(header.declared_count) == rows.len(),
             Self::Unframed(_) => false,
         }
     }
@@ -1119,7 +1119,7 @@ impl<T> SolverSubtable<T> {
     pub(crate) fn missing_rows(&self) -> usize {
         match self {
             Self::Declared { header, rows } => {
-                let declared = header.declared_rows();
+                let declared = cadmpeg_core::decode::index_from_u32(header.declared_count);
                 // The two cases the doc sentence above names: a declaration
                 // above the decoded count is the shortfall, and rows decoded
                 // past the declaration are an over-run, not a shortfall.
@@ -1186,22 +1186,6 @@ pub(crate) struct FeatureSolverTableHeader {
     pub(crate) entity_ref: u32,
     /// Byte offset of the table label or positional array opener.
     pub(crate) offset: usize,
-}
-
-/// [`FeatureSolverTableHeader::declared_rows`] widens the stored 32-bit
-/// declaration to a row count. The widening is exact on every target this
-/// crate builds for, and it justifies nothing else.
-const _: () = assert!(usize::BITS >= u32::BITS);
-
-impl FeatureSolverTableHeader {
-    /// The declaration as a row count.
-    ///
-    /// `declared_count` is the `u32` the `f8` opener stored, which is what the
-    /// native record reproduces; the module assertion above proves the
-    /// widening exact, so this states no refusal.
-    fn declared_rows(&self) -> usize {
-        self.declared_count as usize
-    }
 }
 
 /// One entity incidence within a section solver `skamp_ptr` row.

@@ -448,7 +448,7 @@ pub(crate) fn decode_in_surface_row_lane(
             payload[4],
             payload[5],
         ]);
-        return Some((signed as f64, offset + 7));
+        return Some((cadmpeg_core::convert::f64_from_i64(signed)?, offset + 7));
     }
     if let Some(high) = match data.get(offset) {
         Some(0x73) => Some(0x3fe8),

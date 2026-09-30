@@ -7682,7 +7682,7 @@ fn id_ending_at(payload: &[u8], type_offset: usize) -> Option<(u32, usize)> {
         }
     }
     let start = type_offset.checked_sub(1)?;
-    (payload[start] < 0x80).then_some((payload[start] as u32, start))
+    (payload[start] < 0x80).then_some((u32::from(payload[start]), start))
 }
 
 #[cfg(test)]

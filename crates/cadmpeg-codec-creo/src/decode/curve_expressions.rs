@@ -303,7 +303,7 @@ fn curve_expression_parameter_names(
                 let mut value = *occurrence;
                 let mut width = 0;
                 loop {
-                    digits[width] = (value % 10) as u8;
+                    digits[width] = u8::try_from(value % 10).map_err(|_| cadmpeg_core::CodecError::malformed("Creo occurrence decimal digit exceeds u8"))?;
                     width += 1;
                     value /= 10;
                     if value == 0 {
