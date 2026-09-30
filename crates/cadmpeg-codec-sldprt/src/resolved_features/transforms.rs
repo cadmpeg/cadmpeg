@@ -695,7 +695,7 @@ pub(super) fn sketch_entity_marker_loci(entity: &SketchEntity) -> Option<SketchE
     (!loci.is_empty()).then_some(SketchEntityMarkerLoci { kind, loci })
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum SketchLocusRole {
     Entity,
     Start,
@@ -724,6 +724,18 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         };
         (point, locus)
     }).collect()
+}
+
+pub(super) fn copy_locus_entity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entity: &SketchEntityId,
+    operation: &'static str,
+) -> Result<SketchEntityId, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity.as_str().len())
+        .checked_mul(4).and_then(|work| work.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    let text = ctx.format_retained(format_args!("{}", entity.as_str()), operation)?;
+    SketchEntityId::mint(text).map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("invalid decoded sketch entity identity: {error}")))
 }
 
 pub(super) fn sketch_entity_locus_points(
