@@ -2164,6 +2164,7 @@ fn conflicting_display_reference(
     candidates: &BTreeSet<FeatureSourceId>,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "retain SLDPRT conflicting display reference";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidates.len()), OPERATION)?;
     let index_digits = usize::try_from(table_index.checked_ilog10().unwrap_or(0)).map_err(|_| {
         ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
     })? + 1;
@@ -2208,6 +2209,11 @@ fn appearance_assignment_loss_message(
     conflicts: &[String],
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "retain SLDPRT appearance assignment loss";
+    let scan_work = [assigned.len(), matched.len(), conflicts.len()].into_iter()
+        .try_fold(0u64, |work, count| work.checked_add(cadmpeg_core::decode::u64_from_index(count)))
+        .and_then(|work| work.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scan_work, OPERATION)?;
     const PREFIX: &str = "VisualStates feature appearance assignment unresolved: ";
     const MISSING_PREFIX: &str = "feature source ID(s) ";
     const MISSING_SUFFIX: &str = " have no agreeing DisplayFace persistent reference";
@@ -3173,7 +3179,7 @@ fn build_geometry_ir(
         feature_input_lanes: all_lanes,
         pmi_dimensions,
     };
-    assign_native_configuration_indices(&ir, &mut native);
+    assign_native_configuration_indices(ctx, &ir, &mut native)?;
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             cadmpeg_core::nonblank_literal!("sldprt_native_configuration_sha256"),
@@ -3635,20 +3641,34 @@ fn build_geometry_ir(
     Ok((ir, annotations, unknowns, pmi_losses))
 }
 
-fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::SldprtNative) {
+fn assign_native_configuration_indices(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    native: &mut crate::native::SldprtNative,
+) -> Result<(), CodecError> {
+    const OPERATION: &str = "assign SLDPRT native configuration indices";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.configurations.len()), OPERATION)?;
     for configuration in &ir.model.configurations {
-        let Some(native_ref) = configuration.native_ref.as_deref() else {
-            continue;
-        };
-        if let Some(record) = native
-            .feature_histories
-            .iter_mut()
-            .flat_map(|history| &mut history.configurations)
-            .find(|record| record.id == native_ref)
-        {
-            record.source_index = configuration.source_index;
+        let Some(native_ref) = configuration.native_ref.as_deref() else { continue; };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(native.feature_histories.len()), OPERATION)?;
+        for history in &mut native.feature_histories {
+            let mut found = false;
+            for record in &mut history.configurations {
+                let work = cadmpeg_core::decode::u64_from_index(record.id.len())
+                    .checked_add(cadmpeg_core::decode::u64_from_index(native_ref.len()))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+                if record.id == native_ref {
+                    record.source_index = configuration.source_index;
+                    found = true;
+                    break;
+                }
+            }
+            if found { break; }
         }
     }
+    Ok(())
 }
 
 fn source_meta(
@@ -5681,6 +5701,9 @@ fn append_swift_pmi_losses(
     if unsupported.is_empty() {
         return Ok(());
     }
+    let scan_work = cadmpeg_core::decode::u64_from_index(unsupported.len()).checked_mul(2)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scan_work, OPERATION)?;
     let count = unsupported.values().try_fold(0usize, |sum, value| {
         sum.checked_add(*value)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
