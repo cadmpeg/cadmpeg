@@ -4,7 +4,7 @@ use cadmpeg_core::decode::u64_from_index;
 use crate::design::decode::operands::{
     bind_vertex_recipe_candidates, bind_work_plane_constructions, bind_work_point_input_carriers,
     decode_edge_identity_operands, decode_edge_operands, decode_edge_treatment_vertex_operands,
-    decode_face_operands, insert_edge_member_index, insert_face_seen,
+    decode_face_operands,
 };
 use crate::records::decal::DesignRecordHeader;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -88,7 +88,7 @@ fn edge_operand_member_index_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut indices = std::collections::HashSet::new();
     assert!(matches!(
-        insert_edge_member_index(&ctx, &mut indices, 7),
+        &ctx.insert_hash_set(&mut indices, 7, "f3d edge operand member index").map(|_| ()),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d edge operand member index"
@@ -282,7 +282,7 @@ fn face_operand_seen_key_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = std::collections::HashSet::new();
     assert!(matches!(
-        insert_face_seen(&ctx, &mut seen, ("stream", 12, 7)),
+        &ctx.insert_hash_set(&mut seen, ("stream", 12, 7), "f3d face operand seen key"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d face operand seen key"

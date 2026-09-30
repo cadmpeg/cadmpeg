@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Charged text reads shared by Design record decoders.
 
-use std::fmt::Write;
 use std::ops::RangeInclusive;
 
 use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
@@ -38,14 +37,7 @@ pub(in crate::design::decode) fn class_tag_from_view(
 }
 
 /// Copy an admitted ASCII field into retained text after charging its bytes.
-pub(in crate::design::decode) fn copy_ascii_retained(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(value.as_bytes(), operation)?)
-        .map_err(|_| CodecError::malformed("F3D ASCII field must be UTF-8"))
-}
+
 
 pub(in crate::design::decode) fn design_record_id_charged(
     ctx: &DecodeContext<'_>,
@@ -53,24 +45,9 @@ pub(in crate::design::decode) fn design_record_id_charged(
     suffix: &'static str,
     offset: u64,
     charge_operation: &'static str,
-    allocation_operation: &'static str,
 ) -> Result<String, CodecError> {
     let mut id = super::sketch::native_scope_charged(ctx, stream)?;
-    let digits = usize::try_from(offset.checked_ilog10().unwrap_or(0) + 1)
-        .map_err(|_| ctx.refuse_codec_limit(allocation_operation, 0, 1))?;
-    let additional = suffix
-        .len()
-        .checked_add(digits)
-        .ok_or_else(|| ctx.refuse_codec_limit(allocation_operation, 0, 1))?;
-    ctx.charge_retained(
-        u64::try_from(additional)
-            .map_err(|_| ctx.refuse_codec_limit(allocation_operation, 0, 1))?,
-        charge_operation,
-    )?;
-    id.try_reserve(additional)
-        .map_err(|_| ctx.refuse_codec_limit(allocation_operation, 0, 1))?;
-    id.push_str(suffix);
-    write!(id, "{offset}").map_err(|_| ctx.refuse_codec_limit(allocation_operation, 0, 1))?;
+    ctx.append_formatted_retained(&mut id, format_args!("{suffix}{offset}"), charge_operation)?;
     Ok(id)
 }
 
@@ -183,14 +160,8 @@ pub(super) fn lp_utf16_bounded_charged(
             .checked_add(character.len_utf8())
             .ok_or_else(|| ctx.refuse_codec_limit("f3d Design UTF-16 length", 0, 1))?;
     }
-    ctx.charge_retained(
-        u64::try_from(utf8_len)
-            .map_err(|_| ctx.refuse_codec_limit("f3d Design UTF-16 length", 0, 1))?,
-        "f3d Design UTF-16 text",
-    )?;
-    let mut text = String::new();
-    text.try_reserve(utf8_len)
-        .map_err(|_| ctx.refuse_codec_limit("f3d Design UTF-16 allocation", 0, 1))?;
+
+    let mut text = ctx.retained_string(utf8_len, "f3d Design UTF-16 text")?;
     let mut view = View::over_retained(raw);
     for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
         let Ok(character) = decoded else {
@@ -236,14 +207,9 @@ pub(super) fn lp_utf16_bounded_scoped<'a>(
             .checked_add(character.len_utf8())
             .ok_or_else(|| ctx.refuse_codec_limit("f3d Design temporary UTF-16 length", 0, 1))?;
     }
-    let reservation = ctx.reserve_scoped(
-        u64::try_from(utf8_len)
-            .map_err(|_| ctx.refuse_codec_limit("f3d Design temporary UTF-16 length", 0, 1))?,
-        "f3d Design temporary UTF-16 text",
-    )?;
+    let mut reservation = ctx.reserve_scoped(0, "f3d Design temporary UTF-16 text")?;
     let mut text = String::new();
-    text.try_reserve(utf8_len)
-        .map_err(|_| ctx.refuse_codec_limit("f3d Design temporary UTF-16 allocation", 0, 1))?;
+    ctx.reserve_scoped_string(&mut reservation, &mut text, utf8_len, "f3d Design temporary UTF-16 text")?;
     let mut view = View::over_retained(raw);
     for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
         let Ok(character) = decoded else {

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact fixed extrude, fillet and chamfer parameter scopes.
 
-use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
@@ -204,10 +203,8 @@ pub(super) fn exact_fixed_fillet_parameters(
         if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
-            ctx.charge_collection_items(1, "f3d fixed Fillet scalar lanes")?;
-            lanes.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d fixed Fillet scalar lanes allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut lanes, 1, "f3d fixed Fillet scalar lanes")?;
             lanes.push((*record_index, scalar));
         }
     }
@@ -234,10 +231,8 @@ pub(super) fn exact_fixed_fillet_parameters(
     } else {
         lanes.len() / 2
     };
-    ctx.charge_collection_items(u64_from_index(group_count), "f3d fixed Fillet groups")?;
-    groups
-        .try_reserve(group_count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d fixed Fillet groups allocation", 0, 1))?;
+
+    ctx.reserve_vec(&mut groups, group_count, "f3d fixed Fillet groups")?;
     if lanes.len() == 1 {
         let Some(value) = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0]))) else {
             return Ok(None);
@@ -255,14 +250,9 @@ pub(super) fn exact_fixed_fillet_parameters(
         }
     } else {
         let intermediate_count = (lanes.len() - 3) / 2;
-        ctx.charge_collection_items(
-            u64_from_index(intermediate_count),
-            "f3d fixed Fillet intermediate rows",
-        )?;
+
         let mut intermediate = Vec::new();
-        intermediate.try_reserve(intermediate_count).map_err(|_| {
-            ctx.refuse_codec_limit("f3d fixed Fillet intermediate rows allocation", 0, 1)
-        })?;
+        ctx.reserve_vec(&mut intermediate, intermediate_count, "f3d fixed Fillet intermediate rows")?;
         for pair in lanes[3..].chunks_exact(2) {
             intermediate.push(DesignFixedFilletIntermediate {
                 radius: scalar(&pair[0]),

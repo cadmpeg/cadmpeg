@@ -63,17 +63,11 @@ pub(super) fn exact_assembly_alignment(
             && owner.scope_record_index() == scope.record_index
     };
     let lane_count = parameter_owners.iter().filter(matching).count();
-    ctx.charge_collection_items(
-        u64::try_from(lane_count)
-            .map_err(|_| ctx.refuse_codec_limit("f3d assembly alignment lane count", 0, 1))?,
-        "f3d assembly alignment lanes",
-    )?;
+
     let mut lanes = Vec::new();
-    lanes
-        .try_reserve(lane_count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d assembly alignment lanes allocation", 0, 1))?;
+    ctx.reserve_vec(&mut lanes, lane_count, "f3d assembly alignment lanes")?;
     lanes.extend(parameter_owners.iter().filter(matching));
-    crate::design::sort::sort_by_key(Some(ctx), &mut lanes[..], |owner| owner.local_ordinal())?;
+    crate::design::sort::sort_by_key(ctx, &mut lanes[..], |owner| owner.local_ordinal())?;
     (|| -> Option<Result<DesignAssemblyAlignment, CodecError>> {
         if lanes
             .iter()

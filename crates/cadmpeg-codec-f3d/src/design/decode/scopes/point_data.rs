@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact point-data levels and work-point constructions.
 
-use cadmpeg_core::decode::u64_from_index;
 
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
@@ -86,18 +85,10 @@ fn point_data_level(
         if arity == 0 || arity > end.checked_sub(cursor)? {
             return None;
         }
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(arity), "f3d point-data inputs")
-        {
-            return Some(Err(error));
-        }
+
         let mut inputs = Vec::new();
-        if inputs.try_reserve(arity).is_err() {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d point-data inputs allocation",
-                0,
-                1,
-            )));
+        if let Err(error) = ctx.reserve_vec(&mut inputs, arity, "f3d point-data inputs") {
+            return Some(Err(error));
         }
         for _ in 0..arity {
             let reference_offset = cursor.checked_add(1)?;

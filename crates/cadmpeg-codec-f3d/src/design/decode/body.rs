@@ -67,11 +67,9 @@ pub(crate) fn decode_body_members(
         let Some(count) = bounded_len(u64_from_index(count), 11, view.remaining()) else {
             continue;
         };
-        ctx.charge_collection_items(u64_from_index(count), "f3d body members")?;
+
         let mut decoded = Vec::new();
-        decoded
-            .try_reserve(count)
-            .map_err(|_| ctx.refuse_codec_limit("f3d body members allocation", 0, 1))?;
+        ctx.reserve_vec(&mut decoded, count, "f3d body members")?;
         for _ in 0..count {
             let cursor = view.position();
             if view.u8() != Some(1) {
@@ -86,14 +84,7 @@ pub(crate) fn decode_body_members(
                 decoded.clear();
                 break;
             };
-            let id = design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-body-member#",
-                u64_from_index(cursor),
-                "f3d body member identifier",
-                "f3d body member identifier allocation",
-            )?;
+            let id = design_record_id_charged(ctx, &entry.name, ":design-body-member#", u64_from_index(cursor), "f3d body member identifier")?;
             decoded.push(DesignBodyMember {
                 id,
                 byte_offset: u64_from_index(cursor),
@@ -102,9 +93,8 @@ pub(crate) fn decode_body_members(
             });
         }
         if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
-            ctx.charge_collection_items(u64_from_index(decoded.len()), "f3d decoded body members")?;
-            out.try_reserve(decoded.len())
-                .map_err(|_| ctx.refuse_codec_limit("f3d decoded body members allocation", 0, 1))?;
+
+            ctx.reserve_vec(&mut out, decoded.len(), "f3d decoded body members")?;
             out.extend(decoded);
         }
     }
@@ -216,14 +206,7 @@ pub(crate) fn decode_body_bounds(
             })
         };
         let record = DesignBodyBounds::from_parts(crate::records::bodies::DesignBodyBoundsWire {
-            id: design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-body-bounds#",
-                entity.byte_offset,
-                "f3d body record identifier",
-                "f3d body record identifier allocation",
-            )?,
+            id: design_record_id_charged(ctx, &entry.name, ":design-body-bounds#", entity.byte_offset, "f3d body record identifier")?,
             entity_suffix: entity.entity_id.suffix(),
             entity_byte_offset: entity.byte_offset,
             record_indices,
@@ -238,12 +221,11 @@ pub(crate) fn decode_body_bounds(
             minimum: corner(3)?,
         })
         .map_err(CodecError::Malformed)?;
-        ctx.charge_collection_items(1, "f3d body bounds")?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d body bounds allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d body bounds")?;
         out.push(record);
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -335,11 +317,7 @@ pub(super) fn decode_stream(
                         });
                     Ok(crate::records::recipes::ConstructionRecipeDesign {
                         id: crate::records::identity::RecordedValue {
-                            value: copy_body_map_name(
-                                ctx,
-                                value,
-                                "f3d construction recipe design ID",
-                            )?,
+                            value: ctx.copy_retained_text(value, "f3d construction recipe design ID")?,
                             offset: u64_from_index(design_id_at),
                         },
                         selector,
@@ -348,10 +326,8 @@ pub(super) fn decode_stream(
                 .transpose()?;
             let key = (kind, parsed_design_id.map(|(value, _)| value));
             if !counters.contains_key(&key) {
-                ctx.charge_collection_items(1, "f3d construction recipe counters")?;
-                counters.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d construction recipe counters allocation", 0, 1)
-                })?;
+
+                ctx.reserve_map(&mut counters, 1, "f3d construction recipe counters")?;
             }
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
@@ -367,27 +343,19 @@ pub(super) fn decode_stream(
                 })
             });
             let recipe = ConstructionRecipe {
-                id: design_record_id_charged(
-                    ctx,
-                    stream,
-                    ":construction-recipe#",
-                    u64_from_index(offset),
-                    "f3d body record identifier",
-                    "f3d body record identifier allocation",
-                )?,
+                id: design_record_id_charged(ctx, stream, ":construction-recipe#", u64_from_index(offset), "f3d body record identifier")?,
                 byte_offset: u64_from_index(offset),
                 kind,
                 design,
                 recipe_index,
                 record_index,
             };
-            ctx.charge_collection_items(1, "f3d construction recipes")?;
-            out.try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d construction recipes allocation", 0, 1))?;
+
+            ctx.reserve_vec(out, 1, "f3d construction recipes")?;
             out.push(recipe);
         }
     }
-    crate::design::sort::sort_by_key(Some(ctx), &mut out[..], |recipe| {
+    crate::design::sort::sort_by_key(ctx, &mut out[..], |recipe| {
         recipe.record_index.map(|index| index.value)
     })?;
     Ok(())
@@ -563,10 +531,8 @@ fn snapshot_body_map_records(
     let mut primary_by_entity = HashMap::new();
     for (ordinal, frame) in frames.iter().enumerate() {
         if !primary_by_entity.contains_key(&frame.entity_id) {
-            ctx.charge_collection_items(1, "f3d snapshot body-map primary index")?;
-            primary_by_entity.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d snapshot body-map primary index allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut primary_by_entity, 1, "f3d snapshot body-map primary index")?;
         }
         primary_by_entity.insert(frame.entity_id, ordinal);
     }
@@ -583,14 +549,10 @@ fn snapshot_body_map_records(
             .contains(&design_type.version)
         {
             return Err(CodecError::NotImplemented(
-                crate::design::text::format_design_text(
-                    Some(ctx),
-                    format_args!(
+                (ctx).format_retained(format_args!(
                         "unsupported F3D Design snapshot body-map carrier version {}",
                         design_type.version
-                    ),
-                    "f3d Design unsupported diagnostic",
-                )?,
+                    ), "f3d Design unsupported diagnostic")?,
             ));
         }
         if design_type.module != DESIGN_MODULE_BODY
@@ -618,12 +580,9 @@ fn snapshot_body_map_records(
             .to_string();
         for &entity in design_type.entities.values() {
             let Some(&frame_ordinal) = primary_by_entity.get(&entity) else {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                         "F3D Design snapshot body-map entity {entity} has no primary record"
-                    ),
-                ));
+                    )));
             };
             let frame = frames[frame_ordinal];
             if View::u32_le_at(bytes, frame.start) != Some(3)
@@ -631,20 +590,15 @@ fn snapshot_body_map_records(
                 || View::u64_le_at(bytes, frame.start + 7) != Some(entity)
                 || bytes.get(frame.start + 15..frame.start + 21) != Some(&[0; 6])
             {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                         "F3D Design snapshot body-map entity {entity} has an invalid entity header"
-                    ),
-                ));
+                    )));
             }
             if let Some(record) =
                 parse_snapshot_body_map_frame(ctx, bytes, meta, frame.start, frame.end, entity)?
             {
-                ctx.charge_collection_items(1, "f3d snapshot body-map records")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d snapshot body-map records allocation", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut out, 1, "f3d snapshot body-map records")?;
                 out.push(record);
             }
         }
@@ -750,15 +704,8 @@ fn parse_snapshot_body_map_frame(
                 continue;
             }
             let mut bindings = Vec::new();
-            ctx.charge_collection_items(
-                u64::try_from(count).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d snapshot body-map pair count", 0, 1)
-                })?,
-                "f3d snapshot body-map pairs",
-            )?;
-            bindings.try_reserve(count).map_err(|_| {
-                ctx.refuse_codec_limit("f3d snapshot body-map pairs allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut bindings, count, "f3d snapshot body-map pairs")?;
             for (ordinal, pair) in pairs.chunks_exact(16).enumerate() {
                 let mut pair = View::over_retained(pair);
                 bindings.push(BodyBinding {
@@ -793,10 +740,8 @@ fn body_map_records(
     let mut primary_by_entity = HashMap::<u64, Option<usize>>::new();
     for (ordinal, record) in meta.records.iter().enumerate() {
         if !primary_by_entity.contains_key(&record.entity_id) {
-            ctx.charge_collection_items(1, "f3d body-map primary index")?;
-            primary_by_entity.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d body-map primary index allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut primary_by_entity, 1, "f3d body-map primary index")?;
         }
         primary_by_entity
             .entry(record.entity_id)
@@ -816,14 +761,10 @@ fn body_map_records(
         }
         if design_type.version != crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION {
             return Err(CodecError::NotImplemented(
-                crate::design::text::format_design_text(
-                    Some(ctx),
-                    format_args!(
+                (ctx).format_retained(format_args!(
                         "unsupported F3D Design body-map carrier version {}",
                         design_type.version
-                    ),
-                    "f3d Design unsupported diagnostic",
-                )?,
+                    ), "f3d Design unsupported diagnostic")?,
             ));
         }
         if design_type.module != DESIGN_MODULE_BODY
@@ -852,42 +793,31 @@ fn body_map_records(
 
         for &entity_id in design_type.entities.values() {
             if typed_entities.contains(&entity_id) {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design body-map carrier entity {entity_id} is registered more than once"
-                ),
-                ));
+                )));
             }
-            ctx.charge_collection_items(1, "f3d body-map typed entities")?;
-            typed_entities.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d body-map typed entities allocation", 0, 1)
-            })?;
+
+            ctx.reserve_set(&mut typed_entities, 1, "f3d body-map typed entities")?;
             typed_entities.insert(entity_id);
             let record_ordinal = match primary_by_entity.get(&entity_id) {
                 Some(Some(record_ordinal)) => *record_ordinal,
                 Some(None) => {
-                    return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
+                    return Err(crate::design::text::malformed_design(ctx, format_args!(
                         "F3D Design body-map carrier entity {entity_id} has multiple primary records"
                     )));
                 }
                 None => {
-                    return Err(crate::design::text::malformed_design(
-                        Some(ctx),
-                        format_args!(
+                    return Err(crate::design::text::malformed_design(ctx, format_args!(
                             "F3D Design body-map carrier entity {entity_id} has no primary record"
-                        ),
-                    ));
+                        )));
                 }
             };
             let frame = record_frames[record_ordinal];
             let start = frame.start;
             let end = frame.end;
             let record_index = u32::try_from(entity_id).map_err(|_| {
-                crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!("F3D Design body-map carrier entity {entity_id} exceeds u32"),
-                )
+                crate::design::text::malformed_design(ctx, format_args!("F3D Design body-map carrier entity {entity_id} exceeds u32"))
             })?;
             if View::u32_le_at(bytes, start) != Some(3)
                 || bytes.get(
@@ -897,12 +827,9 @@ fn body_map_records(
                 || View::u32_le_at(bytes, start + indexed_design_record_header::RECORD_INDEX)
                     != Some(record_index)
             {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design body-map carrier entity {entity_id} has an invalid indexed header"
-                ),
-                ));
+                )));
             }
 
             let mut matched = None;
@@ -913,18 +840,14 @@ fn body_map_records(
                     continue;
                 };
                 if matched.replace(bindings).is_some() {
-                    return Err(crate::design::text::malformed_design(
-                        Some(ctx),
-                        format_args!(
+                    return Err(crate::design::text::malformed_design(ctx, format_args!(
                             "F3D Design body-map carrier entity {entity_id} has an ambiguous frame"
-                        ),
-                    ));
+                        )));
                 }
             }
             if let Some(record) = matched {
-                ctx.charge_collection_items(1, "f3d body-map records")?;
-                out.try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("f3d body-map records allocation", 0, 1))?;
+
+                ctx.reserve_vec(&mut out, 1, "f3d body-map records")?;
                 out.push(record);
             }
         }
@@ -943,15 +866,9 @@ pub(crate) fn body_bindings(
             .checked_add(record.bindings.len())
             .ok_or_else(|| ctx.refuse_codec_limit("f3d flattened body-map pair count", 0, 1))
     })?;
-    ctx.charge_collection_items(
-        u64::try_from(count)
-            .map_err(|_| ctx.refuse_codec_limit("f3d flattened body-map pair count", 0, 1))?,
-        "f3d flattened body-map pairs",
-    )?;
+
     let mut bindings = Vec::new();
-    bindings
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d flattened body-map pairs allocation", 0, 1))?;
+    ctx.reserve_vec(&mut bindings, count, "f3d flattened body-map pairs")?;
     for record in records {
         bindings.extend(record.bindings);
     }
@@ -971,14 +888,7 @@ fn selected_body_map_records(
     }
 }
 
-fn copy_body_map_name(
-    ctx: &DecodeContext<'_>,
-    name: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(name.as_bytes(), operation)?)
-        .map_err(|_| CodecError::malformed("F3D body-map name must be UTF-8"))
-}
+
 
 /// Return the typed model-blob set selected independently in each Design
 /// stream. The modern `.smbh` map takes precedence over snapshot `.smb` maps.
@@ -1009,11 +919,9 @@ pub(crate) fn design_model_blob_names(
                     *count += 1;
                 } else {
                     let name =
-                        copy_body_map_name(ctx, &record.blob_name, "f3d body-map carrier name")?;
-                    ctx.charge_collection_items(1, "f3d body-map carrier counts")?;
-                    carrier_counts.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d body-map carrier counts allocation", 0, 1)
-                    })?;
+                        ctx.copy_retained_text(&record.blob_name, "f3d body-map carrier name")?;
+
+                    ctx.reserve_map(&mut carrier_counts, 1, "f3d body-map carrier counts")?;
                     carrier_counts.insert(name, 1);
                 }
             }
@@ -1027,11 +935,9 @@ pub(crate) fn design_model_blob_names(
             .iter()
             .filter(|record| !record.blob_name.is_empty())
         {
-            let name = copy_body_map_name(ctx, &record.blob_name, "f3d selected body-map name")?;
-            ctx.charge_collection_items(1, "f3d selected body-map names")?;
-            model_names.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d selected body-map names allocation", 0, 1)
-            })?;
+            let name = ctx.copy_retained_text(&record.blob_name, "f3d selected body-map name")?;
+
+            ctx.reserve_vec(&mut model_names, 1, "f3d selected body-map names")?;
             model_names.push(name);
         }
     }
@@ -1045,26 +951,18 @@ pub(crate) fn design_model_blob_names(
         if let Some(count) = archive_counts.get_mut(basename) {
             *count += 1;
         } else {
-            let name = copy_body_map_name(ctx, basename, "f3d archive BREP basename")?;
-            ctx.charge_collection_items(1, "f3d archive BREP counts")?;
-            archive_counts
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d archive BREP counts allocation", 0, 1))?;
+            let name = ctx.copy_retained_text(basename, "f3d archive BREP basename")?;
+
+            ctx.reserve_map(&mut archive_counts, 1, "f3d archive BREP counts")?;
             archive_counts.insert(name, 1);
         }
     }
     if !saw_design_stream || carrier_counts.is_empty() {
-        ctx.charge_collection_items(
-            u64::try_from(archive_counts.len())
-                .map_err(|_| ctx.refuse_codec_limit("f3d archive BREP name count", 0, 1))?,
-            "f3d archive BREP names",
-        )?;
+
         let mut names = Vec::new();
-        names
-            .try_reserve(archive_counts.len())
-            .map_err(|_| ctx.refuse_codec_limit("f3d archive BREP names allocation", 0, 1))?;
+        ctx.reserve_vec(&mut names, archive_counts.len(), "f3d archive BREP names")?;
         names.extend(archive_counts.into_keys());
-        crate::design::sort::sort_by(Some(ctx), &mut names[..], Ord::cmp)?;
+        crate::design::sort::sort_by(ctx, &mut names[..], Ord::cmp)?;
         return Ok(names);
     }
     if carrier_counts != archive_counts {
@@ -1072,7 +970,7 @@ pub(crate) fn design_model_blob_names(
             "Design body-map carriers do not classify every binary BREP entry exactly once",
         ));
     }
-    crate::design::sort::sort_by(Some(ctx), &mut model_names[..], Ord::cmp)?;
+    crate::design::sort::sort_by(ctx, &mut model_names[..], Ord::cmp)?;
     model_names.dedup();
     Ok(model_names)
 }
@@ -1101,12 +999,9 @@ fn parse_body_map_frame(
         return Ok(None);
     };
     let count = usize::try_from(pair_count).map_err(|_| {
-        crate::design::text::malformed_design(
-            Some(ctx),
-            format_args!(
+        crate::design::text::malformed_design(ctx, format_args!(
                 "F3D Design body map at byte {start} pair count does not fit this platform"
-            ),
-        )
+            ))
     })?;
     let Some(pairs_start) = count_at.checked_add(4) else {
         return Ok(None);
@@ -1171,19 +1066,14 @@ fn parse_body_map_frame(
     };
 
     let mut bindings = Vec::new();
-    ctx.charge_collection_items(u64::from(pair_count), "f3d body-map pairs")?;
-    bindings
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d body-map pairs allocation", 0, 1))?;
+
+    ctx.reserve_vec(&mut bindings, count, "f3d body-map pairs")?;
     for pair in 0..count {
         let at = pairs_start + pair * 16;
         let (Some(key), Some(suffix)) =
             (View::u64_le_at(bytes, at), View::u64_le_at(bytes, at + 8))
         else {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!("F3D Design body map at byte {start} has a truncated pair run"),
-            ));
+            return Err(crate::design::text::malformed_design(ctx, format_args!("F3D Design body map at byte {start} has a truncated pair run")));
         };
         bindings.push(BodyBinding {
             asm_key: key,
@@ -1237,10 +1127,8 @@ pub(crate) fn decode_design_body_bindings(
                         |source| source == record.blob_name,
                     )
                 }) {
-                    ctx.charge_collection_items(1, "f3d source BREP body keys")?;
-                    source_bodies.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d source BREP body keys allocation", 0, 1)
-                    })?;
+
+                    ctx.reserve_vec(&mut source_bodies, 1, "f3d source BREP body keys")?;
                     source_bodies.push(key);
                 }
             }
@@ -1251,41 +1139,28 @@ pub(crate) fn decode_design_body_bindings(
                 )?;
                 let record =
                     DesignBodyBinding::try_from(crate::records::bodies::DesignBodyBindingWire {
-                        id: design_record_id_charged(
-                            ctx,
-                            &entry.name,
-                            ":design-body-binding#",
-                            u64_from_index(binding.asm_key_offset),
-                            "f3d body record identifier",
-                            "f3d body record identifier allocation",
-                        )?,
-                        stream: copy_body_map_name(ctx, &entry.name, "f3d body-binding stream")?,
+                        id: design_record_id_charged(ctx, &entry.name, ":design-body-binding#", u64_from_index(binding.asm_key_offset), "f3d body record identifier")?,
+                        stream: ctx.copy_retained_text(&entry.name, "f3d body-binding stream")?,
                         pair_count,
                         pair_ordinal: ordinal,
                         asm_body_key: binding.asm_key,
                         asm_body_key_offset: u64_from_index(binding.asm_key_offset),
                         entity_suffix: binding.entity_suffix,
                         entity_suffix_offset: u64_from_index(binding.entity_suffix_offset()),
-                        blob_name: copy_body_map_name(
-                            ctx,
-                            &record.blob_name,
-                            "f3d body-binding blob name",
-                        )?,
+                        blob_name: ctx.copy_retained_text(&record.blob_name, "f3d body-binding blob name")?,
                         blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body
                             .map(|id| crate::brep::copy_body_id(ctx, id))
                             .transpose()?,
                     })
                     .map_err(CodecError::Malformed)?;
-                ctx.charge_collection_items(1, "f3d decoded body bindings")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d decoded body bindings allocation", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut out, 1, "f3d decoded body bindings")?;
                 out.push(record);
             }
         }
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -1307,22 +1182,18 @@ pub(crate) fn bind_body_bounds(
             {
                 continue;
             }
-            ctx.charge_collection_items(1, "f3d matching body bounds bindings")?;
-            matches.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d matching body bounds bindings allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut matches, 1, "f3d matching body bounds bindings")?;
             matches.push(binding);
         }
-        crate::design::sort::sort_by_key(Some(ctx), &mut matches[..], |binding| {
+        crate::design::sort::sort_by_key(ctx, &mut matches[..], |binding| {
             binding.asm_body_key_offset()
         })?;
         let mut ids = Vec::new();
         for binding in matches {
-            let id = copy_body_map_name(ctx, &binding.id, "f3d body bounds binding identifier")?;
-            ctx.charge_collection_items(1, "f3d body bounds binding identifiers")?;
-            ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d body bounds binding identifiers allocation", 0, 1)
-            })?;
+            let id = ctx.copy_retained_text(&binding.id, "f3d body bounds binding identifier")?;
+
+            ctx.reserve_vec(&mut ids, 1, "f3d body bounds binding identifiers")?;
             ids.push(id);
         }
         bounds.body_binding_ids = ids;
@@ -1373,13 +1244,11 @@ pub(crate) fn decode_all_body_visibility(
                 let existing = out.keys().any(|(name, asm_key)| {
                     name == &record.blob_name && *asm_key == binding.asm_key
                 });
-                let key = copy_body_map_name(ctx, &record.blob_name, "f3d visibility BREP name")?;
-                let stream = copy_body_map_name(ctx, &entry.name, "f3d visibility stream")?;
+                let key = ctx.copy_retained_text(&record.blob_name, "f3d visibility BREP name")?;
+                let stream = ctx.copy_retained_text(&entry.name, "f3d visibility stream")?;
                 if !existing {
-                    ctx.charge_collection_items(1, "f3d body visibility entries")?;
-                    out.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit("f3d body visibility entries allocation", 0, 1)
-                    })?;
+
+                    ctx.reserve_map(&mut out, 1, "f3d body visibility entries")?;
                 }
                 out.insert(
                     (key, binding.asm_key),
@@ -1414,16 +1283,11 @@ fn typed_browser_node_hidden_flags(
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
         if !nodes_by_entity.contains_key(&node.entity_suffix) {
-            ctx.charge_collection_items(1, "f3d browser visibility entities")?;
-            nodes_by_entity.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d browser visibility entities allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut nodes_by_entity, 1, "f3d browser visibility entities")?;
         }
         let candidates = nodes_by_entity.entry(node.entity_suffix).or_default();
-        ctx.charge_collection_items(1, "f3d browser visibility candidates")?;
-        candidates.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d browser visibility candidates allocation", 0, 1)
-        })?;
+        ctx.reserve_vec(candidates, 1, "f3d browser visibility candidates")?;
         candidates.push(node);
     }
 
@@ -1435,13 +1299,11 @@ fn typed_browser_node_hidden_flags(
             .filter(|presentation| presentation.entity_suffix == entity_suffix)
             .filter_map(|presentation| presentation.browser_node.as_ref())
         {
-            ctx.charge_collection_items(1, "f3d linked browser visibility nodes")?;
-            linked.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d linked browser visibility nodes allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut linked, 1, "f3d linked browser visibility nodes")?;
             linked.push(node);
         }
-        crate::design::sort::sort_by_key(Some(ctx), &mut linked[..], |node| node.record_index)?;
+        crate::design::sort::sort_by_key(ctx, &mut linked[..], |node| node.record_index)?;
         linked.dedup_by_key(|node| node.record_index);
         let selected = match linked.as_slice() {
             [node] => Some(*node),
@@ -1452,10 +1314,8 @@ fn typed_browser_node_hidden_flags(
             _ => None,
         };
         if let Some(node) = selected {
-            ctx.charge_collection_items(1, "f3d selected browser visibility")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d selected browser visibility allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut out, 1, "f3d selected browser visibility")?;
             out.insert(
                 entity_suffix,
                 BrowserNodeVisibility {
@@ -1482,17 +1342,13 @@ pub(crate) fn scanned_browser_node_entities(
         let key = record.guid.to_ascii_lowercase();
         if let Some(previous) = entities.get(&key) {
             if *previous != record.entity_suffix && !ambiguous.contains(&key) {
-                ctx.charge_collection_items(1, "index F3D ambiguous browser nodes")?;
-                ambiguous.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index F3D ambiguous browser nodes", 0, 1)
-                })?;
+
+                ctx.reserve_set(&mut ambiguous, 1, "index F3D ambiguous browser nodes")?;
                 ambiguous.insert(key);
             }
         } else {
-            ctx.charge_collection_items(1, "index F3D browser node entities")?;
-            entities
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("index F3D browser node entities", 0, 1))?;
+
+            ctx.reserve_map(&mut entities, 1, "index F3D browser node entities")?;
             entities.insert(key, record.entity_suffix);
         }
     }
@@ -1525,10 +1381,8 @@ fn scan_browser_node_identities(
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (0 | 1, Some(member)) = (bytes[flag_at], View::u64_le_at(bytes, flag_at + 3)) {
-                ctx.charge_collection_items(1, "collect F3D browser node identities")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect F3D browser node identities", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut out, 1, "collect F3D browser node identities")?;
                 out.push(ScannedBrowserNodeIdentity {
                     guid: utf16_le_string(&bytes[at + 4..at + 4 + GUID_BYTES]),
                     entity_suffix: member,

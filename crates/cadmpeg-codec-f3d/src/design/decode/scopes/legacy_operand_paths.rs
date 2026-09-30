@@ -731,21 +731,10 @@ fn exact_legacy_class_388_operand_path_envelope(
         }
         let final_index = usize::try_from(path_count).ok()?.checked_sub(1)?;
         let final_path = path_records[final_index].take()?;
-        if let Err(error) =
-            ctx.charge_collection_items(u64::from(path_count), "f3d legacy occurrence GUIDs")
-        {
-            return Some(Err(error));
-        }
+
         let mut occurrence_guids = Vec::new();
-        if occurrence_guids
-            .try_reserve_exact(usize::try_from(path_count).ok()?)
-            .is_err()
-        {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d legacy occurrence GUIDs allocation",
-                0,
-                1,
-            )));
+        if let Err(error) = ctx.reserve_vec(&mut occurrence_guids, usize::try_from(path_count).ok()?, "f3d legacy occurrence GUIDs") {
+            return Some(Err(error));
         }
         for path in path_records.into_iter().flatten() {
             occurrence_guids.push(path.occurrence_guid);

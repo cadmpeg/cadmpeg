@@ -87,14 +87,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(1, DesignOperandRole::PROFILE),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &role_41,
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &role_41, &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -108,14 +101,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &guided_role_41,
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &guided_role_41, &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -152,14 +138,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &cut,
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &cut, &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -201,14 +180,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X43),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &legacy_cut,
-            std::slice::from_ref(&legacy_carrier),
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &legacy_cut, std::slice::from_ref(&legacy_carrier), &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             op: cadmpeg_ir::features::BooleanOp::Cut,
@@ -216,15 +188,7 @@ pub(super) fn fixed_kind_path_operations(
         })) if sections.len() == 2
     ));
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &legacy_cut,
-            &[],
-            &[],
-            &[],
-            &[],
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &legacy_cut, &[], &[], &[], &[], decode_ctx))
         .unwrap(),
         None
     );
@@ -248,14 +212,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X5),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &role_5,
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &role_5, &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -268,14 +225,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(2, DesignOperandRole::ROLE_0X7),
     ];
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &centered,
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &centered, &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Centerline(
@@ -291,15 +241,7 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X7),
     ];
     assert_eq!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &mixed,
-            &[],
-            &[],
-            &[],
-            &[],
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[], decode_ctx))
         .unwrap(),
         None
     );
@@ -335,14 +277,7 @@ pub(super) fn fixed_kind_path_operations(
         )
         .unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_fixed_loft(
-            &loft_scope,
-            &[point.clone(), profile.clone(), boundary.clone()],
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &[point.clone(), profile.clone(), boundary.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Loft {
             sections,
             guidance: cadmpeg_ir::features::LoftGuidance::Guides(guides),
@@ -446,14 +381,7 @@ pub(super) fn fixed_kind_path_operations(
     let path = sweep_group(1, DesignOperandRole::ROLE_0X5);
     let body = sweep_group(2, DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[profile.clone(), path.clone()],
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
                 along_fraction: fraction_0,
@@ -485,14 +413,7 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[profile.clone(), path.clone(), rail],
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), rail], &[], &[], &[], &[], decode_ctx)).unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             path_extent: Some(cadmpeg_ir::features::SweepPathExtent {
@@ -530,27 +451,12 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[profile.clone(), path.clone()],
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone()], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert_eq!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[profile.clone(), path.clone(), body.clone()],
-            &[],
-            &[],
-            &[],
-            &[],
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), body.clone()], &[], &[], &[], &[], decode_ctx))
         .unwrap(),
         None
     );
@@ -650,14 +556,7 @@ pub(super) fn fixed_kind_path_operations(
         )
         .unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[selected_profile, profile_carrier, path.clone(), guide_surface],
-            &[],
-            &[],
-            &[entity_selection],
-            &[],
-         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[selected_profile, profile_carrier, path.clone(), guide_surface], &[], &[], &[entity_selection], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             orientation: Some(cadmpeg_ir::features::SweepOrientation::GuideSurface {
                 faces: cadmpeg_ir::features::FaceSelection::Native(faces),
@@ -690,14 +589,7 @@ pub(super) fn fixed_kind_path_operations(
             .unwrap();
     }
     assert!(matches!(
-        crate::design::feature_project::project_fixed_sweep(
-            &sweep_scope,
-            &[profile, path, body],
-            &[],
-            &[],
-            &[],
-            &[],
-         None).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile, path, body], &[], &[], &[], &[], decode_ctx)).unwrap(), Some(cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Sweep {
             shape,
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid {

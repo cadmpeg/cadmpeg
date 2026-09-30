@@ -80,7 +80,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(recipe.id.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::decode::text::copy_ascii_retained(&ctx, &recipe.id, "f3d face operand recipe ID"),
+        &ctx.copy_retained_text(&recipe.id, "f3d face operand recipe ID"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d face operand recipe ID"
@@ -90,10 +90,7 @@ fn recipe_operand_ids_refuse_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(scope_len).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::decode::text::design_record_id_charged(
-            &ctx, stream, ":design-face-operand#", 0,
-            "f3d face operand ID", "f3d face operand ID allocation",
-        ),
+        crate::design::decode::text::design_record_id_charged(&ctx, stream, ":design-face-operand#", 0, "f3d face operand ID"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d face operand ID"

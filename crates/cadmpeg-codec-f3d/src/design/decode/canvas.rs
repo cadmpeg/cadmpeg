@@ -2,11 +2,11 @@
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
 use crate::container::ContainerScan;
-use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
+use crate::design::decode::image::{  embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
+use crate::design::decode::text::{  lp_ascii_filtered_view};
 use crate::ids;
 use crate::records::{
     canvas::{
@@ -56,7 +56,7 @@ pub(crate) fn project_canvas_images(
         }) else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -65,15 +65,13 @@ pub(crate) fn project_canvas_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = copy_asset_id_charged(ctx, &asset.id)?;
+        let asset_id = asset.id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
         if !assets
             .iter()
             .any(|candidate: &Asset| candidate.id == asset_id)
         {
-            ctx.charge_collection_items(1, "f3d Canvas assets")?;
-            assets
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d Canvas assets allocation", 0, 1))?;
+
+            ctx.reserve_vec(&mut assets, 1, "f3d Canvas assets")?;
             assets.push(asset);
         }
         let (opacity, frame) = image.geometry().payload.decoded();
@@ -111,7 +109,7 @@ pub(crate) fn project_canvas_images(
                 },
             ));
     }
-    crate::design::sort::sort_by(Some(ctx), &mut assets[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut assets[..], |a, b| a.id.cmp(&b.id))?;
     Ok(assets)
 }
 
@@ -235,20 +233,16 @@ fn parse_canvas_image(
             return None;
         }
         let geometry_class_tag =
-            match copy_ascii_retained(ctx, geometry_class_tag, "f3d Canvas geometry class tag") {
+            match ctx.copy_retained_text(geometry_class_tag, "f3d Canvas geometry class tag") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };
-        let paired_geometry_class_tag = match copy_ascii_retained(
-            ctx,
-            paired_geometry_class_tag,
-            "f3d Canvas paired geometry class tag",
-        ) {
+        let paired_geometry_class_tag = match ctx.copy_retained_text(paired_geometry_class_tag, "f3d Canvas paired geometry class tag") {
             Ok(value) => value,
             Err(error) => return Some(Err(error)),
         };
         let asset_class_tag =
-            match copy_ascii_retained(ctx, asset_class_tag, "f3d Canvas asset class tag") {
+            match ctx.copy_retained_text(asset_class_tag, "f3d Canvas asset class tag") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };

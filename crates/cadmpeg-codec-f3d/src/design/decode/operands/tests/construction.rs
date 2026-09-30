@@ -256,7 +256,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut unclosed = Vec::new();
     assert!(matches!(
-        crate::design::decode::operands::push_unclosed_construction_operand(&ctx, &mut unclosed, 100),
+        ctx.push_vec(&mut unclosed, 100, "f3d unclosed construction operand group"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && failure.operation == "f3d unclosed construction operand group"
@@ -770,9 +770,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let (plane_features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (plane_features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &plane_scopes,
@@ -791,8 +789,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("exact synthetic feature timeline");
     let plane_split = plane_features
         .iter()
@@ -914,11 +911,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     let split_groups = [split_target_group.clone(), split_tool_group.clone()];
     assert!(matches!(
-        project_split(None,
-            &split_body_scope,
-            &split_groups,
-            std::slice::from_ref(&split_tool)
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &split_body_scope, &split_groups, std::slice::from_ref(&split_tool))).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
@@ -950,11 +943,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         alternate_selector_edges: Vec::new(),
     }];
     assert!(matches!(
-        project_split(None,
-            &historical_split_scope,
-            &split_groups,
-            std::slice::from_ref(&historical_split_tool)
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &historical_split_scope, &split_groups, std::slice::from_ref(&historical_split_tool))).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: FaceSelection::Historical { faces, native, .. },
             ..
@@ -986,12 +975,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         )
         .unwrap();
     assert!(matches!(
-        project_split(
-            None,
-            &multiple_targets_scope,
-            &[split_tool_group.clone(), multiple_targets],
-            std::slice::from_ref(&split_tool)
-        )
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &multiple_targets_scope, &[split_tool_group.clone(), multiple_targets], std::slice::from_ref(&split_tool)))
         .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::SplitBody { .. }
@@ -1028,11 +1012,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .unwrap();
     split_target_group.scope_reference_ordinal = 3;
     assert!(matches!(
-        project_split(None,
-            &construction_tool_scope,
-            &[split_target_group.clone(), construction_tool],
-            &[]
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &construction_tool_scope, &[split_target_group.clone(), construction_tool], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
             tools: cadmpeg_ir::features::FaceSelection::Native(ref tool),
             ..
@@ -1101,22 +1081,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         }
         invalid_groups.push(vec![split_tool_group.clone(), target]);
     }
-    assert!(invalid_groups.iter().all(|groups| project_split(
-        None,
-        &split_body_scope,
-        groups,
-        std::slice::from_ref(&split_tool)
-    )
+    assert!(invalid_groups.iter().all(|groups| crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &split_body_scope, groups, std::slice::from_ref(&split_tool)))
     .unwrap()
     .is_none()));
     let mut nonterminal_tool = split_tool.clone();
     nonterminal_tool.recipe_program = vec![0, -1, 2];
-    assert!(project_split(
-        None,
-        &split_body_scope,
-        &split_groups,
-        std::slice::from_ref(&nonterminal_tool)
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &split_body_scope, &split_groups, std::slice::from_ref(&nonterminal_tool)))
     .unwrap()
     .is_none());
 
@@ -1513,11 +1483,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::BODIES_A,
         );
     assert_eq!(
-        crate::design::feature_project::project_remove_body(
-            None,
-            &remove_scope,
-            std::slice::from_ref(&remove_group)
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_remove_body(decode_ctx, &remove_scope, std::slice::from_ref(&remove_group)))
         .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
@@ -1564,11 +1530,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X5,
         );
     assert_eq!(
-        crate::design::feature_project::project_surface_stitch(
-            None,
-            &stitch_scope,
-            std::slice::from_ref(&stitch_group)
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_stitch(decode_ctx, &stitch_scope, std::slice::from_ref(&stitch_group)))
         .unwrap(),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {

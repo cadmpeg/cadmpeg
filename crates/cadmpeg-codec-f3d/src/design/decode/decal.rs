@@ -2,11 +2,11 @@
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
 use crate::container::ContainerScan;
-use crate::design::decode::image::{copy_asset_id_charged, embedded_image_asset};
+use crate::design::decode::image::{  embedded_image_asset};
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{copy_ascii_retained, lp_ascii_filtered_view};
+use crate::design::decode::text::{  lp_ascii_filtered_view};
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
@@ -95,15 +95,13 @@ pub(crate) fn project_decal_images(
             )
             .map_err(|_| CodecError::malformed("F3D Decal face identifier must be UTF-8"))?;
             let copied = FaceId::mint(copied).map_err(|error| {
-                crate::design::text::malformed_design(Some(ctx), format_args!("{error}"))
+                crate::design::text::malformed_design(ctx, format_args!("{error}"))
             })?;
-            ctx.charge_collection_items(1, "f3d Decal faces")?;
-            faces
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d Decal faces allocation", 0, 1))?;
+
+            ctx.reserve_vec(&mut faces, 1, "f3d Decal faces")?;
             faces.push(copied);
         }
-        crate::design::sort::sort_by(Some(ctx), &mut faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
+        crate::design::sort::sort_by(ctx, &mut faces[..], |a, b| a.as_str().cmp(b.as_str()))?;
         faces.dedup();
         if faces.is_empty() {
             continue;
@@ -111,11 +109,11 @@ pub(crate) fn project_decal_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
-        let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let asset_id = copy_asset_id_charged(ctx, &asset.id)?;
+        let asset_id = asset.id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
         let native_id = String::from_utf8(
             ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
         )
@@ -131,13 +129,11 @@ pub(crate) fn project_decal_images(
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-        ctx.charge_collection_items(1, "f3d Decal assets")?;
-        assets
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d Decal assets allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut assets, 1, "f3d Decal assets")?;
         assets.push(asset);
     }
-    crate::design::sort::sort_by(Some(ctx), &mut assets[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut assets[..], |a, b| a.id.cmp(&b.id))?;
     assets.dedup_by(|a, b| a.id == b.id);
     Ok(assets)
 }
@@ -270,12 +266,12 @@ fn parse_decal_asset_record(
             return None;
         }
         let asset_class_tag =
-            match copy_ascii_retained(ctx, asset_class_tag, "f3d Decal asset class tag") {
+            match ctx.copy_retained_text(asset_class_tag, "f3d Decal asset class tag") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };
         let name_class_tag =
-            match copy_ascii_retained(ctx, name_class_tag, "f3d Decal name class tag") {
+            match ctx.copy_retained_text(name_class_tag, "f3d Decal name class tag") {
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };

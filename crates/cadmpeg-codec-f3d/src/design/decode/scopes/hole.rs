@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact hole constructions and hole face selections.
 
-use cadmpeg_core::decode::u64_from_index;
 
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
@@ -248,18 +247,10 @@ fn hole_construction_frame_at(
         if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
             return None;
         }
-        if let Err(error) =
-            ctx.charge_collection_items(u64_from_index(input_count), "f3d Hole input records")
-        {
-            return Some(Err(error));
-        }
+
         let mut input_records = Vec::new();
-        if input_records.try_reserve(input_count).is_err() {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d Hole input records allocation",
-                0,
-                1,
-            )));
+        if let Err(error) = ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records") {
+            return Some(Err(error));
         }
         for _ in 0..input_count {
             let reference_at = cursor;

@@ -2,7 +2,6 @@
 
 use crate::design::decode::operands::{
     face_source_carrier_layout, face_source_reference_headers, parse_face_source_carrier_prefix,
-    push_face_source_group,
 };
 use crate::test_support::write_marked_reference;
 
@@ -48,7 +47,7 @@ fn face_source_output_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = Vec::new();
     assert!(matches!(
-        push_face_source_group(&ctx, &mut out, group),
+        ctx.push_vec(&mut out, group, "f3d face source group output"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d face source group output"

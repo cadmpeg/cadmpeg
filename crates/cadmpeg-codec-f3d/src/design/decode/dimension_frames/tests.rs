@@ -261,7 +261,7 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
     prefix.extend_from_slice(&331u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 8]);
     assert_eq!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(),
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
         1
     );
     recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe reference token");
@@ -287,7 +287,7 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
     prefix.extend_from_slice(&305u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(),
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
         2
     );
     recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired operands");
@@ -309,7 +309,7 @@ fn grouped_recipe_references_refuse_output_run() {
     }
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 0).len(),
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
         4
     );
     recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe grouped references");
@@ -344,7 +344,7 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
     let references =
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].selector_offset, 1_022);
@@ -385,12 +385,12 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             .flat_map(u32::to_le_bytes),
     );
     assert_eq!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references")),
         references
     );
     prefix.extend_from_slice(&[0; 2]);
     assert_eq!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000),
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references")),
         references
     );
     let tags = [
@@ -446,9 +446,9 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
     ];
     let mut bound = references[0].clone();
-    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+    crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(ctx,
         &mut bound, &tags, None,
-    );
+    ).expect("recipe references"));
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-b").expect("identity grammar")]
@@ -487,11 +487,11 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
     ];
-    crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
+    crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(ctx,
         &mut bound,
         &stream_tags,
         Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
-    );
+    ).expect("recipe references"));
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-a").expect("identity grammar")]
@@ -522,7 +522,7 @@ fn dimension_recipe_decodes_signed_decimal_reference_tokens() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
     let references =
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].token, "-2");
@@ -558,7 +558,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     }
 
     let references =
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
     assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
     assert_eq!(references.len(), 4);
     assert_eq!(
@@ -588,7 +588,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     let mut packed_second = prefix.clone();
     packed_second.drain(second_operand_at + 4..second_operand_at + 8);
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&packed_second, 1_000)
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &packed_second, 1_000).expect("recipe references"))
             .is_empty()
     );
     let mut invalid_header = prefix.clone();
@@ -600,7 +600,7 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &trailing, 1_000).expect("recipe references"))
             .is_empty()
     );
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
@@ -609,17 +609,17 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     mismatched_selector[second_operand_at..second_operand_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &mismatched_selector,
             1_000,
-        )
+        ).expect("recipe references"))
         .is_empty()
     );
 
     let second_run_at = reference_offsets[1];
     prefix[second_run_at..second_run_at + 4].copy_from_slice(&306u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000)
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"))
             .is_empty()
     );
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
@@ -660,7 +660,7 @@ fn face_recipe_decodes_five_group_reference_sequence() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
     let references =
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -692,50 +692,50 @@ fn face_recipe_decodes_five_group_reference_sequence() {
     let mut wrong_first_group_count = prefix.clone();
     wrong_first_group_count[18..22].copy_from_slice(&3u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &wrong_first_group_count,
             1_000,
-        )
+        ).expect("recipe references"))
         .is_empty()
     );
     let mut wrong_group_count = prefix.clone();
     wrong_group_count[14..18].copy_from_slice(&4u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &wrong_group_count,
             1_000,
-        )
+        ).expect("recipe references"))
         .is_empty()
     );
     let mut empty_group = prefix.clone();
     empty_group[second_group_count_at..second_group_count_at + 4]
         .copy_from_slice(&0u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&empty_group, 1_000)
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &empty_group, 1_000).expect("recipe references"))
             .is_empty()
     );
     let mut length_prefixed_token = prefix.clone();
     length_prefixed_token.splice(26..26, 2u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &length_prefixed_token,
             1_000,
-        )
+        ).expect("recipe references"))
         .is_empty()
     );
     let mut locally_terminated_operand = prefix.clone();
     locally_terminated_operand.splice(first_operand_end..first_operand_end, 0u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
             &locally_terminated_operand,
             1_000,
-        )
+        ).expect("recipe references"))
         .is_empty()
     );
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&trailing, 1_000)
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &trailing, 1_000).expect("recipe references"))
             .is_empty()
     );
     assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
@@ -766,7 +766,7 @@ fn face_recipe_decodes_dynamic_group_reference_sequence() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
     let references =
-        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -807,7 +807,7 @@ fn dimension_recipe_rejects_non_decimal_reference_tokens() {
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
         assert!(
-            crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000)
+            crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"))
                 .is_empty(),
             "accepted token {token:?}"
         );
@@ -975,44 +975,21 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     let parameter = cadmpeg_ir::features::ParameterId::mint("f3d:model:parameter#angle")
         .expect("identity grammar");
     assert!(matches!(
-        null_locus_dimension_definition(None,
-            &axis_pair,
-            &entity,
-            "Angular Dimension-2",
-            std::f64::consts::FRAC_PI_4,
-            parameter.clone(),
-            TEST_LINEAR_TOLERANCE,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity: ref actual_entity,
             axis: SketchAxis::Horizontal,
             parameter: ref actual_parameter,
         }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
-    assert!(null_locus_dimension_definition(
-        None,
-        &axis_pair,
-        &entity,
-        "Angular Dimension-2",
-        0.5,
-        parameter.clone(),
-        TEST_LINEAR_TOLERANCE,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", 0.5, parameter.clone(), TEST_LINEAR_TOLERANCE))
     .transpose()
     .unwrap()
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
     axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
-    assert!(null_locus_dimension_definition(
-        None,
-        &axis_pair,
-        &entity,
-        "Angular Dimension-2",
-        std::f64::consts::FRAC_PI_4,
-        parameter.clone(),
-        TEST_LINEAR_TOLERANCE,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE))
     .transpose()
     .unwrap()
     .is_none());
@@ -1027,28 +1004,13 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
         .unwrap(),
     );
     assert!(matches!(
-        null_locus_dimension_definition(None,
-            &pair,
-            &radial_entity,
-            "Diameter Dimension-2",
-            0.2,
-            parameter.clone(),
-            TEST_LINEAR_TOLERANCE,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter.clone(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual_entity,
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
-    assert!(null_locus_dimension_definition(
-        None,
-        &pair,
-        &radial_entity,
-        "Diameter Dimension-2",
-        0.2,
-        parameter,
-        0.0,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter, 0.0))
     .transpose()
     .unwrap()
     .is_none());
@@ -1787,7 +1749,6 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
         &cadmpeg_test_support::service_decode_context(),
         &parameters,
         "f3d dimension locus parameter index",
-        "f3d dimension locus parameter index allocation",
     )
     .unwrap();
     let point = crate::records::sketch_geometry::SketchPoint::try_from(
@@ -1821,7 +1782,6 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
         &ctx,
         &parameters,
         "f3d dimension locus parameter index",
-        "f3d dimension locus parameter index allocation",
     );
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
@@ -1834,7 +1794,6 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
         std::slice::from_ref(&owner),
         &parameter_index,
         "f3d dimension locus companions",
-        "f3d dimension locus companion allocation",
     );
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems

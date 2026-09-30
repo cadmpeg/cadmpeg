@@ -35,7 +35,7 @@ fn body_recipe_candidate_index_refuses_collection_limit() {
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::decode::operands::bind_body_recipe_operand_candidates(
-            Some(&ctx), &mut [], std::slice::from_ref(&recipe), &[], &[],
+            &ctx, &mut [], std::slice::from_ref(&recipe), &[], &[],
         ),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
@@ -352,19 +352,11 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut limited_operand = operand.clone();
         assert!(matches!(
-            crate::design::decode::operands::bind_body_recipe_operand_candidates(
-                Some(&limited_ctx), std::slice::from_mut(&mut limited_operand), std::slice::from_ref(&recipe), &candidate_tags, std::slice::from_ref(&scope),
-            ),
+            crate::design::decode::operands::bind_body_recipe_operand_candidates(&limited_ctx, std::slice::from_mut(&mut limited_operand), std::slice::from_ref(&recipe), &candidate_tags, std::slice::from_ref(&scope)),
             Err(cadmpeg_core::CodecError::ResourceLimit(failure)) if failure.operation == operation
         ));
     }
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
-        Some(&ctx),
-        std::slice::from_mut(&mut operand),
-        std::slice::from_ref(&recipe),
-        &candidate_tags,
-        std::slice::from_ref(&scope),
-    )
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(&ctx, std::slice::from_mut(&mut operand), std::slice::from_ref(&recipe), &candidate_tags, std::slice::from_ref(&scope))
     .unwrap();
     assert_eq!(
         operand.references()[0].candidate_faces,
@@ -425,11 +417,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             byte_offset: 0,
         });
     let mut combine_operand = operand.clone();
-    crate::design::decode::operands::bind_body_recipe_operand_candidates(
-        Some(&ctx),
-        std::slice::from_mut(&mut combine_operand),
-        std::slice::from_ref(&combine_recipe),
-        &[
+    crate::design::decode::operands::bind_body_recipe_operand_candidates(&ctx, std::slice::from_mut(&mut combine_operand), std::slice::from_ref(&combine_recipe), &[
             PersistentSubentityTag {
                 id: "f3d:Design/BulkStream.dat:persistent-subentity-tag#1".into(),
                 target: AttributeTarget::Face(
@@ -450,9 +438,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 design_references: vec![2265, 2266],
                 ordinal: 0,
             },
-        ],
-        std::slice::from_ref(&combine_scope),
-    )
+        ], std::slice::from_ref(&combine_scope))
     .unwrap();
     assert_eq!(
         combine_operand.references()[0].candidate_faces,
