@@ -459,8 +459,6 @@ fn native_version(bytes: &[u8]) -> u32 {
 
 /// Every marker hit is tried as a block first (the CRC gate is effectively
 /// false-positive-free), then as a cache cell, then as a directory entry.
-type NativeWalk = Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), CodecError>;
-
 enum ScanAdmission<'a, 'ctx> {
     Probe,
     Decode(&'ctx DecodeContext<'a>),
@@ -482,7 +480,7 @@ fn walk_native_markers(
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
-) -> NativeWalk {
+) -> Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), CodecError> {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
