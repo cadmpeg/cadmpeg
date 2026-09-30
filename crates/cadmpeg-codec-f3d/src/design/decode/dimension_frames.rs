@@ -287,7 +287,7 @@ fn decode_standard_recipe_references(
     }
     let mut references = Vec::new();
     let mut at = 22usize;
-    while prefix.len().saturating_sub(at) > 4 {
+    while prefix.len().checked_sub(at).is_some_and(|remaining| remaining > 4) {
         if recipe_reference_suffix(&prefix[at..]) {
             return Ok(references);
         }
@@ -326,7 +326,7 @@ fn decode_paired_recipe_references(
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
         return Ok(Vec::new());
     };
-    if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / MINIMUM_PAIR_SIZE {
+    if pair_count == 0 || prefix.len().checked_sub(22).is_none_or(|remaining| pair_count > remaining / MINIMUM_PAIR_SIZE) {
         return Ok(Vec::new());
     }
     if pair_count.checked_mul(2).is_none() {
@@ -421,7 +421,7 @@ fn decode_grouped_recipe_references(
         };
         at = next;
         if operand_count == 0
-            || operand_count > prefix.len().saturating_sub(at) / MINIMUM_PACKED_OPERAND_SIZE
+            || prefix.len().checked_sub(at).is_none_or(|remaining| operand_count > remaining / MINIMUM_PACKED_OPERAND_SIZE)
         {
             return Ok(Vec::new());
         }
@@ -461,7 +461,7 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
         return false;
     };
-    if pair_count == 0 || pair_count > prefix.len().saturating_sub(22) / 42 {
+    if pair_count == 0 || prefix.len().checked_sub(22).is_none_or(|remaining| pair_count > remaining / 42) {
         return false;
     }
     let mut at = 22usize;
@@ -521,7 +521,7 @@ pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
             return false;
         };
         at = next;
-        if operand_count == 0 || operand_count > prefix.len().saturating_sub(at) / 17 {
+        if operand_count == 0 || prefix.len().checked_sub(at).is_none_or(|remaining| operand_count > remaining / 17) {
             return false;
         }
         for _ in 0..operand_count {
@@ -596,7 +596,7 @@ fn scan_recipe_reference_operand(
         usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
     let reference_bytes = reference_count.checked_mul(4)?;
     let references_at = marker_at.checked_add(4)?;
-    if reference_bytes > prefix.len().saturating_sub(references_at) {
+    if reference_bytes > prefix.len().checked_sub(references_at)? {
         return None;
     }
     let references_end = references_at.checked_add(reference_bytes)?;
@@ -1039,8 +1039,8 @@ fn find_dimension_locus_pair(
             .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
     let mut candidate = parse(start);
-    let mut position = start.saturating_add(1);
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
+    let mut position = start.checked_add(1);
+    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
         if at >= end {
             break;
         }
@@ -1050,7 +1050,7 @@ fn find_dimension_locus_pair(
             }
             candidate = Some(pair);
         }
-        position = at.saturating_add(1);
+        position = at.checked_add(1);
     }
     candidate
 }
@@ -1233,8 +1233,8 @@ fn find_dimension_null_locus_pair(
             .filter(|pair| pair.paired_byte_offset() < u64_from_index(end))
     };
     let mut candidate = parse(start);
-    let mut position = start.saturating_add(1);
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
+    let mut position = start.checked_add(1);
+    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
         if at >= end {
             break;
         }
@@ -1244,7 +1244,7 @@ fn find_dimension_null_locus_pair(
             }
             candidate = Some(pair);
         }
-        position = at.saturating_add(1);
+        position = at.checked_add(1);
     }
     candidate
 }
@@ -1454,7 +1454,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                 ) {
                     let mut frame = parsed?;
                     if frame.paired_byte_offset() >= u64_from_index(end) {
-                        position = at.saturating_add(1);
+                        position = at + 1;
                         continue;
                     }
                     frame.id = design_record_id_charged(
@@ -1464,9 +1464,10 @@ pub(crate) fn decode_dimension_annotation_frames(
                         frame.byte_offset(),
                         "f3d dimension annotation frame ID",
                     )?;
-                    position = usize::try_from(frame.paired_byte_offset())
-                        .unwrap_or(at)
-                        .saturating_add(1);
+                    let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
+                        return Err(CodecError::Malformed("F3D annotation paired offset is not representable".into()));
+                    };
+                    position = paired_at + 1;
                     let key = (stream, frame.byte_offset());
                     if !decoded_offsets.contains(&key) {
                         ctx.reserve_set(
@@ -1480,7 +1481,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                         out.push(frame);
                     }
                 } else {
-                    position = at.saturating_add(1);
+                    position = at + 1;
                 }
             }
         }
@@ -1558,7 +1559,7 @@ fn parse_dimension_annotation_frame(
         paired_search = at.checked_add(1)?;
     };
     let mut matched_tail = None;
-    for tail in annotation_byte_offset..paired_byte_offset.saturating_sub(15) {
+    for tail in paired_byte_offset.checked_sub(15).into_iter().flat_map(|last| annotation_byte_offset..last) {
         if let Err(error) = ctx.charge_work(1, "f3d dimension annotation tail scan") {
             return Some(Err(error));
         }
@@ -2079,8 +2080,8 @@ fn find_dimension_locus_groups(
         ctx.reserve_vec(&mut candidates, 1, "f3d dimension locus group candidates")?;
         candidates.push(group);
     }
-    let mut position = start.saturating_add(1);
-    while let Some(at) = next_indexed_record_offset(bytes, position) {
+    let mut position = start.checked_add(1);
+    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
         if at >= end {
             break;
         }
@@ -2090,7 +2091,7 @@ fn find_dimension_locus_groups(
             ctx.reserve_vec(&mut candidates, 1, "f3d dimension locus group candidates")?;
             candidates.push(group);
         }
-        position = at.saturating_add(1);
+        position = at.checked_add(1);
     }
     crate::design::sort::sort_by_key(ctx, &mut candidates[..], |group| group.byte_offset)?;
     candidates.dedup_by_key(|group| group.byte_offset);

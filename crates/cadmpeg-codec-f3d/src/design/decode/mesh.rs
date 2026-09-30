@@ -425,7 +425,7 @@ fn record_identity(
         record_index,
         u64::try_from(frame.start)
             .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
-        u64::try_from(frame.end.saturating_sub(frame.start))
+        u64::try_from(frame.end.checked_sub(frame.start).ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?)
             .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
     )
     .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))

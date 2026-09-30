@@ -604,7 +604,7 @@ fn local_reference(bytes: &[u8], at: &mut usize) -> Option<u64> {
 
 fn record_tail_visual_offset(bytes: &[u8], name_end: usize, end: usize) -> Option<usize> {
     const OPACITY_ONE: [u8; 4] = 1.0f32.to_le_bytes();
-    for marker_at in name_end..name_end.saturating_add(40).min(end) {
+    for marker_at in (name_end..end).take(40) {
         if bytes.get(marker_at..marker_at + 2) != Some(&[0x01, 0x01]) {
             continue;
         }
@@ -662,8 +662,7 @@ fn preceding_lp_utf16(
         {
             continue;
         }
-        let scan_start = end.saturating_sub(4 + 256 * 2).max(start);
-        for at in scan_start..end {
+        for at in (start..end).rev().take(4 + 256 * 2).rev() {
             let Some(count) =
                 View::u32_le_at(bytes, at).and_then(|count| usize::try_from(count).ok())
             else {

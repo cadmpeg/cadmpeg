@@ -1043,7 +1043,10 @@ fn arrangement_retain_cycle_edges(
 ) -> Result<(), CodecError> {
     loop {
         // Each retention pass may run a BFS per edge (O(E²) worst case).
-        if !budget.charge_by(edges.len().saturating_mul(edges.len())) {
+        let Some(work) = edges.len().checked_mul(edges.len()) else {
+            return Err(ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX));
+        };
+        if !budget.charge_by(work) {
             return Ok(());
         }
         let mut keep = Vec::new();
@@ -3139,10 +3142,9 @@ pub(super) fn closed_sketch_profiles(
         let cell = (u, v);
         for u_offset in -1..=1 {
             for v_offset in -1..=1 {
-                let adjacent = (
-                    cell.0.saturating_add(u_offset),
-                    cell.1.saturating_add(v_offset),
-                );
+                let Some(adjacent_u) = cell.0.checked_add(u_offset) else { continue; };
+                let Some(adjacent_v) = cell.1.checked_add(v_offset) else { continue; };
+                let adjacent = (adjacent_u, adjacent_v);
                 for candidate in endpoint_cells.get(&adjacent).into_iter().flatten() {
                     if sketch_endpoints_close(point, endpoints[*candidate], linear_tolerance) {
                         union_endpoint_nodes(&mut parents, endpoint, *candidate);

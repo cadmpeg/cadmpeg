@@ -142,9 +142,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
                 {
-                    let entity_reference_offset = scope
-                        .byte_offset()
-                        .saturating_add(u64_from_index(relative_offset));
+                    let Some(entity_reference_offset) = scope.byte_offset().checked_add(u64_from_index(relative_offset)) else {
+                        continue;
+                    };
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)
@@ -859,7 +859,7 @@ pub(super) fn parameter_scope_candidate_headers(
 ) -> Result<Vec<RecordFrame>, CodecError> {
     let mut headers = Vec::new();
     for (record_index, offsets) in records.records() {
-        for at in &offsets[..offsets.len().saturating_sub(1)] {
+        for at in offsets.windows(2).map(|pair| &pair[0]) {
             let Some((class_tag, _)) =
                 lp_ascii_filtered_view(bytes, *at, 3..=3, u8::is_ascii_digit)
             else {
@@ -949,11 +949,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         let mut fixed_ambiguous = false;
         let mut named_candidate = None;
         let mut named_ambiguous = false;
-        let kind_scan_start = paired_at
-            .saturating_sub(590 + 4 + 2 * 256)
-            .max(start.checked_add(11)?);
         let kind_scan_end = paired_at.checked_sub(72)?;
-        for at in kind_scan_start..kind_scan_end {
+        for at in (start.checked_add(11)?..paired_at).rev().take(590 + 4 + 2 * 256).rev().take_while(|at| *at < kind_scan_end) {
             let (kind, kind_end, _reservation) =
                 match lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256) {
                     Ok(Some(decoded)) => decoded,

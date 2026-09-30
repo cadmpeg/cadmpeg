@@ -677,7 +677,7 @@ fn exact_long_coil_discriminators(
 }
 
 fn exact_long_coil_matrix(bytes: &[u8], start: usize) -> bool {
-    let Some(values) = f64s_at(bytes, start.saturating_add(77), 16) else {
+    let Some(values) = start.checked_add(77).and_then(|at| f64s_at(bytes, at, 16)) else {
         return false;
     };
     values.iter().all(|value| value.is_finite())

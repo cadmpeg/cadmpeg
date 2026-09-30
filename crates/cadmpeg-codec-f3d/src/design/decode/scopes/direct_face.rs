@@ -337,7 +337,7 @@ pub(super) fn exact_scale_operation(
                 && matches!(scope.reference_members().len(), 5 | 6)
                 && scope.frame_length()
                     == 307
-                        + u64::try_from(scope.reference_members().len().saturating_sub(5)).ok()?
+                        + u64::try_from(scope.reference_members().len() - 5).ok()?
                             * 11
             {
                 let mut references = scope.reference_members().values();
