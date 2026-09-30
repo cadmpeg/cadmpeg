@@ -737,6 +737,29 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Appends a grouped value after admitting both new index and value slots.
+    pub fn push_hash_group<K: Eq + Hash, V>(
+        &self,
+        values: &mut HashMap<K, Vec<V>>,
+        key: K,
+        value: V,
+        index_operation: &'static str,
+        value_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let new_key = !values.contains_key(&key);
+        if new_key {
+            self.charge_collection_items(1, index_operation)?;
+        }
+        self.charge_collection_items(1, value_operation)?;
+        if new_key {
+            Self::reserve_admitted_map(values, 1, index_operation)?;
+        }
+        let group = values.entry(key).or_default();
+        Self::reserve_admitted_vec(group, 1, value_operation)?;
+        group.push(value);
+        Ok(())
+    }
+
     /// Inserts a map entry after admitting a new key, if needed.
     pub fn insert_hash_map<K: Eq + Hash, V>(
         &self,
@@ -3198,4 +3221,28 @@ mod tests {
             .expect("service admission");
         drop(reservation);
     }
+    #[test]
+    fn push_hash_group_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        let mut groups = HashMap::<u8, Vec<u8>>::new();
+        let error = ctx.push_hash_group(&mut groups, 1, 7, "group index", "group value")
+            .expect_err("two slots exceed one");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "group value"));
+        assert!(groups.is_empty());
+        assert_eq!(groups.capacity(), 0);
+    }
+
+    #[test]
+    fn push_hash_group_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut groups = HashMap::<u8, Vec<u8>>::new();
+        ctx.push_hash_group(&mut groups, 1, 7, "group index", "group value").expect("first value");
+        ctx.push_hash_group(&mut groups, 1, 8, "group index", "group value").expect("same group");
+        assert_eq!(groups.get(&1), Some(&vec![7, 8]));
+    }
+
 }
