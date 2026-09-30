@@ -94,13 +94,13 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("declared entity-handle carrier");
 
     assert_eq!(carrier.marker.id(), "center");
@@ -115,13 +115,13 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let terminal_carrier = dimensioned_relation_carrier(
+    let terminal_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&terminal_lane),
         &terminal_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("terminal radial address carrier");
     assert_eq!(terminal_carrier.marker.id(), "center");
     assert_eq!(terminal_carrier.center(), [0.010, 0.020]);
@@ -132,13 +132,13 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let circular_radial_carrier = dimensioned_relation_carrier(
+    let circular_radial_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&terminal_lane),
         &circular_radial_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("terminal circular radial address carrier");
     assert_eq!(circular_radial_carrier.marker.id(), "center");
     assert_eq!(circular_radial_carrier.center(), [0.010, 0.020]);
@@ -159,13 +159,13 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut direct_lane = ambiguous_lane;
@@ -175,13 +175,13 @@ fn declared_entity_handle_precedes_generic_operand_resolution() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let direct_carrier = dimensioned_relation_carrier(
+    let direct_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&direct_lane),
         &direct_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("explicit circular marker remains a carrier");
     assert_eq!(direct_carrier.marker.id(), "wrong");
     assert_eq!(direct_carrier.construction, Some(false));
@@ -253,13 +253,13 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("indexed radial point carrier");
     assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.center(), [0.010, 0.020]);
@@ -275,13 +275,13 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut mismatched_lane = lane;
@@ -292,13 +292,13 @@ fn declared_entity_handle_accepts_indexed_radial_point_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -372,13 +372,13 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("indexed circle-dimension pair");
     assert_eq!(carrier.marker.id(), "center-1");
     assert_eq!(carrier.center(), [0.010, 0.010]);
@@ -387,25 +387,25 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
 
     let mut first_pair = operand;
     first_pair.entity_index = 0;
-    let first_carrier = dimensioned_relation_carrier(
+    let first_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &first_pair,
         5.0,
-    )
+    ).unwrap()
     .expect("first indexed circle-dimension pair");
     assert_eq!(first_carrier.marker.id(), "center-0");
 
     let mut out_of_range = first_pair.clone();
     out_of_range.entity_index = 2;
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &out_of_range,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut mismatched_lane = lane.clone();
@@ -416,13 +416,13 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_lane),
         &mismatched_markers,
         "feature",
         &first_pair,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut odd_lane = lane.clone();
@@ -432,13 +432,13 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&odd_lane),
         &odd_markers,
         "feature",
         &first_pair,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut missing_center_id_lane = lane.clone();
@@ -452,13 +452,13 @@ fn declared_entity_handle_indexed_circle_dimension_selects_pair() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&missing_center_id_lane),
         &missing_center_id_markers,
         "feature",
         &first_pair,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -547,13 +547,13 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
-        let carrier = dimensioned_relation_carrier(
+        let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .expect("explicit point center identity");
         assert_eq!(carrier.marker.id(), "center");
         assert_eq!(carrier.center(), [0.010, 0.020]);
@@ -568,36 +568,36 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
                 .iter()
                 .map(|marker| (marker.id(), marker))
                 .collect::<HashMap<_, _>>();
-            assert!(dimensioned_relation_carrier(
+            assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
                 std::slice::from_ref(&wrong_marker_kind_lane),
                 &wrong_marker_kind,
                 "feature",
                 &operand,
                 5.0,
-            )
+            ).unwrap()
             .is_none());
         }
 
         let mut wrong_address = operand.clone();
         wrong_address.entity_index = 1;
-        assert!(dimensioned_relation_carrier(
+        assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &wrong_address,
             5.0,
-        )
+        ).unwrap()
         .is_none());
 
         let mut unreferenced = operand.clone();
         unreferenced.entity_ref = None;
-        assert!(dimensioned_relation_carrier(
+        assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &unreferenced,
             5.0,
-        )
+        ).unwrap()
         .is_none());
 
         let mut wrong_feature_lane = lane.clone();
@@ -607,13 +607,13 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
-        assert!(dimensioned_relation_carrier(
+        assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&wrong_feature_lane),
             &wrong_feature_markers,
             "feature",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .is_none());
 
         assert!(cadmpeg_ir::units::FiniteVector::new([f64::NAN, 0.020]).is_none());
@@ -631,13 +631,13 @@ fn explicit_point_entity_handle_circle_dimension_uses_unique_center_identity() {
             .flat_map(|lane| lane.sketch_entities.iter())
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
-        assert!(dimensioned_relation_carrier(
+        assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             &lanes,
             &duplicate_owner_markers,
             "feature",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .is_none());
     }
 }
@@ -784,13 +784,13 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         7.0,
-    )
+    ).unwrap()
     .expect("slot handle dimension carrier");
     assert_eq!(carrier.marker.id(), "slot");
     assert_eq!(carrier.center(), [0.016, 0.020]);
@@ -813,13 +813,13 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         7.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut mismatched_center_lane = lane.clone();
@@ -829,13 +829,13 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_center_lane),
         &mismatched_center_markers,
         "feature",
         &operand,
         7.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut mismatched_slot_lane = lane;
@@ -845,13 +845,13 @@ fn declared_slot_handle_selects_indexed_dimension_center() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_slot_lane),
         &mismatched_slot_markers,
         "feature",
         &operand,
         7.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -966,13 +966,13 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("explicit short arc-handle point carrier");
     assert_eq!(carrier.marker.id(), "carrier");
     assert_eq!(carrier.center(), [0.01, 0.02]);
@@ -998,13 +998,13 @@ fn explicitly_referenced_current_arc_handle_point_is_dimension_carrier() {
         .collect::<HashMap<_, _>>();
     let mut unrelated_operand = operand;
     unrelated_operand.entity_ref = Some("other".into());
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&unrelated_lane),
         &unrelated_markers,
         "feature",
         &unrelated_operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -1076,13 +1076,13 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
             .iter()
             .map(|marker| (marker.id(), marker))
             .collect::<HashMap<_, _>>();
-        let carrier = dimensioned_relation_carrier(
+        let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .expect("unlinked declared entity-handle carrier");
 
         assert_eq!(carrier.marker.id(), "circular");
@@ -1103,13 +1103,13 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&missing_witness_lane),
         &missing_witness_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let point_operand = FeatureInputOperand {
@@ -1122,13 +1122,13 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let point_carrier = dimensioned_relation_carrier(
+    let point_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&point_lane),
         &point_markers,
         "feature",
         &point_operand,
         5.0,
-    )
+    ).unwrap()
     .expect("point-resolved entity handle carrier");
     assert_eq!(point_carrier.marker.id(), "circular");
 
@@ -1142,13 +1142,13 @@ fn unlinked_declared_entity_handle_uses_one_circular_marker_with_one_radial_witn
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -1238,13 +1238,13 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
 
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers_by_id,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("declared curve child pair");
 
     assert_eq!(carrier.marker.id(), "arc");
@@ -1261,13 +1261,13 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let unbound_carrier = dimensioned_relation_carrier(
+    let unbound_carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &unbound_markers,
         "feature",
         &unbound_operand,
         5.0,
-    )
+    ).unwrap()
     .expect("scoped child declaration remains authoritative without operand identity");
     assert_eq!(unbound_carrier.marker.id(), "arc");
 
@@ -1284,13 +1284,13 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&multiple_declared),
         &multiple_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut mismatched_declared = lane;
@@ -1301,13 +1301,13 @@ fn declared_entity_handle_uses_curve_child_declaration_before_radius_uniqueness(
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&mismatched_declared),
         &mismatched_markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -1493,13 +1493,13 @@ fn native_radial_role_propagates_omitted_circle_construction_state() {
             entity_index: 0,
             entity_ref: Some(center.id().to_string()),
         };
-        let carrier = dimensioned_relation_carrier(
+        let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             &markers_by_id,
             "feature",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .expect("dimensioned carrier");
         assert_eq!(carrier.construction, Some(construction));
     }
