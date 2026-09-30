@@ -243,6 +243,7 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     for (name, start, end) in [
         ("first", Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)),
         ("second", Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)),
+        ("third", Point2::new(1.0, 0.0), Point2::new(1.000000001, 0.0)),
     ] {
         let mut entity = SketchEntity::new(
             SketchEntityId::mint(format!("synthetic:test:id#owned-line-{name}-with-retained-identity")).unwrap(),
@@ -250,6 +251,9 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
             SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
         );
         entity.native_ref = Some(name.into());
+        if name == "third" {
+            entity.endpoint_refs = vec!["canonical-point".into(), "canonical-point".into()];
+        }
         entities.push(entity);
         markers.push(SketchInputEntity::new(name, "lane", 0, 0, SketchInputKind::LineOrCircle));
     }
@@ -259,6 +263,7 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
         SketchInputLink { local_id: 2, entity_ref: "second".into() },
     ]);
     markers.push(point);
+    markers.push(SketchInputEntity::new("canonical-point", "lane", 0, 0, SketchInputKind::Point));
     let mut lane = relation_lane();
     lane.relation_instances.clear();
     lane.sketch_entities = markers;
