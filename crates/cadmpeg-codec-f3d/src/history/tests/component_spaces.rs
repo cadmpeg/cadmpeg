@@ -139,13 +139,7 @@ fn extrude_history_identity_resolves_only_in_context_component_breps() {
         .unwrap(),
     ];
 
-    bind_extrude_selection_history(
-        None,
-        &mut members,
-        &naming_spaces,
-        &body_bindings,
-        &histories,
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_extrude_selection_history(decode_ctx, &mut members, &naming_spaces, &body_bindings, &histories))
     .unwrap();
 
     assert_eq!(
@@ -201,7 +195,7 @@ fn historical_recipe_join_unions_fragments_without_raw_selector_equality() {
         alternate_selector_edges: Vec::new(),
     };
 
-    bind_historical_recipe_reference_candidates(None, &mut reference, &topology).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| bind_historical_recipe_reference_candidates(decode_ctx, &mut reference, &topology)).unwrap();
 
     assert_eq!(
         reference.candidate_faces,
@@ -247,24 +241,14 @@ fn direct_face_recipe_selects_every_fragment_in_its_own_reference_lane() {
     let references = [reference(203, &[8, 7]), reference(199, &[9])];
 
     assert_eq!(
-        direct_face_recipe_candidates(
-            None,
-            crate::records::recipes::ConstructionRecipeKind::Face,
-            &references,
-            203,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| direct_face_recipe_candidates(decode_ctx, crate::records::recipes::ConstructionRecipeKind::Face, &references, 203))
         .unwrap(),
         Some(vec![
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar"),
             cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(8)).expect("identity grammar"),
         ])
     );
-    assert!(direct_face_recipe_candidates(
-        None,
-        crate::records::recipes::ConstructionRecipeKind::BoundedFace,
-        &references,
-        203,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| direct_face_recipe_candidates(decode_ctx, crate::records::recipes::ConstructionRecipeKind::BoundedFace, &references, 203))
     .unwrap()
     .is_none());
 }
@@ -314,7 +298,7 @@ fn historical_recipe_live_faces_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_historical_recipe_reference_candidates(Some(&ctx), &mut reference, &topology)
+    let error = bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -330,7 +314,7 @@ fn historical_recipe_live_edges_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_historical_recipe_reference_candidates(Some(&ctx), &mut reference, &topology)
+    let error = bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -346,7 +330,7 @@ fn historical_recipe_face_candidates_refuse_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_historical_recipe_reference_candidates(Some(&ctx), &mut reference, &topology)
+    let error = bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -362,7 +346,7 @@ fn historical_recipe_edge_candidates_refuse_collection_limit() {
     policy.limits.max_collection_items = 3;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_historical_recipe_reference_candidates(Some(&ctx), &mut reference, &topology)
+    let error = bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -378,7 +362,7 @@ fn historical_recipe_identity_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_historical_recipe_reference_candidates(Some(&ctx), &mut reference, &topology)
+    let error = bind_historical_recipe_reference_candidates(&ctx, &mut reference, &topology)
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -394,7 +378,7 @@ fn historical_recipe_face_list_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = historical_recipe_faces(Some(&ctx), 301, &topology).unwrap_err();
+    let error = historical_recipe_faces(&ctx, 301, &topology).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D historical recipe faces")
@@ -410,12 +394,7 @@ fn direct_face_recipe_copy_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = direct_face_recipe_candidates(
-        Some(&ctx),
-        crate::records::recipes::ConstructionRecipeKind::Face,
-        &[reference],
-        301,
-    )
+    let error = direct_face_recipe_candidates(&ctx, crate::records::recipes::ConstructionRecipeKind::Face, &[reference], 301)
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -512,7 +491,7 @@ fn corner_recipe_intersects_vertex_sets_across_fragment_unions() {
     .unwrap();
 
     assert_eq!(
-        recipe_reference_common_vertex(None, &recipe, &topology).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| recipe_reference_common_vertex(decode_ctx, &recipe, &topology)).unwrap(),
         Some(3)
     );
 }

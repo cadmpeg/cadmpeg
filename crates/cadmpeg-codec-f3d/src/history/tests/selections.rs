@@ -110,7 +110,7 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        entity_selection_face_candidates(None, 18044, &[unrelated, selected]).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| entity_selection_face_candidates(decode_ctx, 18044, &[unrelated, selected])).unwrap(),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -220,7 +220,7 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         *slot = Some(construction);
     }
 
-    bind_hole_selection_history(None, std::slice::from_mut(&mut scope), &[history]).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])).unwrap();
 
     assert_eq!(
         scope
@@ -246,21 +246,21 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
 #[test]
 fn compact_edge_treatment_deletions_require_exact_cardinality() {
     assert_eq!(
-        complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 19]).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 19])).unwrap(),
         [17, 19]
     );
     assert!(
-        complete_compact_edge_treatment_deletions(None, true, Some(2), &[17, 18, 19])
+        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 18, 19]))
             .unwrap()
             .is_empty()
     );
     assert!(
-        complete_compact_edge_treatment_deletions(None, false, Some(2), &[17, 19])
+        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, false, Some(2), &[17, 19]))
             .unwrap()
             .is_empty()
     );
     assert!(
-        complete_compact_edge_treatment_deletions(None, true, None, &[17, 19])
+        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, None, &[17, 19]))
             .unwrap()
             .is_empty()
     );
@@ -273,7 +273,7 @@ fn compact_edge_treatment_deletions_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = complete_compact_edge_treatment_deletions(Some(&ctx), true, Some(2), &[17, 19])
+    let error = complete_compact_edge_treatment_deletions(&ctx, true, Some(2), &[17, 19])
         .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -368,14 +368,7 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         states: vec![current, previous],
     };
 
-    bind_edge_identity_history(
-        None,
-        &mut operands,
-        &[],
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&history),
-        &HashMap::from([(scope.id.clone(), history.id.clone())]),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_history(decode_ctx, &mut operands, &[], std::slice::from_ref(&scope), std::slice::from_ref(&history), &HashMap::from([(scope.id.clone(), history.id.clone())])))
     .unwrap();
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
@@ -1516,21 +1509,16 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
     };
     let changed = [20, 12, 10, 11].into_iter().collect();
     assert_eq!(
-        profile_face_group_cardinality_candidates(None, &topology, &changed, 3).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &changed, 3)).unwrap(),
         Some(vec![10, 11, 12])
     );
     assert_eq!(
-        profile_face_group_cardinality_candidates(None, &topology, &[20].into_iter().collect(), 1,)
+        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &[20].into_iter().collect(), 1))
             .unwrap(),
         Some(vec![20])
     );
     assert_eq!(
-        profile_face_group_cardinality_candidates(
-            None,
-            &topology,
-            &[10, 20].into_iter().collect(),
-            1,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &[10, 20].into_iter().collect(), 1))
         .unwrap(),
         None
     );
@@ -1545,7 +1533,7 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
         }));
     let changed = [10, 11, 12, 30, 31, 32].into_iter().collect();
     assert_eq!(
-        profile_face_group_cardinality_candidates(None, &ambiguous, &changed, 3).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &ambiguous, &changed, 3)).unwrap(),
         None
     );
 }
@@ -1566,7 +1554,7 @@ fn profile_candidate_limit_case(
     policy.limits.max_collection_items = max_items;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    profile_face_group_cardinality_candidates(Some(&ctx), &topology, &[10].into_iter().collect(), 1)
+    profile_face_group_cardinality_candidates(&ctx, &topology, &[10].into_iter().collect(), 1)
 }
 
 #[test]
@@ -1817,7 +1805,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
                 .expect("identity grammar"),
         ];
 
-    let roots = crate::design::face_resolve::extrude_profile_group_roots(None, &scope, &groups)
+    let roots = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups))
         .unwrap()
         .expect("valid profile hierarchy");
     assert_eq!(
@@ -1828,9 +1816,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         [100]
     );
     assert_eq!(
-        crate::design::face_resolve::extrude_profile_group_operand_indices(
-            None, roots[0], &groups, &operands,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_operand_indices(decode_ctx, roots[0], &groups, &operands))
         .unwrap()
         .expect("one leaf operand per root member"),
         [0, 1]
@@ -1846,11 +1832,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
         }])
         .collect();
     repeated_child[0].try_set_members(repeated_members).unwrap();
-    assert!(crate::design::face_resolve::extrude_profile_group_roots(
-        None,
-        &scope,
-        &repeated_child
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &repeated_child))
     .unwrap()
     .is_none());
 
@@ -1923,20 +1905,11 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     let histories = vec![history, unrelated_history];
     let scope_histories = HashMap::from([(scope.id.clone(), bound_history_id)]);
 
-    bind_profile_face_group_cardinality(
-        None,
-        &mut operands,
-        std::slice::from_ref(&scope),
-        &groups,
-        &histories,
-        &scope_histories,
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_profile_face_group_cardinality(decode_ctx, &mut operands, std::slice::from_ref(&scope), &groups, &histories, &scope_histories))
     .unwrap();
     assert_eq!(operands[0].resolved_face_slots, [10]);
     assert_eq!(operands[1].resolved_face_slots, [11]);
-    let profile = crate::design::face_resolve::resolved_extrude_profile_face_group(
-        None, &scope, roots[0], &groups, &operands,
-    )
+    let profile = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_extrude_profile_face_group(decode_ctx, &scope, roots[0], &groups, &operands))
     .unwrap()
     .expect("resolved root profile");
     let feature = crate::ids::neutral_feature_id(&scope);

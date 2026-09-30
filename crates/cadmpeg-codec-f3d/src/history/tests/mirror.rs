@@ -81,7 +81,7 @@ fn discard_projection_caches_retains_compact_mirror_plane_topology() {
         }]
     );
     assert_eq!(
-        historical_selection_identity_kind(None, &histories, 30).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| historical_selection_identity_kind(decode_ctx, &histories, 30)).unwrap(),
         Some((AsmHistoricalEntityKind::Face, 10, vec![1]))
     );
 }
@@ -258,7 +258,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         ..Default::default()
     };
 
-    let plane = historical_mirror_coedge_plane(None, 30, &topology)
+    let plane = crate::test_support::with_decode_context(|decode_ctx| historical_mirror_coedge_plane(decode_ctx, 30, &topology))
         .unwrap()
         .expect("radial coedge cycle has one exact planar face");
     assert_eq!(plane.origin, Point3::new(1.0, 2.0, 3.0));
@@ -298,7 +298,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
             },
             face_slot: 10,
         };
-    let dispatched = historical_mirror_plane(None, &candidate, 1, std::slice::from_ref(&history))
+    let dispatched = crate::test_support::with_decode_context(|decode_ctx| historical_mirror_plane(decode_ctx, &candidate, 1, std::slice::from_ref(&history)))
         .unwrap()
         .expect("coedge dispatch uses radial plane resolver");
     assert_eq!(dispatched.origin, Point3::new(1.0, 2.0, 3.0));
@@ -306,7 +306,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
 
     let mut open_cycle = topology.clone();
     open_cycle.coedge_topology[1].radial_next = 31;
-    assert!(historical_mirror_coedge_plane(None, 30, &open_cycle)
+    assert!(crate::test_support::with_decode_context(|decode_ctx| historical_mirror_coedge_plane(decode_ctx, 30, &open_cycle))
         .unwrap()
         .is_none());
 
@@ -316,7 +316,7 @@ fn mirror_coedge_plane_uses_unique_planar_face_in_radial_cycle() {
         origin: Point3::new(1.0, 2.0, 4.0),
         normal: Vector3::new(0.0, 0.0, 1.0),
     });
-    assert!(historical_mirror_coedge_plane(None, 30, &ambiguous)
+    assert!(crate::test_support::with_decode_context(|decode_ctx| historical_mirror_coedge_plane(decode_ctx, 30, &ambiguous))
         .unwrap()
         .is_none());
 }
