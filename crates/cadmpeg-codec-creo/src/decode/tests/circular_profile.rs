@@ -175,6 +175,8 @@ fn typed_center_locus_requires_a_circular_geometry_family() {
 
 #[test]
 fn section_profile_prefers_a_resolved_sketch_chain() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
@@ -197,11 +199,11 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         ))
     );
 
-    ir.model.sketches[0].profiles.push_single(SketchEntityUse {
+    ir.model.sketches[0].profiles.push_single(&resource_ctx, SketchEntityUse {
         entity: SketchEntityId::mint("creo:featdefs:sketch_entity#offset:40:4".to_string())
             .expect("valid test fixture"),
         reversed: false,
-    });
+    }).unwrap();
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(
