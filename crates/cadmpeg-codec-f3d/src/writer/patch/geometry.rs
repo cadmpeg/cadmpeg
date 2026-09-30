@@ -808,3 +808,6 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     }
     Ok(encoded)
 }
+
+#[cfg(test)]
+mod tests;

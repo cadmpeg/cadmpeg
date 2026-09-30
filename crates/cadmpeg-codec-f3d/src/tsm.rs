@@ -2300,6 +2300,16 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         )
     }
 
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn secondary_grip_vertex_refuses_32_bit_wrap() {
+        let source = derived_quad_source();
+        parse_cage(source.as_bytes()).expect("fixture derived grip is valid");
+        let invalid = source.replace("0m gv 0\n", "0m gv 4294967296\n");
+        let error = parse_cage(invalid.as_bytes()).expect_err("secondary grip index exceeds address space");
+        assert!(error.to_string().contains("secondary grip vertex exceeds address space"));
+    }
+
     fn symmetry_quad_source() -> String {
         format!(
             "#TS0200\n{QUAD_TOPOLOGY}\
