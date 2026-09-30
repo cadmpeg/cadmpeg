@@ -408,7 +408,7 @@ fn parse_asset_tail_at(
                 format_args!("duplicate base name {base:?}"),
             ));
         }
-        (ctx).push_vec(&mut asset_folder_bases, base, "collect F3D asset folders")?;
+        ctx.push_vec(&mut asset_folder_bases, base, "collect F3D asset folders")?;
     }
     cursor.expect_u32("top-level manifest terminal word", 0)?;
     if cursor.exhausted() {
@@ -466,7 +466,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
 ) -> Result<String, CodecError> {
     let mut names = Vec::new();
     for name in entry_names {
-        (ctx).push_vec(&mut names, name, "index F3D manifest entry names")?;
+        ctx.push_vec(&mut names, name, "index F3D manifest entry names")?;
     }
     let mut design_folders = Vec::new();
 
@@ -524,8 +524,8 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 fusion_subtype: None
             }
         ) {
-            let name = (ctx).copy_retained_text(folder, "retain F3D Design asset folder")?;
-            (ctx).push_vec(&mut design_folders, name, "collect F3D Design asset folders")?;
+            let name = ctx.copy_retained_text(folder, "retain F3D Design asset folder")?;
+            ctx.push_vec(&mut design_folders, name, "collect F3D Design asset folders")?;
         }
     }
 

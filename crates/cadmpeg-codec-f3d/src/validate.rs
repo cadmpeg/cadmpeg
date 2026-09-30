@@ -630,41 +630,41 @@ impl<'a, 'd> Ctx<'a, 'd> {
         native: &'a native::F3dNative,
         decode: &'a DecodeContext<'d>,
     ) -> Result<Self, CodecError> {
-        let records_by_index = (decode).collect_hash_map(native
+        let records_by_index = decode.collect_hash_map(native
                 .design_record_headers
                 .iter()
                 .map(|record| ((design_stream(&record.id), record.record_index), record)), "index F3D design headers")?;
-        let recipes_by_id = (decode).collect_hash_map(native
+        let recipes_by_id = decode.collect_hash_map(native
                 .construction_recipes
                 .iter()
                 .map(|recipe| (recipe.id.as_str(), recipe)), "index F3D construction recipes")?;
-        let parameters_by_index = (decode).collect_hash_map(native.design_parameters.iter().map(|parameter| {
+        let parameters_by_index = decode.collect_hash_map(native.design_parameters.iter().map(|parameter| {
                 (
                     (design_stream(&parameter.id), parameter.record_index),
                     parameter,
                 )
             }), "index F3D design parameters")?;
-        let owners_by_index = (decode).collect_hash_map(native
+        let owners_by_index = decode.collect_hash_map(native
                 .design_parameter_owners
                 .iter()
                 .map(|owner| ((design_stream(owner.id()), owner.record_index()), owner)), "index F3D parameter owners")?;
-        let companions_by_index = (decode).collect_hash_map(native.design_parameter_companions.iter().map(|companion| {
+        let companions_by_index = decode.collect_hash_map(native.design_parameter_companions.iter().map(|companion| {
                 (
                     (design_stream(companion.id()), companion.record_index()),
                     companion,
                 )
             }), "index F3D parameter companions")?;
-        let scopes_by_index = (decode).collect_hash_map(native
+        let scopes_by_index = decode.collect_hash_map(native
                 .design_parameter_scopes
                 .iter()
                 .map(|scope| ((design_stream(&scope.id), scope.record_index), scope)), "index F3D parameter scopes")?;
-        let entities_by_suffix = (decode).collect_hash_map(native.design_entity_headers.iter().map(|entity| {
+        let entities_by_suffix = decode.collect_hash_map(native.design_entity_headers.iter().map(|entity| {
                 (
                     (design_stream(&entity.id), entity.entity_id.suffix()),
                     entity,
                 )
             }), "index F3D entity suffixes")?;
-        let sketch_geometry_indices = (decode).collect_hash_set(native
+        let sketch_geometry_indices = decode.collect_hash_set(native
                 .sketch_points
                 .iter()
                 .map(|point| (design_stream(&point.id), point.record_index))
@@ -674,7 +674,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
                         .iter()
                         .map(|curve| (design_stream(&curve.id), curve.record_index)),
                 ), "index F3D sketch geometry")?;
-        let placements_by_scope = (decode).collect_hash_map(native
+        let placements_by_scope = decode.collect_hash_map(native
                 .design_sketch_placements
                 .iter()
                 .filter_map(|placement| {
@@ -683,15 +683,15 @@ impl<'a, 'd> Ctx<'a, 'd> {
                         placement,
                     ))
                 }), "index F3D sketch placements")?;
-        let groups_by_index = (decode).collect_hash_map(native
+        let groups_by_index = decode.collect_hash_map(native
                 .design_extrude_selection_groups
                 .iter()
                 .map(|group| ((design_stream(&group.id), group.record_index), group)), "index F3D extrude selection groups")?;
-        let operand_groups_by_index = (decode).collect_hash_map(native
+        let operand_groups_by_index = decode.collect_hash_map(native
                 .design_construction_operand_groups
                 .iter()
                 .map(|group| ((design_stream(&group.id), group.record_index), group)), "index F3D construction operand groups")?;
-        let members_by_slot = (decode).collect_hash_map(native
+        let members_by_slot = decode.collect_hash_map(native
                 .design_extrude_selection_members
                 .iter()
                 .map(|member| {
@@ -704,7 +704,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
                         member,
                     )
                 }), "index F3D extrude selection members")?;
-        let sketch_owner_ids = (decode).collect_hash_map(native
+        let sketch_owner_ids = decode.collect_hash_map(native
                 .design_entity_headers
                 .iter()
                 .filter(|header| header.in_sketch_module())
@@ -785,10 +785,10 @@ fn validate_loaded(
         &native.asm_histories,
         &scope_histories,
     )?;
-    let decoded_profile_face_groups = (decode).collect_hash_set(native.design_face_operands.iter().filter_map(|operand| {
+    let decoded_profile_face_groups = decode.collect_hash_set(native.design_face_operands.iter().filter_map(|operand| {
             Some((design_stream(&operand.id), operand.group_record_index()?))
         }), "index F3D decoded profile face groups")?;
-    let face_group_members = (decode).collect_hash_set(native
+    let face_group_members = decode.collect_hash_set(native
             .design_construction_operand_groups
             .iter()
             .filter(|group| {
@@ -5536,7 +5536,7 @@ fn validate_edge_identity_operands<'a>(
         &mut expected_edge_identity_operands,
         expected_face_operands,
     )?;
-    let expected_edge_identity_operands = (decode).collect_hash_map(expected_edge_identity_operands
+    let expected_edge_identity_operands = decode.collect_hash_map(expected_edge_identity_operands
             .iter()
             .map(|operand| (operand.id.as_str(), operand)), "index F3D expected edge identity operands")?;
     let mut edge_identity_slots = HashSet::new();
@@ -5610,7 +5610,7 @@ fn validate_body_recipe_operands<'a>(
         &native.design_parameter_scopes,
         &native.asm_histories,
     )?;
-    let expected_operands = (decode).collect_hash_map(expected_operands
+    let expected_operands = decode.collect_hash_map(expected_operands
             .iter()
             .map(|operand| (operand.id.as_str(), operand)), "index F3D expected body recipe operands")?;
     let mut member_slots = HashSet::new();
@@ -6193,7 +6193,7 @@ fn validate_edge_operands<'a>(
         &native.asm_histories,
         &scope_histories,
     )?;
-    let expected_edge_operands = (decode).collect_hash_map(expected_edge_operands
+    let expected_edge_operands = decode.collect_hash_map(expected_edge_operands
             .iter()
             .map(|operand| (operand.id.as_str(), operand)), "index F3D expected edge operands")?;
     for operand in &native.design_edge_operands {
@@ -6330,7 +6330,7 @@ fn validate_edge_treatment_vertex_operands<'a>(
         &native.asm_histories,
         &scope_histories,
     )?;
-    let expected = (decode).collect_hash_map(expected
+    let expected = decode.collect_hash_map(expected
             .iter()
             .map(|operand| (operand.id.as_str(), operand)), "index F3D expected edge treatment vertex operands")?;
     let mut records = HashSet::new();
@@ -7908,7 +7908,7 @@ fn validate_sketch_relation_owners(
     let companions_by_index = &ctx.companions_by_index;
     let placements_by_scope = &ctx.placements_by_scope;
     let sketch_owner_ids = &ctx.sketch_owner_ids;
-    let typed_sketch_records = (decode).collect_hash_set(native
+    let typed_sketch_records = decode.collect_hash_set(native
             .sketch_points
             .iter()
             .map(|point| (design_stream(&point.id), point.record_index))
@@ -7924,7 +7924,7 @@ fn validate_sketch_relation_owners(
                     .iter()
                     .map(|surface| (design_stream(&surface.id), surface.record_index)),
             ), "index F3D typed sketch records")?;
-    let sketch_operands = (decode).collect_hash_map(native
+    let sketch_operands = decode.collect_hash_map(native
             .sketch_points
             .iter()
             .map(|point| {

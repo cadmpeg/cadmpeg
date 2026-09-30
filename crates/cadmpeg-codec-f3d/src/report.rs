@@ -63,8 +63,8 @@ pub(crate) fn classify_document(
     let dialects = match scope {
         ReportScope::Standalone => {
             let (dialects, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
-            (ctx).append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &dialects)? }, "append F3D dialect losses")?;
-            (ctx).append_vec(&mut losses, &mut { std::mem::take(&mut body.losses) }, "prepend F3D dialect losses")?;
+            ctx.append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &dialects)? }, "append F3D dialect losses")?;
+            ctx.append_vec(&mut losses, &mut { std::mem::take(&mut body.losses) }, "prepend F3D dialect losses")?;
             body.losses = losses;
             dialects
         }
@@ -83,7 +83,7 @@ pub(crate) fn build_inspection_summary(
     scan: &ContainerScan<'_>,
 ) -> Result<ContainerSummary, cadmpeg_core::CodecError> {
     let (layers, mut losses) = crate::dialect::classify_layers(ctx, scan)?;
-    (ctx).append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &layers)? }, "append F3D inspection dialect losses")?;
+    ctx.append_vec(&mut losses, &mut { crate::dialect::dialect_losses(ctx, &layers)? }, "append F3D inspection dialect losses")?;
     let mut summary = crate::container::summarize(ctx, scan, layers)?;
     summary.losses = losses;
     Ok(summary)
@@ -106,7 +106,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let incoming =
             vec![crate::loss::F3dLossCode::DialectLayerCollision.note("duplicate layer")];
-        let error = (&ctx).append_vec(&mut Vec::new(), &mut { incoming }, operation).unwrap_err();
+        let error = ctx.append_vec(&mut Vec::new(), &mut { incoming }, operation).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == operation)

@@ -42,9 +42,9 @@ fn configuration_scalar_text(
 ) -> Result<String, CodecError> {
     match value {
         ConfigurationScalar::String(text) => {
-            (ctx).copy_retained_text(text, "f3d configuration parameter value")
+            ctx.copy_retained_text(text, "f3d configuration parameter value")
         }
-        ConfigurationScalar::Number(number) => (ctx).format_retained(format_args!("{number}"), "f3d configuration scalar text"),
+        ConfigurationScalar::Number(number) => ctx.format_retained(format_args!("{number}"), "f3d configuration scalar text"),
         _ => value.text_charged(ctx),
     }
 }
@@ -133,7 +133,7 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
             expected: "a string",
         })? {
             if unique.contains(&name) {
-                let message = (self.ctx).format_retained(format_args!("duplicate configuration variant {name:?}"), "f3d duplicate configuration variant diagnostic");
+                let message = self.ctx.format_retained(format_args!("duplicate configuration variant {name:?}"), "f3d duplicate configuration variant diagnostic");
                 return match message {
                     Ok(message) => Err(serde::de::Error::custom(message)),
                     Err(error) => {
@@ -146,7 +146,7 @@ impl<'de> Visitor<'de> for OrderedVariantNamesSeed<'_, '_> {
             }
             { let ctx = self.ctx;
                 let charge = (|| -> Result<String, CodecError> {
-                    let copy = (ctx).copy_retained_text(&name, "f3d configuration variant unique name")?;
+                    let copy = ctx.copy_retained_text(&name, "f3d configuration variant unique name")?;
                     ctx.reserve_set(&mut unique, 1, "f3d configuration variant name index")?;
                     ctx.reserve_vec(&mut names, 1, "f3d configuration variant order")?;
                     Ok(copy)
@@ -197,7 +197,7 @@ fn parse_configuration_variant_order(
         Err(error) => match refusal {
             Some(error) => Err(error),
             None => Err(CodecError::Malformed(
-                (ctx).format_retained(format_args!("invalid F3D configuration variant order {entry_name}: {error}"), "f3d configuration order diagnostic")?,
+                ctx.format_retained(format_args!("invalid F3D configuration variant order {entry_name}: {error}"), "f3d configuration order diagnostic")?,
             )),
         },
     }
@@ -218,7 +218,7 @@ pub(crate) fn decode_configurations(
         let payload = json::parse_configuration_payload(ctx, &entry.name, bytes)?;
         let serde_json::Value::Object(payload) = payload else {
             return Err(CodecError::Malformed(
-                (ctx).format_retained(format_args!("F3D configuration JSON must be an object: {}", entry.name), "f3d configuration JSON root diagnostic")?,
+                ctx.format_retained(format_args!("F3D configuration JSON must be an object: {}", entry.name), "f3d configuration JSON root diagnostic")?,
             ));
         };
         let kind = if entry.name.ends_with(".dsgcfgrule") {
@@ -232,7 +232,7 @@ pub(crate) fn decode_configurations(
             Vec::new()
         };
         let entry_name =
-            (ctx).copy_retained_text(&entry.name, "f3d configuration entry name")?;
+            ctx.copy_retained_text(&entry.name, "f3d configuration entry name")?;
         let configuration =
             DesignConfiguration::try_new_charged(ctx, entry_name, kind, variant_order, payload)?;
         ctx.push_vec(
@@ -245,7 +245,7 @@ pub(crate) fn decode_configurations(
     for configuration in &configurations {
         if names.contains(configuration.entry_name().as_str()) {
             return Err(CodecError::Malformed(
-                (ctx).format_retained(format_args!(
+                ctx.format_retained(format_args!(
                         "duplicate F3D configuration identity: {}",
                         configuration.entry_name()
                     ), "f3d configuration identity diagnostic")?,
@@ -292,10 +292,7 @@ pub(crate) fn project_configurations(
                     "f3d configuration parameter key",
                 )?;
                 let value = configuration_scalar_text(ctx, value)?;
-                {
-                    ctx.charge_collection_items(1, "f3d configuration parameter property")?;
-                }
-                properties.insert(key, value);
+                ctx.insert_btree_map(&mut properties, key, value, "f3d configuration parameter property")?;
             }
             for feature in definition.suppressed() {
                 let key = configuration_property_key(
@@ -304,21 +301,18 @@ pub(crate) fn project_configurations(
                     feature,
                     "f3d configuration suppression key",
                 )?;
-                {
-                    ctx.charge_collection_items(1, "f3d configuration suppression property")?;
-                }
-                properties.insert(key, "true".into());
+                ctx.insert_btree_map(&mut properties, key, "true".into(), "f3d configuration suppression property")?;
             }
             let material = definition
                 .material()
                 .map(|material| {
-                    (ctx).copy_retained_text(material, "f3d configuration material")
+                    ctx.copy_retained_text(material, "f3d configuration material")
                 })
                 .transpose()?;
             let ordinal = u32::try_from(projected.len()).map_err(|_| {
                 CodecError::Malformed("F3D configuration ordinal exceeds u32".into())
             })?;
-            let name = (ctx).copy_retained_text(name, "f3d configuration variant name")?;
+            let name = ctx.copy_retained_text(name, "f3d configuration variant name")?;
             {
 
                 ctx.reserve_vec(&mut projected, 1, "f3d projected configuration")?;
@@ -364,11 +358,8 @@ pub(crate) fn project_configurations(
             rule.entry_name(),
             "f3d configuration activation rule key",
         )?;
-        let condition = (ctx).copy_retained_text(condition, "f3d configuration activation rule condition")?;
-        {
-            ctx.charge_collection_items(1, "f3d configuration activation rule property")?;
-        }
-        configuration.properties.insert(key, condition);
+        let condition = ctx.copy_retained_text(condition, "f3d configuration activation rule condition")?;
+        ctx.insert_btree_map(&mut configuration.properties, key, condition, "f3d configuration activation rule property")?;
     }
     super::sort::sort_by(ctx, &mut projected, |left, right| left.id.cmp(&right.id))?;
     Ok(projected)
@@ -421,7 +412,7 @@ pub(crate) fn bind_configuration_parameter_overrides(
             };
             {
                 if let Err(error) =
-                    ctx.charge_collection_items(1, "f3d configuration parameter override")
+                    ctx.admit_btree_entry(&configuration.parameter_overrides, &id, "f3d configuration parameter override")
                 {
                     refusal = Some(error);
                     return true;
@@ -465,17 +456,13 @@ pub(crate) fn bind_configuration_suppressed_features(
                 return true;
             }
             let projected = (|| -> Result<_, CodecError> {
-                let id = (ctx).copy_retained_text(feature.id.as_str(), "f3d configuration suppressed feature id")?;
-                let id =
-                    cadmpeg_ir::features::FeatureId::try_from(id).map_err(CodecError::malformed)?;
+                let id = feature.id.try_clone_for_decode(ctx, "f3d configuration suppressed feature id")?;
                 {
-                    ctx.charge_collection_items(1, "f3d configuration suppressed feature state")?;
+                    ctx.admit_btree_entry(&configuration.feature_states, &id, "f3d configuration suppressed feature state")?;
                 }
                 let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
                 for dependency in &feature.dependencies {
-                    let copied = (ctx).copy_retained_text(dependency.as_str(), "f3d configuration suppressed dependency id")?;
-                    let copied = cadmpeg_ir::features::FeatureId::try_from(copied)
-                        .map_err(CodecError::malformed)?;
+                    let copied = dependency.try_clone_for_decode(ctx, "f3d configuration suppressed dependency id")?;
                     {
                         dependencies.reserve_for_decode(
                             ctx,
@@ -1028,7 +1015,7 @@ mod tests {
             policy.limits.max_retained_bytes = 4;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
-                (&ctx).copy_retained_text("input", operation),
+                ctx.copy_retained_text("input", operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation

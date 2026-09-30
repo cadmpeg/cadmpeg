@@ -779,7 +779,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
             .iter()
             .filter(|operand| dimension_recipe_edge_matches(record, operand))
         {
-            push_dimension_recipe_edge_id(ctx, &mut ids, &operand.id)?;
+            ctx.push_formatted_retained(&mut ids, format_args!("{}", &operand.id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text")?;
         }
         crate::design::sort::sort_by(ctx, &mut ids[..], Ord::cmp)?;
         ids.dedup();
@@ -788,17 +788,7 @@ pub(crate) fn bind_dimension_recipe_edge_operands(
     Ok(())
 }
 
-fn push_dimension_recipe_edge_id(
-    ctx: &DecodeContext<'_>,
-    ids: &mut Vec<String>,
-    id: &str,
-) -> Result<(), CodecError> {
 
-    let id = ctx.copy_retained_text(id, "f3d dimension recipe edge ID text")?;
-    ctx.reserve_vec(ids, 1, "f3d dimension recipe edge IDs")?;
-    ids.push(id);
-    Ok(())
-}
 
 pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ctx: &DecodeContext<'_>,
@@ -807,7 +797,7 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
 ) -> Result<Vec<String>, CodecError> {
     let mut ids = Vec::new();
     for operand in operands.iter().filter(|operand| dimension_recipe_edge_matches(record, operand)) {
-        push_dimension_recipe_edge_id(ctx, &mut ids, &operand.id)?;
+        ctx.push_formatted_retained(&mut ids, format_args!("{}", &operand.id), "f3d dimension recipe edge IDs", "f3d dimension recipe edge ID text")?;
     }
     crate::design::sort::sort_by(ctx, &mut ids, Ord::cmp)?;
     ids.dedup();

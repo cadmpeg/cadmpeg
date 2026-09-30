@@ -549,7 +549,7 @@ fn snapshot_body_map_records(
             .contains(&design_type.version)
         {
             return Err(CodecError::NotImplemented(
-                (ctx).format_retained(format_args!(
+                ctx.format_retained(format_args!(
                         "unsupported F3D Design snapshot body-map carrier version {}",
                         design_type.version
                     ), "f3d Design unsupported diagnostic")?,
@@ -761,7 +761,7 @@ fn body_map_records(
         }
         if design_type.version != crate::design::body::BODY_MAP_CARRIER_TYPE_VERSION {
             return Err(CodecError::NotImplemented(
-                (ctx).format_retained(format_args!(
+                ctx.format_retained(format_args!(
                         "unsupported F3D Design body-map carrier version {}",
                         design_type.version
                     ), "f3d Design unsupported diagnostic")?,

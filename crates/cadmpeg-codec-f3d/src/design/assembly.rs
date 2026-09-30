@@ -263,7 +263,9 @@ let mut key = ctx.copy_scoped_text(source, &mut reservation, "f3d assembly occur
 key.make_ascii_lowercase();
             (Some(reservation), key)
         };
-        match occurrences.entry((stream, key)) {
+        let key = (stream, key);
+        ctx.admit_btree_entry(&occurrences, &key, "f3d assembly occurrence map entry")?;
+        match occurrences.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 {
                     ctx.charge_retained(
@@ -272,8 +274,7 @@ key.make_ascii_lowercase();
                         })?,
                         "f3d assembly occurrence key",
                     )?;
-                    ctx.charge_collection_items(1, "f3d assembly occurrence map entry")?;
-                }
+                    }
                 entry.insert(Some(occurrence));
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -362,9 +363,10 @@ key.make_ascii_lowercase();
         let translation_offset = [x?, y?, z?];
         if !joints.contains_key(id.as_str()) {
             {
-                ctx.charge_collection_items(1, "f3d assembly joint map entry")?;
+                
             }
             let key = copy_assembly_text(ctx, id.as_str(), false)?;
+        ctx.admit_btree_entry(&joints, &key, "f3d assembly joint map entry")?;
             let native_ref = copy_assembly_text(ctx, &scope.id, false)?;
             let mut joint = AssemblyJoint::paired(
                 id,

@@ -42,7 +42,7 @@ fn validation_map_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
     let error =
-        (&ctx).collect_hash_map([("key", 1)], "index F3D test map").unwrap_err();
+        ctx.collect_hash_map([("key", 1)], "index F3D test map").unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -55,7 +55,7 @@ fn validation_set_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
     let error =
-        (&ctx).collect_hash_set(["key"], "index F3D test set").unwrap_err();
+        ctx.collect_hash_set(["key"], "index F3D test set").unwrap_err();
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -92,7 +92,7 @@ fn validation_design_header_index_refuses_collection_limit() {
 fn validation_typed_sketch_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = (&ctx).collect_hash_set([("Design/BulkStream.dat", 1)], "index F3D typed sketch records")
+    let error = ctx.collect_hash_set([("Design/BulkStream.dat", 1)], "index F3D typed sketch records")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -104,7 +104,7 @@ fn validation_typed_sketch_index_refuses_collection_limit() {
 fn validation_sketch_operand_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = (&ctx).collect_hash_map([(("Design/BulkStream.dat", 1), 1)], "index F3D sketch operands")
+    let error = ctx.collect_hash_map([(("Design/BulkStream.dat", 1), 1)], "index F3D sketch operands")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -157,7 +157,7 @@ fn validation_sketch_owner_finding_id_refuses_retained_limit() {
 fn validation_profile_face_group_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = (&ctx).collect_hash_set([("Design/BulkStream.dat", 1)], "index F3D decoded profile face groups")
+    let error = ctx.collect_hash_set([("Design/BulkStream.dat", 1)], "index F3D decoded profile face groups")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -169,7 +169,7 @@ fn validation_profile_face_group_index_refuses_collection_limit() {
 fn validation_face_group_member_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = limited_context(&arena);
-    let error = (&ctx).collect_hash_set([("Design/BulkStream.dat", 1, 2)], "index F3D face group members")
+    let error = ctx.collect_hash_set([("Design/BulkStream.dat", 1, 2)], "index F3D face group members")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

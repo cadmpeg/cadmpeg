@@ -91,24 +91,9 @@ fn body_visibility_for<'m>(
 
 
 
-fn insert_source_attribute_owned(
-    ctx: &DecodeContext<'_>,
-    attributes: &mut std::collections::BTreeMap<String, String>,
-    key: &'static str,
-    value: String,
-) -> Result<(), CodecError> {
-    (ctx).insert_btree_map(attributes, (|| key.to_owned())(), value, "collect F3D source attributes").map(|_| ())
-}
 
-fn insert_source_attribute_copy(
-    ctx: &DecodeContext<'_>,
-    attributes: &mut std::collections::BTreeMap<String, String>,
-    key: &'static str,
-    value: &str,
-) -> Result<(), CodecError> {
-    let copy = ctx.copy_retained_text(value, "retain F3D source attribute value")?;
-    insert_source_attribute_owned(ctx, attributes, key, copy)
-}
+
+
 
 
 
@@ -282,7 +267,7 @@ fn report_unresolved_dimension_companions(
 ) -> Result<(), CodecError> {
     let count = unresolved_dimension_companion_count(ctx, native, ir)?;
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::DimensionCompanionUntyped, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::DimensionCompanionUntyped, format_args!(
             "{count} payload-bearing Design dimension companion(s) were retained without a typed locus frame."
         ), "report unresolved F3D dimensions", "retain F3D unresolved dimension loss")?;
     }
@@ -299,7 +284,7 @@ fn report_unresolved_configuration_rules(
         &native.design_configurations,
     );
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationMemberUnassigned, format_args!(
             "{count} Design configuration JSON member(s) were retained without assigned neutral configuration semantics."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -308,7 +293,7 @@ fn report_unresolved_configuration_rules(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ConfigurationRuleUnbound, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationRuleUnbound, format_args!(
             "{count} nonempty Design configuration rule(s) were retained without an unambiguous neutral activation target."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -316,7 +301,7 @@ fn report_unresolved_configuration_rules(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ConfigurationParameterOverrideUnbound, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationParameterOverrideUnbound, format_args!(
             "{count} Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -324,7 +309,7 @@ fn report_unresolved_configuration_rules(
         &ir.model.configurations,
     );
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
             "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -337,7 +322,7 @@ fn report_unretained_act_component_links(
     count: usize,
 ) -> Result<(), CodecError> {
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ActComponentLinkUnresolved, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ActComponentLinkUnresolved, format_args!(
             "{count} non-root ACT component link(s) remain source-only because their product-structure role is unresolved."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -350,7 +335,7 @@ fn report_untyped_material_distances(
     count: usize,
 ) -> Result<(), CodecError> {
     if count != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::MaterialDistanceUnitUntyped, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::MaterialDistanceUnitUntyped, format_args!(
             "{count} Protein texture Distance property value(s) retain an untyped unit tag; their typed texture carriers were omitted."
         ), "collect F3D decode losses", "retain F3D decode loss")?;
     }
@@ -1814,23 +1799,7 @@ impl std::fmt::Display for IncompleteFamilyCounts<'_> {
     }
 }
 
-fn push_decode_loss(
-    ctx: &DecodeContext<'_>,
-    report: &mut DecodeBody,
-    code: F3dLossCode,
-    args: std::fmt::Arguments<'_>,
-    collection_operation: &'static str,
-    retained_operation: &'static str,
-) -> Result<(), CodecError> {
-    push_loss_vec(
-        ctx,
-        &mut report.losses,
-        code,
-        args,
-        collection_operation,
-        retained_operation,
-    )
-}
+
 
 fn push_loss_vec(
     ctx: &DecodeContext<'_>,
@@ -1846,20 +1815,7 @@ fn push_loss_vec(
     Ok(())
 }
 
-fn push_decode_note(
-    ctx: &DecodeContext<'_>,
-    report: &mut DecodeBody,
-    args: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    const OPERATION: &str = "collect F3D decode notes";
 
-    ctx.reserve_vec(&mut report
-        .notes, 1, OPERATION)?;
-    report
-        .notes
-        .push(ctx.format_retained(args, "retain F3D decode note")?);
-    Ok(())
-}
 
 fn report_design_projection_gaps(
     ctx: &DecodeContext<'_>,
@@ -1875,7 +1831,7 @@ fn report_design_projection_gaps(
         .filter(|history| history.record_table_binding_budget_exceeded)
         .count();
     if history_budget_skips != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::HistoryBindingBudgetExceeded, format_args!(
             "{history_budget_skips} ASM history stream(s) retain no historical topology because their binding work exceeded the decoder safety budget."
         ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
@@ -1886,44 +1842,30 @@ fn report_design_projection_gaps(
         .flat_map(|state| &state.records)
         .filter_map(|record| record.framing_error())
     {
-        push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::HistoryRecordFramingFailed,
-            format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::HistoryRecordFramingFailed, format_args!(
                 "An ASM history span remains opaque because record framing failed: {error}."
-            ),
-            "collect F3D projection losses",
-            "retain F3D projection loss",
-        )?;
+            ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.unresolved_body_bindings != 0 {
-        push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::DesignBodyBindingUnresolved,
-            format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::DesignBodyBindingUnresolved, format_args!(
                 "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
                 gaps.unresolved_body_bindings
-            ),
-            "collect F3D projection losses",
-            "retain F3D projection loss",
-        )?;
+            ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.native_reference_images != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::ReferenceImageNativeRetained, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::ReferenceImageNativeRetained, format_args!(
             "{} reference-image timeline object(s) retain native Canvas records because no neutral image-plane binding was resolved.",
             gaps.native_reference_images
         ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.native_decals != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::DecalNativeRetained, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::DecalNativeRetained, format_args!(
             "{} decal timeline object(s) retain native image and mapping records because no neutral decal binding was resolved.",
             gaps.native_decals
         ), "collect F3D projection losses", "retain F3D projection loss")?;
     }
     if gaps.unrepaired_lost_edge_references != 0 {
-        push_decode_loss(ctx, report, F3dLossCode::EdgeReferenceLostUnrepaired, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::EdgeReferenceLostUnrepaired, format_args!(
             "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and have no independent complete selection proof.",
             gaps.unrepaired_lost_edge_references
         ), "collect F3D projection losses", "retain F3D projection loss")?;
@@ -1933,14 +1875,7 @@ fn report_design_projection_gaps(
                     message: std::fmt::Arguments<'_>|
      -> Result<(), CodecError> {
         if count != 0 {
-            push_decode_loss(
-                ctx,
-                report,
-                code,
-                message,
-                "collect F3D projection losses",
-                "retain F3D projection loss",
-            )?;
+            push_loss_vec(ctx, &mut report.losses, code, message, "collect F3D projection losses", "retain F3D projection loss")?;
         }
         Ok(())
     };
@@ -2358,16 +2293,9 @@ impl<'a> F3dDecodeSession<'a> {
             geometry_losses(ctx, &brep)?,
         )?;
         if undecoded_candidates != 0 {
-            push_decode_loss(
-                ctx,
-                &mut report,
-                F3dLossCode::BrepBlobUndecoded,
-                format_args!(
+            push_loss_vec(ctx, &mut report.losses, F3dLossCode::BrepBlobUndecoded, format_args!(
                     "{undecoded_candidates} Design-referenced BREP blob(s) could not be decoded."
-                ),
-                "collect F3D undecoded BREP loss",
-                "retain F3D undecoded BREP loss",
-            )?;
+                ), "collect F3D undecoded BREP loss", "retain F3D undecoded BREP loss")?;
         }
         let design_body_bindings = crate::design::decode::body::decode_design_body_bindings(
             ctx,
@@ -3414,38 +3342,17 @@ fn collect_mesh_outcome(
         MeshContainerOutcome::Joined(body) => {
             ctx.push_vec(bodies, body, "collect F3D joined mesh bodies")?;
         }
-        MeshContainerOutcome::Unjoined { entry_name } => push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::MeshContainerUnjoined,
-            format_args!(
+        MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshContainerUnjoined, format_args!(
                 "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-            ),
-            "collect F3D unjoined mesh loss",
-            "retain F3D unjoined mesh loss",
-        )?,
+            ), "collect F3D unjoined mesh loss", "retain F3D unjoined mesh loss")?,
         MeshContainerOutcome::Failed {
             error: error @ CodecError::ResourceLimit(_),
             ..
         } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::MeshContainerUndecoded,
-            format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),
-            "collect F3D undecoded mesh loss",
-            "retain F3D undecoded mesh loss",
-        )?,
-        MeshContainerOutcome::Missing { entry_name } => push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::MeshContainerMissing,
-            format_args!(
+        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshContainerUndecoded, format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"), "collect F3D undecoded mesh loss", "retain F3D undecoded mesh loss")?,
+        MeshContainerOutcome::Missing { entry_name } => push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshContainerMissing, format_args!(
                 "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-            ),
-            "collect F3D missing mesh loss",
-            "retain F3D missing mesh loss",
-        )?,
+            ), "collect F3D missing mesh loss", "retain F3D missing mesh loss")?,
     }
     Ok(())
 }
@@ -3929,17 +3836,10 @@ fn report_unresolved_mesh_attributes(
                  vertex",
             ),
         };
-        push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::MeshAttributeNotTransferred,
-            format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshAttributeNotTransferred, format_args!(
                 "{count} mesh attribute channel(s) addressing {addressing} were not transferred: \
              {reason}."
-            ),
-            "collect F3D unresolved mesh attribute loss",
-            "retain F3D unresolved mesh attribute loss",
-        )?;
+            ), "collect F3D unresolved mesh attribute loss", "retain F3D unresolved mesh attribute loss")?;
     }
     Ok(())
 }
@@ -3966,14 +3866,7 @@ fn report_xref_parse_loss(
     report: &mut DecodeBody,
     error: &CodecError,
 ) -> Result<(), CodecError> {
-    push_decode_loss(
-        ctx,
-        report,
-        F3dLossCode::XrefTableUndecoded,
-        format_args!("external-reference table was not decoded: {error}"),
-        "collect F3D xref parse losses",
-        "retain F3D xref parse loss",
-    )
+    push_loss_vec(ctx, &mut report.losses, F3dLossCode::XrefTableUndecoded, format_args!("external-reference table was not decoded: {error}"), "collect F3D xref parse losses", "retain F3D xref parse loss")
 }
 
 /// Report typed occurrence placements whose role path was readable but whose
@@ -3991,18 +3884,11 @@ fn report_xref_placement_failures(
         else {
             continue;
         };
-        push_decode_loss(
-            ctx,
-            report,
-            F3dLossCode::XrefPlacementUndecoded,
-            format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::XrefPlacementUndecoded, format_args!(
                 "external occurrence {} for role {} has a typed placement record that did not \
                  decode under its generation grammar; no valid placement carrier was available",
                 reference.relative_path, reference.neutron_role
-            ),
-            "collect F3D xref placement losses",
-            "retain F3D xref placement loss",
-        )?;
+            ), "collect F3D xref placement losses", "retain F3D xref placement loss")?;
     }
     Ok(())
 }
@@ -4024,7 +3910,7 @@ fn report_xref_placement_overrides(
         else {
             continue;
         };
-        push_decode_loss(ctx, report, F3dLossCode::XrefPlacementSuperseded, format_args!(
+        push_loss_vec(ctx, &mut report.losses, F3dLossCode::XrefPlacementSuperseded, format_args!(
                 "{count} structured placement record(s) for external occurrence {} and role {} were superseded by scope-bound Component Insert carrier(s)",
                 reference.relative_path, reference.neutron_role
             ), "collect F3D xref placement losses", "retain F3D xref placement loss")?;
@@ -4054,16 +3940,9 @@ fn apply_mesh_body_classification(
         )
     });
     report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
-    push_decode_loss(
-        ctx,
-        report,
-        F3dLossCode::MeshVertexPrecisionReduced,
-        format_args!(
+    push_loss_vec(ctx, &mut report.losses, F3dLossCode::MeshVertexPrecisionReduced, format_args!(
             "{bodies} mesh body geometry container(s) store vertex coordinates at f32 precision"
-        ),
-        "collect F3D mesh classification losses",
-        "retain F3D mesh classification loss",
-    )
+        ), "collect F3D mesh classification losses", "retain F3D mesh classification loss")
 }
 
 /// Classify a bodyless design whose transferred content requires no BREP.
@@ -4136,25 +4015,15 @@ fn apply_assembly_classification(
                 LossCategory::Geometry | LossCategory::Topology
             ))
     });
-    push_decode_loss(
-        ctx,
-        report,
-        F3dLossCode::AssemblyComponentsExternal,
-        format_args!(
+    push_loss_vec(ctx, &mut report.losses, F3dLossCode::AssemblyComponentsExternal, format_args!(
             "assembly document: geometry is defined by {} external reference(s); decode the \
          containing .f3z archive to resolve them",
             table.references.len()
-        ),
-        "collect F3D assembly classification losses",
-        "retain F3D assembly classification loss",
-    )?;
+        ), "collect F3D assembly classification losses", "retain F3D assembly classification loss")?;
     for reference in &table.references {
         let property_note = XrefPropertyNote(reference);
         match crate::xref::design_for(table, reference) {
-            Some(design) => push_decode_note(
-                ctx,
-                report,
-                format_args!(
+            Some(design) => ctx.push_formatted_retained(&mut report.notes, format_args!(
                     "xref {}: {} -> {} (lineage {}, version {}, {})",
                     reference.ordinal,
                     design.display_name,
@@ -4162,16 +4031,11 @@ fn apply_assembly_classification(
                     design.lineage_urn,
                     design.version_urn,
                     property_note
-                ),
-            )?,
-            None => push_decode_note(
-                ctx,
-                report,
-                format_args!(
+                ), "collect F3D decode notes", "retain F3D decode note")?,
+            None => ctx.push_formatted_retained(&mut report.notes, format_args!(
                     "xref {}: -> {} ({})",
                     reference.ordinal, reference.relative_path, property_note
-                ),
-            )?,
+                ), "collect F3D decode notes", "retain F3D decode note")?,
         }
     }
     Ok(())
@@ -4245,7 +4109,7 @@ fn decode_result(
     // compares against the exact document the sealed wrapper returns.
     ir.finalize();
     let hash = document_local_sha256_with_source(&ir, &source)?;
-    (ctx).insert_btree_map(&mut source.attributes, (|| cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))(), hash, "record F3D document digest").map(|_| ())?;
+    ctx.insert_btree_map(&mut source.attributes, (|| cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))(), hash, "record F3D document digest").map(|_| ())?;
     Ok(AuthoredDecoded {
         ir,
         source,
@@ -5241,35 +5105,20 @@ fn source_attributes_and_tolerances(
 ) -> Result<(std::collections::BTreeMap<String, String>, Tolerances), CodecError> {
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
-        insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
+        { let copy = ctx.copy_retained_text(folder, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "asset_folder".to_owned(), copy, "collect F3D source attributes")?; }
     }
-    insert_source_attribute_owned(
-        ctx,
-        &mut attributes,
-        "zip_entry_count",
-        scan.entries.len().to_string(),
-    )?;
-    insert_source_attribute_copy(
-        ctx,
-        &mut attributes,
-        "active_brep",
-        &primary_model_brep.name,
-    )?;
-    insert_source_attribute_copy(
-        ctx,
-        &mut attributes,
-        "active_brep_sha256",
-        primary_model_brep.sha256.as_str(),
-    )?;
+    ctx.insert_btree_map(&mut attributes, "zip_entry_count".to_owned(), scan.entries.len().to_string(), "collect F3D source attributes").map(|_| ())?;
+    { let copy = ctx.copy_retained_text(&primary_model_brep.name, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "active_brep".to_owned(), copy, "collect F3D source attributes")?; }
+    { let copy = ctx.copy_retained_text(primary_model_brep.sha256.as_str(), "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "active_brep_sha256".to_owned(), copy, "collect F3D source attributes")?; }
     if let Some(off) = primary_model_brep
         .kernel
         .as_ref()
         .and_then(crate::container::KernelFraming::solved_record_limit)
     {
-        insert_source_attribute_owned(ctx, &mut attributes, "solved_record_len", off.to_string())?;
+        ctx.insert_btree_map(&mut attributes, "solved_record_len".to_owned(), off.to_string(), "collect F3D source attributes").map(|_| ())?;
     }
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
-        insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
+        ctx.insert_btree_map(&mut attributes, "modeling_length_unit".to_owned(), unit, "collect F3D source attributes").map(|_| ())?;
     }
 
     let mut tolerances = Tolerances::default();
@@ -5279,13 +5128,13 @@ fn source_attributes_and_tolerances(
         .and_then(crate::container::KernelFraming::model_metadata)
     {
         if let Some(pf) = &h.product_family {
-            insert_source_attribute_copy(ctx, &mut attributes, "product_family", pf)?;
+            { let copy = ctx.copy_retained_text(pf, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "product_family".to_owned(), copy, "collect F3D source attributes")?; }
         }
         if let Some(pv) = &h.product_version {
-            insert_source_attribute_copy(ctx, &mut attributes, "product_version", pv)?;
+            { let copy = ctx.copy_retained_text(pv, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "product_version".to_owned(), copy, "collect F3D source attributes")?; }
         }
         if let Some(sd) = &h.save_date {
-            insert_source_attribute_copy(ctx, &mut attributes, "save_date", sd)?;
+            { let copy = ctx.copy_retained_text(sd, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "save_date".to_owned(), copy, "collect F3D source attributes")?; }
         }
         if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
             tolerances = admit_kernel_tolerances(resabs, resnor)?;
@@ -5475,37 +5324,22 @@ fn build_metadata_ir(
 
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = scan.design_asset_folder() {
-        insert_source_attribute_copy(ctx, &mut attributes, "asset_folder", folder)?;
+        { let copy = ctx.copy_retained_text(folder, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "asset_folder".to_owned(), copy, "collect F3D source attributes")?; }
     }
-    insert_source_attribute_owned(
-        ctx,
-        &mut attributes,
-        "zip_entry_count",
-        scan.entries.len().to_string(),
-    )?;
+    ctx.insert_btree_map(&mut attributes, "zip_entry_count".to_owned(), scan.entries.len().to_string(), "collect F3D source attributes").map(|_| ())?;
     if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
-        insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
+        ctx.insert_btree_map(&mut attributes, "modeling_length_unit".to_owned(), unit, "collect F3D source attributes").map(|_| ())?;
     }
 
     if let Some(brep) = container::select_fallback_brep(scan) {
-        insert_source_attribute_copy(ctx, &mut attributes, "active_brep", &brep.name)?;
-        insert_source_attribute_copy(
-            ctx,
-            &mut attributes,
-            "active_brep_sha256",
-            brep.sha256.as_str(),
-        )?;
+        { let copy = ctx.copy_retained_text(&brep.name, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "active_brep".to_owned(), copy, "collect F3D source attributes")?; }
+        { let copy = ctx.copy_retained_text(brep.sha256.as_str(), "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "active_brep_sha256".to_owned(), copy, "collect F3D source attributes")?; }
         if let Some(off) = brep
             .kernel
             .as_ref()
             .and_then(crate::container::KernelFraming::solved_record_limit)
         {
-            insert_source_attribute_owned(
-                ctx,
-                &mut attributes,
-                "solved_record_len",
-                off.to_string(),
-            )?;
+            ctx.insert_btree_map(&mut attributes, "solved_record_len".to_owned(), off.to_string(), "collect F3D source attributes").map(|_| ())?;
         }
         if let Some(h) = brep
             .kernel
@@ -5513,13 +5347,13 @@ fn build_metadata_ir(
             .and_then(crate::container::KernelFraming::model_metadata)
         {
             if let Some(pf) = &h.product_family {
-                insert_source_attribute_copy(ctx, &mut attributes, "product_family", pf)?;
+                { let copy = ctx.copy_retained_text(pf, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "product_family".to_owned(), copy, "collect F3D source attributes")?; }
             }
             if let Some(pv) = &h.product_version {
-                insert_source_attribute_copy(ctx, &mut attributes, "product_version", pv)?;
+                { let copy = ctx.copy_retained_text(pv, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "product_version".to_owned(), copy, "collect F3D source attributes")?; }
             }
             if let Some(sd) = &h.save_date {
-                insert_source_attribute_copy(ctx, &mut attributes, "save_date", sd)?;
+                { let copy = ctx.copy_retained_text(sd, "retain F3D source attribute value")?; ctx.insert_btree_map(&mut attributes, "save_date".to_owned(), copy, "collect F3D source attributes")?; }
             }
             if let (Some(resabs), Some(resnor)) = (h.linear, h.angular) {
                 ir.tolerances = admit_kernel_tolerances(resabs, resnor)?;

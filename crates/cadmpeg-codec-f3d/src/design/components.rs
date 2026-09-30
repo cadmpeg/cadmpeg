@@ -30,6 +30,7 @@ pub(crate) fn project_local_components(
             occurrence.occurrence_guid.as_str(),
             "f3d component native occurrence key",
         )?;
+        ctx.admit_btree_entry(&native_by_guid, &key, "f3d component native occurrence index")?;
         match native_by_guid.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
                 ctx.charge_retained(
@@ -38,7 +39,6 @@ pub(crate) fn project_local_components(
                     })?,
                     "f3d component native occurrence key",
                 )?;
-                ctx.charge_collection_items(1, "f3d component native occurrence index")?;
                 entry.insert(Some(occurrence));
             }
             std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -229,11 +229,11 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         ctx.reserve_vec(&mut occurrences, 1, "f3d unresolved component occurrence")?;
         let occurrence_id =
             crate::design::identity::neutral_component_insert_occurrence_id(ctx, scope)?;
-        let feature_occurrence_id = cadmpeg_ir::ids::OccurrenceId::mint((ctx).copy_retained_text(occurrence_id.as_str(), "f3d unresolved component feature occurrence id")?)
+        let feature_occurrence_id = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(occurrence_id.as_str(), "f3d unresolved component feature occurrence id")?)
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        let name = (ctx).copy_retained_text(&construction.neutron_role, "f3d unresolved component name")?;
+        let name = ctx.copy_retained_text(&construction.neutron_role, "f3d unresolved component name")?;
         let native_ref =
-            (ctx).copy_retained_text(&scope.id, "f3d unresolved component native reference")?;
+            ctx.copy_retained_text(&scope.id, "f3d unresolved component native reference")?;
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
@@ -292,8 +292,9 @@ fn project_occurrence(
     project_component(ctx, components, component_guid)?;
     let occurrence_id = crate::ids::neutral_component_occurrence_id(occurrence_guid);
     if !occurrences.contains_key(occurrence_id.as_str()) {
-        ctx.charge_collection_items(1, "f3d component occurrence map entry")?;
-        let key = (ctx).copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
+        
+        let key = ctx.copy_retained_text(occurrence_id.as_str(), "f3d component occurrence map key")?;
+        ctx.admit_btree_entry(&occurrences, &key, "f3d component occurrence map entry")?;
         let (native_key, reservation) = temporary_lowercase_component_key(
             ctx,
             occurrence_guid.as_str(),
@@ -304,7 +305,7 @@ fn project_occurrence(
             .copied()
             .flatten()
             .map(|occurrence| {
-                (ctx).copy_retained_text(&occurrence.id, "f3d component occurrence native reference")
+                ctx.copy_retained_text(&occurrence.id, "f3d component occurrence native reference")
             })
             .transpose()?;
         drop(native_key);
@@ -338,8 +339,9 @@ fn project_component(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let component_id = crate::ids::neutral_component_id(component_guid);
     if !components.contains_key(component_id.as_str()) {
-        ctx.charge_collection_items(1, "f3d component definition map entry")?;
-        let key = (ctx).copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
+        
+        let key = ctx.copy_retained_text(component_id.as_str(), "f3d component definition map key")?;
+        ctx.admit_btree_entry(&components, &key, "f3d component definition map entry")?;
         components.insert(
             key,
             ProductDefinition {

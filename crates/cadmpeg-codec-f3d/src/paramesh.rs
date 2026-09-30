@@ -357,7 +357,7 @@ impl MeshAttribute {
             return Ok(None);
         };
         let mut selectors =
-            (ctx).collection_vec(selector_count, "collect paramesh corner selectors")?;
+            ctx.collection_vec(selector_count, "collect paramesh corner selectors")?;
         for triangle in triangles {
             selectors.extend_from_slice(triangle);
         }
@@ -421,14 +421,14 @@ fn protobuf_fields<'a>(
         match key & 0x07 {
             0 => {
                 let value = take_varint(message, &mut at)?;
-                (ctx).push_vec(&mut fields, (key >> 3, ProtobufValue::Varint(value)), "collect paramesh protobuf fields")?;
+                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Varint(value)), "collect paramesh protobuf fields")?;
             }
             1 => {
                 at = at
                     .checked_add(8)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
-                (ctx).push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
+                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
             }
             2 => {
                 let count = usize::try_from(take_varint(message, &mut at)?)
@@ -438,14 +438,14 @@ fn protobuf_fields<'a>(
                     .and_then(|end| message.get(at..end))
                     .ok_or_else(|| malformed("paramesh protobuf byte field is truncated"))?;
                 at += count;
-                (ctx).push_vec(&mut fields, (key >> 3, ProtobufValue::Bytes(bytes)), "collect paramesh protobuf fields")?;
+                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Bytes(bytes)), "collect paramesh protobuf fields")?;
             }
             5 => {
                 at = at
                     .checked_add(4)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
-                (ctx).push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
+                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
             }
             _ => {
                 return Err(malformed(
@@ -507,7 +507,7 @@ fn guid(ctx: &DecodeContext<'_>, bytes: &[u8], context: &str) -> Result<String, 
     if !crate::bytes::is_guid_hyphenated(value) {
         return Err(malformed(format!("paramesh {context} is not a GUID")));
     }
-    (ctx).copy_retained_text(value, "retain paramesh GUID")
+    ctx.copy_retained_text(value, "retain paramesh GUID")
 }
 
 fn utf8(ctx: &DecodeContext<'_>, bytes: &[u8], context: &str) -> Result<String, CodecError> {
@@ -516,7 +516,7 @@ fn utf8(ctx: &DecodeContext<'_>, bytes: &[u8], context: &str) -> Result<String, 
     if value.is_empty() {
         return Err(malformed(format!("paramesh {context} is empty")));
     }
-    (ctx).copy_retained_text(value, "retain paramesh UTF-8 text")
+    ctx.copy_retained_text(value, "retain paramesh UTF-8 text")
 }
 
 /// Read the stream entry of one channel.
@@ -642,7 +642,7 @@ fn registry_channel<'a>(
                         "paramesh channel repeats a face-group key or GUID",
                     ));
                 }
-                (ctx).push_vec(&mut groups, group, "collect paramesh channel groups")?;
+                ctx.push_vec(&mut groups, group, "collect paramesh channel groups")?;
             }
             (CHANNEL_ROLE | CHANNEL_RESOURCE | CHANNEL_STREAMS | CHANNEL_GROUP, _) => {
                 return Err(malformed("paramesh channel field has the wrong wire type"));
@@ -855,7 +855,7 @@ fn message_pack_name_table(
         *at += count;
         let value =
             std::str::from_utf8(raw).map_err(|_| malformed("paramesh stream name is not UTF-8"))?;
-        (ctx).copy_retained_text(value, "retain paramesh stream name")
+        ctx.copy_retained_text(value, "retain paramesh stream name")
     }
 
     let mut at = 0usize;
@@ -888,7 +888,7 @@ fn message_pack_name_table(
         {
             return Err(malformed("paramesh name table repeats a stream name or id"));
         }
-        (ctx).push_vec(&mut entries, (name, id), "collect paramesh stream names")?;
+        ctx.push_vec(&mut entries, (name, id), "collect paramesh stream names")?;
     }
     if at != bytes.len() {
         return Err(malformed("paramesh name table has trailing bytes"));
@@ -969,13 +969,13 @@ fn stream_descriptor(
             .get(at..at + key_count)
             .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
         at += key_count;
-        let key = (ctx).copy_retained_text(std::str::from_utf8(raw)
+        let key = ctx.copy_retained_text(std::str::from_utf8(raw)
                 .map_err(|_| malformed("paramesh stream descriptor key is not UTF-8"))?, "retain paramesh descriptor key")?;
         if entries.iter().any(|(existing, _)| existing == &key) {
             return Err(malformed("paramesh stream descriptor repeats a key"));
         }
         let descriptor_value = value(bytes, &mut at)?;
-        (ctx).push_vec(&mut entries, (key, descriptor_value), "collect paramesh descriptor entries")?;
+        ctx.push_vec(&mut entries, (key, descriptor_value), "collect paramesh descriptor entries")?;
     }
     if at != bytes.len() {
         return Err(malformed("paramesh stream descriptor has trailing bytes"));
@@ -1021,7 +1021,7 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         }
         return Ok(MeshStream {
             descriptor,
-            bytes: (ctx).copy_retained(payload, "retain paramesh stream bytes")?,
+            bytes: ctx.copy_retained(payload, "retain paramesh stream bytes")?,
         });
     }
     if properties != [LZMA_PROPERTIES, LZMA_DICTIONARY_LOG] {
@@ -1232,14 +1232,14 @@ fn attribute_names(
         if !crate::bytes::is_guid_hyphenated(resource_guid) {
             return Err(malformed("paramesh TriName has an undefined form"));
         }
-        let mut key = (ctx).copy_retained_text(resource_guid, "retain paramesh attribute GUID")?;
+        let mut key = ctx.copy_retained_text(resource_guid, "retain paramesh attribute GUID")?;
         key.make_ascii_uppercase();
         if names.contains_key(&key) {
             return Err(malformed(
                 "paramesh attribute-name stream repeats a channel GUID",
             ));
         }
-        let authored_name = (ctx).copy_retained_text(authored_name, "retain paramesh attribute name")?;
+        let authored_name = ctx.copy_retained_text(authored_name, "retain paramesh attribute name")?;
         ctx.insert_btree_map(&mut names, key, RegisteredAttributeName {
                 kind,
                 authored_name,
@@ -1259,7 +1259,7 @@ fn decode_vertices(
     stream: &[u8],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
     let mut view = View::over_retained(stream);
-    let mut vertices = (ctx).collection_vec(stream.len() / 12, "collect paramesh vertices")?;
+    let mut vertices = ctx.collection_vec(stream.len() / 12, "collect paramesh vertices")?;
     while !view.is_empty() {
         let mut point = [FiniteReal::ZERO; 3];
         for value in &mut point {
@@ -1285,7 +1285,7 @@ fn decode_triangles(
     vertices: usize,
 ) -> Result<Vec<[u32; 3]>, CodecError> {
     let mut view = View::over_retained(stream);
-    let mut words = (ctx).collection_vec(stream.len() / 4, "collect paramesh corner words")?;
+    let mut words = ctx.collection_vec(stream.len() / 4, "collect paramesh corner words")?;
     while !view.is_empty() {
         words.push(i64::from(view.i32_le().ok_or_else(|| {
             malformed("paramesh corner stream is not a whole number of values")
@@ -1329,7 +1329,7 @@ fn decode_triangles(
     }
 
     let mut current = lowest_start;
-    let mut corners = (ctx).collection_vec(values, "collect paramesh corner indices")?;
+    let mut corners = ctx.collection_vec(values, "collect paramesh corner indices")?;
     corners.push(
         u32::try_from(current).map_err(|_| malformed("paramesh corner index is out of range"))?,
     );
@@ -1342,7 +1342,7 @@ fn decode_triangles(
         }
         corners.push(index);
     }
-    let mut triangles = (ctx).collection_vec(values / 3, "collect paramesh triangles")?;
+    let mut triangles = ctx.collection_vec(values / 3, "collect paramesh triangles")?;
     for corner in corners.chunks_exact(3) {
         triangles.push([corner[0], corner[1], corner[2]]);
     }
@@ -1359,7 +1359,7 @@ fn decode_terminal_delta_values(
     stream: &[u8],
 ) -> Result<Vec<u32>, CodecError> {
     let mut view = View::over_retained(stream);
-    let mut words = (ctx).collection_vec(stream.len() / 4, "collect paramesh terminal delta words")?;
+    let mut words = ctx.collection_vec(stream.len() / 4, "collect paramesh terminal delta words")?;
     while !view.is_empty() {
         words.push(view.u32_le().ok_or_else(|| {
             malformed("paramesh terminal-delta stream is not a whole number of values")
@@ -1431,7 +1431,7 @@ fn decode_index_positions(
     }
 
     let decoded = decode_terminal_delta_values(ctx, stream)?;
-    let mut positions = (ctx).collection_vec(decoded.len(), "collect paramesh index positions")?;
+    let mut positions = ctx.collection_vec(decoded.len(), "collect paramesh index positions")?;
     let mut previous = None;
     for position in decoded {
         if usize::try_from(position)
@@ -1512,7 +1512,7 @@ fn decode_corner_normals(
         ));
     }
     let mut view = View::over_retained(values);
-    let mut table = (ctx).collection_vec(values.len() / index_from_u32(PACKED_DIRECTION_BYTES), "collect paramesh normal table")?;
+    let mut table = ctx.collection_vec(values.len() / index_from_u32(PACKED_DIRECTION_BYTES), "collect paramesh normal table")?;
     while !view.is_empty() {
         let pair = view.f32_le().zip(view.f32_le()).ok_or_else(|| {
             malformed("paramesh corner-normal channel has no complete packed-direction table")
@@ -1528,7 +1528,7 @@ fn decode_corner_normals(
     let selectors = attribute
         .corner_selectors(ctx, vertices, triangles)?
         .ok_or_else(|| malformed("paramesh corner-normal addressing is inconsistent"))?;
-    let mut normals = (ctx).collection_vec(selectors.len(), "collect paramesh corner normals")?;
+    let mut normals = ctx.collection_vec(selectors.len(), "collect paramesh corner normals")?;
     for selector in selectors {
         let normal = table
             .get(
@@ -1614,7 +1614,7 @@ fn registry_feature_edges(
     }
     let mut seen = std::collections::BTreeSet::new();
     let mut feature_edges =
-        (ctx).collection_vec(endpoints.len() / 2, "collect paramesh feature edges")?;
+        ctx.collection_vec(endpoints.len() / 2, "collect paramesh feature edges")?;
     for pair in endpoints.chunks_exact(2) {
         let edge = [pair[0], pair[1]];
         let high_in_domain = index_from_u32(edge[1]) < vertices;
@@ -1695,7 +1695,7 @@ pub(crate) fn decode_mesh_container(
             }
             CHUNK_STREAM => {
                 let stream = inflate_stream(ctx, body)?;
-                (ctx).push_vec(&mut streams, stream, "collect paramesh streams")?;
+                ctx.push_vec(&mut streams, stream, "collect paramesh streams")?;
             }
             _ => {
                 return Err(malformed(
@@ -1869,7 +1869,7 @@ fn registry_attributes(
             ));
         }
         let authored_name = registered_name
-            .map(|name| (ctx).copy_retained_text(&name.authored_name, "copy paramesh attribute name"))
+            .map(|name| ctx.copy_retained_text(&name.authored_name, "copy paramesh attribute name"))
             .transpose()?;
         let mut attribute = MeshAttribute {
             role: registration.role,
@@ -1879,24 +1879,24 @@ fn registry_attributes(
             elements: match registration.streams.element_code {
                 ELEMENT_PAIR => MeshElements::Float {
                     width: FloatWidth::Pair,
-                    values: (ctx).copy_retained(&stream.bytes, "copy paramesh channel values")?,
+                    values: ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 },
                 ELEMENT_QUAD => MeshElements::Float {
                     width: FloatWidth::Quad,
-                    values: (ctx).copy_retained(&stream.bytes, "copy paramesh channel values")?,
+                    values: ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 },
                 ELEMENT_PACKED_DIRECTION => MeshElements::PackedDirection {
-                    values: (ctx).copy_retained(&stream.bytes, "copy paramesh channel values")?,
+                    values: ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 },
                 ELEMENT_TRIANGLE_DELTA => MeshElements::TriangleDelta(TriangleDeltaStream::new(
                     ctx,
-                    (ctx).copy_retained(&stream.bytes, "copy paramesh channel values")?,
+                    ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 )?),
                 code => MeshElements::Opaque {
                     code: u32::try_from(code).map_err(|_| {
                         malformed("paramesh channel declares an out-of-range element code")
                     })?,
-                    values: (ctx).copy_retained(&stream.bytes, "copy paramesh channel values")?,
+                    values: ctx.copy_retained(&stream.bytes, "copy paramesh channel values")?,
                 },
             },
             addressing: match registration.domain {
@@ -1939,13 +1939,13 @@ fn registry_attributes(
                 "paramesh triangle-channel element count differs from the triangle count",
             ));
         }
-        (ctx).push_vec(&mut attributes, attribute, "collect paramesh attributes")?;
+        ctx.push_vec(&mut attributes, attribute, "collect paramesh attributes")?;
     }
     let mut resources = std::collections::BTreeSet::new();
     for attribute in &attributes {
         if let Some(resource_guid) = &attribute.resource_guid {
             let mut key =
-                (ctx).copy_retained_text(resource_guid, "index paramesh channel resource GUID")?;
+                ctx.copy_retained_text(resource_guid, "index paramesh channel resource GUID")?;
             key.make_ascii_uppercase();
             if resources.contains(&key) {
                 return Err(malformed(
@@ -2009,10 +2009,10 @@ fn registry_triangle_groups(
         ));
     }
     let mut memberships =
-        (ctx).collection_vec(channel.groups.len(), "collect paramesh face groups")?;
+        ctx.collection_vec(channel.groups.len(), "collect paramesh face groups")?;
     let mut group_indices = std::collections::BTreeMap::new();
     for (index, (key, group_guid)) in channel.groups.iter().enumerate() {
-        let source_id = (ctx).copy_retained_text(group_guid, "copy paramesh face group GUID")?;
+        let source_id = ctx.copy_retained_text(group_guid, "copy paramesh face group GUID")?;
         memberships.push(MeshTriangleGroup {
             source_id,
             triangles: Vec::new(),
@@ -2025,7 +2025,7 @@ fn registry_triangle_groups(
             .ok_or_else(|| malformed("paramesh triangle selects no face-group record"))?;
         let ordinal = u32::try_from(triangle)
             .map_err(|_| malformed("paramesh triangle ordinal is out of range"))?;
-        (ctx).push_vec(&mut memberships[*group_index].triangles, ordinal, "collect paramesh face group triangles")?;
+        ctx.push_vec(&mut memberships[*group_index].triangles, ordinal, "collect paramesh face group triangles")?;
     }
     if memberships.iter().any(|group| group.triangles.is_empty()) {
         return Err(malformed(
@@ -2063,7 +2063,7 @@ fn registry_texture_ids(
     match &channel.elements {
         MeshElements::TriangleDelta(stream) => {
             let mut values =
-                (ctx).collection_vec(stream.decoded().len(), "collect paramesh texture IDs")?;
+                ctx.collection_vec(stream.decoded().len(), "collect paramesh texture IDs")?;
             values.extend_from_slice(stream.decoded());
             Ok(Some(values))
         }

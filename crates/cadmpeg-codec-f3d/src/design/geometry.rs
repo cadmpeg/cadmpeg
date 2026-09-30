@@ -65,7 +65,7 @@ fn copy_arrangement_boundary_run(
     let mut copy = Vec::new();
     for boundary in boundaries {
         let boundary = copy_arrangement_boundary(ctx, boundary)?;
-        (ctx).push_vec(&mut copy, boundary, "f3d arrangement selected boundary")?;
+        ctx.push_vec(&mut copy, boundary, "f3d arrangement selected boundary")?;
     }
     Ok(copy)
 }
@@ -172,7 +172,7 @@ fn sketch_arrangement_faces(
             })
         {
             let entity = (entity.id()).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
-            (ctx).push_vec(&mut candidate_uses, SketchEntityUse {
+            ctx.push_vec(&mut candidate_uses, SketchEntityUse {
                     entity,
                     reversed: false,
                 }, "f3d arrangement candidate use")?;
@@ -180,7 +180,7 @@ fn sketch_arrangement_faces(
     } else {
         for use_ in sketch.profiles.iter().flat_map(|profile| profile.iter()) {
             let entity = (use_.entity).try_clone_for_decode(ctx, "f3d arrangement candidate entity id")?;
-            (ctx).push_vec(&mut candidate_uses, SketchEntityUse {
+            ctx.push_vec(&mut candidate_uses, SketchEntityUse {
                     entity,
                     reversed: use_.reversed,
                 }, "f3d arrangement candidate use")?;
@@ -189,7 +189,7 @@ fn sketch_arrangement_faces(
     for use_ in candidate_uses {
         let entity = geometric!(entities.iter().find(|entity| entity.id() == &use_.entity));
         if let SketchGeometryDefinition::Circle { center, radius } = *entity.geometry.definition() {
-            (ctx).push_vec(&mut circles, (use_, center.get(), radius), "f3d arrangement circle")?;
+            ctx.push_vec(&mut circles, (use_, center.get(), radius), "f3d arrangement circle")?;
             continue;
         }
         let range = geometric!(sketch_geometry_parameter_range(&entity.geometry));
@@ -200,7 +200,7 @@ fn sketch_arrangement_faces(
             arrangement_node(&mut nodes, point, tolerance, ctx)?;
         }
         let id = (entity.id()).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
-        (ctx).push_vec(&mut pending, SketchProfileBoundaryUse {
+        ctx.push_vec(&mut pending, SketchProfileBoundaryUse {
                 entity: id,
                 parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
                     range
@@ -244,7 +244,7 @@ fn sketch_arrangement_faces(
             }
             let range = [start, end];
             let id = (use_.entity).try_clone_for_decode(ctx, "f3d arrangement pending entity id")?;
-            (ctx).push_vec(&mut pending, SketchProfileBoundaryUse {
+            ctx.push_vec(&mut pending, SketchProfileBoundaryUse {
                     entity: id,
                     parameter_range: geometric!(cadmpeg_ir::geometry::DirectedParameterRange::new(
                         range
@@ -278,7 +278,7 @@ fn sketch_arrangement_faces(
                 tolerance,
                 ctx,
             )?);
-            (ctx).push_vec(&mut split_pending, (
+            ctx.push_vec(&mut split_pending, (
                     SketchProfileBoundaryUse {
                         entity: id,
                         parameter_range,
@@ -313,7 +313,7 @@ fn sketch_arrangement_faces(
         if coincident {
             continue;
         }
-        (ctx).push_vec(&mut edges, edge, "f3d arrangement edge")?;
+        ctx.push_vec(&mut edges, edge, "f3d arrangement edge")?;
     }
     arrangement_retain_cycle_edges(&mut edges, nodes.len(), budget, ctx)?;
     if budget.exhausted() {
@@ -327,12 +327,12 @@ fn sketch_arrangement_faces(
         let Some(tubes) = arrangement_edge_tubes(edge, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut edge_tubes, tubes, "f3d arrangement edge tube set")?;
+        ctx.push_vec(&mut edge_tubes, tubes, "f3d arrangement edge tube set")?;
     }
     let mut edge_bounds = Vec::new();
     for tubes in &edge_tubes {
         let bounds = geometric!(certified_tube_bounds(tubes));
-        (ctx).push_vec(&mut edge_bounds, bounds, "f3d arrangement edge bounds")?;
+        ctx.push_vec(&mut edge_bounds, bounds, "f3d arrangement edge bounds")?;
     }
     for left_index in 0..edges.len() {
         for right_index in left_index + 1..edges.len() {
@@ -447,14 +447,14 @@ fn sketch_arrangement_faces(
                 if reverse {
                     use_.reversed = !use_.reversed;
                 }
-                (ctx).push_vec(&mut boundary, use_, "f3d arrangement face boundary")?;
+                ctx.push_vec(&mut boundary, use_, "f3d arrangement face boundary")?;
                 if reverse {
                     for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
-                        (ctx).push_vec(&mut polyline, *point, "f3d arrangement face point")?;
+                        ctx.push_vec(&mut polyline, *point, "f3d arrangement face point")?;
                     }
                 } else {
                     for point in edge.polyline.iter().take(edge.polyline.len() - 1) {
-                        (ctx).push_vec(&mut polyline, *point, "f3d arrangement face point")?;
+                        ctx.push_vec(&mut polyline, *point, "f3d arrangement face point")?;
                     }
                 }
                 let destination = edge.nodes[usize::from(!reverse)];
@@ -466,7 +466,7 @@ fn sketch_arrangement_faces(
                 current = (next.0, next.1);
             }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
-                (ctx).push_vec(&mut faces, SketchArrangementFace { boundary, polyline }, "f3d arrangement face")?;
+                ctx.push_vec(&mut faces, SketchArrangementFace { boundary, polyline }, "f3d arrangement face")?;
             }
         }
     }
@@ -965,7 +965,7 @@ fn arrangement_circle_angles(
         let angle = (point.v - center.v)
             .atan2(point.u - center.u)
             .rem_euclid(std::f64::consts::TAU);
-        (ctx).push_vec(&mut angles, angle, "f3d arrangement circle angle")?;
+        ctx.push_vec(&mut angles, angle, "f3d arrangement circle angle")?;
     }
     crate::design::sort::sort_by(ctx, &mut angles[..], f64::total_cmp)?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.get());
@@ -984,7 +984,7 @@ fn arrangement_node(
     {
         return Ok(index);
     }
-    (ctx).push_vec(nodes, point, "f3d arrangement node")?;
+    ctx.push_vec(nodes, point, "f3d arrangement node")?;
     Ok(nodes.len() - 1)
 }
 
@@ -1016,7 +1016,7 @@ fn arrangement_retain_cycle_edges(
                 node_count,
                 ctx,
             )?;
-            (ctx).push_vec(&mut keep, has_cycle, "f3d arrangement retained edge mark")?;
+            ctx.push_vec(&mut keep, has_cycle, "f3d arrangement retained edge mark")?;
         }
         if keep.iter().all(|keep| *keep) {
             break;
@@ -1024,7 +1024,7 @@ fn arrangement_retain_cycle_edges(
         let mut retained = Vec::new();
         for (edge, keep) in std::mem::take(edges).into_iter().zip(keep) {
             if keep {
-                (ctx).push_vec(&mut retained, edge, "f3d arrangement retained edge")?;
+                ctx.push_vec(&mut retained, edge, "f3d arrangement retained edge")?;
             }
         }
         *edges = retained;
@@ -1042,7 +1042,7 @@ fn arrangement_has_alternate_path(
 ) -> Result<bool, CodecError> {
     let mut visited = ctx.alloc_filled(node_count, false, "f3d arrangement visit marks")?;
     let mut pending = Vec::new();
-    (ctx).push_vec(&mut pending, start, "f3d arrangement pending nodes")?;
+    ctx.push_vec(&mut pending, start, "f3d arrangement pending nodes")?;
     visited[start] = true;
     while let Some(node) = pending.pop() {
         if node == destination {
@@ -1060,7 +1060,7 @@ fn arrangement_has_alternate_path(
             };
             if !visited[next] {
                 visited[next] = true;
-                (ctx).push_vec(&mut pending, next, "f3d arrangement pending nodes")?;
+                ctx.push_vec(&mut pending, next, "f3d arrangement pending nodes")?;
             }
         }
     }
@@ -1496,21 +1496,21 @@ pub(super) fn region_containing_points(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(None);
         };
-        (ctx).push_vec(&mut boundaries, boundary, "f3d profile boundaries")?;
+        ctx.push_vec(&mut boundaries, boundary, "f3d profile boundaries")?;
     }
     let mut containment = Vec::new();
     for (outer_index, outer) in boundaries.iter().enumerate() {
         let mut row = Vec::new();
         for (inner_index, inner) in boundaries.iter().enumerate() {
             let contains = outer_index != inner_index && outer.strictly_contains(inner, ctx)?;
-            (ctx).push_vec(&mut row, contains, "f3d profile containment cell")?;
+            ctx.push_vec(&mut row, contains, "f3d profile containment cell")?;
         }
-        (ctx).push_vec(&mut containment, row, "f3d profile containment row")?;
+        ctx.push_vec(&mut containment, row, "f3d profile containment row")?;
     }
     let mut projected = Vec::new();
     for point in points {
         let projected_point = geometric!(project_to_sketch(sketch, *point));
-        (ctx).push_vec(&mut projected, projected_point, "f3d profile projected point")?;
+        ctx.push_vec(&mut projected, projected_point, "f3d profile projected point")?;
     }
     let mut incidences = Vec::new();
     for point in &projected {
@@ -1522,12 +1522,12 @@ pub(super) fn region_containing_points(
                     continue;
                 };
                 if point_on_sketch_entity(ctx, *point, entity, tolerance)? {
-                    (ctx).insert_hash_set(&mut incident, index, "f3d profile incident boundary")?;
+                    ctx.insert_hash_set(&mut incident, index, "f3d profile incident boundary")?;
                     break;
                 }
             }
         }
-        (ctx).push_vec(&mut incidences, incident, "f3d profile incidence row")?;
+        ctx.push_vec(&mut incidences, incident, "f3d profile incidence row")?;
     }
     let region = |outer: usize| -> Result<Option<(usize, Vec<usize>)>, CodecError> {
         let holes = immediate_containment_children(outer, &containment, ctx)?;
@@ -1548,14 +1548,14 @@ pub(super) fn region_containing_points(
     let mut closure_matches = Vec::new();
     for outer in 0..boundaries.len() {
         if let Some(candidate) = region(outer)? {
-            (ctx).push_vec(&mut closure_matches, candidate, "f3d profile closure match")?;
+            ctx.push_vec(&mut closure_matches, candidate, "f3d profile closure match")?;
         }
     }
     if let [(outer, holes)] = closure_matches.as_slice() {
         let mut converted_holes = Vec::new();
         for hole in holes {
             let hole = geometric!(u32::try_from(*hole).ok());
-            (ctx).push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
+            ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
         }
         return Ok(SketchProfileRegion::loops(
             geometric!(u32::try_from(*outer).ok()),
@@ -1572,7 +1572,7 @@ pub(super) fn region_containing_points(
             .iter()
             .all(|point| boundary.contains_point(*point))
         {
-            (ctx).push_vec(&mut containing, index, "f3d profile containing boundary")?;
+            ctx.push_vec(&mut containing, index, "f3d profile containing boundary")?;
         }
     }
     if containing.iter().enumerate().any(|(left_index, left)| {
@@ -1592,7 +1592,7 @@ pub(super) fn region_containing_points(
     let mut converted_holes = Vec::new();
     for hole in holes {
         let hole = geometric!(u32::try_from(hole).ok());
-        (ctx).push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
+        ctx.push_vec(&mut converted_holes, hole, "f3d profile hole index")?;
     }
     Ok(SketchProfileRegion::loops(geometric!(u32::try_from(outer).ok()), converted_holes).ok())
 }
@@ -1617,7 +1617,7 @@ pub(super) fn profile_loops_are_independent(
         let Some(boundary) = profile_boundary(profile, entities, tolerance, ctx)? else {
             return Ok(false);
         };
-        (ctx).push_vec(&mut boundaries, boundary, "f3d independent profile boundaries")?;
+        ctx.push_vec(&mut boundaries, boundary, "f3d independent profile boundaries")?;
     }
     for (left_index, left) in boundaries.iter().enumerate() {
         for right in boundaries.iter().skip(left_index + 1) {
@@ -1645,7 +1645,7 @@ fn immediate_containment_children(
                     && containment[intermediate][candidate]
             })
         {
-            (ctx).push_vec(&mut children, candidate, "f3d profile immediate hole")?;
+            ctx.push_vec(&mut children, candidate, "f3d profile immediate hole")?;
         }
     }
     Ok(children)
@@ -1842,7 +1842,7 @@ impl CertifiedProfileLoop {
     ) -> Result<Option<Self>, CodecError> {
         let mut tubes = Vec::new();
         for (start, end) in polygon_edges(vertices) {
-            (ctx).push_vec(&mut tubes, CertifiedCurveTube {
+            ctx.push_vec(&mut tubes, CertifiedCurveTube {
                     start,
                     end,
                     error: 0.0,
@@ -2014,7 +2014,7 @@ fn certified_analytic_loop(
             )?),
         };
         for tube in segment_tubes {
-            (ctx).push_vec(&mut tubes, tube, "f3d certified analytic tube")?;
+            ctx.push_vec(&mut tubes, tube, "f3d certified analytic tube")?;
         }
     }
     Ok(CertifiedProfileLoop::new(tubes))
@@ -2237,7 +2237,7 @@ fn circular_arc_profile_segments(
             return Ok(None);
         }
         previous_end = Some(end);
-        (ctx).push_vec(&mut segments, segment, "f3d circular arc profile segment")?;
+        ctx.push_vec(&mut segments, segment, "f3d circular arc profile segment")?;
     }
     let first_start = geometric!(segments.first().map(boundary_segment_endpoints)).0;
     Ok((segments.len() >= 2
@@ -2269,7 +2269,7 @@ fn line_profile_vertices(
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
             return Ok(None);
         }
-        (ctx).push_vec(&mut vertices, start, "f3d line profile vertex")?;
+        ctx.push_vec(&mut vertices, start, "f3d line profile vertex")?;
         previous_end = Some(end);
     }
     if vertices.len() < 3
@@ -2672,11 +2672,11 @@ fn historical_entity_positions(
                 .iter()
                 .filter(|coedge| coedge.coedge == local_id)
             {
-                (ctx).push_vec(&mut edge_refs, coedge.edge, "f3d historical coedge edge reference")?;
+                ctx.push_vec(&mut edge_refs, coedge.edge, "f3d historical coedge edge reference")?;
             }
         }
         AsmHistoricalEntityKind::Edge => {
-            (ctx).push_vec(&mut edge_refs, local_id, "f3d historical direct edge reference")?;
+            ctx.push_vec(&mut edge_refs, local_id, "f3d historical direct edge reference")?;
         }
         AsmHistoricalEntityKind::Curve => {
             for binding in topology
@@ -2684,7 +2684,7 @@ fn historical_entity_positions(
                 .iter()
                 .filter(|binding| binding.carrier == Some(local_id))
             {
-                (ctx).push_vec(&mut edge_refs, binding.entity, "f3d historical curve edge reference")?;
+                ctx.push_vec(&mut edge_refs, binding.entity, "f3d historical curve edge reference")?;
             }
         }
         AsmHistoricalEntityKind::Loop => {
@@ -2693,7 +2693,7 @@ fn historical_entity_positions(
                 .iter()
                 .filter(|coedge| coedge.owner_loop == local_id)
             {
-                (ctx).push_vec(&mut edge_refs, coedge.edge, "f3d historical loop edge reference")?;
+                ctx.push_vec(&mut edge_refs, coedge.edge, "f3d historical loop edge reference")?;
             }
         }
         AsmHistoricalEntityKind::Pcurve => {
@@ -2707,13 +2707,13 @@ fn historical_entity_positions(
                     .iter()
                     .find(|coedge| coedge.coedge == binding.entity)
                 {
-                    (ctx).push_vec(&mut edge_refs, coedge.edge, "f3d historical pcurve edge reference")?;
+                    ctx.push_vec(&mut edge_refs, coedge.edge, "f3d historical pcurve edge reference")?;
                 }
             }
         }
         AsmHistoricalEntityKind::Vertex => {
             for point in historical_vertex_positions(topology, local_id) {
-                (ctx).push_vec(&mut positions, point, "f3d historical vertex position")?;
+                ctx.push_vec(&mut positions, point, "f3d historical vertex position")?;
             }
         }
         AsmHistoricalEntityKind::Point => {
@@ -2722,7 +2722,7 @@ fn historical_entity_positions(
                 .iter()
                 .filter(|point| point.point == local_id)
             {
-                (ctx).push_vec(&mut positions, point.position, "f3d historical point position")?;
+                ctx.push_vec(&mut positions, point.position, "f3d historical point position")?;
             }
         }
         AsmHistoricalEntityKind::Face => {
@@ -2730,7 +2730,7 @@ fn historical_entity_positions(
                 return Ok(None);
             };
             for point in points {
-                (ctx).push_vec(&mut positions, point, "f3d historical face position")?;
+                ctx.push_vec(&mut positions, point, "f3d historical face position")?;
             }
         }
         AsmHistoricalEntityKind::Surface => {
@@ -2745,7 +2745,7 @@ fn historical_entity_positions(
                     return Ok(None);
                 };
                 for point in points {
-                    (ctx).push_vec(&mut positions, point, "f3d historical surface position")?;
+                    ctx.push_vec(&mut positions, point, "f3d historical surface position")?;
                 }
             }
             if !found {
@@ -2763,7 +2763,7 @@ fn historical_entity_positions(
                     return Ok(None);
                 };
                 for point in points {
-                    (ctx).push_vec(&mut positions, point, "f3d historical owned face position")?;
+                    ctx.push_vec(&mut positions, point, "f3d historical owned face position")?;
                 }
             }
         }
@@ -2782,7 +2782,7 @@ fn historical_entity_positions(
             return Ok(None);
         }
         for point in start.chain(end) {
-            (ctx).push_vec(&mut positions, point, "f3d historical edge position")?;
+            ctx.push_vec(&mut positions, point, "f3d historical edge position")?;
         }
     }
     Ok((!positions.is_empty()).then_some(positions))
@@ -2859,7 +2859,7 @@ fn append_historical_shell_faces(
         return Ok(false);
     };
     for face in members {
-        (ctx).push_vec(faces, *face, "f3d historical owned face")?;
+        ctx.push_vec(faces, *face, "f3d historical owned face")?;
     }
     Ok(true)
 }
@@ -3028,14 +3028,14 @@ pub(super) fn closed_sketch_profiles(
         ) {
             let id = (entity.id()).try_clone_for_decode(ctx, "f3d closed sketch profile entity id")?;
             let mut profile = Vec::new();
-            (ctx).push_vec(&mut profile, SketchEntityUse {
+            ctx.push_vec(&mut profile, SketchEntityUse {
                     entity: id,
                     reversed: false,
                 }, "f3d closed sketch profile member")?;
-            (ctx).push_vec(&mut profiles, profile, "f3d closed sketch circle profile")?;
+            ctx.push_vec(&mut profiles, profile, "f3d closed sketch circle profile")?;
         }
         if let Some(ends) = sketch_entity_endpoints(entity, ctx)? {
-            (ctx).push_vec(&mut edges, (entity, ends), "f3d closed sketch edge")?;
+            ctx.push_vec(&mut edges, (entity, ends), "f3d closed sketch edge")?;
         }
     }
     if edges.is_empty() {
@@ -3045,12 +3045,12 @@ pub(super) fn closed_sketch_profiles(
 
     let mut endpoints = Vec::new();
     for (_, [start, end]) in &edges {
-        (ctx).push_vec(&mut endpoints, *start, "f3d closed sketch endpoint")?;
-        (ctx).push_vec(&mut endpoints, *end, "f3d closed sketch endpoint")?;
+        ctx.push_vec(&mut endpoints, *start, "f3d closed sketch endpoint")?;
+        ctx.push_vec(&mut endpoints, *end, "f3d closed sketch endpoint")?;
     }
     let mut parents = Vec::new();
     for index in 0..endpoints.len() {
-        (ctx).push_vec(&mut parents, index, "f3d closed sketch union parent")?;
+        ctx.push_vec(&mut parents, index, "f3d closed sketch union parent")?;
     }
     let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
     for (endpoint, point) in endpoints.iter().copied().enumerate() {
@@ -3074,7 +3074,7 @@ pub(super) fn closed_sketch_profiles(
                 }
             }
         }
-        (ctx).push_hash_group(&mut endpoint_cells, cell, endpoint, "f3d sketch endpoint cell", "f3d sketch endpoint cell member")?;
+        ctx.push_hash_group(&mut endpoint_cells, cell, endpoint, "f3d sketch endpoint cell", "f3d sketch endpoint cell member")?;
     }
     let mut edge_nodes = Vec::new();
     for edge in 0..edges.len() {
@@ -3082,12 +3082,12 @@ pub(super) fn closed_sketch_profiles(
             endpoint_root(&mut parents, edge * 2),
             endpoint_root(&mut parents, edge * 2 + 1),
         ];
-        (ctx).push_vec(&mut edge_nodes, nodes, "f3d closed sketch edge nodes")?;
+        ctx.push_vec(&mut edge_nodes, nodes, "f3d closed sketch edge nodes")?;
     }
     let mut adjacency = HashMap::<usize, Vec<usize>>::new();
     for (edge, [start, end]) in edge_nodes.iter().copied().enumerate() {
-        (ctx).push_hash_group(&mut adjacency, start, edge, "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
-        (ctx).push_hash_group(&mut adjacency, end, edge, "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
+        ctx.push_hash_group(&mut adjacency, start, edge, "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
+        ctx.push_hash_group(&mut adjacency, end, edge, "f3d sketch edge adjacency", "f3d sketch edge adjacency member")?;
     }
     for incident in adjacency.values_mut() {
         crate::design::sort::sort_by(ctx, &mut incident[..], |a, b| {
@@ -3098,7 +3098,7 @@ pub(super) fn closed_sketch_profiles(
     let mut visited = ctx.alloc_filled(edges.len(), false, "f3d edge component marks")?;
     let mut order = Vec::new();
     for edge in 0..edges.len() {
-        (ctx).push_vec(&mut order, edge, "f3d closed sketch edge order")?;
+        ctx.push_vec(&mut order, edge, "f3d closed sketch edge order")?;
     }
     crate::design::sort::sort_by(ctx, &mut order[..], |a, b| {
         edges[*a].0.id().cmp(edges[*b].0.id())
@@ -3109,16 +3109,16 @@ pub(super) fn closed_sketch_profiles(
         }
         let mut component = Vec::new();
         let mut pending = Vec::new();
-        (ctx).push_vec(&mut pending, first_edge, "f3d closed sketch pending edge")?;
+        ctx.push_vec(&mut pending, first_edge, "f3d closed sketch pending edge")?;
         let mut component_seen = HashSet::new();
         while let Some(edge) = pending.pop() {
-            if !(ctx).insert_hash_set(&mut component_seen, edge, "f3d closed sketch component seen")? {
+            if !ctx.insert_hash_set(&mut component_seen, edge, "f3d closed sketch component seen")? {
                 continue;
             }
-            (ctx).push_vec(&mut component, edge, "f3d closed sketch component edge")?;
+            ctx.push_vec(&mut component, edge, "f3d closed sketch component edge")?;
             for node in edge_nodes[edge] {
                 for next in adjacency[&node].iter().copied() {
-                    (ctx).push_vec(&mut pending, next, "f3d closed sketch pending edge")?;
+                    ctx.push_vec(&mut pending, next, "f3d closed sketch pending edge")?;
                 }
             }
         }
@@ -3144,11 +3144,11 @@ pub(super) fn closed_sketch_profiles(
                         &adjacency,
                         linear_tolerance,
                     )? {
-                        (ctx).push_vec(&mut profiles, profile, "f3d closed sketch tangent profile")?;
+                        ctx.push_vec(&mut profiles, profile, "f3d closed sketch tangent profile")?;
                     }
                 } else {
                     for profile in branched_profiles {
-                        (ctx).push_vec(&mut profiles, profile, "f3d closed sketch branched profile")?;
+                        ctx.push_vec(&mut profiles, profile, "f3d closed sketch branched profile")?;
                     }
                 }
             }
@@ -3166,7 +3166,7 @@ pub(super) fn closed_sketch_profiles(
         let mut current_node = edge_nodes[first_edge][1];
         let mut profile = Vec::new();
         let first_id = (edges[first_edge].0.id()).try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
-        (ctx).push_vec(&mut profile, SketchEntityUse {
+        ctx.push_vec(&mut profile, SketchEntityUse {
                 entity: first_id,
                 reversed: false,
             }, "f3d closed sketch component profile member")?;
@@ -3185,13 +3185,13 @@ pub(super) fn closed_sketch_profiles(
             current_node = if reversed { stored_start } else { stored_end };
             visited[next_edge] = true;
             let id = (edges[next_edge].0.id()).try_clone_for_decode(ctx, "f3d closed sketch component profile id")?;
-            (ctx).push_vec(&mut profile, SketchEntityUse {
+            ctx.push_vec(&mut profile, SketchEntityUse {
                     entity: id,
                     reversed,
                 }, "f3d closed sketch component profile member")?;
         }
         if !profile.is_empty() && component.iter().all(|edge| visited[*edge]) {
-            (ctx).push_vec(&mut profiles, profile, "f3d closed sketch component profile")?;
+            ctx.push_vec(&mut profiles, profile, "f3d closed sketch component profile")?;
         }
     }
     crate::design::sort::sort_by(ctx, &mut profiles[..], |a, b| a[0].entity.cmp(&b[0].entity))?;
@@ -3212,12 +3212,12 @@ fn branched_line_profiles(
 
     let mut component_set = HashSet::new();
     for edge in component.iter().copied() {
-        (ctx).insert_hash_set(&mut component_set, edge, "f3d branched profile component edge")?;
+        ctx.insert_hash_set(&mut component_set, edge, "f3d branched profile component edge")?;
     }
     let mut outgoing = HashMap::<usize, Vec<usize>>::new();
     for edge in &component_set {
-        (ctx).push_hash_group(&mut outgoing, edge_nodes[*edge][0], edge * 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
-        (ctx).push_hash_group(&mut outgoing, edge_nodes[*edge][1], edge * 2 + 1, "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
+        ctx.push_hash_group(&mut outgoing, edge_nodes[*edge][0], edge * 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
+        ctx.push_hash_group(&mut outgoing, edge_nodes[*edge][1], edge * 2 + 1, "f3d branched profile outgoing node", "f3d branched profile outgoing edge")?;
     }
     for half_edges in outgoing.values_mut() {
         crate::design::sort::sort_by(ctx, &mut half_edges[..], |first, second| {
@@ -3241,7 +3241,7 @@ fn branched_line_profiles(
     let mut next = HashMap::new();
     for around in outgoing.values() {
         for (&previous, &twin) in around.iter().zip(around.iter().cycle().skip(1)) {
-            (ctx).insert_hash_map(&mut next, twin ^ 1, previous, "f3d branched profile next half-edge").map(|_| ())?;
+            ctx.insert_hash_map(&mut next, twin ^ 1, previous, "f3d branched profile next half-edge").map(|_| ())?;
         }
     }
 
@@ -3249,8 +3249,8 @@ fn branched_line_profiles(
     let mut visited = HashSet::new();
     let mut starts = Vec::new();
     for edge in &component_set {
-        (ctx).push_vec(&mut starts, edge * 2, "f3d branched profile start half-edge")?;
-        (ctx).push_vec(&mut starts, edge * 2 + 1, "f3d branched profile start half-edge")?;
+        ctx.push_vec(&mut starts, edge * 2, "f3d branched profile start half-edge")?;
+        ctx.push_vec(&mut starts, edge * 2 + 1, "f3d branched profile start half-edge")?;
     }
     crate::design::sort::sort_by(ctx, &mut starts[..], |a, b| {
         (edges[*a / 2].0.id(), *a % 2).cmp(&(edges[*b / 2].0.id(), *b % 2))
@@ -3263,7 +3263,7 @@ fn branched_line_profiles(
         let mut profile = Vec::new();
         let mut twice_area = 0.0;
         loop {
-            if !(ctx).insert_hash_set(&mut visited, current, "f3d branched profile visited half-edge")? {
+            if !ctx.insert_hash_set(&mut visited, current, "f3d branched profile visited half-edge")? {
                 if current != start {
                     profile.clear();
                 }
@@ -3279,14 +3279,14 @@ fn branched_line_profiles(
             };
             twice_area += from.u * to.v - from.v * to.u;
             let id = (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d branched profile entity id")?;
-            (ctx).push_vec(&mut profile, SketchEntityUse {
+            ctx.push_vec(&mut profile, SketchEntityUse {
                     entity: id,
                     reversed,
                 }, "f3d branched profile member")?;
             current = next[&current];
         }
         if !profile.is_empty() && twice_area > 2.0 * linear_tolerance * linear_tolerance {
-            (ctx).push_vec(&mut profiles, profile, "f3d branched profile output")?;
+            ctx.push_vec(&mut profiles, profile, "f3d branched profile output")?;
         }
     }
 
@@ -3396,11 +3396,11 @@ fn tangent_nested_line_profile(
                 }
                 edge
             };
-            if !(ctx).insert_hash_set(&mut used, edge, "f3d tangent profile used edge")? {
+            if !ctx.insert_hash_set(&mut used, edge, "f3d tangent profile used edge")? {
                 cycle.clear();
                 break;
             }
-            (ctx).push_vec(&mut cycle, edge, "f3d tangent profile cycle edge")?;
+            ctx.push_vec(&mut cycle, edge, "f3d tangent profile cycle edge")?;
             current = edge_nodes[edge][1];
             if current == junction {
                 break;
@@ -3413,7 +3413,7 @@ fn tangent_nested_line_profile(
                 .iter()
                 .any(|candidate: &Vec<usize>| candidate == &cycle)
         {
-            (ctx).push_vec(&mut cycles, cycle, "f3d tangent profile cycle")?;
+            ctx.push_vec(&mut cycles, cycle, "f3d tangent profile cycle")?;
         }
     }
     if cycles.len() != 2
@@ -3426,7 +3426,7 @@ fn tangent_nested_line_profile(
     let cycle_points = |cycle: &[usize]| -> Result<Vec<Point2>, CodecError> {
         let mut points = Vec::new();
         for edge in cycle {
-            (ctx).push_vec(&mut points, edges[*edge].1[0], "f3d tangent profile cycle point")?;
+            ctx.push_vec(&mut points, edges[*edge].1[0], "f3d tangent profile cycle point")?;
         }
         Ok(points)
     };
@@ -3478,7 +3478,7 @@ fn tangent_nested_line_profile(
             };
             let edge = cycles[index][offset];
             let entity = (edges[edge].0.id()).try_clone_for_decode(ctx, "f3d tangent profile entity id")?;
-            (ctx).push_vec(&mut profile, SketchEntityUse {
+            ctx.push_vec(&mut profile, SketchEntityUse {
                     entity,
                     reversed: reverse,
                 }, "f3d tangent profile member")?;
@@ -3501,7 +3501,7 @@ fn tangent_nested_line_profile(
             } else {
                 start.get()
             };
-            (ctx).push_vec(&mut profile_points, point, "f3d tangent profile output point")?;
+            ctx.push_vec(&mut profile_points, point, "f3d tangent profile output point")?;
         }
     }
     Ok((profile_points.len() == profile.len()

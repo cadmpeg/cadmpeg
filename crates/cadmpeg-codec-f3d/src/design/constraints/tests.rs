@@ -103,7 +103,7 @@ fn constraint_index_refuses_each_collection_growth() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut index = std::collections::HashMap::new();
         assert!(matches!(
-            (&ctx).insert_hash_map(&mut index, "input-key", 1, operation).map(|_| ()),
+            ctx.insert_hash_map(&mut index, "input-key", 1, operation).map(|_| ()),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
         assert!(index.is_empty());

@@ -103,7 +103,7 @@ fn material_definition_index_refuses_collection_limit() {
 fn material_body_id_copy_refuses_retained_limit() {
     let id = cadmpeg_ir::ids::BodyId::mint("f3d:design:body#one").unwrap();
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
-        (&id).try_clone_for_decode(ctx, "copy F3D material body ID").unwrap_err()
+        id.try_clone_for_decode(ctx, "copy F3D material body ID").unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -115,7 +115,7 @@ fn material_body_id_copy_refuses_retained_limit() {
 fn material_appearance_id_copy_refuses_retained_limit() {
     let id = cadmpeg_ir::ids::AppearanceId::mint("f3d:appearance:asset#one").unwrap();
     let error = material_context_with_limits(u64::MAX, 0, |ctx| {
-        (&id).try_clone_for_decode(ctx, "copy F3D material appearance ID").unwrap_err()
+        id.try_clone_for_decode(ctx, "copy F3D material appearance ID").unwrap_err()
     });
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -170,7 +170,7 @@ fn material_named_act_channel_refuses_collection_limit() {
 fn material_fixed_appearance_vector_refuses_collection_limit() {
     let error = material_context_with_limits(0, u64::MAX, |ctx| {
         let mut appearances = Vec::new();
-        (ctx).push_vec(&mut appearances, (), "collect F3D fixed appearances")
+        ctx.push_vec(&mut appearances, (), "collect F3D fixed appearances")
             .unwrap_err()
     });
     assert!(
@@ -385,7 +385,7 @@ fn material_note_format_refuses_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(note.len() - 1).unwrap();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = (&ctx).format_retained(format_args!("Protein {} record {} rejected: {}", "A", 1, "B"), "retain F3D protein rejection note")
+    let error = ctx.format_retained(format_args!("Protein {} record {} rejected: {}", "A", 1, "B"), "retain F3D protein rejection note")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -401,7 +401,7 @@ fn material_note_vector_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut notes = Vec::new();
-    let error = (&ctx).push_vec(&mut notes, "note".to_owned(), "collect F3D protein rejection notes")
+    let error = ctx.push_vec(&mut notes, "note".to_owned(), "collect F3D protein rejection notes")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -417,7 +417,7 @@ fn material_appearance_merge_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut merged = Vec::new();
-    let error = (&ctx).append_vec(&mut merged, &mut { vec![1, 2] }, "merge F3D fixed appearances")
+    let error = ctx.append_vec(&mut merged, &mut { vec![1, 2] }, "merge F3D fixed appearances")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -433,7 +433,7 @@ fn material_asset_appearance_vector_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
     let mut appearances = Vec::new();
-    let error = (&ctx).append_vec(&mut appearances, &mut { vec![1, 2] }, "collect F3D asset appearances")
+    let error = ctx.append_vec(&mut appearances, &mut { vec![1, 2] }, "collect F3D asset appearances")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -451,7 +451,7 @@ fn material_schema_id_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test decode context");
-    let error = (&ctx).collect_hash_set(appearances.iter().map(|appearance| appearance.id.as_str()), "index F3D schema appearance IDs").unwrap_err();
+    let error = ctx.collect_hash_set(appearances.iter().map(|appearance| appearance.id.as_str()), "index F3D schema appearance IDs").unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D schema appearance IDs")
@@ -468,7 +468,7 @@ macro_rules! material_item_limit_test {
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
                 .expect("test decode context");
             let mut items = Vec::new();
-            let error = (&ctx).push_vec(&mut items, 1, $operation)
+            let error = ctx.push_vec(&mut items, 1, $operation)
                 .unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));

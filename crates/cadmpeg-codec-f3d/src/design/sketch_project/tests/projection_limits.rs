@@ -166,7 +166,7 @@ fn spatial_spline_segment_candidate_refuses_collection_limit() {
     let mut segments = Vec::new();
     let candidate = (10, [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
     assert!(matches!(
-        (&ctx).push_vec(&mut segments, candidate, "f3d spatial spline segment candidates"),
+        ctx.push_vec(&mut segments, candidate, "f3d spatial spline segment candidates"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial spline segment candidates"
@@ -419,7 +419,7 @@ fn sketch_nurbs_lanes_refuse_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                (&ctx).collect_vec([1.0_f64], operation),
+                ctx.collect_vec([1.0_f64], operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -523,7 +523,7 @@ fn projected_sketch_text_copies_refuse_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                (&ctx).copy_retained_text("input", operation),
+                ctx.copy_retained_text("input", operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
@@ -555,7 +555,7 @@ fn projected_sketch_entries_refuse_collection_limit() {
         let mut entries = Vec::new();
         assert!(
             matches!(
-                (&ctx).push_vec(&mut entries, 1, operation),
+                ctx.push_vec(&mut entries, 1, operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -611,7 +611,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            (&ctx).copy_retained_text("input", operation),
+            ctx.copy_retained_text("input", operation),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation
@@ -628,7 +628,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut items = Vec::new();
         assert!(matches!(
-            (&ctx).push_vec(&mut items, 1, operation),
+            ctx.push_vec(&mut items, 1, operation),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
@@ -642,7 +642,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut members = std::collections::HashSet::new();
         assert!(matches!(
-            (&ctx).insert_hash_set(&mut members, 1, operation).map(|_| ()),
+            ctx.insert_hash_set(&mut members, 1, operation).map(|_| ()),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation

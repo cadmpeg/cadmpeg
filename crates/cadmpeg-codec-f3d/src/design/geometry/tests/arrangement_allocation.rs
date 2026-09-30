@@ -22,7 +22,7 @@ macro_rules! arrangement_item_refusal {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                (&ctx).push_vec(&mut items, 1, $operation),
+                ctx.push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == $operation

@@ -133,10 +133,7 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
-                    {
-                        ctx.charge_collection_items(1, "admit configuration parameter")?;
-                    }
-                    admitted.insert(key, value);
+                    ctx.insert_btree_map(&mut admitted, key, value, "admit configuration parameter")?;
                 }
                 Some(admitted)
             }
@@ -529,10 +526,7 @@ pub(crate) fn try_new(
                 let mut admitted = BTreeMap::new();
                 for (name, value) in variants {
                     let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
-                    {
-                        ctx.charge_collection_items(1, "admit configuration variant")?;
-                    }
-                    admitted.insert(name, value);
+                    ctx.insert_btree_map(&mut admitted, name, value, "admit configuration variant")?;
                 }
                 let mut variants = admitted;
                 let explicit_order = !variant_order.is_empty();

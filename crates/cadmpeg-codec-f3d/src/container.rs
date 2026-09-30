@@ -36,14 +36,7 @@ use crate::manifest;
 
 
 
-fn push_summary_note(
-    ctx: &DecodeContext<'_>,
-    notes: &mut Vec<String>,
-    args: std::fmt::Arguments<'_>,
-) -> Result<(), CodecError> {
-    let note = ctx.format_retained(args, "retain F3D summary note")?;
-    ctx.push_vec(notes, note, "collect F3D summary notes")
-}
+
 
 pub(crate) fn copy_summary_entries(
     ctx: &DecodeContext<'_>,
@@ -53,7 +46,7 @@ pub(crate) fn copy_summary_entries(
     for entry in entries {
         let mut attributes = BTreeMap::new();
         for (key, value) in &entry.attributes {
-            ctx.charge_collection_items(1, "copy F3D summary attributes")?;
+            ctx.admit_btree_entry(&attributes, key, "copy F3D summary attributes")?;
             attributes.insert(
                 ctx.copy_retained_text(key, "copy F3D summary attribute key")?,
                 ctx.copy_retained_text(value, "copy F3D summary attribute value")?,
@@ -69,15 +62,7 @@ pub(crate) fn copy_summary_entries(
     Ok(copied)
 }
 
-fn insert_attribute(
-    ctx: &DecodeContext<'_>,
-    attributes: &mut BTreeMap<String, String>,
-    key: &'static str,
-    value: String,
-) -> Result<(), CodecError> {
-    ctx.insert_btree_map(attributes, key.to_owned(), value, "index F3D container attributes")?;
-    Ok(())
-}
+
 
 /// Write-path local cap for nested Protein rewriting (`patch_protein_appearances`).
 /// Decode opens nested archives through `ArchiveSnapshot` / `begin_expand`, so
@@ -470,85 +455,50 @@ pub(crate) fn scan<'a>(
             let solved_record_limit = kernel.as_ref().and_then(KernelFraming::solved_record_limit);
             let sha = Sha256Digest::digest(buf);
 
-            insert_attribute(ctx, &mut attributes, "asm_magic", asm_magic_label(buf))?;
+            ctx.insert_btree_map(&mut attributes, "asm_magic".to_owned(), asm_magic_label(buf), "index F3D container attributes").map(|_| ())?;
             if let Some(h) = kernel.as_ref().and_then(KernelFraming::asm_header) {
-                insert_attribute(ctx, &mut attributes, "asm_width", h.width.to_string())?;
+                ctx.insert_btree_map(&mut attributes, "asm_width".to_owned(), h.width.to_string(), "index F3D container attributes").map(|_| ())?;
                 if let Some(v) = h.metadata.save_format_version {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "acis_save_format_version",
-                        v.to_string(),
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "acis_save_format_version".to_owned(), v.to_string(), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(v) = asm_header::record_count(buf) {
-                    insert_attribute(ctx, &mut attributes, "asm_record_count", v.to_string())?;
+                    ctx.insert_btree_map(&mut attributes, "asm_record_count".to_owned(), v.to_string(), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(v) = h.metadata.entity_count {
-                    insert_attribute(ctx, &mut attributes, "asm_entity_count", v.to_string())?;
+                    ctx.insert_btree_map(&mut attributes, "asm_entity_count".to_owned(), v.to_string(), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(v) = h.metadata.flags {
-                    insert_attribute(ctx, &mut attributes, "asm_flags", v.to_string())?;
+                    ctx.insert_btree_map(&mut attributes, "asm_flags".to_owned(), v.to_string(), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(pf) = &h.metadata.product_family {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "product_family",
-                        ctx.copy_retained_text(pf, "retain F3D container attribute")?,
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "product_family".to_owned(), ctx.copy_retained_text(pf, "retain F3D container attribute")?, "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(pv) = &h.metadata.product_version {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "product_version",
-                        ctx.copy_retained_text(pv, "retain F3D container attribute")?,
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "product_version".to_owned(), ctx.copy_retained_text(pv, "retain F3D container attribute")?, "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(sd) = &h.metadata.save_date {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "save_date",
-                        ctx.copy_retained_text(sd, "retain F3D container attribute")?,
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "save_date".to_owned(), ctx.copy_retained_text(sd, "retain F3D container attribute")?, "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(s) = h.metadata.scale {
-                    insert_attribute(ctx, &mut attributes, "scale", format!("{s}"))?;
+                    ctx.insert_btree_map(&mut attributes, "scale".to_owned(), format!("{s}"), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(r) = h.metadata.linear {
-                    insert_attribute(ctx, &mut attributes, "resabs", format!("{r}"))?;
+                    ctx.insert_btree_map(&mut attributes, "resabs".to_owned(), format!("{r}"), "index F3D container attributes").map(|_| ())?;
                 }
                 if let Some(r) = h.metadata.angular {
-                    insert_attribute(ctx, &mut attributes, "resnor", format!("{r}"))?;
+                    ctx.insert_btree_map(&mut attributes, "resnor".to_owned(), format!("{r}"), "index F3D container attributes").map(|_| ())?;
                 }
             }
             match solved_record_limit {
                 Some(offset) => {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "history_partition_offset",
-                        offset.to_string(),
-                    )?;
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "solved_record_len",
-                        offset.to_string(),
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "history_partition_offset".to_owned(), offset.to_string(), "index F3D container attributes").map(|_| ())?;
+                    ctx.insert_btree_map(&mut attributes, "solved_record_len".to_owned(), offset.to_string(), "index F3D container attributes").map(|_| ())?;
                 }
                 None => {
-                    insert_attribute(
-                        ctx,
-                        &mut attributes,
-                        "history_partition_offset",
-                        "none".to_string(),
-                    )?;
+                    ctx.insert_btree_map(&mut attributes, "history_partition_offset".to_owned(), "none".to_string(), "index F3D container attributes").map(|_| ())?;
                 }
             }
-            insert_attribute(ctx, &mut attributes, "sha256", sha.as_str().to_owned())?;
+            ctx.insert_btree_map(&mut attributes, "sha256".to_owned(), sha.as_str().to_owned(), "index F3D container attributes").map(|_| ())?;
 
             ctx.push_vec(&mut breps, BrepFacts {
                     name: ctx.copy_retained_text(&name, "retain F3D BREP name")?,
@@ -561,12 +511,7 @@ pub(crate) fn scan<'a>(
         let storage = match compression.storage(compressed_size, uncompressed_size) {
             Ok(storage) => storage,
             Err(message) => {
-                insert_attribute(
-                    ctx,
-                    &mut attributes,
-                    "storage_declaration",
-                    format!("{message}: {compressed_size}/{uncompressed_size}"),
-                )?;
+                ctx.insert_btree_map(&mut attributes, "storage_declaration".to_owned(), format!("{message}: {compressed_size}/{uncompressed_size}"), "index F3D container attributes").map(|_| ())?;
                 EntryStorage::payload_only(VerbatimLabel::Stored, uncompressed_size)
             }
         };
@@ -576,8 +521,7 @@ pub(crate) fn scan<'a>(
                 storage,
                 attributes,
             }, "collect F3D container entries")?;
-        ctx.charge_collection_items(1, "index F3D inflated entries")?;
-        inflated_entries.insert(name, view);
+        ctx.insert_btree_map(&mut inflated_entries, name, view, "index F3D inflated entries")?;
     }
 
     // The parse strategy and the dialect row are chosen together, from the same
@@ -689,72 +633,44 @@ pub(crate) fn summary_notes(
 ) -> Result<Vec<String>, CodecError> {
     let mut notes = Vec::new();
     if let Some(folder) = scan.design_asset_folder() {
-        push_summary_note(
-            ctx,
-            &mut notes,
-            format_args!("Design asset folder (from manifests): {folder}"),
-        )?;
+        ctx.push_formatted_retained(&mut notes, format_args!("Design asset folder (from manifests): {folder}"), "collect F3D summary notes", "retain F3D summary note")?;
     } else {
-        push_summary_note(
-            ctx,
-            &mut notes,
-            format_args!("outer F3Z archive; each F3D member selects its own Design asset"),
-        )?;
+        ctx.push_formatted_retained(&mut notes, format_args!("outer F3Z archive; each F3D member selects its own Design asset"), "collect F3D summary notes", "retain F3D summary note")?;
     }
     let design_brep_count = design_breps(scan).count();
-    push_summary_note(
-        ctx,
-        &mut notes,
-        format_args!(
+    ctx.push_formatted_retained(&mut notes, format_args!(
         "{design_brep_count} ASM BREP stream(s); Design body-to-blob bindings select model geometry"
-    ),
-    )?;
+    ), "collect F3D summary notes", "retain F3D summary note")?;
     if design_brep_count != scan.breps.len() {
-        push_summary_note(
-            ctx,
-            &mut notes,
-            format_args!(
+        ctx.push_formatted_retained(&mut notes, format_args!(
                 "{} ASM BREP stream(s) belong to non-Design assets",
                 scan.breps.len() - design_brep_count
-            ),
-        )?;
+            ), "collect F3D summary notes", "retain F3D summary note")?;
     }
     let history_brep_count = history_breps(scan).count();
     match history_brep_count {
         0 => {
             if design_brep_count != 0 {
-                push_summary_note(
-                    ctx,
-                    &mut notes,
-                    format_args!("no BREP header declares a history partition"),
-                )?;
+                ctx.push_formatted_retained(&mut notes, format_args!("no BREP header declares a history partition"), "collect F3D summary notes", "retain F3D summary note")?;
             }
         }
         1 => {
             if let Some(history) = history_breps(scan).next() {
-                push_summary_note(
-                    ctx,
-                    &mut notes,
-                    format_args!(
+                ctx.push_formatted_retained(&mut notes, format_args!(
                         "history-bearing BREP: {} ({} bytes uncompressed)",
                         history.name, history.uncompressed_len
-                    ),
-                )?;
+                    ), "collect F3D summary notes", "retain F3D summary note")?;
             }
         }
-        count => push_summary_note(
-            ctx,
-            &mut notes,
-            format_args!(
+        count => ctx.push_formatted_retained(&mut notes, format_args!(
                 "{count} history-bearing BREPs; each history graph is decoded independently"
-            ),
-        )?,
+            ), "collect F3D summary notes", "retain F3D summary note")?,
     }
     if scope == SummaryScope::ContainerOnly {
-        push_summary_note(ctx, &mut notes, format_args!(
+        ctx.push_formatted_retained(&mut notes, format_args!(
             "container-level inspection only; run `decode` to resolve Design body bindings and build \
              each referenced BREP graph"
-        ))?;
+        ), "collect F3D summary notes", "retain F3D summary note")?;
     }
 
     Ok(notes)

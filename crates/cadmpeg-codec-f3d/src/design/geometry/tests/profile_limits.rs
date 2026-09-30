@@ -33,7 +33,7 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
             let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
             assert!(
                 matches!(
-                    (&ctx).push_hash_group(&mut index, 1, 2, index_operation, value_operation),
+                    ctx.push_hash_group(&mut index, 1, 2, index_operation, value_operation),
                     Err(CodecError::ResourceLimit(failure))
                         if failure.dimension == ResourceDimension::CollectionItems
                             && failure.operation == operation
@@ -71,7 +71,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
         let mut items = Vec::new();
         assert!(
             matches!(
-                (&ctx).push_vec(&mut items, 1, operation),
+                ctx.push_vec(&mut items, 1, operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -85,7 +85,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = std::collections::HashSet::new();
     assert!(matches!(
-        (&ctx).insert_hash_set(&mut seen, 1, "f3d closed sketch component seen"),
+        ctx.insert_hash_set(&mut seen, 1, "f3d closed sketch component seen"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d closed sketch component seen"
@@ -130,7 +130,7 @@ macro_rules! geometry_collection_refusal_test {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                (&ctx).push_vec(&mut items, 1, $operation),
+                ctx.push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == $operation
@@ -160,7 +160,7 @@ fn branched_profile_component_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        (&ctx).insert_hash_set(&mut items, 1, "f3d branched profile component edge"),
+        ctx.insert_hash_set(&mut items, 1, "f3d branched profile component edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile component edge"
     ));
@@ -174,7 +174,7 @@ fn branched_profile_visited_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        (&ctx).insert_hash_set(&mut items, 1, "f3d branched profile visited half-edge"),
+        ctx.insert_hash_set(&mut items, 1, "f3d branched profile visited half-edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile visited half-edge"
     ));
@@ -188,7 +188,7 @@ fn branched_profile_outgoing_node_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
-        (&ctx).push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        ctx.push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile outgoing node"
     ));
@@ -202,7 +202,7 @@ fn branched_profile_outgoing_edge_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
-        (&ctx).push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        ctx.push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile outgoing edge"
     ));
@@ -216,7 +216,7 @@ fn branched_profile_next_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashMap::new();
     assert!(matches!(
-        (&ctx).insert_hash_map(&mut items, 1, 2, "f3d branched profile next half-edge").map(|_| ()),
+        ctx.insert_hash_map(&mut items, 1, 2, "f3d branched profile next half-edge").map(|_| ()),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile next half-edge"
     ));
@@ -264,7 +264,7 @@ fn tangent_profile_used_edge_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        (&ctx).insert_hash_set(&mut items, 1, "f3d tangent profile used edge"),
+        ctx.insert_hash_set(&mut items, 1, "f3d tangent profile used edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d tangent profile used edge"
     ));

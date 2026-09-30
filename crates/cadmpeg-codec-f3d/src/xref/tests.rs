@@ -218,7 +218,7 @@ fn xref_occurrence_id_refuses_retained_limit() {
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
-    let error = (&ctx).format_retained(format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0), "retain F3D xref record ID")
+    let error = ctx.format_retained(format_args!("f3d:xref:reference#{}-occurrence-{}", 0, 0), "retain F3D xref record ID")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

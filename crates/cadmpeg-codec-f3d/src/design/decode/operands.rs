@@ -376,7 +376,7 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
+        let (_stream_reservation, stream) = ctx.format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -558,7 +558,7 @@ pub(crate) fn bind_work_plane_constructions(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
+        let (_stream_reservation, stream) = ctx.format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -624,7 +624,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
     for scope in scopes {
-        let (_scope_reservation, scope_id) = (ctx).format_scoped(format_args!("{}", &scope.id), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
+        let (_scope_reservation, scope_id) = ctx.format_scoped(format_args!("{}", &scope.id), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;
@@ -5598,7 +5598,7 @@ fn edge_recipe_side_sequences<'w>(
     let _depth = Some(ctx.enter_nested("f3d recipe side recursion")?);
     if side_count == 0 {
         let mut empty = Vec::new();
-        (ctx).reserve_vec(&mut empty, 1, "f3d recipe empty side sequence")?;
+        ctx.reserve_vec(&mut empty, 1, "f3d recipe empty side sequence")?;
         empty.push(RecipeSideSequence {
             sides: Vec::new(),
             remaining: words,
@@ -5620,9 +5620,9 @@ fn edge_recipe_side_sequences<'w>(
         } in edge_recipe_side_sequences(ctx, remaining, side_count - 1)?
         {
             let copied = copy_recipe_side(ctx, &side)?;
-            (ctx).reserve_vec(&mut following, 1, "f3d recipe following side")?;
+            ctx.reserve_vec(&mut following, 1, "f3d recipe following side")?;
             following.insert(0, copied);
-            (ctx).reserve_vec(&mut out, 1, "f3d recipe side sequence")?;
+            ctx.reserve_vec(&mut out, 1, "f3d recipe side sequence")?;
             out.push(RecipeSideSequence {
                 sides: following,
                 remaining: tail,
@@ -5638,9 +5638,9 @@ fn copy_recipe_side(
 ) -> Result<DesignTopologyRecipeSide, CodecError> {
     Ok(DesignTopologyRecipeSide {
         header_value: side.header_value,
-        scalars: (ctx).copy_slice(&side.scalars, "f3d recipe copied scalars")?,
-        payload_prefix: (ctx).copy_slice(&side.payload_prefix, "f3d recipe copied payload prefix")?,
-        entries: (ctx).copy_slice(&side.entries, "f3d recipe copied entries")?,
+        scalars: ctx.copy_slice(&side.scalars, "f3d recipe copied scalars")?,
+        payload_prefix: ctx.copy_slice(&side.payload_prefix, "f3d recipe copied payload prefix")?,
+        entries: ctx.copy_slice(&side.entries, "f3d recipe copied entries")?,
     })
 }
 
@@ -5704,7 +5704,7 @@ fn edge_recipe_counted_side_candidates<'w>(
         return Ok(Vec::new());
     }
     let mut scalars = Vec::new();
-    (ctx).reserve_vec(&mut scalars, scalar_count, "f3d recipe scalars")?;
+    ctx.reserve_vec(&mut scalars, scalar_count, "f3d recipe scalars")?;
     for _ in 0..scalar_count {
         let Some((&scalar, tail)) = remaining.split_first() else {
             return Ok(Vec::new());
@@ -5747,11 +5747,11 @@ fn edge_recipe_counted_side_candidates<'w>(
         };
         let side = DesignTopologyRecipeSide {
             header_value,
-            scalars: (ctx).copy_slice(&scalars, "f3d recipe candidate scalars")?,
-            payload_prefix: (ctx).copy_slice(&remaining[..entry_count_at], "f3d recipe payload prefix")?,
+            scalars: ctx.copy_slice(&scalars, "f3d recipe candidate scalars")?,
+            payload_prefix: ctx.copy_slice(&remaining[..entry_count_at], "f3d recipe payload prefix")?,
             entries,
         };
-        (ctx).reserve_vec(&mut candidates, 1, "f3d recipe side candidate")?;
+        ctx.reserve_vec(&mut candidates, 1, "f3d recipe side candidate")?;
         candidates.push((side, tail));
     }
     Ok(candidates)
@@ -5837,7 +5837,7 @@ fn face_recipe_nodes_with_context(
         if values != [-1, -1, 2] {
             continue;
         }
-        (ctx).reserve_vec(&mut recipe_node_indices, 1, "f3d face recipe node index")?;
+        ctx.reserve_vec(&mut recipe_node_indices, 1, "f3d face recipe node index")?;
         recipe_node_indices.push(index);
     }
     if recipe_node_indices.first().is_some_and(|index| *index < 3) {
@@ -5876,8 +5876,8 @@ fn face_recipe_nodes_with_context(
             Some(tail) => face_recipe_structure_with_context(ctx, tail)?,
             None => None,
         };
-        let program = (ctx).copy_slice(program, "f3d face recipe node program")?;
-        (ctx).reserve_vec(&mut recipe_nodes, 1, "f3d face recipe node")?;
+        let program = ctx.copy_slice(program, "f3d face recipe node program")?;
+        ctx.reserve_vec(&mut recipe_nodes, 1, "f3d face recipe node")?;
         recipe_nodes.push(crate::records::topology::face::DesignFaceRecipeNode {
             byte_offset,
             end_byte_offset,
@@ -5907,7 +5907,7 @@ fn topology_recipe_references(
         {
             return Ok(None);
         }
-        (ctx).reserve_vec(&mut references, 1, "f3d recipe topology reference")?;
+        ctx.reserve_vec(&mut references, 1, "f3d recipe topology reference")?;
         references.push(ordinal);
     }
     Ok(Some(references))
@@ -5951,7 +5951,7 @@ fn edge_recipe_entries_with_context(
         {
             return Ok(None);
         }
-        (ctx).reserve_vec(&mut entries, 1, "f3d recipe topology entry")?;
+        ctx.reserve_vec(&mut entries, 1, "f3d recipe topology entry")?;
         entries.push(parsed);
     }
     Ok(Some(entries))
