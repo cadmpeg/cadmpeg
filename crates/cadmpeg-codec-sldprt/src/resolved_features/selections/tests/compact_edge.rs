@@ -340,6 +340,10 @@ fn compact_edge_selection_accepts_object_terminated_u16_paths() {
 
 #[test]
 fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
     let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -353,16 +357,20 @@ fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
     payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
     payload[12..28].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 12).unwrap(), None);
-    assert_eq!(compact_edge_component_path_at(&payload, 12), None);
+    assert_eq!(compact_edge_component_path_at(&reference_ctx, &payload, 12).unwrap(), None);
 
     payload[..16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
     assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 0).unwrap(), None);
-    assert_eq!(compact_edge_component_path_at(&payload, 0), None);
+    assert_eq!(compact_edge_component_path_at(&reference_ctx, &payload, 0).unwrap(), None);
     assert_eq!(compact_surface_selection_at(&face_path_ctx, &payload, 0).unwrap(), None);
 }
 
 #[test]
 fn compact_edge_selection_accepts_heterogeneous_component_paths() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -386,7 +394,7 @@ fn compact_edge_selection_accepts_heterogeneous_component_paths() {
         Some(vec![2, 3])
     );
     assert_eq!(
-        compact_edge_component_path_at(&payload, marker),
+        compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap(),
         Some(vec![
             FeatureInputComponentPathEntry {
                 instance: Some(0x803d),
@@ -449,6 +457,10 @@ fn compact_edge_selection_accepts_root_and_zero_run_separators() {
 
 #[test]
 fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -474,11 +486,15 @@ fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
     entry(&mut payload, fourth, 0x8141, 0);
 
     assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
-    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+    assert_eq!(compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap(), None);
 }
 
 #[test]
 fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -497,7 +513,7 @@ fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
     payload[second + 4..second + 16].copy_from_slice(&signature);
     payload[second + 20..second + 24].copy_from_slice(&5u32.to_le_bytes());
 
-    assert_eq!(compact_edge_component_path_at(&payload, marker), None);
+    assert_eq!(compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap(), None);
     assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
 }
 
@@ -565,6 +581,10 @@ fn compact_edge_selection_accepts_zero_and_state_separator() {
 
 #[test]
 fn compact_edge_selection_preserves_an_idless_path_entry() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -599,7 +619,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![4, 4, 0])
     );
-    let components = compact_edge_component_path_at(&payload, marker).unwrap();
+    let components = compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap().unwrap();
     assert_eq!(
         components
             .iter()
@@ -785,6 +805,10 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
 
 #[test]
 fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -815,13 +839,17 @@ fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         Some(vec![32, 34, 1])
     );
     assert_eq!(
-        compact_edge_component_path_at(&payload, marker).map(|components| components.len()),
+        compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap().map(|components| components.len()),
         Some(3)
     );
 }
 
 #[test]
 fn compact_reference_list_preserves_reference_and_hop_boundaries() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
     let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -848,7 +876,7 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
     payload.extend([0xff; 4]);
     payload.extend([0; 6]);
 
-    let references = compact_component_reference_list_at(&payload, marker).unwrap();
+    let references = compact_component_reference_list_at(&reference_ctx, &payload, marker).unwrap().unwrap();
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].len(), 2);
     assert_eq!(references[0][0].local_id, None);
@@ -860,7 +888,7 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
         Some(vec![12, 0])
     );
     assert_eq!(
-        compact_edge_component_path_at(&payload, marker)
+        compact_edge_component_path_at(&reference_ctx, &payload, marker).unwrap()
             .unwrap()
             .iter()
             .map(|component| component.local_id)
@@ -873,7 +901,7 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
         payload[prefix_offset..prefix_offset + 4].copy_from_slice(&[0xa7, 0x81, 0xa9, 0x01]);
     }
     assert_eq!(
-        compact_component_reference_list_at(&payload, marker)
+        compact_component_reference_list_at(&reference_ctx, &payload, marker).unwrap()
             .unwrap()
             .len(),
         2
@@ -883,7 +911,7 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
     payload.extend([0; 10]);
     payload.extend([0xff, 0xfe, 0xff]);
     assert_eq!(
-        compact_component_reference_list_at(&payload, marker)
+        compact_component_reference_list_at(&reference_ctx, &payload, marker).unwrap()
             .unwrap()
             .len(),
         2
@@ -892,6 +920,10 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
 
 #[test]
 fn compact_reference_list_accepts_unframed_surface_cut_targets() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let face_path_arena = cadmpeg_core::decode::DecodeArena::new();
     let (face_path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &face_path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -923,7 +955,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
     }
     payload.extend([0; 16]);
 
-    let references = compact_component_reference_list(&payload, marker, false)
+    let references = compact_component_reference_list(&reference_ctx, &payload, marker, false).unwrap()
         .expect("operation target reference list");
     assert_eq!(
         references
@@ -933,7 +965,7 @@ fn compact_reference_list_accepts_unframed_surface_cut_targets() {
             .collect::<Vec<_>>(),
         [0, 3, 2]
     );
-    assert!(compact_component_reference_list_at(&payload, marker).is_none());
+    assert!(compact_component_reference_list_at(&reference_ctx, &payload, marker).unwrap().is_none());
     assert!(surface_reference_matches_at(&face_path_ctx, 
         &payload,
         marker,
