@@ -3545,6 +3545,62 @@ fn marker_line_entities_inner(
     entities.into_iter().collect()
 }
 
+fn collect_profile_locus_map<K, V>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = (K, V)>,
+    key_len: impl Fn(&K) -> usize,
+    operation: &'static str,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError>
+where K: Eq + std::hash::Hash {
+    let mut result = HashMap::new();
+    let mut key_bytes = 0u64;
+    for (key, value) in entries {
+        let bytes = cadmpeg_core::decode::u64_from_index(key_len(&key));
+        let work = key_bytes.checked_add(bytes)
+            .and_then(|work| work.checked_mul(4))
+            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(result.len())
+                .checked_add(1)?.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(K, V)>()))?))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        if !result.contains_key(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            result.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            key_bytes = key_bytes.checked_add(bytes)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        }
+        result.insert(key, value);
+    }
+    Ok(result)
+}
+
+fn collect_profile_locus_set<K>(
+    ctx: &DecodeContext<'_>,
+    entries: impl IntoIterator<Item = K>,
+    key_len: impl Fn(&K) -> usize,
+    operation: &'static str,
+) -> Result<HashSet<K>, cadmpeg_core::CodecError>
+where K: Eq + std::hash::Hash {
+    let mut result = HashSet::new();
+    let mut key_bytes = 0u64;
+    for key in entries {
+        let bytes = cadmpeg_core::decode::u64_from_index(key_len(&key));
+        let work = key_bytes.checked_add(bytes)
+            .and_then(|work| work.checked_mul(4))
+            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(result.len())
+                .checked_add(1)?.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<K>()))?))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        if !result.contains(&key) {
+            ctx.charge_collection_items(1, operation)?;
+            result.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            key_bytes = key_bytes.checked_add(bytes)
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            result.insert(key);
+        }
+    }
+    Ok(result)
+}
+
 pub(super) fn profile_loci_by_marker(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
@@ -3554,7 +3610,20 @@ pub(super) fn profile_loci_by_marker(
 ) -> Result<HashMap<String, Vec<SketchLocus>>, cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1e-8;
-    let qualified_point_markers = lanes
+    const INDEX_OPERATION: &str = "index SLDPRT profile marker identities";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(features.len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(sketch_entities.len()))
+        .and_then(|work| work.checked_mul(64))
+        .ok_or_else(|| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?, INDEX_OPERATION)?;
+    for lane in lanes {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lane.relation_instances.len())
+            .checked_add(cadmpeg_core::decode::u64_from_index(lane.sketch_entities.len())).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?, INDEX_OPERATION)?;
+        for relation in &lane.relation_instances {
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(relation.operands.len()), INDEX_OPERATION)?;
+        }
+    }
+    let qualified_point_markers = collect_profile_locus_set(ctx, lanes
         .iter()
         .flat_map(|lane| &lane.relation_instances)
         .flat_map(|relation| &relation.operands)
@@ -3575,10 +3644,9 @@ pub(super) fn profile_loci_by_marker(
                     )
             )
         })
-        .filter_map(|operand| operand.entity_ref.as_deref())
-        .collect::<HashSet<_>>();
+        .filter_map(|operand| operand.entity_ref.as_deref()), |key: &&str| key.len(), "index SLDPRT qualified profile markers")?;
 
-    let sketches_by_feature = features
+    let sketches_by_feature = collect_profile_locus_map(ctx, features
         .iter()
         .filter_map(|feature| {
             let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -3590,22 +3658,19 @@ pub(super) fn profile_loci_by_marker(
                 return None;
             };
             Some((feature.native_ref.as_deref()?, sketch))
-        })
-        .collect::<HashMap<_, _>>();
+        }), |key: &&str| key.len(), "index SLDPRT feature profile sketches")?;
     let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let mut line_midpoints = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
-    let geometry_by_entity = sketch_entities
+    let geometry_by_entity = collect_profile_locus_map(ctx, sketch_entities
         .iter()
-        .map(|entity| (entity.id(), &entity.geometry))
-        .collect::<HashMap<_, _>>();
+        .map(|entity| (entity.id(), &entity.geometry)), |key: &&SketchEntityId| key.as_str().len(), "index SLDPRT profile geometry identities")?;
     let transforms =
         marker_transform_candidates_by_feature(ctx, features, sketches, sketch_entities, lanes)?;
-    let markers_by_id = lanes
+    let markers_by_id = collect_profile_locus_map(ctx, lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
-    let native_point_markers_with_nonpoint_carrier = sketch_entities
+        .map(|marker| (marker.id(), marker)), |key: &&str| key.len(), "index SLDPRT profile markers")?;
+    let native_point_markers_with_nonpoint_carrier = collect_profile_locus_set(ctx, sketch_entities
         .iter()
         .filter(|entity| {
             !matches!(
@@ -3613,8 +3678,7 @@ pub(super) fn profile_loci_by_marker(
                 SketchGeometryDefinition::Point { .. }
             )
         })
-        .filter_map(|entity| entity.native_ref.as_deref())
-        .collect::<HashSet<_>>();
+        .filter_map(|entity| entity.native_ref.as_deref()), |key: &&str| key.len(), "index SLDPRT nonpoint profile carriers")?;
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -3850,11 +3914,7 @@ pub(super) fn profile_loci_by_marker(
             }
         }
     }
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id(), marker))
-        .collect::<HashMap<_, _>>();
+
     for marker in markers_by_id.values().copied() {
         if marker.kind() != SketchInputKind::LineOrCircle || result.contains_key(marker.id()) {
             continue;
@@ -3930,10 +3990,9 @@ pub(super) fn profile_loci_by_marker(
             }
         }
     }
-    let entities_by_id = sketch_entities
+    let entities_by_id = collect_profile_locus_map(ctx, sketch_entities
         .iter()
-        .map(|entity| (entity.id(), entity))
-        .collect::<HashMap<_, _>>();
+        .map(|entity| (entity.id(), entity)), |key: &&SketchEntityId| key.as_str().len(), "index SLDPRT linked profile entities")?;
     loop {
         const OPERATION: &str = "collect SLDPRT linked endpoint loci";
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(result.len()), OPERATION)?;
