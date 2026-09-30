@@ -128,7 +128,7 @@ fn nibble_swap_name_charged(
     {
         return Ok(None);
     }
-    let mut bytes = ctx.copy_retained(raw, "retain SLDPRT section name")?;
+    let mut bytes = crate::byte_admission::copy_retained(ctx, raw, "retain SLDPRT section name")?;
     for byte in &mut bytes {
         *byte = byte.rotate_left(4);
     }
@@ -582,7 +582,7 @@ fn compound_streams<'a>(
             continue;
         };
         let view = snapshot.open(ctx, entry)?;
-        let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
+        let payload = crate::byte_admission::copy_retained(ctx, view.window(), "retain SolidWorks CFB stream")?;
         let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
         let mut path = String::new();
         crate::text_admission::reserve_retained_string(ctx, &mut path, entry.path().len(), "retain SLDPRT stream path")?;

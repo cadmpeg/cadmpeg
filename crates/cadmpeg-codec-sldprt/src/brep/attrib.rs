@@ -176,7 +176,7 @@ fn definition_candidates(
         let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        let family = ctx.copy_retained(text, "copy Parasolid attribute family")?;
+        let family = crate::byte_admission::copy_retained(ctx, text, "copy Parasolid attribute family")?;
         reserve_map_entry(ctx, &mut found, &definition, "collect Parasolid attribute definitions")?;
         match found.entry(definition) {
             std::collections::hash_map::Entry::Vacant(entry) => {

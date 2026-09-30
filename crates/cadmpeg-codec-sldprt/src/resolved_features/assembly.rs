@@ -130,7 +130,7 @@ fn feature_input_lane(
     Ok(FeatureInputLane {
         id: parent,
         configuration: configuration(ctx, section)?,
-        native_payload: ctx.copy_retained(payload, "retain SLDPRT feature input payload")?,
+        native_payload: crate::byte_admission::copy_retained(ctx, payload, "retain SLDPRT feature input payload")?,
         classes,
         names,
         scalars,

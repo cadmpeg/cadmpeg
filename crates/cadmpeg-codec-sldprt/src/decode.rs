@@ -3489,7 +3489,7 @@ fn build_geometry_ir(
         unknowns.push(UnknownRecord::retained(
             display_id,
             0,
-            ctx.copy_retained(display.payload(), "retain SLDPRT display section")?,
+            crate::byte_admission::copy_retained(ctx, display.payload(), "retain SLDPRT display section")?,
             display_links,
         ));
     }
@@ -4037,7 +4037,7 @@ fn build_metadata_ir(
         unknowns.push(UnknownRecord::retained(
             id,
             offset,
-            ctx.copy_retained(site.payload, "retain SLDPRT active site")?,
+            crate::byte_admission::copy_retained(ctx, site.payload, "retain SLDPRT active site")?,
             Vec::new(),
         ));
     }
@@ -5607,7 +5607,7 @@ fn preserve_source_image(
             cadmpeg_ir::identity_key!("0"),
         ),
         0,
-        ctx.copy_retained(scan.source_image, "retain SLDPRT source image")?,
+        crate::byte_admission::copy_retained(ctx, scan.source_image, "retain SLDPRT source image")?,
         Vec::new(),
     ));
     Ok(())

@@ -100,6 +100,7 @@
 mod annotations;
 mod appearance;
 mod brep;
+mod byte_admission;
 mod classification;
 mod container;
 mod decode;
