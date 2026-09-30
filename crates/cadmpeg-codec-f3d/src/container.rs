@@ -30,98 +30,37 @@ use cadmpeg_asm::{acis_header, asm_header};
 use crate::dialect::F3dDialect;
 use crate::manifest;
 
-fn push_charged<T>(
-    ctx: &DecodeContext<'_>,
-    values: &mut Vec<T>,
-    value: T,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    values
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    values.push(value);
-    Ok(())
-}
 
-fn copy_string_charged(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let length =
-        u64::try_from(value.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length, operation)?;
-    let mut copy = String::new();
-    copy.try_reserve(value.len())
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-    copy.push_str(value);
-    Ok(copy)
-}
 
-pub(crate) fn format_retained(
-    ctx: &DecodeContext<'_>,
-    operation: &'static str,
-    args: std::fmt::Arguments<'_>,
-) -> Result<String, CodecError> {
-    struct Length(usize);
 
-    impl std::fmt::Write for Length {
-        fn write_str(&mut self, value: &str) -> std::fmt::Result {
-            self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
-            Ok(())
-        }
-    }
 
-    let mut length = Length(0);
-    std::fmt::write(&mut length, args)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let bytes =
-        u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut output = String::new();
-    output
-        .try_reserve(length.0)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-    std::fmt::write(&mut output, args).map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-    Ok(output)
-}
+
 
 fn push_summary_note(
     ctx: &DecodeContext<'_>,
     notes: &mut Vec<String>,
     args: std::fmt::Arguments<'_>,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "collect F3D summary notes")?;
-    notes
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("collect F3D summary notes", 0, 1))?;
-    notes.push(format_retained(ctx, "retain F3D summary note", args)?);
-    Ok(())
+    let note = ctx.format_retained(args, "retain F3D summary note")?;
+    ctx.push_vec(notes, note, "collect F3D summary notes")
 }
 
 pub(crate) fn copy_summary_entries(
     ctx: &DecodeContext<'_>,
     entries: &[ContainerEntry],
 ) -> Result<Vec<ContainerEntry>, CodecError> {
-    let count = u64::try_from(entries.len())
-        .map_err(|_| ctx.refuse_codec_limit("copy F3D summary entries", 0, u64::MAX))?;
-    ctx.charge_collection_items(count, "copy F3D summary entries")?;
-    let mut copied = Vec::new();
-    copied
-        .try_reserve_exact(entries.len())
-        .map_err(|_| ctx.refuse_codec_limit("copy F3D summary entries", 0, count))?;
+    let mut copied = ctx.collection_vec(entries.len(), "copy F3D summary entries")?;
     for entry in entries {
         let mut attributes = BTreeMap::new();
         for (key, value) in &entry.attributes {
             ctx.charge_collection_items(1, "copy F3D summary attributes")?;
             attributes.insert(
-                copy_string_charged(ctx, key, "copy F3D summary attribute key")?,
-                copy_string_charged(ctx, value, "copy F3D summary attribute value")?,
+                ctx.copy_retained_text(key, "copy F3D summary attribute key")?,
+                ctx.copy_retained_text(value, "copy F3D summary attribute value")?,
             );
         }
         copied.push(ContainerEntry {
-            name: copy_string_charged(ctx, &entry.name, "copy F3D summary entry name")?,
+            name: ctx.copy_retained_text(&entry.name, "copy F3D summary entry name")?,
             role: entry.role,
             storage: entry.storage.clone(),
             attributes,
@@ -136,8 +75,7 @@ fn insert_attribute(
     key: &'static str,
     value: String,
 ) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "index F3D container attributes")?;
-    attributes.insert(key.to_owned(), value);
+    ctx.insert_btree_map(attributes, key.to_owned(), value, "index F3D container attributes")?;
     Ok(())
 }
 
@@ -165,6 +103,8 @@ pub(crate) fn read_entry_bounded(
     declared_size: u64,
     name: &str,
 ) -> Result<Vec<u8>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
     if declared_size > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
@@ -178,14 +118,7 @@ pub(crate) fn read_entry_bounded(
         if read == 0 {
             break;
         }
-        bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "F3D entry allocation",
-                MAX_INFLATED_ENTRY_BYTES,
-                u64_from_index(bytes.len().saturating_add(read)),
-            )
-        })?;
-        bytes.extend_from_slice(&chunk[..read]);
+        ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "F3D entry allocation")?;
     }
     if u64_from_index(bytes.len()) > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::malformed(format_args!(
@@ -422,12 +355,9 @@ impl<'a> ContainerScan<'a> {
             return Ok(std::rc::Rc::clone(cached));
         }
         let parsed = crate::metastream::parse(ctx, self.entry_bytes(name)?, name)?;
-        ctx.charge_collection_items(1, "cache F3D MetaStream")?;
         let mut cache = self.metastream_cache.borrow_mut();
-        cache
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("cache F3D MetaStream", 0, 1))?;
-        let key = copy_string_charged(ctx, name, "cache F3D MetaStream name")?;
+        ctx.reserve_map(&mut cache, 1, "cache F3D MetaStream")?;
+        let key = ctx.copy_retained_text(name, "cache F3D MetaStream name")?;
         let parsed = std::rc::Rc::new(parsed);
         cache.insert(key, std::rc::Rc::clone(&parsed));
         Ok(parsed)
@@ -518,7 +448,7 @@ pub(crate) fn scan<'a>(
     let mut inflated_entries = BTreeMap::new();
 
     for file in archive.entries() {
-        let name = copy_string_charged(ctx, &file.name, "retain F3D entry name")?;
+        let name = ctx.copy_retained_text(&file.name, "retain F3D entry name")?;
         let role = classify(&name);
         let compression = file.compression;
         let compressed_size = file.compressed_size;
@@ -565,7 +495,7 @@ pub(crate) fn scan<'a>(
                         ctx,
                         &mut attributes,
                         "product_family",
-                        copy_string_charged(ctx, pf, "retain F3D container attribute")?,
+                        ctx.copy_retained_text(pf, "retain F3D container attribute")?,
                     )?;
                 }
                 if let Some(pv) = &h.metadata.product_version {
@@ -573,7 +503,7 @@ pub(crate) fn scan<'a>(
                         ctx,
                         &mut attributes,
                         "product_version",
-                        copy_string_charged(ctx, pv, "retain F3D container attribute")?,
+                        ctx.copy_retained_text(pv, "retain F3D container attribute")?,
                     )?;
                 }
                 if let Some(sd) = &h.metadata.save_date {
@@ -581,7 +511,7 @@ pub(crate) fn scan<'a>(
                         ctx,
                         &mut attributes,
                         "save_date",
-                        copy_string_charged(ctx, sd, "retain F3D container attribute")?,
+                        ctx.copy_retained_text(sd, "retain F3D container attribute")?,
                     )?;
                 }
                 if let Some(s) = h.metadata.scale {
@@ -620,17 +550,12 @@ pub(crate) fn scan<'a>(
             }
             insert_attribute(ctx, &mut attributes, "sha256", sha.as_str().to_owned())?;
 
-            push_charged(
-                ctx,
-                &mut breps,
-                BrepFacts {
-                    name: copy_string_charged(ctx, &name, "retain F3D BREP name")?,
+            ctx.push_vec(&mut breps, BrepFacts {
+                    name: ctx.copy_retained_text(&name, "retain F3D BREP name")?,
                     uncompressed_len: uncompressed_size,
                     kernel,
                     sha256: sha,
-                },
-                "collect F3D BREP facts",
-            )?;
+                }, "collect F3D BREP facts")?;
         }
 
         let storage = match compression.storage(compressed_size, uncompressed_size) {
@@ -645,17 +570,12 @@ pub(crate) fn scan<'a>(
                 EntryStorage::payload_only(VerbatimLabel::Stored, uncompressed_size)
             }
         };
-        push_charged(
-            ctx,
-            &mut entries,
-            ContainerEntry {
-                name: copy_string_charged(ctx, &name, "retain F3D summary entry name")?,
+        ctx.push_vec(&mut entries, ContainerEntry {
+                name: ctx.copy_retained_text(&name, "retain F3D summary entry name")?,
                 role,
                 storage,
                 attributes,
-            },
-            "collect F3D container entries",
-        )?;
+            }, "collect F3D container entries")?;
         ctx.charge_collection_items(1, "index F3D inflated entries")?;
         inflated_entries.insert(name, view);
     }
@@ -694,13 +614,10 @@ pub(crate) fn scan<'a>(
     for (index, entry) in entries.iter().enumerate() {
         let scope = crate::ids::native_scope_charged(ctx, &entry.name)?;
         if !scope_entry_indices.contains_key(&scope) {
-            ctx.charge_collection_items(1, "index F3D native scopes")?;
-            scope_entry_indices
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("index F3D native scopes", 0, 1))?;
+            ctx.reserve_map(&mut scope_entry_indices, 1, "index F3D native scopes")?;
         }
         let indices = scope_entry_indices.entry(scope).or_default();
-        push_charged(ctx, indices, index, "index F3D scope entries")?;
+        ctx.push_vec(indices, index, "index F3D scope entries")?;
     }
 
     let mut scan = ContainerScan {
@@ -732,11 +649,8 @@ pub(crate) fn scan<'a>(
             }
             Err(cadmpeg_asm::stream_error::StreamFailure::Resource(error)) => return Err(error),
         };
-        ctx.charge_collection_items(1, "retain F3D text B-rep framing")?;
-        scan.text_breps
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("retain F3D text B-rep framing", 0, 1))?;
-        let name = copy_string_charged(ctx, &entry.name, "retain F3D text B-rep name")?;
+        ctx.reserve_map(&mut scan.text_breps, 1, "retain F3D text B-rep framing")?;
+        let name = ctx.copy_retained_text(&entry.name, "retain F3D text B-rep name")?;
         scan.text_breps.insert(name, framing);
     }
     Ok(scan)
@@ -859,7 +773,7 @@ fn root_f3d_members<'a>(
     let mut members = Vec::new();
     for name in entries.keys().map(String::as_str) {
         if !name.contains('/') && is_f3d_name(name) {
-            push_charged(ctx, &mut members, name, "collect F3Z document members")?;
+            ctx.push_vec(&mut members, name, "collect F3Z document members")?;
         }
     }
     Ok(members)

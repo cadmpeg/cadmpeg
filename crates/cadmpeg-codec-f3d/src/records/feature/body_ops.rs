@@ -228,7 +228,7 @@ pub(crate) struct CopyPasteRecordLocation {
 }
 
 impl DesignCopyPasteBodiesOperation {
-    pub(crate) fn try_new(
+pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
         body_group_record_index: u32,
         body_group_class_tag: DesignClassTag,
@@ -237,8 +237,10 @@ impl DesignCopyPasteBodiesOperation {
         relation_class_tag: DesignClassTag,
         relation_byte_offset: u64,
     ) -> Result<Self, String> {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
         Self::try_new_inner(
-            None,
+            &ctx,
             bodies,
             CopyPasteRecordLocation {
                 record_index: body_group_record_index,
@@ -257,18 +259,15 @@ impl DesignCopyPasteBodiesOperation {
         })
     }
 
+
+
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
-        Self::try_new_inner(
-            Some(ctx),
-            bodies,
-            body_group,
-            relation,
-        )
+        Self::try_new_inner(ctx, bodies, body_group, relation)
         .map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
             CopyPasteBodiesError::Resource(error) => error,
@@ -276,7 +275,7 @@ impl DesignCopyPasteBodiesOperation {
     }
 
     fn try_new_inner(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
@@ -302,13 +301,9 @@ impl DesignCopyPasteBodiesOperation {
                 if suffixes.contains(&suffix) {
                     return Err("source and copied body suffixes must be pairwise distinct".into());
                 }
-                if let Some(ctx) = ctx {
+                {
                     let operation = "index F3D copied body suffixes";
-                    ctx.charge_collection_items(1, operation)
-                        .map_err(CopyPasteBodiesError::Resource)?;
-                    suffixes.try_reserve(1).map_err(|_| {
-                        CopyPasteBodiesError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-                    })?;
+                    ctx.reserve_set(&mut suffixes, 1, operation).map_err(CopyPasteBodiesError::Resource)?;
                 }
                 suffixes.insert(suffix);
             }

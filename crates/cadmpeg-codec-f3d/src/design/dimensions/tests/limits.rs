@@ -379,7 +379,7 @@ fn native_fallback_null_pair() -> DesignDimensionLocusPair {
 }
 
 fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
-    DesignDimensionAnnotationFrame::try_new(DesignDimensionAnnotationFrameDraft {
+    crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, DesignDimensionAnnotationFrameDraft {
         id: "f3d:Design/BulkStream.dat:design-dimension-annotation-frame#34".into(),
         companion_record_index: Some(22),
         governing_companion_record_index: 22,
@@ -415,7 +415,7 @@ fn native_fallback_annotation() -> DesignDimensionAnnotationFrame {
         paired_byte_offset: 100,
         owner_reference: 7,
         owner_reference_offset: 120,
-    })
+    }))
     .unwrap()
 }
 

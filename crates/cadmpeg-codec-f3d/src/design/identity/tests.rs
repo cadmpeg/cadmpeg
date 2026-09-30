@@ -35,15 +35,10 @@ fn configuration_identifier_preserves_encoded_bytes() {
 
 #[test]
 fn projected_configuration_identifier_refuses_retained_limit() {
-    let table = crate::records::configuration::DesignConfiguration::try_new(
-        "asset/a:#% b\u{2003}ç.dsgcfg".to_owned(),
-        crate::records::configuration::DesignConfigurationKind::Table,
-        vec!["v:#%\u{a0}ç".to_owned()],
-        serde_json::json!({"configurations":{"v:#%\u{a0}ç":{}}})
+    let table = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "asset/a:#% b\u{2003}ç.dsgcfg".to_owned(), crate::records::configuration::DesignConfigurationKind::Table, vec!["v:#%\u{a0}ç".to_owned()], serde_json::json!({"configurations":{"v:#%\u{a0}ç":{}}})
             .as_object()
             .unwrap()
-            .clone(),
-    )
+            .clone()))
     .unwrap();
     let name_bytes = u64::try_from(table.variants()[0].0.len()).unwrap();
     let id = crate::ids::neutral_configuration_id(table.entry_name(), &table.variants()[0].0);

@@ -65,12 +65,7 @@ fn act_component_link_loss_refuses_collection_limit() {
 
 #[test]
 fn configuration_member_loss_refuses_collection_limit() {
-    let configuration = crate::records::configuration::DesignConfiguration::try_new(
-        "table.dsgcfg".into(),
-        crate::records::configuration::DesignConfigurationKind::Table,
-        Vec::new(),
-        serde_json::Map::from_iter([("unknown".into(), serde_json::Value::Bool(true))]),
-    )
+    let configuration = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), crate::records::configuration::DesignConfigurationKind::Table, Vec::new(), serde_json::Map::from_iter([("unknown".into(), serde_json::Value::Bool(true))])))
     .unwrap();
     let native = crate::native::F3dNative {
         design_configurations: vec![configuration],

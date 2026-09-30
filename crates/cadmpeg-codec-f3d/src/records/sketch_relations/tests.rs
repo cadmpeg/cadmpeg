@@ -339,3 +339,23 @@ fn sketch_relation_admission_bounds_every_reference_and_preserves_failed_edits()
     draft.members.0[0].offset = 77;
     assert!(SketchRelation::try_new(draft).is_err());
 }
+
+#[test]
+fn sketch_relation_wire_entry_uses_default_limits() {
+    let normal: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    assert!(SketchRelation::try_from(normal).is_ok());
+    let mut oversized: super::SketchRelationSerde = serde_json::from_str(RELATION_WIRE).unwrap();
+    let count = usize::try_from(cadmpeg_core::decode::DecodePolicy::default().limits.max_collection_items).unwrap() + 1;
+    oversized.members = vec![1; count];
+    oversized.member_offsets.clear();
+    let error: super::SketchRelationPayloadError = SketchRelation::try_from(oversized).unwrap_err();
+    let expected = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+        dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
+        reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+        limit: cadmpeg_core::decode::DecodePolicy::default().limits.max_collection_items,
+        used: 0,
+        additional: u64::try_from(count).unwrap(),
+        operation: "pad sketch relation offsets",
+    });
+    assert_eq!(error.to_string(), expected.to_string());
+}

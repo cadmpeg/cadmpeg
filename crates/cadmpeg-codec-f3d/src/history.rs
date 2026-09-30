@@ -1697,9 +1697,7 @@ pub(crate) fn bind_feature_body_selections(
                         };
                         let mut native_tools = Vec::new();
                         for tool in operation.tools.iter() {
-                            let native = admitted!(crate::container::format_retained(ctx,
-                                "retain F3D Combine tool identity",
-                                format_args!("{stream}:design-record#{}", tool.record_index)));
+                            let native = admitted!(ctx.format_retained(format_args!("{stream}:design-record#{}", tool.record_index), "retain F3D Combine tool identity"));
                             admitted!(ctx.charge_collection_items(1,
                                 "collect F3D Combine tool identities"));
                             admitted!(native_tools.try_reserve(1).map_err(|_|
@@ -2458,11 +2456,7 @@ fn unique_external_body_candidate(
     )?;
     let current_prefix = current_history_source
         .map(|source| {
-            crate::container::format_retained(
-                ctx,
-                "retain F3D current history prefix",
-                format_args!("f3d:brep/{source}/"),
-            )
+            ctx.format_retained(format_args!("f3d:brep/{source}/"), "retain F3D current history prefix")
         })
         .transpose()?;
     let mut candidates: Option<BTreeSet<cadmpeg_ir::ids::BodyId>> = None;
@@ -5161,11 +5155,7 @@ fn historical_face_id(
     let Some(ctx) = decode else {
         return Ok(crate::ids::brep_face_id(slot));
     };
-    let text = crate::container::format_retained(
-        ctx,
-        "retain F3D historical face identity",
-        format_args!("f3d:brep:entity#{slot}"),
-    )?;
+    let text = ctx.format_retained(format_args!("f3d:brep:entity#{slot}"), "retain F3D historical face identity")?;
     cadmpeg_ir::ids::FaceId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -5176,11 +5166,7 @@ fn historical_edge_id(
     let Some(ctx) = decode else {
         return Ok(crate::ids::brep_edge_id(slot));
     };
-    let text = crate::container::format_retained(
-        ctx,
-        "retain F3D historical edge identity",
-        format_args!("f3d:brep:entity#{slot}"),
-    )?;
+    let text = ctx.format_retained(format_args!("f3d:brep:entity#{slot}"), "retain F3D historical edge identity")?;
     cadmpeg_ir::ids::EdgeId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 

@@ -1,4 +1,3 @@
-use cadmpeg_core::decode::u64_from_index;
 
 use super::{dimension_null_locus_wire, dimensions::DesignDimensionLocusPair};
 use cadmpeg_core::decode::DecodeContext;
@@ -86,15 +85,7 @@ impl DesignDimensionNullLocusPairs {
         ctx: &DecodeContext<'_>,
         entries: Vec<dimension_null_locus_wire::Entry>,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
-        ctx.charge_collection_items(u64_from_index(entries.len()), "load F3D null locus pairs")?;
-        let mut pairs = Vec::new();
-        pairs.try_reserve(entries.len()).map_err(|_| {
-            cadmpeg_ir::NativeConvertError::Resource(ctx.refuse_codec_limit(
-                "load F3D null locus pairs",
-                0,
-                u64_from_index(entries.len()),
-            ))
-        })?;
+        let mut pairs = ctx.collection_vec(entries.len(), "load F3D null locus pairs")?;
         for entry in entries {
             pairs.push(entry.0);
         }

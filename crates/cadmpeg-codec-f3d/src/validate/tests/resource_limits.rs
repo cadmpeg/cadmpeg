@@ -213,12 +213,7 @@ fn native_configuration_name_index_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let configuration = crate::records::configuration::DesignConfiguration::try_new(
-        "sample.dsgcfgrule".into(),
-        crate::records::configuration::DesignConfigurationKind::Rule,
-        Vec::new(),
-        serde_json::Map::new(),
-    )
+    let configuration = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "sample.dsgcfgrule".into(), crate::records::configuration::DesignConfigurationKind::Rule, Vec::new(), serde_json::Map::new()))
     .unwrap();
     let mut native = crate::native::F3dNative::default();
     native.design_configurations.push(configuration);
@@ -239,12 +234,7 @@ fn native_duplicate_configuration_id_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let configuration = crate::records::configuration::DesignConfiguration::try_new(
-        "sample.dsgcfgrule".into(),
-        crate::records::configuration::DesignConfigurationKind::Rule,
-        Vec::new(),
-        serde_json::Map::new(),
-    )
+    let configuration = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "sample.dsgcfgrule".into(), crate::records::configuration::DesignConfigurationKind::Rule, Vec::new(), serde_json::Map::new()))
     .unwrap();
     let mut native = crate::native::F3dNative::default();
     native.design_configurations.push(configuration.clone());
@@ -266,12 +256,7 @@ fn native_duplicate_configuration_finding_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let configuration = crate::records::configuration::DesignConfiguration::try_new(
-        "sample.dsgcfgrule".into(),
-        crate::records::configuration::DesignConfigurationKind::Rule,
-        Vec::new(),
-        serde_json::Map::new(),
-    )
+    let configuration = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "sample.dsgcfgrule".into(), crate::records::configuration::DesignConfigurationKind::Rule, Vec::new(), serde_json::Map::new()))
     .unwrap();
     let mut native = crate::native::F3dNative::default();
     native.design_configurations.push(configuration.clone());

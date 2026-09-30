@@ -236,13 +236,9 @@ pub(crate) fn classify_layers(
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");
             losses.push(F3dLossCode::DialectLayerCollision.note(
-                crate::container::format_retained(
-                    ctx,
-                    "retain F3D dialect collision loss",
-                    format_args!(
+                ctx.format_retained(format_args!(
                         "the document produced a duplicate {format} dialect layer at instance {instance}; the later layer was omitted"
-                    ),
-                )?,
+                    ), "retain F3D dialect collision loss")?,
             ));
         }
         Ok(())
@@ -329,12 +325,8 @@ fn archive_loss_text(
 ) -> Result<String, CodecError> {
     let operation = "retain F3D dialect recovery loss";
     match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
-        Some(member) => crate::container::format_retained(
-            ctx,
-            operation,
-            format_args!("archive member {member}: {body}"),
-        ),
-        None => crate::container::format_retained(ctx, operation, format_args!("{body}")),
+        Some(member) => ctx.format_retained(format_args!("archive member {member}: {body}"), operation),
+        None => ctx.format_retained(format_args!("{body}"), operation),
     }
 }
 

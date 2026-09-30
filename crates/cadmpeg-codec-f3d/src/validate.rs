@@ -823,11 +823,7 @@ impl<'a, 'd> Ctx<'a, 'd> {
 
     fn copy_entity(&self, text: &str) -> Result<String, CodecError> {
         match self.decode {
-            Some(decode) => crate::container::format_retained(
-                decode,
-                "retain F3D validation entity",
-                format_args!("{text}"),
-            ),
+            Some(decode) => decode.format_retained(format_args!("{text}"), "retain F3D validation entity"),
             None => Ok(text.to_owned()),
         }
     }
@@ -4444,11 +4440,7 @@ fn validate_component_occurrences(
     for occurrence in &ctx.native.design_component_occurrences {
         let stream = design_stream(&occurrence.id);
         let key = match ctx.decode {
-            Some(decode) => crate::container::format_retained(
-                decode,
-                "retain F3D occurrence GUID index key",
-                format_args!("{}", LowerAscii(occurrence.occurrence_guid.as_str())),
-            )?,
+            Some(decode) => decode.format_retained(format_args!("{}", LowerAscii(occurrence.occurrence_guid.as_str())), "retain F3D occurrence GUID index key")?,
             None => occurrence.occurrence_guid.as_str().to_ascii_lowercase(),
         };
         let unique_identity =
@@ -7558,14 +7550,10 @@ fn validate_face_group_member_resolution(
     for member in face_group_members {
         if !face_operand_records.contains(&member) && !entity_selection_records.contains(&member) {
             let entity = match ctx.decode {
-                Some(decode) => crate::container::format_retained(
-                    decode,
-                    "retain F3D face group member identity",
-                    format_args!(
+                Some(decode) => decode.format_retained(format_args!(
                         "{}:design-face-group-member#{}:{}",
                         member.0, member.1, member.2
-                    ),
-                )?,
+                    ), "retain F3D face group member identity")?,
                 None => format!(
                     "{}:design-face-group-member#{}:{}",
                     member.0, member.1, member.2
@@ -8538,11 +8526,7 @@ fn validate_parameters(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
         }
         if !parameter_indices.insert((native_stream, parameter.record_index)) {
             let id = match ctx.decode {
-                Some(decode) => crate::container::format_retained(
-                    decode,
-                    "retain F3D parameter finding entity",
-                    format_args!("{}", parameter.id),
-                )?,
+                Some(decode) => decode.format_retained(format_args!("{}", parameter.id), "retain F3D parameter finding entity")?,
                 None => parameter.id.clone(),
             };
             ctx.push_constant_finding(

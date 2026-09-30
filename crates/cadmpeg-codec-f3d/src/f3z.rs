@@ -29,11 +29,7 @@ fn push_note(
     notes
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-    notes.push(crate::container::format_retained(
-        ctx,
-        "retain F3Z report note",
-        args,
-    )?);
+    notes.push(ctx.format_retained(args, "retain F3Z report note")?);
     Ok(())
 }
 
@@ -48,11 +44,7 @@ fn push_loss(
     losses
         .try_reserve(1)
         .map_err(|_| ctx.refuse_codec_limit(OPERATION, 0, 1))?;
-    losses.push(code.note(crate::container::format_retained(
-        ctx,
-        "retain F3Z report loss",
-        args,
-    )?));
+    losses.push(code.note(ctx.format_retained(args, "retain F3Z report loss")?));
     Ok(())
 }
 

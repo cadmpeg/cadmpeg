@@ -675,32 +675,14 @@ impl From<String> for AnnotationFrameBuildError {
     }
 }
 
-fn collect_annotation_run<T>(
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
-    values: impl IntoIterator<Item = T>,
-    operation: &'static str,
-) -> Result<Vec<T>, AnnotationFrameBuildError> {
-    let mut collected = Vec::new();
-    for value in values {
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, operation)
-                .map_err(AnnotationFrameBuildError::Resource)?;
-        }
-        collected.try_reserve(1).map_err(|_| match ctx {
-            Some(ctx) => {
-                AnnotationFrameBuildError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-            }
-            None => AnnotationFrameBuildError::Invalid("annotation run allocation failed".into()),
-        })?;
-        collected.push(value);
-    }
-    Ok(collected)
-}
+
 
 impl DesignDimensionAnnotationFrame {
     /// Admit an annotation frame with representable offsets and matching operand runs.
     pub(crate) fn try_new(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
-        Self::try_new_inner(None, draft).map_err(|error| match error {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
+        Self::try_new_inner(&ctx, draft).map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => message,
             AnnotationFrameBuildError::Resource(error) => error.to_string(),
         })
@@ -711,7 +693,7 @@ impl DesignDimensionAnnotationFrame {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        Self::try_new_inner(Some(ctx), draft).map_err(|error| match error {
+        Self::try_new_inner(ctx, draft).map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => {
                 cadmpeg_core::CodecError::malformed(message)
             }
@@ -720,7 +702,7 @@ impl DesignDimensionAnnotationFrame {
     }
 
     fn try_new_inner(
-        ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         draft: DesignDimensionAnnotationFrameDraft,
     ) -> Result<Self, AnnotationFrameBuildError> {
         if draft.operands.is_empty() {
@@ -780,19 +762,11 @@ impl DesignDimensionAnnotationFrame {
                 return Err("return_member_offsets disagree with frame layout".into());
             }
         }
-        let mut operand_members = collect_annotation_run(
-            ctx,
-            draft
+        let mut operand_members = ctx.collect_vec(draft
                 .operands
                 .iter()
-                .filter_map(|operand| operand.geometry_record_index),
-            "index F3D annotation operands",
-        )?;
-        let mut return_members = collect_annotation_run(
-            ctx,
-            draft.return_members.iter().map(|member| member.value),
-            "index F3D annotation return members",
-        )?;
+                .filter_map(|operand| operand.geometry_record_index), "index F3D annotation operands").map_err(AnnotationFrameBuildError::Resource)?;
+        let mut return_members = ctx.collect_vec(draft.return_members.iter().map(|member| member.value), "index F3D annotation return members").map_err(AnnotationFrameBuildError::Resource)?;
         operand_members.sort_unstable();
         return_members.sort_unstable();
         if operand_members != return_members {
@@ -806,25 +780,17 @@ impl DesignDimensionAnnotationFrame {
             class_tag: draft.class_tag,
             record_index: draft.record_index,
             frame_length: draft.frame_length,
-            operands: collect_annotation_run(
-                ctx,
-                draft
+            operands: ctx.collect_vec(draft
                     .operands
                     .into_iter()
                     .map(|operand| DesignDimensionAnnotationLocus {
                         geometry_record_index: operand.geometry_record_index,
                         role: operand.role,
-                    }),
-                "retain F3D annotation operands",
-            )?,
+                    }), "retain F3D annotation operands").map_err(AnnotationFrameBuildError::Resource)?,
             entity_genesis: draft.entity_genesis,
             annotation_bytes: draft.annotation_bytes,
             governing_owner_record_index: draft.governing_owner_record_index,
-            return_members: collect_annotation_run(
-                ctx,
-                draft.return_members.into_iter().map(|member| member.value),
-                "retain F3D annotation return members",
-            )?,
+            return_members: ctx.collect_vec(draft.return_members.into_iter().map(|member| member.value), "retain F3D annotation return members").map_err(AnnotationFrameBuildError::Resource)?,
             paired_class_tag: draft.paired_class_tag,
             owner_reference: draft.owner_reference,
         })

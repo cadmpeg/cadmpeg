@@ -560,7 +560,11 @@ pub(crate) fn project_sketch_design(
                     .transpose()?;
                 SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
                     geometry.degree(),
-                    geometry.knots_copy(ctx)?,
+                    match ctx { Some(ctx) => geometry.knots_copy(ctx)?, None => {
+ let arena = cadmpeg_core::decode::DecodeArena::new();
+ let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+ geometry.knots_copy(&ctx)?
+} },
                     planar_poles,
                     weights,
                     false,
@@ -943,7 +947,11 @@ pub(crate) fn project_spatial_sketch_design(
                             .transpose()?;
                         let curve3d = cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
                             geometry.degree(),
-                            geometry.knots_copy(ctx)?,
+                            match ctx { Some(ctx) => geometry.knots_copy(ctx)?, None => {
+ let arena = cadmpeg_core::decode::DecodeArena::new();
+ let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+ geometry.knots_copy(&ctx)?
+} },
                             transformed_poles,
                             weights,
                             false,
