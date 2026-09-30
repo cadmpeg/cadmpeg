@@ -112,6 +112,10 @@ fn geometry_locus_role_excludes_display_handles() {
 
 #[test]
 fn coordinate_marker_links_are_sentinel_terminated_reference_cells() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0; 118];
     payload[5..13].fill(0xff);
     payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
@@ -127,16 +131,16 @@ fn coordinate_marker_links_are_sentinel_terminated_reference_cells() {
     }
     payload[112..116].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
     assert_eq!(
-        coordinate_marker_local_links(&payload, 0),
+        coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
         Some((vec![7, 11], 0x8386))
     );
     for start in [86, 98] {
         payload[start..start + 2].copy_from_slice(&0xbc87u16.to_le_bytes());
     }
     assert_eq!(
-        coordinate_marker_local_links(&payload, 0),
+        coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
         Some((vec![7, 11], 0xbc87))
     );
     payload[98] ^= 1;
-    assert_eq!(coordinate_marker_local_links(&payload, 0), None);
+    assert_eq!(coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(), None);
 }

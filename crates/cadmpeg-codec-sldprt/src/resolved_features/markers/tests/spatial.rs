@@ -1320,6 +1320,10 @@ fn extended_geometry_values_share_the_coordinate_record_layout() {
 
 #[test]
 fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let offset = 4;
     let mut payload = vec![0; offset + 154 + SKETCH_MARKER.len()];
     payload[..offset].copy_from_slice(&7u32.to_le_bytes());
@@ -1519,7 +1523,7 @@ fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
         Some(([1.25, -2.5], [(0x8139, 1), (0x8139, 0)]))
     );
     assert_eq!(
-        coordinate_marker_local_links(&legacy_geometry, offset),
+        coordinate_marker_local_links(&link_ctx, &legacy_geometry, offset).unwrap(),
         Some((vec![1, 0], 0x8139))
     );
     assert_eq!(
