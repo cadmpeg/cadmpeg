@@ -91,6 +91,7 @@ impl BodyCandidate {
 
 impl BodyNode {
     fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        charge_record_copy::<u32>(ctx, self.ownership_refs.len(), "copy typed Parasolid body ownership references")?;
         let mut ownership_refs = Vec::new();
         ctx.reserve_collection_vec(
             &mut ownership_refs,
@@ -216,11 +217,21 @@ fn reserve_set_key<T: Eq + Hash>(
     Ok(())
 }
 
+fn charge_record_copy<T>(ctx: &DecodeContext<'_>, count: usize, operation: &'static str) -> Result<(), CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(count)
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)?;
+    Ok(())
+}
+
 impl Facts {
     pub(super) fn try_clone(&self, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
+        charge_record_copy::<BodyNode>(ctx, self.bodies.len(), "copy typed Parasolid bodies")?;
         let mut bodies = Vec::new();
         ctx.reserve_collection_vec(&mut bodies, self.bodies.len(), "copy typed Parasolid bodies")?;
         for body in &self.bodies {
+            charge_record_copy::<u32>(ctx, body.ownership_refs.len(), "copy typed Parasolid body references")?;
             let mut ownership_refs = Vec::new();
             ctx.reserve_collection_vec(
                 &mut ownership_refs,
@@ -238,12 +249,15 @@ impl Facts {
                 end: body.end,
             });
         }
+        charge_record_copy::<ShellNode>(ctx, self.shells.len(), "copy typed Parasolid shells")?;
         let mut shells = Vec::new();
         ctx.reserve_collection_vec(&mut shells, self.shells.len(), "copy typed Parasolid shells")?;
         shells.extend_from_slice(&self.shells);
+        charge_record_copy::<RegionNode>(ctx, self.regions.len(), "copy typed Parasolid regions")?;
         let mut regions = Vec::new();
         ctx.reserve_collection_vec(&mut regions, self.regions.len(), "copy typed Parasolid regions")?;
         regions.extend_from_slice(&self.regions);
+        charge_record_copy::<FaceNode>(ctx, self.faces.len(), "copy typed Parasolid faces")?;
         let mut faces = Vec::new();
         ctx.reserve_collection_vec(&mut faces, self.faces.len(), "copy typed Parasolid faces")?;
         faces.extend_from_slice(&self.faces);
