@@ -12,7 +12,7 @@ use super::{
     contiguous_i32_program, find_dimension_locus_groups, find_dimension_locus_pair,
     find_dimension_null_locus_pair, indexed_record_containing, parse_dimension_annotation_frame,
     parse_dimension_locus_group, parse_dimension_locus_pair, parse_dimension_null_locus_pair,
-    parse_dimension_presentation_frame,  recipe_record_prefix,
+    parse_dimension_presentation_frame, recipe_record_prefix,
 };
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::{
@@ -261,7 +261,13 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
     prefix.extend_from_slice(&331u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 8]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 0,
+            )
+            .expect("recipe references")
+        })
+        .len(),
         1
     );
     recipe_reference_limit(&prefix, u64::MAX, 0, "f3d recipe reference token");
@@ -287,7 +293,13 @@ fn paired_recipe_references_refuse_operand_and_flattened_runs() {
     prefix.extend_from_slice(&305u32.to_le_bytes());
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 0,
+            )
+            .expect("recipe references")
+        })
+        .len(),
         2
     );
     recipe_reference_limit(&prefix, 2, u64::MAX, "f3d recipe paired operands");
@@ -309,7 +321,13 @@ fn grouped_recipe_references_refuse_output_run() {
     }
     prefix.extend_from_slice(&[0; 4]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 0).expect("recipe references")).len(),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 0,
+            )
+            .expect("recipe references")
+        })
+        .len(),
         4
     );
     recipe_reference_limit(&prefix, 1, u64::MAX, "f3d recipe grouped references");
@@ -343,8 +361,12 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references =
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
+    let references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    });
     assert_eq!(references.len(), 3);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].selector_offset, 1_022);
@@ -385,12 +407,22 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             .flat_map(u32::to_le_bytes),
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references")),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 1_000,
+            )
+            .expect("recipe references")
+        }),
         references
     );
     prefix.extend_from_slice(&[0; 2]);
     assert_eq!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references")),
+        crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                ctx, &prefix, 1_000,
+            )
+            .expect("recipe references")
+        }),
         references
     );
     let tags = [
@@ -446,9 +478,12 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
         },
     ];
     let mut bound = references[0].clone();
-    crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(ctx,
-        &mut bound, &tags, None,
-    ).expect("recipe references"));
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+            ctx, &mut bound, &tags, None,
+        )
+        .expect("recipe references");
+    });
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-b").expect("identity grammar")]
@@ -487,11 +522,15 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             ordinal: 0,
         },
     ];
-    crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(ctx,
-        &mut bound,
-        &stream_tags,
-        Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
-    ).expect("recipe references"));
+    crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::bind_recipe_reference_candidates_charged(
+            ctx,
+            &mut bound,
+            &stream_tags,
+            Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
+        )
+        .expect("recipe references");
+    });
     assert_eq!(
         bound.candidate_faces,
         [FaceId::mint("test:model:face#face-a").expect("identity grammar")]
@@ -521,8 +560,12 @@ fn dimension_recipe_decodes_signed_decimal_reference_tokens() {
     prefix.extend_from_slice(&0u32.to_le_bytes());
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references =
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
+    let references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    });
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].token, "-2");
@@ -557,8 +600,12 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
         }
     }
 
-    let references =
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
+    let references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    });
     assert!(crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
     assert_eq!(references.len(), 4);
     assert_eq!(
@@ -587,10 +634,15 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
     let second_operand_at = reference_offsets[0] + 8;
     let mut packed_second = prefix.clone();
     packed_second.drain(second_operand_at + 4..second_operand_at + 8);
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &packed_second, 1_000).expect("recipe references"))
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
+            &packed_second,
+            1_000,
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut invalid_header = prefix.clone();
     invalid_header[0] = 1;
     assert!(
@@ -599,29 +651,37 @@ fn face_recipe_decodes_paired_packed_reference_runs() {
 
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &trailing, 1_000).expect("recipe references"))
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &trailing, 1_000,
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&trailing));
 
     let mut mismatched_selector = prefix.clone();
     mismatched_selector[second_operand_at..second_operand_at + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
             &mismatched_selector,
             1_000,
-        ).expect("recipe references"))
-        .is_empty()
-    );
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
 
     let second_run_at = reference_offsets[1];
     prefix[second_run_at..second_run_at + 4].copy_from_slice(&306u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"))
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     assert!(!crate::design::decode::dimension_frames::is_paired_recipe_reference_frame(&prefix));
 }
 
@@ -659,8 +719,12 @@ fn face_recipe_decodes_five_group_reference_sequence() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references =
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
+    let references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    });
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -691,53 +755,69 @@ fn face_recipe_decodes_five_group_reference_sequence() {
 
     let mut wrong_first_group_count = prefix.clone();
     wrong_first_group_count[18..22].copy_from_slice(&3u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
             &wrong_first_group_count,
             1_000,
-        ).expect("recipe references"))
-        .is_empty()
-    );
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut wrong_group_count = prefix.clone();
     wrong_group_count[14..18].copy_from_slice(&4u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
             &wrong_group_count,
             1_000,
-        ).expect("recipe references"))
-        .is_empty()
-    );
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut empty_group = prefix.clone();
     empty_group[second_group_count_at..second_group_count_at + 4]
         .copy_from_slice(&0u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &empty_group, 1_000).expect("recipe references"))
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
+            &empty_group,
+            1_000,
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut length_prefixed_token = prefix.clone();
     length_prefixed_token.splice(26..26, 2u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
             &length_prefixed_token,
             1_000,
-        ).expect("recipe references"))
-        .is_empty()
-    );
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut locally_terminated_operand = prefix.clone();
     locally_terminated_operand.splice(first_operand_end..first_operand_end, 0u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
             &locally_terminated_operand,
             1_000,
-        ).expect("recipe references"))
-        .is_empty()
-    );
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     let mut trailing = prefix.clone();
     trailing.extend_from_slice(&0u32.to_le_bytes());
-    assert!(
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &trailing, 1_000).expect("recipe references"))
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &trailing, 1_000,
+        )
+        .expect("recipe references")
+    })
+    .is_empty());
     assert!(!crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&trailing));
 }
 
@@ -765,8 +845,12 @@ fn face_recipe_decodes_dynamic_group_reference_sequence() {
     }
     prefix.extend_from_slice(&0u32.to_le_bytes());
 
-    let references =
-        crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"));
+    let references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx, &prefix, 1_000,
+        )
+        .expect("recipe references")
+    });
     assert!(crate::design::decode::dimension_frames::is_grouped_recipe_reference_frame(&prefix));
     assert_eq!(
         references
@@ -807,8 +891,13 @@ fn dimension_recipe_rejects_non_decimal_reference_tokens() {
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
         assert!(
-            crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx, &prefix, 1_000).expect("recipe references"))
-                .is_empty(),
+            crate::test_support::with_decode_context(|ctx| {
+                crate::design::decode::dimension_frames::decode_recipe_references_charged(
+                    ctx, &prefix, 1_000,
+                )
+                .expect("recipe references")
+            })
+            .is_empty(),
             "accepted token {token:?}"
         );
     }
@@ -982,14 +1071,34 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter: ref actual_parameter,
         }) if actual_entity == entity.id() && actual_parameter == &parameter
     ));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", 0.5, parameter.clone(), TEST_LINEAR_TOLERANCE))
+    assert!(crate::test_support::with_decode_context(
+        |decode_ctx| null_locus_dimension_definition(
+            decode_ctx,
+            &axis_pair,
+            &entity,
+            "Angular Dimension-2",
+            0.5,
+            parameter.clone(),
+            TEST_LINEAR_TOLERANCE
+        )
+    )
     .transpose()
     .unwrap()
     .is_none());
     let mut draft = axis_pair.into_draft();
     draft.loci[0].role = 13;
     axis_pair = crate::records::dimensions::DesignDimensionLocusPair::try_new(draft).unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &axis_pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), TEST_LINEAR_TOLERANCE))
+    assert!(crate::test_support::with_decode_context(
+        |decode_ctx| null_locus_dimension_definition(
+            decode_ctx,
+            &axis_pair,
+            &entity,
+            "Angular Dimension-2",
+            std::f64::consts::FRAC_PI_4,
+            parameter.clone(),
+            TEST_LINEAR_TOLERANCE
+        )
+    )
     .transpose()
     .unwrap()
     .is_none());
@@ -1010,7 +1119,17 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
             parameter: ref actual_parameter,
         }) if actual_entity == radial_entity.id() && actual_parameter == &parameter
     ));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| null_locus_dimension_definition(decode_ctx, &pair, &radial_entity, "Diameter Dimension-2", 0.2, parameter, 0.0))
+    assert!(crate::test_support::with_decode_context(
+        |decode_ctx| null_locus_dimension_definition(
+            decode_ctx,
+            &pair,
+            &radial_entity,
+            "Diameter Dimension-2",
+            0.2,
+            parameter,
+            0.0
+        )
+    )
     .transpose()
     .unwrap()
     .is_none());
@@ -1778,11 +1897,8 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let refusal = super::dimension_parameter_index(
-        &ctx,
-        &parameters,
-        "f3d dimension locus parameter index",
-    );
+    let refusal =
+        super::dimension_parameter_index(&ctx, &parameters, "f3d dimension locus parameter index");
     assert!(matches!(refusal, Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d dimension locus parameter index"));
@@ -1811,116 +1927,4 @@ fn dimension_locus_lookup_collections_refuse_collection_limits() {
             && failure.operation == "f3d dimension geometry indices"));
 }
 
-#[test]
-fn typed_dimension_companions_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    let mut bytes = vec![0; 74];
-    bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
-    bytes[4..7].copy_from_slice(b"277");
-    bytes[7..11].copy_from_slice(&1394u32.to_le_bytes());
-    bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
-    bytes[24] = 1;
-    bytes[35..39].copy_from_slice(&10u32.to_le_bytes());
-    bytes[39] = 1;
-    bytes[40..44].copy_from_slice(&1109u32.to_le_bytes());
-    bytes[50..54].copy_from_slice(&7u32.to_le_bytes());
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"273");
-    bytes.extend_from_slice(&1394u32.to_le_bytes());
-    let mut pair =
-        parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109])).unwrap();
-    pair.id = "f3d:Design/BulkStream.dat:design-dimension-null-locus-pair#0".into();
-
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-        .unwrap();
-    zip.write_all(&[]).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let inputs = super::DimensionDecodeInputs {
-            scan,
-            placements: &[],
-            parameters: &[],
-            owners: &[],
-            companions: &[],
-            scopes: &[],
-            headers: &[],
-            points: &[],
-            curves: &[],
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::decode_dimension_null_locus_pairs(&ctx, &inputs, &[pair], &[]),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d typed dimension companions"
-        ));
-    });
-}
-
-#[test]
-fn dimension_presentation_sketch_scopes_refuse_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-    use std::io::{Cursor, Write};
-    use zip::CompressionMethod;
-
-    let placement = crate::records::sketch_placement::DesignSketchPlacement {
-        frame: crate::records::sketch_placement::DesignSketchFrame::new(
-            0,
-            crate::records::sketch_placement::DesignSketchFrameForm::MemberCompact {
-                paired_byte_offset: 34,
-            },
-        )
-        .unwrap(),
-        id: "f3d:design:design-sketch-placement#1".into(),
-        scope_record_index: Some(1),
-        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_201".to_owned())
-            .unwrap(),
-        visibility: None,
-        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-        record_index: 1,
-        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
-            .unwrap(),
-    };
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-        .unwrap();
-    zip.write_all(&[]).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-    crate::test_support::zip_test::with_scan(&archive, |scan| {
-        let inputs = super::DimensionDecodeInputs {
-            scan,
-            placements: std::slice::from_ref(&placement),
-            parameters: &[],
-            owners: &[],
-            companions: &[],
-            scopes: &[],
-            headers: &[],
-            points: &[],
-            curves: &[],
-        };
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            super::decode_dimension_presentation_frames(&ctx, &inputs, &[]),
-            Err(CodecError::ResourceLimit(failure))
-                if failure.dimension == ResourceDimension::CollectionItems
-                    && failure.operation == "f3d dimension presentation sketch scopes"
-        ));
-    });
-}
+mod companion_limits;

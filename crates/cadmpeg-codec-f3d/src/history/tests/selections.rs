@@ -12,18 +12,26 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::history::{
-    active_brep_face_matches_source, bind_historical_entity_versions,
-    bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
-    body_revision_without_topology_change, combine_recipe_family_tool_slots,
-    grouped_reference_face_candidate, historical_body_slot, historical_record_archive,
-    historical_transition, insert_only_active_record_count, materialize_record_table,
-    pattern_combine_tool_slots, profile_face_group_cardinality_candidates,
-    selection::bind_edge_identity_history, selection::bind_hole_selection_history,
-    selection::complete_compact_edge_treatment_deletions,
-    selection::entity_selection_face_candidates, singleton_body_revision_across_state_chain,
-    singleton_revised_input_body_across_state_chain, TopologyStableBodyRevision,
-};
+use crate::history::active_brep_face_matches_source;
+use crate::history::bind_historical_entity_versions;
+use crate::history::bind_snapshot_revision_ids;
+use crate::history::body_revision_without_topology_change;
+use crate::history::combine_recipe_family_tool_slots;
+use crate::history::grouped_reference_face_candidate;
+use crate::history::historical_body_slot;
+use crate::history::historical_record_archive;
+use crate::history::historical_transition;
+use crate::history::insert_only_active_record_count;
+use crate::history::materialize_record_table;
+use crate::history::pattern_combine_tool_slots;
+use crate::history::profile_face_group_cardinality_candidates;
+use crate::history::selection::bind_edge_identity_history;
+use crate::history::selection::bind_hole_selection_history;
+use crate::history::selection::complete_compact_edge_treatment_deletions;
+use crate::history::selection::entity_selection_face_candidates;
+use crate::history::singleton_body_revision_across_state_chain;
+use crate::history::singleton_revised_input_body_across_state_chain;
+use crate::history::TopologyStableBodyRevision;
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalEntityDelta, AsmHistoricalOptionalCarrierBinding,
@@ -110,7 +118,12 @@ fn entity_selection_face_proofs_preserve_history_namespaces() {
     );
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| entity_selection_face_candidates(decode_ctx, 18044, &[unrelated, selected])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| entity_selection_face_candidates(
+            decode_ctx,
+            18044,
+            &[unrelated, selected]
+        ))
+        .unwrap(),
         [
             crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate {
                 history_id: "selected".into(),
@@ -220,7 +233,10 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
         *slot = Some(construction);
     }
 
-    crate::test_support::with_decode_context(|decode_ctx| bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])).unwrap();
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_hole_selection_history(decode_ctx, std::slice::from_mut(&mut scope), &[history])
+    })
+    .unwrap();
 
     assert_eq!(
         scope
@@ -246,24 +262,27 @@ fn hole_face_selection_history_binds_the_unique_persistent_face() {
 #[test]
 fn compact_edge_treatment_deletions_require_exact_cardinality() {
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 19])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 19])
+        })
+        .unwrap(),
         [17, 19]
     );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 18, 19]))
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, false, Some(2), &[17, 19]))
-            .unwrap()
-            .is_empty()
-    );
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_compact_edge_treatment_deletions(decode_ctx, true, None, &[17, 19]))
-            .unwrap()
-            .is_empty()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        complete_compact_edge_treatment_deletions(decode_ctx, true, Some(2), &[17, 18, 19])
+    })
+    .unwrap()
+    .is_empty());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        complete_compact_edge_treatment_deletions(decode_ctx, false, Some(2), &[17, 19])
+    })
+    .unwrap()
+    .is_empty());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        complete_compact_edge_treatment_deletions(decode_ctx, true, None, &[17, 19])
+    })
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -273,8 +292,8 @@ fn compact_edge_treatment_deletions_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = complete_compact_edge_treatment_deletions(&ctx, true, Some(2), &[17, 19])
-        .unwrap_err();
+    let error =
+        complete_compact_edge_treatment_deletions(&ctx, true, Some(2), &[17, 19]).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "copy F3D compact treatment deletions")
@@ -368,7 +387,16 @@ fn compact_transition_fallback_is_scoped_to_each_operand_group() {
         states: vec![current, previous],
     };
 
-    crate::test_support::with_decode_context(|decode_ctx| bind_edge_identity_history(decode_ctx, &mut operands, &[], std::slice::from_ref(&scope), std::slice::from_ref(&history), &HashMap::from([(scope.id.clone(), history.id.clone())])))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_edge_identity_history(
+            decode_ctx,
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+            &HashMap::from([(scope.id.clone(), history.id.clone())]),
+        )
+    })
     .unwrap();
 
     assert_eq!(operands[0].transition_edge_candidates, [17, 19]);
@@ -1509,16 +1537,33 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
     };
     let changed = [20, 12, 10, 11].into_iter().collect();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &changed, 3)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            profile_face_group_cardinality_candidates(decode_ctx, &topology, &changed, 3)
+        })
+        .unwrap(),
         Some(vec![10, 11, 12])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &[20].into_iter().collect(), 1))
-            .unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            profile_face_group_cardinality_candidates(
+                decode_ctx,
+                &topology,
+                &[20].into_iter().collect(),
+                1,
+            )
+        })
+        .unwrap(),
         Some(vec![20])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &topology, &[10, 20].into_iter().collect(), 1))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            profile_face_group_cardinality_candidates(
+                decode_ctx,
+                &topology,
+                &[10, 20].into_iter().collect(),
+                1,
+            )
+        })
         .unwrap(),
         None
     );
@@ -1533,7 +1578,10 @@ fn profile_face_group_cardinality_requires_one_changed_surface_family() {
         }));
     let changed = [10, 11, 12, 30, 31, 32].into_iter().collect();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| profile_face_group_cardinality_candidates(decode_ctx, &ambiguous, &changed, 3)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            profile_face_group_cardinality_candidates(decode_ctx, &ambiguous, &changed, 3)
+        })
+        .unwrap(),
         None
     );
 }
@@ -1638,10 +1686,14 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     }))
     .expect("grouped face operand");
     operand.recipe_prefix_bytes = prefix;
-    operand.recipe_references = crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
-        &operand.recipe_prefix_bytes,
-        0,
-    ).expect("recipe references"));
+    operand.recipe_references = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::dimension_frames::decode_recipe_references_charged(
+            ctx,
+            &operand.recipe_prefix_bytes,
+            0,
+        )
+        .expect("recipe references")
+    });
     let topology = AsmHistoricalTopology {
         faces: vec![10, 20],
         ..AsmHistoricalTopology::default()
@@ -1666,266 +1718,4 @@ fn grouped_face_reference_selects_one_changed_topology_face() {
     );
 }
 
-#[test]
-fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
-    use crate::records::{
-        feature::scope::DesignParameterScope,
-        topology::{construction::DesignConstructionOperandGroup, face::DesignFaceOperand},
-    };
-    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
-
-    let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
-        let member_offsets = (0..members.len())
-            .map(|index| u64_from_index(index) * 11)
-            .collect::<Vec<_>>();
-        serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
-            "id": format!(
-                "f3d:Design/BulkStream.dat:design-construction-operand-group#{record_index}"
-            ),
-            "scope_record_index": 42,
-            "scope_reference_ordinal": scope_reference_ordinal,
-            "record_index": record_index,
-            "byte_offset": 0,
-            "class_tag": "267",
-            "members": members,
-            "member_offsets": member_offsets,
-            "frame": {
-                "member_count_offset": 0,
-                "opaque_index": 1,
-                "opaque_index_offset": 18,
-                "opaque_scalar": 0.0,
-                "opaque_scalar_offset": 22,
-                "variant": false
-            },
-            "role": 279_172_874_240_u64,
-            "extrude_role": "profile",
-            "role_offset": 0,
-            "paired_class_tag": "260",
-            "paired_byte_offset": 0
-        }))
-        .expect("profile group")
-    };
-    let paired_prefix = || {
-        let mut prefix = vec![0; 10];
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.extend_from_slice(&2u32.to_le_bytes());
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.push(b'2');
-        prefix.extend_from_slice(&[0; 4]);
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.extend_from_slice(&305u32.to_le_bytes());
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.push(b'3');
-        prefix.extend_from_slice(&0u32.to_le_bytes());
-        prefix.extend_from_slice(&1u32.to_le_bytes());
-        prefix.extend_from_slice(&305u32.to_le_bytes());
-        prefix.extend_from_slice(&0u32.to_le_bytes());
-        prefix
-    };
-    let face_operand = |record_index, group_record_index, scope_reference_ordinal| {
-        let mut operand = serde_json::from_value::<DesignFaceOperand>(serde_json::json!({
-            "id": format!("f3d:Design/BulkStream.dat:design-face-operand#{record_index}"),
-            "scope_record_index": 42,
-            "scope_reference_ordinal": scope_reference_ordinal,
-            "group_record_index": group_record_index,
-            "group_member_ordinal": 0,
-            "record_index": record_index,
-            "byte_offset": 0,
-            "class_tag": "297",
-            "paired_byte_offset": 16,
-            "paired_class_tag": "259",
-            "recipe_record_index": record_index + 3,
-            "recipe_record_byte_offset": 32,
-            "recipe_id": format!("f3d:Design/BulkStream.dat:construction-recipe#{}", record_index + 3),
-            "recipe_prefix_offset": 43,
-            "recipe_prefix_bytes": "",
-            "recipe_references": [],
-            "recipe_kind": "bounded_face",
-            "recipe_program_offset": 0,
-            "recipe_program": [0],
-            "recipe_node_offsets": [],
-            "recipe_nodes": [],
-            "next_record_index": record_index + 4,
-            "next_byte_offset": 160
-        }))
-        .expect("profile face operand");
-        operand.recipe_prefix_bytes = paired_prefix();
-        operand.recipe_references =
-            crate::test_support::with_decode_context(|ctx| crate::design::decode::dimension_frames::decode_recipe_references_charged(ctx,
-                &operand.recipe_prefix_bytes,
-                0,
-            ).expect("recipe references"));
-        operand
-    };
-
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#42",
-        crate::records::feature::scope::DesignFeatureKind::Extrude,
-        42,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.history_state_id = Some(2);
-            draft.previous_history_state_id = Some(1);
-            draft.reference_members = {
-                let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
-                let reference_offsets = (0..reference_values.len())
-                    .map(|ordinal| 14 + 11 * u64_from_index(ordinal))
-                    .collect();
-                crate::records::identity::ReferenceRun::from_columns(
-                    reference_values,
-                    reference_offsets,
-                    "reference_members",
-                )
-                .unwrap()
-            };
-            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let groups = vec![
-        group(100, 0, vec![110, 120]),
-        group(110, 1, vec![111]),
-        group(120, 3, vec![121]),
-    ];
-    let mut operands = vec![face_operand(111, 110, 1), face_operand(121, 120, 3)];
-    operands[0].candidate_faces =
-        vec![
-            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(10))
-                .expect("identity grammar"),
-        ];
-    operands[1].unreferenced_candidate_faces =
-        vec![
-            cadmpeg_ir::ids::FaceId::mint(crate::ids::brep_entity_id(11))
-                .expect("identity grammar"),
-        ];
-
-    let roots = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups))
-        .unwrap()
-        .expect("valid profile hierarchy");
-    assert_eq!(
-        roots
-            .iter()
-            .map(|group| group.record_index)
-            .collect::<Vec<_>>(),
-        [100]
-    );
-    assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_operand_indices(decode_ctx, roots[0], &groups, &operands))
-        .unwrap()
-        .expect("one leaf operand per root member"),
-        [0, 1]
-    );
-    let mut repeated_child = groups.clone();
-    let repeated_members = repeated_child[0]
-        .members()
-        .iter()
-        .copied()
-        .chain([crate::records::identity::Located {
-            value: 110,
-            offset: repeated_child[0].members().last().unwrap().offset + 11,
-        }])
-        .collect();
-    repeated_child[0].try_set_members(repeated_members).unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &repeated_child))
-    .unwrap()
-    .is_none());
-
-    let previous_topology = AsmHistoricalTopology {
-        faces: vec![10, 11, 20],
-        face_surfaces: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 10,
-                carrier: 1000,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 11,
-                carrier: 1001,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 20,
-                carrier: 2000,
-            },
-        ],
-        ..AsmHistoricalTopology::default()
-    };
-    let state = |state_id, topology_cache, transition| AsmDeltaState {
-        id: format!("f3d:history:state#{state_id}"),
-        parent: "f3d:history".into(),
-        byte_offset: 0,
-        state_id,
-        version_flag: 1,
-        state_flag: 0,
-        previous_ref: None,
-        next_ref: None,
-        node_index: state_id,
-        partner_ref: None,
-        owner_ref: 0,
-        bulletin_boards: Vec::new(),
-        records: Vec::new(),
-        entity_versions: Vec::new(),
-        topology_cache,
-        transition,
-    };
-    let previous = state(
-        1,
-        crate::history_records::AsmTopologyCache::Complete(previous_topology),
-        None,
-    );
-    let mut transition = AsmHistoricalTransition {
-        previous_state_id: Some(1),
-        records: AsmHistoricalEntityDelta::default(),
-        topology: AsmHistoricalTopologyDelta::default(),
-    };
-    transition.topology.faces.deleted = vec![11, 10];
-    let current = state(
-        2,
-        crate::history_records::AsmTopologyCache::Absent,
-        Some(transition),
-    );
-    let history = AsmHistory {
-        id: "f3d:history".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![previous, current],
-    };
-    let bound_history_id = history.id.clone();
-    let mut unrelated_history = history.clone();
-    unrelated_history.id = "f3d:other-history".into();
-    unrelated_history.states[0]
-        .topology_mut()
-        .expect("unrelated preceding topology")
-        .faces = vec![30, 31, 40];
-    let histories = vec![history, unrelated_history];
-    let scope_histories = HashMap::from([(scope.id.clone(), bound_history_id)]);
-
-    crate::test_support::with_decode_context(|decode_ctx| bind_profile_face_group_cardinality(decode_ctx, &mut operands, std::slice::from_ref(&scope), &groups, &histories, &scope_histories))
-    .unwrap();
-    assert_eq!(operands[0].resolved_face_slots, [10]);
-    assert_eq!(operands[1].resolved_face_slots, [11]);
-    let profile = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_extrude_profile_face_group(decode_ctx, &scope, roots[0], &groups, &operands))
-    .unwrap()
-    .expect("resolved root profile");
-    let feature = crate::ids::neutral_feature_id(&scope);
-    let feature_key = feature.key();
-    let prefix = crate::ids::history_input_prefix(&feature_key, 1);
-    assert!(matches!(
-        profile,
-        ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
-            state,
-            faces,
-            native,
-        }) if state == crate::ids::feature_input_topology_id(&feature, 1)
-            && faces.as_slice() == [
-                crate::ids::history_input_face_id(&prefix, 10),
-                crate::ids::history_input_face_id(&prefix, 11),
-            ]
-            && native.as_slice() == [groups[0].id.clone()]
-    ));
-}
+mod extrude_profile;
