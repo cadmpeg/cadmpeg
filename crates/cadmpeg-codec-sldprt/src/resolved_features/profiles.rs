@@ -1557,18 +1557,12 @@ pub(crate) fn project_marker_backed_sketches(
                                 .ok().ok_or(MarkerGeometryFailure::Absent)?
                             } else if let (Some(point), Some(radius)) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
-                                coordinate_circle_radius(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                )
-                                .or_else(|| {
-                                    legacy_coordinate_circle_radius(
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                    )
-                                }),
+                                {
+                                    let radius = coordinate_circle_radius(ctx, &lane.native_payload, marker, &object_markers)?;
+                                    if radius.is_some() { radius } else {
+                                        legacy_coordinate_circle_radius(ctx, &lane.native_payload, marker, &object_markers)?
+                                    }
+                                },
                             ) {
                                 SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center: point,

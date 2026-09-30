@@ -2585,10 +2585,11 @@ pub(super) fn legacy_compact_diameter_arc_center(
 }
 
 pub(super) fn coordinate_circle_radius(
-    payload: &[u8],
-    circle: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>, payload: &[u8], circle: &SketchInputEntity, markers: &[&SketchInputEntity],
+) -> Result<Option<f64>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT circle coordinate roster";
+    ctx.charge_work(256, OPERATION)?;
+    let center = (|| {
     let offset = usize::try_from(circle.offset()).ok()?;
     if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -2609,80 +2610,63 @@ pub(super) fn coordinate_circle_radius(
     {
         return None;
     }
-    let [center_u, center_v] = circle.coordinates_m?.get();
-    let mut coordinates = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.feature_ref == circle.feature_ref
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        })
-        .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset());
+    Some(circle.coordinates_m?.get())
+    })();
+    let Some([center_u, center_v]) = center else { return Ok(None); };
+    let mut coordinates = collect_endpoint_markers(ctx, markers.iter().copied(), circle, |marker|
+        marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint), OPERATION)?;
+    sort_endpoint_markers(ctx, &mut coordinates, OPERATION)?;
+    charge_endpoint_work(ctx, coordinates.len(), 4, OPERATION)?;
     let insertion = coordinates.partition_point(|marker| marker.offset() < circle.offset());
-    let grids = [
-        insertion
-            .checked_sub(6)
-            .and_then(|start| coordinates.get(start..insertion)),
-        coordinates.get(insertion..insertion.checked_add(6)?),
-    ];
-    let mut radii = grids
-        .into_iter()
-        .flatten()
-        .filter_map(|grid| {
-            let mut u = grid
-                .iter()
-                .filter_map(|marker| marker.coordinates_m.map(|point| point[0]))
-                .collect::<Vec<_>>();
-            let mut v = grid
-                .iter()
-                .filter_map(|marker| marker.coordinates_m.map(|point| point[1]))
-                .collect::<Vec<_>>();
-            u.sort_by(f64::total_cmp);
-            u.dedup();
-            v.sort_by(f64::total_cmp);
-            v.dedup();
-            let (u_min, u_max, v_min, v_max) = (*u.first()?, *u.last()?, *v.first()?, *v.last()?);
-            let mut points = grid
-                .iter()
-                .filter_map(|marker| {
-                    marker
-                        .coordinates_m
-                        .map(cadmpeg_ir::units::FiniteVector::get)
-                })
-                .collect::<Vec<_>>();
-            points.sort_by(|left, right| {
-                left[0]
-                    .total_cmp(&right[0])
-                    .then_with(|| left[1].total_cmp(&right[1]))
-            });
-            points.dedup();
-            let complete_grid = points.len() == 6 && u.len() * v.len() == 6;
+    ctx.charge_work(2048, OPERATION)?;
+    Ok((|| {
+        let grids = [
+            insertion.checked_sub(6).and_then(|start| coordinates.get(start..insertion)),
+            coordinates.get(insertion..insertion.checked_add(6)?),
+        ];
+        let radii = grids.map(|grid| {
+            let grid: [&SketchInputEntity; 6] = grid?.try_into().ok()?;
+            let [Some(first), Some(second), Some(third), Some(fourth), Some(fifth), Some(sixth)] =
+                grid.map(|marker| marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get)) else { return None; };
+            let mut points = [first, second, third, fourth, fifth, sixth];
+            let mut axes = [points.map(|point| point[0]), points.map(|point| point[1])];
+            let mut counts = [1usize; 2];
+            for (axis, count) in axes.iter_mut().zip(&mut counts) {
+                axis.sort_unstable_by(f64::total_cmp);
+                for index in 1..axis.len() {
+                    if axis[index] != axis[*count - 1] {
+                        axis[*count] = axis[index];
+                        *count += 1;
+                    }
+                }
+            }
+            let (u_min, u_max) = (axes[0][0], axes[0][counts[0] - 1]);
+            let (v_min, v_max) = (axes[1][0], axes[1][counts[1] - 1]);
+            points.sort_unstable_by(|left, right| left[0].total_cmp(&right[0]).then_with(|| left[1].total_cmp(&right[1])));
+            let point_count = 1 + points.windows(2).filter(|pair| pair[0] != pair[1]).count();
+            let complete_grid = point_count == 6 && counts[0] * counts[1] == 6;
             let centered = same_dimension_length(center_u - u_min, u_max - center_u)
                 && same_dimension_length(center_v - v_min, v_max - center_v);
             let square = same_dimension_length(u_max - u_min, v_max - v_min);
-            (complete_grid && centered && square && matches!((u.len(), v.len()), (3, 2) | (2, 3)))
-                .then_some((u_max - u_min) * 0.5)
-        })
-        .filter(|radius| radius.is_finite() && *radius > 0.0)
-        .collect::<Vec<_>>();
-    radii.sort_by(f64::total_cmp);
-    radii.dedup_by(|left, right| same_dimension_length(*left, *right));
-    let [radius] = radii.as_slice() else {
-        return None;
-    };
-    Some(*radius)
+            let radius = (u_max - u_min) * 0.5;
+            (complete_grid && centered && square && matches!((counts[0], counts[1]), (3, 2) | (2, 3))
+                && radius.is_finite() && radius > 0.0).then_some(radius)
+        });
+        match radii {
+            [None, None] => None,
+            [Some(radius), None] | [None, Some(radius)] => Some(radius),
+            [Some(first), Some(second)] if same_dimension_length(first, second) => Some(first.min(second)),
+            [Some(_), Some(_)] => None,
+        }
+    })())
 }
 
 pub(super) fn legacy_coordinate_circle_radius(
-    payload: &[u8],
-    circle: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<f64> {
+    ctx: &DecodeContext<'_>, payload: &[u8], circle: &SketchInputEntity, markers: &[&SketchInputEntity],
+) -> Result<Option<f64>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy circle coordinate roster";
+    ctx.charge_work(256, OPERATION)?;
+    let radial_index = (|| {
     let offset = usize::try_from(circle.offset()).ok()?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
@@ -2718,21 +2702,27 @@ pub(super) fn legacy_coordinate_circle_radius(
         return None;
     }
     let radial_index = View::u32_le_at(payload, offset + 158)?;
-    let mut radial_points = markers.iter().copied().filter(|marker| {
-        marker.feature_ref == circle.feature_ref
-            && marker.offset() == circle.offset() + 162
-            && marker.object_index() == Some(radial_index)
-            && marker.kind() == SketchInputKind::Point
-            && marker.coordinates_m.is_some()
-    });
-    let radial = radial_points.next()?;
-    if radial_points.next().is_some() {
-        return None;
+    Some(radial_index)
+    })();
+    let Some(radial_index) = radial_index else { return Ok(None); };
+    let mut radial = None;
+    for marker in markers.iter().copied() {
+        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
+        charge_endpoint_work(ctx, circle.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
+        ctx.charge_work(64, OPERATION)?;
+        if marker.feature_ref == circle.feature_ref && marker.offset() == circle.offset() + 162
+            && marker.object_index() == Some(radial_index) && marker.kind() == SketchInputKind::Point && marker.coordinates_m.is_some() {
+            if radial.is_some() { return Ok(None); }
+            radial = Some(marker);
+        }
     }
-    let center = circle.coordinates_m?.get();
-    let radial = radial.coordinates_m?.get();
-    let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
-    (radius.is_finite() && radius > 0.0).then_some(radius)
+    ctx.charge_work(64, OPERATION)?;
+    Ok((|| {
+        let center = circle.coordinates_m?.get();
+        let radial = radial?.coordinates_m?.get();
+        let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
+        (radius.is_finite() && radius > 0.0).then_some(radius)
+    })())
 }
 
 pub(super) fn coordinate_roster_full_circle(
@@ -3636,6 +3626,31 @@ fn charge_endpoint_work(ctx: &DecodeContext<'_>, len: usize, factor: u64, operat
     ctx.charge_work(work, operation)
 }
 
+fn collect_endpoint_markers<'a>(
+    ctx: &DecodeContext<'_>, markers: impl Iterator<Item = &'a SketchInputEntity>, owner: &SketchInputEntity,
+    keep: impl Fn(&SketchInputEntity) -> bool, operation: &'static str,
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    let mut selected = Vec::new();
+    for marker in markers {
+        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 2, operation)?;
+        charge_endpoint_work(ctx, owner.feature_ref.as_deref().map_or(0, str::len), 2, operation)?;
+        ctx.charge_work(64, operation)?;
+        if marker.feature_ref != owner.feature_ref || !keep(marker) { continue; }
+        if selected.len() == selected.capacity() { charge_endpoint_work(ctx, selected.len(), 4, operation)?; }
+        ctx.reserve_collection_vec(&mut selected, 1, operation)?;
+        selected.push(marker);
+    }
+    Ok(selected)
+}
+
+fn sort_endpoint_markers(ctx: &DecodeContext<'_>, markers: &mut [&SketchInputEntity], operation: &'static str) -> Result<(), CodecError> {
+    let factor = u64::from(markers.len().checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(64))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    charge_endpoint_work(ctx, markers.len(), factor, operation)?;
+    markers.sort_unstable_by_key(|marker| marker.offset());
+    Ok(())
+}
+
 fn ellipse_axis_bounds(mut values: [f64; 4]) -> Option<[f64; 2]> {
     values.sort_unstable_by(f64::total_cmp);
     let first = values[0];
@@ -3663,21 +3678,10 @@ pub(super) fn coordinate_ellipse_axes(
         Some((ellipse.coordinates_m?.get(), ellipse.offset().checked_add(134)?))
     })();
     let Some(([center_u, center_v], following_offset)) = eligibility else { return Ok(None); };
-    let mut following = Vec::new();
-    for marker in markers {
-        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
-        charge_endpoint_work(ctx, ellipse.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
-        ctx.charge_work(64, OPERATION)?;
-        if marker.feature_ref != ellipse.feature_ref || marker.offset() <= ellipse.offset() || marker.coordinates_m.is_none()
-            || !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { continue; }
-        if following.len() == following.capacity() { charge_endpoint_work(ctx, following.len(), 4, OPERATION)?; }
-        ctx.reserve_collection_vec(&mut following, 1, OPERATION)?;
-        following.push(*marker);
-    }
-    let factor = u64::from(following.len().checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-    charge_endpoint_work(ctx, following.len(), factor, OPERATION)?;
-    following.sort_unstable_by_key(|marker| marker.offset());
+    let mut following = collect_endpoint_markers(ctx, markers.iter().copied(), ellipse, |marker|
+        marker.offset() > ellipse.offset() && marker.coordinates_m.is_some()
+            && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint), OPERATION)?;
+    sort_endpoint_markers(ctx, &mut following, OPERATION)?;
     ctx.charge_work(512, OPERATION)?;
     Ok((|| {
         let corners: [&SketchInputEntity; 4] = following.get(..4)?.try_into().ok()?;

@@ -64,12 +64,12 @@ fn current_coordinate_circle_uses_its_complete_square_handle_grid() {
     entities.extend(points);
     let markers = entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_circle_radius(&payload, &center, &markers),
+        coordinate_circle_radius(&cadmpeg_test_support::service_decode_context(), &payload, &center, &markers).unwrap(),
         Some(1.0)
     );
     entities[6].coordinates_m = cadmpeg_ir::units::FiniteVector::new([3.0, 5.0]);
     let markers = entities.iter().collect::<Vec<_>>();
-    assert_eq!(coordinate_circle_radius(&payload, &center, &markers), None);
+    assert_eq!(coordinate_circle_radius(&cadmpeg_test_support::service_decode_context(), &payload, &center, &markers).unwrap(), None);
 }
 
 #[test]
@@ -125,12 +125,12 @@ fn legacy_coordinate_circle_uses_its_trailing_radial_point() {
     );
 
     assert!(
-        legacy_coordinate_circle_radius(&payload, &circle, &[&circle, &radial])
+        legacy_coordinate_circle_radius(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &[&circle, &radial]).unwrap()
             .is_some_and(|radius| same_dimension_length(radius, 0.012))
     );
     payload[158..162].copy_from_slice(&22u32.to_le_bytes());
     assert_eq!(
-        legacy_coordinate_circle_radius(&payload, &circle, &[&circle, &radial]),
+        legacy_coordinate_circle_radius(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &[&circle, &radial]).unwrap(),
         None
     );
 }
