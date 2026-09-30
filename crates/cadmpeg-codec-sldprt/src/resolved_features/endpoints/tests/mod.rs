@@ -36,6 +36,7 @@ mod circles;
 mod compact;
 mod construction_lines;
 mod extended;
+mod point_solver;
 mod profile_lines;
 mod profile_roster_92;
 mod profile_roster_96;

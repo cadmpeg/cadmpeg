@@ -1468,64 +1468,27 @@ pub(crate) fn project_marker_backed_sketches(
                                         })
                                         .ok().ok_or(MarkerGeometryFailure::Absent)?
                                     }
-                                } else if let Some([start, end]) =
-                                    extended_declared_inline_line_endpoints(
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                    )
-                                    .map(|endpoints| {
-                                        endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                    })
-                                    .or_else(|| {
-                                        extended_linked_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
-                                    .or_else(|| {
-                                        extended_identity_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
-                                    .or_else(|| {
-                                        implicit_coordinate_roster_curve_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            inferred_points.get_or_init(|| {
-                                                inferred_point_coordinates_by_index(
-                                                    lane,
-                                                    native_feature.id.as_str(),
-                                                )
-                                            }),
-                                        )
-                                    })
-                                    .or_else(|| {
-                                        implicit_profile_chain_closure_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                    })
-                                    .or_else(|| {
-                                        compact_legacy_142_profile_curve_endpoints(
-                                            &lane.native_payload,
-                                            index_from_u64(marker.offset())?,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
+                                } else if let Some([start, end]) = {
+                                    let mut endpoints = extended_declared_inline_line_endpoints(&lane.native_payload, marker, &object_markers)
+                                        .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get))
+                                        .or_else(|| extended_linked_inline_line_endpoints(&lane.native_payload, marker, &object_markers)
+                                            .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)))
+                                        .or_else(|| extended_identity_inline_line_endpoints(&lane.native_payload, marker, &object_markers)
+                                            .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)));
+                                    if endpoints.is_none() {
+                                        let inferred = match inferred_points.get() {
+                                            Some(inferred) => inferred,
+                                            None => {
+                                                let inferred = inferred_point_coordinates_by_index(ctx, lane, native_feature.id.as_str())?;
+                                                inferred_points.get_or_init(|| inferred)
+                                            }
+                                        };
+                                        endpoints = implicit_coordinate_roster_curve_endpoints(&lane.native_payload, marker, &object_markers, inferred);
+                                    }
+                                    endpoints.or_else(|| implicit_profile_chain_closure_endpoints(&lane.native_payload, marker, &object_markers))
+                                        .or_else(|| compact_legacy_142_profile_curve_endpoints(&lane.native_payload, index_from_u64(marker.offset())?)
+                                            .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)))
+                                }
                                 {
                                     let (Some(start), Some(end)) =
                                         (project_coordinates(start), project_coordinates(end))

@@ -1801,174 +1801,198 @@ fn current_referenced_compact_curve_uses_marker_roster(payload: &[u8], offset: u
         && referenced_ending
 }
 
+const POINT_SOLVER_OPERATION: &str = "solve SLDPRT omitted point coordinates";
+
+fn reserve_point_solver_vec<T>(ctx: &DecodeContext<'_>, values: &mut Vec<T>, additional: usize) -> Result<(), CodecError> {
+    if values.capacity() - values.len() < additional {
+        charge_endpoint_work(ctx, values.len(), 4, POINT_SOLVER_OPERATION)?;
+    }
+    ctx.reserve_collection_vec(values, additional, POINT_SOLVER_OPERATION)
+}
+
+fn reserve_point_solver_map<T>(ctx: &DecodeContext<'_>, values: &mut HashMap<u32, T>) -> Result<(), CodecError> {
+    if values.len() == values.capacity() { charge_endpoint_work(ctx, values.len(), 8, POINT_SOLVER_OPERATION)?; }
+    ctx.charge_collection_items(1, POINT_SOLVER_OPERATION)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))
+}
+
+fn insert_point_solver_index(ctx: &DecodeContext<'_>, values: &mut HashSet<u32>, index: u32) -> Result<bool, CodecError> {
+    ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
+    if values.contains(&index) { return Ok(false); }
+    if values.len() == values.capacity() { charge_endpoint_work(ctx, values.len(), 8, POINT_SOLVER_OPERATION)?; }
+    ctx.charge_collection_items(1, POINT_SOLVER_OPERATION)?;
+    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
+    Ok(values.insert(index))
+}
+
 pub(super) fn inferred_point_coordinates_by_index(
-    lane: &FeatureInputLane,
-    feature: &str,
-) -> HashMap<u32, [f64; 2]> {
+    ctx: &DecodeContext<'_>, lane: &FeatureInputLane, feature: &str,
+) -> Result<HashMap<u32, [f64; 2]>, CodecError> {
     // These tags address the solver-point namespace in the point-distance
     // scalar form. They are admitted here only to solve omitted point
     // coordinates; generic operand resolution still requires a marker match.
     const SOLVER_POINT_REFERENCE_TAGS: [u16; 2] = [0x8100, 0x820f];
-
-    let mut candidates = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter_map(|marker| {
-            marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get)
-        })
-        .collect::<Vec<_>>();
-    candidates.sort_by(|left, right| {
-        left[0]
-            .total_cmp(&right[0])
-            .then_with(|| left[1].total_cmp(&right[1]))
-    });
-    candidates.dedup_by(|left, right| {
-        same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1])
-    });
+    let mut candidates = Vec::new();
+    for marker in &lane.sketch_entities {
+        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 2, POINT_SOLVER_OPERATION)?;
+        charge_endpoint_work(ctx, feature.len(), 2, POINT_SOLVER_OPERATION)?;
+        ctx.charge_work(4, POINT_SOLVER_OPERATION)?;
+        if marker.feature_ref.as_deref() != Some(feature) { continue; }
+        let Some(point) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
+        reserve_point_solver_vec(ctx, &mut candidates, 1)?;
+        candidates.push(point);
+    }
+    let sort_factor = u64::from(candidates.len().checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(64))
+        .ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_endpoint_work(ctx, candidates.len(), sort_factor, POINT_SOLVER_OPERATION)?;
+    candidates.sort_unstable_by(|left, right| left[0].total_cmp(&right[0]).then_with(|| left[1].total_cmp(&right[1])));
+    charge_endpoint_work(ctx, candidates.len(), 64, POINT_SOLVER_OPERATION)?;
+    candidates.dedup_by(|left, right| same_dimension_length(left[0], right[0]) && same_dimension_length(left[1], right[1]));
 
     let mut constraints = Vec::new();
-    for (scalar, [first, second]) in lane.scalars.iter().filter_map(|scalar| {
-        let [first, second] = scalar.operands.as_slice() else {
-            return None;
-        };
-        (scalar.feature_ref.as_deref() == Some(feature)
-            && scalar.role == FeatureInputScalarRole::Driving
-            && scalar.value.get() >= 0.0
-            && [first, second].iter().all(|operand| {
-                matches!(
-                    operand.kind,
-                    FeatureInputOperandKind::Native(tag)
-                        if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value())
-                )
-            }))
-        .then_some((scalar, [first, second]))
-    }) {
-        let endpoints = [
-            u32::from(first.entity_index),
-            u32::from(second.entity_index),
-        ];
-        constraints.push((endpoints, scalar.value.get()));
+    for scalar in &lane.scalars {
+        charge_endpoint_work(ctx, scalar.feature_ref.as_deref().map_or(0, str::len), 2, POINT_SOLVER_OPERATION)?;
+        charge_endpoint_work(ctx, feature.len(), 2, POINT_SOLVER_OPERATION)?;
+        ctx.charge_work(64, POINT_SOLVER_OPERATION)?;
+        let [first, second] = scalar.operands.as_slice() else { continue; };
+        if scalar.feature_ref.as_deref() != Some(feature) || scalar.role != FeatureInputScalarRole::Driving || scalar.value.get() < 0.0
+            || ![first, second].iter().all(|operand| matches!(operand.kind, FeatureInputOperandKind::Native(tag) if SOLVER_POINT_REFERENCE_TAGS.contains(&tag.value()))) { continue; }
+        reserve_point_solver_vec(ctx, &mut constraints, 1)?;
+        constraints.push(([u32::from(first.entity_index), u32::from(second.entity_index)], scalar.value.get()));
     }
-
     let mut indices = HashSet::new();
-    for (endpoints, _) in &constraints {
-        indices.extend(endpoints);
+    for (endpoints, _) in &constraints { for index in endpoints { insert_point_solver_index(ctx, &mut indices, *index)?; } }
+    let mut domains = HashMap::new();
+    for index in indices {
+        charge_endpoint_work(ctx, candidates.len(), 4, POINT_SOLVER_OPERATION)?;
+        let mut domain = Vec::new();
+        reserve_point_solver_vec(ctx, &mut domain, candidates.len())?;
+        domain.extend_from_slice(&candidates);
+        reserve_point_solver_map(ctx, &mut domains)?;
+        domains.insert(index, domain);
     }
-    let mut domains = indices
-        .into_iter()
-        .map(|index| (index, candidates.clone()))
-        .collect::<HashMap<_, _>>();
     loop {
-        let previous = domains.clone();
+        let mut previous = HashMap::new();
+        for (&index, domain) in &domains {
+            charge_endpoint_work(ctx, domain.len(), 4, POINT_SOLVER_OPERATION)?;
+            let mut copied = Vec::new();
+            reserve_point_solver_vec(ctx, &mut copied, domain.len())?;
+            copied.extend_from_slice(domain);
+            reserve_point_solver_map(ctx, &mut previous)?;
+            previous.insert(index, copied);
+        }
         for (index, domain) in &mut domains {
-            domain.retain(|candidate| {
-                constraints.iter().all(|(endpoints, distance)| {
-                    let other = match endpoints {
-                        [left, other] if left == index => other,
-                        [other, right] if right == index => other,
-                        _ => return true,
-                    };
+            ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
+            let mut kept = 0;
+            for read in 0..domain.len() {
+                let candidate = domain[read];
+                let mut supported = true;
+                for (endpoints, distance) in &constraints {
+                    ctx.charge_work(64, POINT_SOLVER_OPERATION)?;
+                    let other = match endpoints { [left, other] if left == index => other, [other, right] if right == index => other, _ => continue };
                     if other == index {
-                        same_dimension_length(*distance, 0.0)
+                        if !same_dimension_length(*distance, 0.0) { supported = false; break; }
                     } else {
-                        previous.get(other).is_some_and(|other_domain| {
-                            other_domain.iter().any(|point| {
-                                same_dimension_length(
-                                    (candidate[0] - point[0]).hypot(candidate[1] - point[1]),
-                                    *distance,
-                                )
-                            })
-                        })
+                        let mut matched = false;
+                        if let Some(other_domain) = previous.get(other) {
+                            for point in other_domain {
+                                ctx.charge_work(64, POINT_SOLVER_OPERATION)?;
+                                if same_dimension_length((candidate[0] - point[0]).hypot(candidate[1] - point[1]), *distance) { matched = true; break; }
+                            }
+                        }
+                        if !matched { supported = false; break; }
                     }
-                })
-            });
+                }
+                if supported { domain[kept] = candidate; kept += 1; }
+            }
+            domain.truncate(kept);
         }
-        if domains == previous {
-            break;
-        }
+        for domain in domains.values() { charge_endpoint_work(ctx, domain.len(), 8, POINT_SOLVER_OPERATION)?; }
+        if domains == previous { break; }
     }
-    domains
-        .iter()
-        .filter_map(|(&index, domain)| {
-            let [point] = domain.as_slice() else {
-                return None;
-            };
-            point_distance_component_has_solution(index, &domains, &constraints)
-                .then_some((index, *point))
-        })
-        .collect()
+    let mut result = HashMap::new();
+    for (&index, domain) in &domains {
+        ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
+        let [point] = domain.as_slice() else { continue; };
+        if !point_distance_component_has_solution(ctx, index, &domains, &constraints)? { continue; }
+        reserve_point_solver_map(ctx, &mut result)?;
+        result.insert(index, *point);
+    }
+    Ok(result)
 }
 
 fn point_distance_component_has_solution(
-    seed: u32,
-    domains: &HashMap<u32, Vec<[f64; 2]>>,
-    constraints: &[([u32; 2], f64)],
-) -> bool {
-    let mut component = HashSet::from([seed]);
-    let mut pending = vec![seed];
+    ctx: &DecodeContext<'_>, seed: u32, domains: &HashMap<u32, Vec<[f64; 2]>>, constraints: &[([u32; 2], f64)],
+) -> Result<bool, CodecError> {
+    let mut component = HashSet::new();
+    insert_point_solver_index(ctx, &mut component, seed)?;
+    let mut pending = Vec::new();
+    reserve_point_solver_vec(ctx, &mut pending, 1)?;
+    pending.push(seed);
     while let Some(index) = pending.pop() {
-        for (endpoints, _) in constraints
-            .iter()
-            .filter(|(endpoints, _)| endpoints.contains(&index))
-        {
+        for (endpoints, _) in constraints {
+            ctx.charge_work(8, POINT_SOLVER_OPERATION)?;
+            if !endpoints.contains(&index) { continue; }
             for endpoint in endpoints {
-                if component.insert(*endpoint) {
+                if insert_point_solver_index(ctx, &mut component, *endpoint)? {
+                    reserve_point_solver_vec(ctx, &mut pending, 1)?;
                     pending.push(*endpoint);
                 }
             }
         }
     }
-    let mut unassigned = component.into_iter().collect::<Vec<_>>();
-    unassigned.sort_unstable_by_key(|index| {
-        std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len))
-    });
-
-    point_distance_assignment_exists(&mut unassigned, &mut HashMap::new(), domains, constraints)
+    let mut unassigned = Vec::new();
+    charge_endpoint_work(ctx, component.len(), 4, POINT_SOLVER_OPERATION)?;
+    reserve_point_solver_vec(ctx, &mut unassigned, component.len())?;
+    unassigned.extend(component);
+    let factor = u64::from(unassigned.len().checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(32))
+        .ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_endpoint_work(ctx, unassigned.len(), factor, POINT_SOLVER_OPERATION)?;
+    unassigned.sort_unstable_by_key(|index| std::cmp::Reverse(domains.get(index).map_or(usize::MAX, Vec::len)));
+    point_distance_assignment_exists(ctx, &unassigned, domains, constraints)
 }
 
 fn point_distance_assignment_exists(
-    unassigned: &mut Vec<u32>,
-    assigned: &mut HashMap<u32, [f64; 2]>,
-    domains: &HashMap<u32, Vec<[f64; 2]>>,
-    constraints: &[([u32; 2], f64)],
-) -> bool {
-    let Some(index) = unassigned.pop() else {
-        return true;
-    };
-    let solved = domains.get(&index).is_some_and(|domain| {
-        domain.iter().copied().any(|candidate| {
-            let compatible = constraints.iter().all(|(endpoints, distance)| {
-                let other = match endpoints {
-                    [left, other] if *left == index => *other,
-                    [other, right] if *right == index => *other,
-                    _ => return true,
-                };
-                if other == index {
-                    same_dimension_length(*distance, 0.0)
-                } else {
-                    assigned.get(&other).is_none_or(|point| {
-                        same_dimension_length(
-                            (candidate[0] - point[0]).hypot(candidate[1] - point[1]),
-                            *distance,
-                        )
-                    })
+    ctx: &DecodeContext<'_>, unassigned: &[u32], domains: &HashMap<u32, Vec<[f64; 2]>>, constraints: &[([u32; 2], f64)],
+) -> Result<bool, CodecError> {
+    if unassigned.is_empty() { return Ok(true); }
+    charge_endpoint_work(ctx, unassigned.len(), 8, POINT_SOLVER_OPERATION)?;
+    let mut next = ctx.alloc_filled(unassigned.len(), 0usize, POINT_SOLVER_OPERATION)?;
+    let mut assigned = ctx.alloc_filled(unassigned.len(), None::<[f64; 2]>, POINT_SOLVER_OPERATION)?;
+    let mut depth = 0;
+    loop {
+        ctx.charge_work(16, POINT_SOLVER_OPERATION)?;
+        let position = unassigned.len() - 1 - depth;
+        let index = unassigned[position];
+        let candidate = domains.get(&index).and_then(|domain| domain.get(next[depth])).copied();
+        let Some(candidate) = candidate else {
+            assigned[position] = None;
+            next[depth] = 0;
+            if depth == 0 { return Ok(false); }
+            depth -= 1;
+            assigned[unassigned.len() - 1 - depth] = None;
+            continue;
+        };
+        next[depth] = next[depth].checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(POINT_SOLVER_OPERATION, u64::MAX - 1, u64::MAX))?;
+        let mut compatible = true;
+        for (endpoints, distance) in constraints {
+            ctx.charge_work(64, POINT_SOLVER_OPERATION)?;
+            let other = match endpoints { [left, other] if *left == index => *other, [other, right] if *right == index => *other, _ => continue };
+            if other == index {
+                if !same_dimension_length(*distance, 0.0) { compatible = false; break; }
+            } else {
+                charge_endpoint_work(ctx, unassigned.len(), 4, POINT_SOLVER_OPERATION)?;
+                if let Some(point) = unassigned.iter().position(|index| *index == other).and_then(|position| assigned[position]) {
+                    if !same_dimension_length((candidate[0] - point[0]).hypot(candidate[1] - point[1]), *distance) { compatible = false; break; }
                 }
-            });
-            if !compatible {
-                return false;
             }
-            assigned.insert(index, candidate);
-            let solved =
-                point_distance_assignment_exists(unassigned, assigned, domains, constraints);
-            assigned.remove(&index);
-            solved
-        })
-    });
-    unassigned.push(index);
-    solved
+        }
+        if !compatible { continue; }
+        assigned[position] = Some(candidate);
+        depth += 1;
+        if depth == unassigned.len() { return Ok(true); }
+        next[depth] = 0;
+    }
 }
 
 pub(super) fn implicit_coordinate_roster_curve_endpoints(

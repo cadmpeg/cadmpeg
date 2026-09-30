@@ -778,7 +778,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         };
 
         assert_eq!(
-            inferred_point_coordinates_by_index(&lane, "feature-native"),
+            inferred_point_coordinates_by_index(&cadmpeg_test_support::service_decode_context(), &lane, "feature-native").unwrap(),
             HashMap::from([
                 (3, [0.008, 0.0]),
                 (4, [0.0015, 0.0]),
@@ -833,7 +833,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
         sketch_entities: vec![first, second, third],
     };
 
-    assert!(inferred_point_coordinates_by_index(&lane, "feature-native").is_empty());
+    assert!(inferred_point_coordinates_by_index(&cadmpeg_test_support::service_decode_context(), &lane, "feature-native").unwrap().is_empty());
 }
 
 #[test]

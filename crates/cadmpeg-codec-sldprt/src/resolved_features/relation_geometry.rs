@@ -1940,7 +1940,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             )?;
             if relation_uses_solver_points(relation) {
                 let coordinates_by_index =
-                    inferred_point_coordinates_by_index(lane, relation.feature_ref.as_str());
+                    inferred_point_coordinates_by_index(ctx, lane, relation.feature_ref.as_str())?;
                 let mut resolved_positions = Vec::with_capacity(relation.operands.len());
                 for (index, operand) in relation.operands.iter().enumerate() {
                     let geometry_ref = ctx.format_retained(
