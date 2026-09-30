@@ -580,34 +580,36 @@ where
     E: From<NativeConvertError>,
     I: IntoIterator<Item = Result<T, E>>,
 {
-    let mut converted = records
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, record)| {
-            let record = record?;
-            ctx.charge_collection_items(1, "store native record")
-                .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-            let writer = RefCell::new(ChargingJsonWriter {
-                ctx,
-                bytes: Vec::new(),
-                refusal: None,
-            });
-            let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
-            let result = NativeRecord::from_typed_with_sink(&record, Some(&sink));
-            let source = match result {
-                Ok(record) => return Ok(record),
-                Err(error) => writer
-                    .borrow_mut()
-                    .refusal
-                    .take()
-                    .map_or(error, NativeConvertError::Resource),
-            };
-            Err(E::from(NativeConvertError::WriteRecord {
-                ordinal,
-                source: Box::new(source),
-            }))
-        })
-        .collect::<Result<Vec<_>, E>>()?;
+    let mut converted = Vec::new();
+    for (ordinal, record) in records.into_iter().enumerate() {
+        let record = record?;
+        ctx.charge_collection_items(1, "store native record")
+            .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+        converted.try_reserve(1).map_err(|_| {
+            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+                "store native record", u64::MAX - 1, u64::MAX,
+            )))
+        })?;
+        let writer = RefCell::new(ChargingJsonWriter {
+            ctx,
+            bytes: Vec::new(),
+            refusal: None,
+        });
+        let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
+        let result = NativeRecord::from_typed_with_sink(&record, Some(&sink));
+        let value = match result {
+            Ok(record) => record,
+            Err(error) => {
+                let source = writer.borrow_mut().refusal.take()
+                    .map_or(error, NativeConvertError::Resource);
+                return Err(E::from(NativeConvertError::WriteRecord {
+                    ordinal,
+                    source: Box::new(source),
+                }));
+            }
+        };
+        converted.push(value);
+    }
     let scratch_bytes = converted
         .len()
         .checked_mul(std::mem::size_of::<NativeRecord>())
@@ -735,6 +737,11 @@ impl NativeNamespace {
                     });
                 }
             };
+            typed.try_reserve(1).map_err(|_| {
+                NativeConvertError::Resource(ctx.refuse_codec_limit(
+                    "load typed native record", u64::MAX - 1, u64::MAX,
+                ))
+            })?;
             typed.push(value);
         }
         Ok(typed)
