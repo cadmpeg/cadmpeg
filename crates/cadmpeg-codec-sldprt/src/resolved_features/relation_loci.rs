@@ -1836,7 +1836,7 @@ fn unique_profile_line_angle_entity(
 #[derive(Clone, Copy)]
 enum LinePairOrdering { Operand, Identity }
 
-fn find_profile_entity<'a>(ctx: &DecodeContext<'_>, entities: &'a [SketchEntity], id: &SketchEntityId,
+pub(super) fn find_profile_entity<'a>(ctx: &DecodeContext<'_>, entities: &'a [SketchEntity], id: &SketchEntityId,
     operation: &'static str) -> Result<Option<&'a SketchEntity>, cadmpeg_core::CodecError> {
     for entity in entities {
         charge_relation_identity_work(ctx, [entity.id().as_str(), id.as_str()], 8, operation)?;

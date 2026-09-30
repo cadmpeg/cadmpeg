@@ -16,7 +16,7 @@ use super::markers::{
     sketch_marker_prefix_at,
 };
 use super::relation_loci::{
-    canonical_profile_loci, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
+    canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
     linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
     point_line_distance_value, profile_locus_point, profile_locus_point_charged, relation_operand_loci, same_dimension_angle,
     same_dimension_length,
@@ -789,12 +789,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Ok(Some(native()?));
             };
+            const OPERATION: &str = "resolve SLDPRT marker intersection operands";
             let mut point = None;
             let mut entities = Vec::new();
             for locus in loci {
-                let Some(entity) = sketch_entities
-                    .iter()
-                    .find(|candidate| candidate.id() == locus_entity(&locus))
+                let Some(entity) = find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?
                 else {
                     return Ok(Some(native()?));
                 };
@@ -806,7 +805,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             | SketchGeometryDefinition::Native { .. }
                     )
                 {
-                    entities.push(entity.id().clone());
+                    ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), OPERATION)?;
+                    ctx.reserve_collection_vec(&mut entities, 1, OPERATION)?;
+                    let identity = match locus {
+                        SketchLocus::Entity(identity) | SketchLocus::Start(identity)
+                        | SketchLocus::End(identity) | SketchLocus::Center(identity) => identity,
+                    };
+                    entities.push(identity);
                 } else if point.replace(locus).is_some() {
                     return Ok(Some(native()?));
                 }
@@ -814,19 +819,22 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let (Some(point), [first, second]) = (point, entities.as_slice()) else {
                 return Ok(Some(native()?));
             };
+            charge_typed_endpoint_work(ctx, first.as_str().len(), 4, OPERATION)?;
+            charge_typed_endpoint_work(ctx, second.as_str().len(), 4, OPERATION)?;
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(position) = profile_locus_point(&point, sketch_entities) else {
+            let Some(position) = profile_locus_point_charged(ctx, &point, sketch_entities, OPERATION)? else {
                 return Ok(Some(native()?));
             };
-            if [first, second].into_iter().any(|id| {
-                sketch_entities
-                    .iter()
-                    .find(|entity| entity.id() == id)
-                    .is_none_or(|entity| !sketch_entity_contains_point(entity, position))
-            }) {
-                return Ok(Some(native()?));
+            for identity in [first, second] {
+                let Some(entity) = find_profile_entity(ctx, sketch_entities, identity, OPERATION)? else {
+                    return Ok(Some(native()?));
+                };
+                ctx.charge_work(256, OPERATION)?;
+                if !sketch_entity_contains_point(entity, position) {
+                    return Ok(Some(native()?));
+                }
             }
             let [first, second] = marker_resolved_or_none!(<[SketchEntityId; 2]>::try_from(entities).ok());
             SketchConstraintDefinitionInput::AtIntersection { point, first, second }
@@ -838,12 +846,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Ok(Some(native()?));
             };
+            const OPERATION: &str = "resolve SLDPRT symmetric marker operands";
             let mut axis = None;
             let mut points = Vec::new();
             for locus in loci {
-                let entity = sketch_entities
-                    .iter()
-                    .find(|candidate| candidate.id() == locus_entity(&locus));
+                let entity = find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?;
                 if matches!(locus, SketchLocus::Entity(_))
                     && entity.is_some_and(|entity| {
                         matches!(
@@ -858,25 +865,29 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         return Ok(Some(native()?));
                     }
                 } else {
+                    ctx.charge_work(u64_from_index(std::mem::size_of::<SketchLocus>()), OPERATION)?;
+                    ctx.reserve_collection_vec(&mut points, 1, OPERATION)?;
                     points.push(locus);
                 }
             }
             let (Some(axis), [first, second]) = (axis, points.as_slice()) else {
                 return Ok(Some(native()?));
             };
+            charge_typed_endpoint_work(ctx, locus_entity(first).as_str().len(), 4, OPERATION)?;
+            charge_typed_endpoint_work(ctx, locus_entity(second).as_str().len(), 4, OPERATION)?;
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(first_point) = profile_locus_point(first, sketch_entities) else {
+            let Some(first_point) = profile_locus_point_charged(ctx, first, sketch_entities, OPERATION)? else {
                 return Ok(Some(native()?));
             };
-            let Some(second_point) = profile_locus_point(second, sketch_entities) else {
+            let Some(second_point) = profile_locus_point_charged(ctx, second, sketch_entities, OPERATION)? else {
                 return Ok(Some(native()?));
             };
-            let Some(axis_entity) = sketch_entities.iter().find(|entity| entity.id() == &axis)
-            else {
+            let Some(axis_entity) = find_profile_entity(ctx, sketch_entities, &axis, OPERATION)? else {
                 return Ok(Some(native()?));
             };
+            ctx.charge_work(256, OPERATION)?;
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Ok(Some(native()?));
             }
