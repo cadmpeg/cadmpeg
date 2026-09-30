@@ -244,7 +244,9 @@ pub(crate) fn decode(
             )));
         }
         non_root_component_links = non_root_component_links
-            .checked_add(links.len().saturating_sub(stream_roots))
+            .checked_add(links.len().checked_sub(stream_roots).ok_or_else(|| {
+                CodecError::Malformed("F3D ACT root count exceeds component links".into())
+            })?)
             .ok_or_else(|| {
                 CodecError::Malformed("F3D ACT component-link count overflows".into())
             })?;
@@ -335,7 +337,7 @@ fn decode_table(
     let count =
         usize::try_from(View::u32_le_at(bytes, count_offset).ok_or_else(|| malformed("count"))?)
             .map_err(|_| malformed("count"))?;
-    if count > frame.end.saturating_sub(cursor) / 15 {
+    if frame.end.checked_sub(cursor).is_none_or(|left| count > left / 15) {
         return Err(malformed("entry count"));
     }
     let mut entries = Vec::new();
@@ -394,7 +396,7 @@ fn decode_table(
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("table-reference count"))?;
-    if reference_count > frame.end.saturating_sub(cursor) / 11 {
+    if frame.end.checked_sub(cursor).is_none_or(|left| reference_count > left / 11) {
         return Err(malformed("table-reference count"));
     }
     let mut table_references = Vec::new();
@@ -428,7 +430,7 @@ fn decode_table(
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("channel-registry count"))?;
-    if registry_count > frame.end.saturating_sub(cursor) / 81 {
+    if frame.end.checked_sub(cursor).is_none_or(|left| registry_count > left / 81) {
         return Err(malformed("channel-registry count"));
     }
     let mut registry_names = BTreeSet::new();
