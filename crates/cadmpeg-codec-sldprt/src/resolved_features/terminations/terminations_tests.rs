@@ -1477,3 +1477,73 @@ fn compact_combine_operation_is_name_length_relative() {
     tokenized[operation + 9] = 0;
     assert_eq!(compact_combine_operation_at(&tokenized, offset), None);
 }
+
+fn sweep_path_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    let histories = [FeatureHistory {
+        id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(),
+        configurations: Vec::new(), features: vec![Feature {
+            id: "sweep".into(), parent: "history".into(), xml_tag: "Feature".into(),
+            tree_parent: None, source_id: FeatureSource::from_value(119), ordinal: 0,
+            name: "Sweep".into(), kind: "Sweep".into(), input_class: Some("moSweep_c".into()),
+            suppressed: false, parameters: BTreeMap::new(), dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(), text: None, content: Vec::new(),
+        }],
+    }];
+    let mut payload = vec![0; 40];
+    payload.extend([0xff, 0xff, 1, 0]);
+    payload.extend(19u16.to_le_bytes());
+    payload.extend(b"moGeneralCurveRef_w");
+    let lanes = [FeatureInputLane {
+        id: "lane#35".into(), configuration: None, native_payload: payload,
+        classes: vec![crate::records::FeatureInputClass {
+            id: "general-curve".into(), parent: "lane#35".into(), ordinal: 0, offset: 40,
+            name: "moGeneralCurveRef_w".into(),
+        }],
+        names: vec![FeatureInputName {
+            id: "sweep-name".into(), parent: "lane#35".into(), ordinal: 0,
+            offset: 0, object_id: ObjectId::from_value(119), value: "Sweep".into(),
+        }],
+        scalars: Vec::new(), relation_bindings: Vec::new(), relation_instances: Vec::new(),
+        body_selections: Vec::new(), edge_selections: Vec::new(), surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(), references: Vec::new(), sketch_entities: Vec::new(),
+    }];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    let mut admitted = histories.clone();
+    super::enrich_history_sweep_paths(&service, &mut admitted, &lanes).unwrap();
+    assert_eq!(admitted[0].features[0].properties.get("Path").map(String::as_str),
+        Some("sldprt:feature-input:general-curve-ref:35:40"));
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lanes[0].native_payload, &arena, &policy,
+    ).unwrap();
+    super::enrich_history_sweep_paths(&ctx, &mut histories.clone(), &lanes).unwrap_err()
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_collection_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    assert!(matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "enrich SLDPRT sweep paths"));
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_retained_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    assert!(matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && limit.operation == "enrich SLDPRT sweep paths"));
+}
+
+#[test]
+fn sweep_path_enrichment_refuses_work_limit() {
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    assert!(matches!(sweep_path_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits
+            && limit.operation == "enrich SLDPRT sweep paths"));
+}
