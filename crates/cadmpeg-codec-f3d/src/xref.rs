@@ -835,7 +835,7 @@ fn indexed_records(
 ) -> Result<Vec<IndexedRecord>, CodecError> {
     ctx.charge_work(u64_from_index(bytes.len()), "scan F3D xref record headers")?;
     let mut records: Vec<IndexedRecord> = Vec::new();
-    for at in 0..bytes.len().saturating_sub(11) {
+    for at in bytes.len().checked_sub(11).into_iter().flat_map(|last| 0..last) {
         if View::u32_le_at(bytes, at) != Some(3) {
             continue;
         }

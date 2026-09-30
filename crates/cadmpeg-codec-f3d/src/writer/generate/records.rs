@@ -988,7 +988,12 @@ pub(super) fn encode_design_metastream(
         out.extend_from_slice(&count.to_le_bytes());
         for entity_id in &design_type.entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
-            next_entity_id = next_entity_id.max(entity_id.saturating_add(1));
+            let next = entity_id.checked_add(1).ok_or_else(|| {
+                CodecError::Malformed("generated Design next entity id overflows".into())
+            })?;
+            if next > next_entity_id {
+                next_entity_id = next;
+            }
         }
     }
     // Named-entity list, primary record index, and secondary index.
@@ -1097,6 +1102,36 @@ mod tests {
             SketchRelationReturnMember,
         },
     };
+
+    fn registry_with_entity(entity_id: u64) -> super::GeneratedDesignRegistry {
+        super::GeneratedDesignRegistry {
+            types: vec![super::super::presentation::GeneratedDesignType {
+                type_guid: "11111111-2222-3333-4444-555555555555".to_owned().try_into().unwrap(),
+                base_type_guid: None,
+                version: 1,
+                module: "Fusion".into(),
+                entity_ids: vec![entity_id],
+            }],
+            body_map: None,
+            browser_nodes: None,
+        }
+    }
+
+    #[test]
+    fn metastream_rejects_overflowed_next_entity_id() {
+        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
+            .expect_err("the next identity cannot be represented");
+        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
+            if message == "generated Design next entity id overflows"));
+    }
+
+    #[test]
+    fn metastream_preserves_largest_representable_next_entity_id() {
+        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
+            .unwrap().unwrap();
+        let next_offset = bytes.len() - 16;
+        assert_eq!(cadmpeg_core::decode::View::u64_le_at(&bytes, next_offset), Some(u64::MAX));
+    }
 
     /// One member whose ordinal the wire states, which is what the writer
     /// needs: `SketchRelationMember::from_index` retains none.
