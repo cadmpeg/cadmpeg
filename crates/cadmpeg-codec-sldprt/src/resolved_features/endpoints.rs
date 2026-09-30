@@ -95,11 +95,10 @@ const CURVE_ENDPOINT_INDEX_DECODERS: &[CurveEndpointDecoder] = &[
     extended_wide_horizontal_relation_endpoint_indices,
 ];
 
-fn curve_endpoint_index_candidates(payload: &[u8], offset: usize) -> Vec<[u32; 2]> {
-    CURVE_ENDPOINT_INDEX_DECODERS
-        .iter()
-        .filter_map(|decode| decode(payload, offset))
-        .collect()
+fn curve_endpoint_index_candidates(payload: &[u8], offset: usize) -> impl Iterator<Item = [u32; 2]> + Clone {
+    let candidates: [Option<[u32; 2]>; CURVE_ENDPOINT_INDEX_DECODERS.len()] =
+        std::array::from_fn(|index| CURVE_ENDPOINT_INDEX_DECODERS[index](payload, offset));
+    candidates.into_iter().flatten()
 }
 
 pub(super) fn extended_direct_object_line_endpoint_ids(
@@ -514,7 +513,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         }
     }
     let index_candidates = curve_endpoint_index_candidates(payload, offset);
-    if !index_candidates.is_empty() {
+    if index_candidates.clone().next().is_some() {
         let resolve_indexed = |indices: [u32; 2]| {
             indices
                 .into_iter()
@@ -563,12 +562,12 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 .collect::<Vec<_>>()
         };
         let first_indexed = index_candidates
-            .first()
-            .copied()
+            .clone()
+            .next()
             .map(resolve_indexed)
             .unwrap_or_default();
         let (indexed, indexed_ambiguous) = resolve_indexed_marker_candidates(
-            index_candidates.iter().copied().map(resolve_indexed),
+            index_candidates.map(resolve_indexed),
         );
         if indexed_ambiguous {
             return Vec::new();
@@ -1246,25 +1245,21 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
             .map(|endpoints| endpoints.to_vec())
             .unwrap_or_default();
     }
-    let candidates = distinct_marker_pairs([resolve(complete_entity_roster, one_based), fallback]);
-    let [endpoints] = candidates.as_slice() else {
+    let Some(endpoints) = unique_marker_pair([resolve(complete_entity_roster, one_based), fallback]) else {
         return Vec::new();
     };
     endpoints.to_vec()
 }
 
-fn distinct_marker_pairs<'a>(
-    candidates: impl IntoIterator<Item = Option<[&'a SketchInputEntity; 2]>>,
-) -> Vec<[&'a SketchInputEntity; 2]> {
-    let mut distinct: Vec<[&'a SketchInputEntity; 2]> = Vec::new();
-    for candidate in candidates.into_iter().flatten() {
-        if !distinct.iter().any(|existing| {
-            existing[0].id() == candidate[0].id() && existing[1].id() == candidate[1].id()
-        }) {
-            distinct.push(candidate);
-        }
+fn unique_marker_pair<'a>(
+    candidates: [Option<[&'a SketchInputEntity; 2]>; 2],
+) -> Option<[&'a SketchInputEntity; 2]> {
+    let mut candidates = candidates.into_iter().flatten();
+    let first = candidates.next()?;
+    match candidates.next() {
+        Some(second) if first[0].id() != second[0].id() || first[1].id() != second[1].id() => None,
+        _ => Some(first),
     }
-    distinct
 }
 
 /// Resolve all accepted index pairs against the owner-consistent marker
@@ -1379,7 +1374,7 @@ fn compact_complete_marker_roster_endpoints<'a>(
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Vec<&'a SketchInputEntity> {
-    let candidates = distinct_marker_pairs([true, false].into_iter().map(|one_based| {
+    let candidates = unique_marker_pair([true, false].map(|one_based| {
         let [first, second] =
             compact_complete_marker_roster_pair(payload, curve, markers, one_based)?;
         [first, second]
@@ -1396,7 +1391,7 @@ fn compact_complete_marker_roster_endpoints<'a>(
             })
             .then_some([first, second])
     }));
-    let [endpoints] = candidates.as_slice() else {
+    let Some(endpoints) = candidates else {
         return Vec::new();
     };
     endpoints.to_vec()
@@ -6258,10 +6253,10 @@ pub(super) fn relation_reference_curve_record(
         }
     }
     let candidates =
-        distinct_marker_pairs([false, true].into_iter().map(|one_based| {
+        unique_marker_pair([false, true].map(|one_based| {
             compact_complete_marker_roster_pair(payload, curve, markers, one_based)
         }));
-    let [[first, second]] = candidates.as_slice() else {
+    let Some([first, second]) = candidates else {
         return false;
     };
     matches!(first.kind(), SketchInputKind::Relation(_))

@@ -1354,7 +1354,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
         legacy_state_five_curve_endpoint_indices(&payload, 0),
         Some([2, 3])
     );
-    let candidates = super::curve_endpoint_index_candidates(&payload, 0);
+    let candidates = super::curve_endpoint_index_candidates(&payload, 0).collect::<Vec<_>>();
     assert!(candidates.contains(&[1, 2]));
     assert!(candidates.contains(&[2, 3]));
 
