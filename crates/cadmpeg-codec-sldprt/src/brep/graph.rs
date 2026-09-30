@@ -5010,6 +5010,7 @@ fn nurbs_boundary_pcurve(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
 ) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
+    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let (fixed_degree, fixed_count, fixed_knots) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree() as usize,
@@ -5120,6 +5121,7 @@ fn nurbs_strict_isocurve_pcurve(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<InverseResolution<PcurveGeometry>, cadmpeg_core::CodecError> {
+    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let axis_candidate = |fixed_axis| -> Result<
         InverseResolution<PcurveGeometry>,
         cadmpeg_core::CodecError,
@@ -5605,6 +5607,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     fixed_axis: SurfaceParameterAxis,
 ) -> Result<InverseResolution<PcurveGeometry>, NurbsPcurveFailure> {
+    super::evaluation::charge_nurbs_isocurve_comparison(ctx, surface, curve)?;
     let (fixed_degree, fixed_count, fixed_knots, fixed_periodic) = match fixed_axis {
         SurfaceParameterAxis::U => (
             surface.u_degree(),
