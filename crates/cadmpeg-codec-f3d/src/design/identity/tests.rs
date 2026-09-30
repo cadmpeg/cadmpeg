@@ -121,7 +121,7 @@ fn neutral_component_insert_occurrence_id_refuses_before_allocation_and_preserve
 fn neutral_assembly_joint_id_refuses_before_allocation_and_preserves_bytes() {
     let scope = encoded_scope();
     assert_identity_budget(
-        &crate::ids::neutral_assembly_joint_id(None, &scope).expect("joint identifier"),
+        &crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scope)).expect("joint identifier"),
         "f3d assembly joint identifier",
         |ctx| super::neutral_assembly_joint_id(Some(ctx), &scope),
     );
