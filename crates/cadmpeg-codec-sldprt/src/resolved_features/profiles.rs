@@ -2187,20 +2187,24 @@ pub(crate) fn project_sketch_block_profiles(
     for lane in lanes {
         for history in histories {
             let mut objects = Vec::new();
-            for feature in &history.features {
+            for (ordinal, feature) in history.features.iter().enumerate() {
                 if let Some(name) = feature_object_name(feature, lane) {
                     if !crate::history::classify::is_history_metadata_record(
                         feature,
                         &history.features,
                     ) {
                         ctx.reserve_collection_vec(&mut objects, 1, "collect SLDPRT sketch block history objects")?;
-                        objects.push((name.offset, feature));
+                        objects.push((name.offset, feature, ordinal));
                     }
                 }
             }
-            objects.sort_by_key(|(offset, _)| *offset);
+            let levels = if objects.len() > 1 { objects.len().ilog2() + 1 } else { 1 };
+            let work = u64_from_index(objects.len()).checked_mul(u64::from(levels))
+                .ok_or_else(|| ctx.refuse_codec_limit("sort SLDPRT sketch block objects", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, "sort SLDPRT sketch block objects")?;
+            objects.sort_unstable_by_key(|(offset, _, ordinal)| (*offset, *ordinal));
 
-            for (profile_position, (_, native_profile)) in objects.iter().enumerate() {
+            for (profile_position, (_, native_profile, _)) in objects.iter().enumerate() {
                 if !super::component_paths::is_profile_feature_object(native_profile) {
                     continue;
                 }
@@ -2216,19 +2220,19 @@ pub(crate) fn project_sketch_block_profiles(
                     .iter()
                     .enumerate()
                     .skip(profile_position + 1)
-                    .find(|(_, (_, feature))| !is_sketch_block_object(feature))
+                    .find(|(_, (_, feature, _))| !is_sketch_block_object(feature))
                     .map_or(objects.len(), |(index, _)| index);
                 let intervening = &objects[profile_position + 1..end];
                 if !super::component_paths::profile_owns_intervening_sketch_blocks(
                     ctx,
                     native_profile,
-                    intervening.iter().map(|(_, feature)| *feature),
+                    intervening.iter().map(|(_, feature, _)| *feature),
                 )? {
                     continue;
                 }
                 let inferred_children = if explicit_children.is_none() {
                     let mut children = HashSet::new();
-                    for (_, feature) in intervening.iter().filter(|(_, feature)| {
+                    for (_, feature, _) in intervening.iter().filter(|(_, feature, _)| {
                         native_object_class(feature.input_class.as_deref().unwrap_or_default())
                             == NativeClassKind::SketchBlockDefinition
                     }) {
@@ -2268,7 +2272,7 @@ pub(crate) fn project_sketch_block_profiles(
                 let mut block_sketches = HashMap::<u32, SketchId>::new();
                 let mut block_feature_ids = HashMap::<u32, String>::new();
                 let mut definitions_complete = true;
-                for (_, native_definition) in intervening.iter().filter(|(_, feature)| {
+                for (_, native_definition, _) in intervening.iter().filter(|(_, feature, _)| {
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockDefinition
                 }) {
@@ -2334,7 +2338,7 @@ pub(crate) fn project_sketch_block_profiles(
 
                 let mut instances = Vec::new();
                 let mut instances_complete = true;
-                for (_, native_instance) in intervening.iter().filter(|(_, feature)| {
+                for (_, native_instance, _) in intervening.iter().filter(|(_, feature, _)| {
                     native_object_class(feature.input_class.as_deref().unwrap_or_default())
                         == NativeClassKind::SketchBlockInstance
                 }) {
