@@ -342,10 +342,10 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID);
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID);
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
+    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
         let Some((physical_guid_at, physical_guid)) =
@@ -486,12 +486,12 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)
+    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?
         .into_iter()
-        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID))
+        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?)
         .collect::<Vec<_>>();
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
     for marker_at in find_all(bytes, start, end, &marker) {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
@@ -1246,7 +1246,7 @@ mod tests {
 
         let node_start = bytes.len();
         assert!(bare_presentation_material(&bytes, 15, node_start, entity).is_some());
-        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]).len();
+        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]).expect("fixture UTF-16 code-unit count fits u32").len();
         assert!(
             bare_presentation_material(&bytes, 15, node_start - trailer_len, entity,).is_none()
         );

@@ -78,7 +78,7 @@ pub(super) fn exact_assembly_alignment(
         if lanes
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
+            .any(|(ordinal, owner)| u32::try_from(ordinal) != Ok(owner.local_ordinal()))
         {
             return None;
         }

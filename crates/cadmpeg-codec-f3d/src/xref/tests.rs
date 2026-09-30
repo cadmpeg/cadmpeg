@@ -1036,14 +1036,14 @@ fn repeated_target_occurrence_record_with_path_role(
         .1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a).expect("fixture UTF-16 code-unit count fits u32"));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     match transform {
         Some(transform) => {
@@ -1055,7 +1055,7 @@ fn repeated_target_occurrence_record_with_path_role(
         None => bytes.push(1),
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     bytes.extend(local_reference(3));
     bytes
@@ -1130,7 +1130,7 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
     assert_eq!(transform_offset, None);
-    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role);
+    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role).expect("fixture UTF-16 code-unit count fits u32");
     assert_eq!(
         &local_carrier[role_offset - 4..role_offset - 4 + encoded_role.len()],
         encoded_role
@@ -1153,22 +1153,22 @@ fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a).expect("fixture UTF-16 code-unit count fits u32"));
+    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
     bytes
@@ -1227,10 +1227,10 @@ fn legacy_occurrence_record(
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.extend(crate::bytes::lp_utf16_bytes(
         "11111111-2222-3333-4444-555555555555",
-    ));
+    ).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend(crate::bytes::lp_utf16_bytes(
         "66666666-7777-8888-9999-aaaaaaaaaaaa",
-    ));
+    ).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.push(0);
     bytes.extend(legacy_occurrence_reference(3, 0x1112_1314_1516_1718));
     match transform {
@@ -1243,7 +1243,7 @@ fn legacy_occurrence_record(
         None => bytes.push(1),
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"));
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     bytes
 }

@@ -371,7 +371,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     ];
     for guid in related_guids {
-        let encoded = crate::bytes::lp_utf16_bytes(guid);
+        let encoded = crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
         snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
         cursor += encoded.len();
     }
@@ -396,7 +396,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     cursor += 4;
     let third_guid = "00000000-0000-0000-0000-000000000000";
-    let encoded = crate::bytes::lp_utf16_bytes(third_guid);
+    let encoded = crate::bytes::lp_utf16_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     cursor += 3;
@@ -409,7 +409,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
     cursor += 4;
-    let encoded = crate::bytes::lp_utf16_bytes("Base Feature");
+    let encoded = crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
@@ -1180,7 +1180,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
     bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
         .copy_from_slice(&202u32.to_le_bytes());
-    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f");
+    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f").expect("fixture UTF-16 code-unit count fits u32");
     bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
     bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
         .copy_from_slice(&class_377::REFERENCE_COUNT_VALUE.to_le_bytes());
@@ -1193,7 +1193,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::KIND_LENGTH..class_377::KIND]
         .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
     bytes[class_377::KIND..class_377::FEATURE_ORDINAL]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32")[4..]);
     bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]
         .copy_from_slice(&1u32.to_le_bytes());
     bytes[class_377::PREVIOUS_HISTORY_STATE_ID..class_377::PREVIOUS_HISTORY_STATE_ID + 4]
@@ -1424,7 +1424,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             crate::layout::base_feature_class_377_prefix::KIND_LENGTH_VALUE,
         );
         bytes[kind..feature_ordinal]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32")[4..]);
         put_u32(bytes, feature_ordinal, ordinal);
 
         let mut scope = DesignParameterScope::empty(
@@ -1501,7 +1501,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         bytes[compact::ENVELOPE_GUID_CODE_UNIT_COUNT..compact::ZERO_RUN_AFTER_GUID]
             .copy_from_slice(&crate::bytes::lp_utf16_bytes(
                 "fcec56e3-832f-4468-88a4-d710e62e629f",
-            ));
+            ).expect("fixture UTF-16 code-unit count fits u32"));
         let _ = put_kind_tail(
             &mut bytes,
             (
@@ -1713,7 +1713,7 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
     expanded_bytes[expanded::ENVELOPE_GUID_CODE_UNIT_COUNT..expanded::ZERO_RUN_AFTER_GUID]
         .copy_from_slice(&crate::bytes::lp_utf16_bytes(
             "00000000-0000-0000-0000-000000000000",
-        ));
+        ).expect("fixture UTF-16 code-unit count fits u32"));
     let mut expanded_scope = put_kind_tail(
         &mut expanded_bytes,
         (

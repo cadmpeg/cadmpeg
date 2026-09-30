@@ -1237,7 +1237,9 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     push_charged(
                         ctx,
                         &mut grip_vertices,
-                        GripVertexMarker::Secondary((vertex >= 0).then_some(vertex as usize)),
+                        GripVertexMarker::Secondary(if vertex >= 0 {
+                            Some(usize::try_from(vertex).map_err(|_| malformed(ctx, name, "secondary grip vertex exceeds address space"))?)
+                        } else { None }),
                         "read T-spline grip vertex markers",
                     )?;
                     require_end(ctx, name, fields, "secondary grip map")?;

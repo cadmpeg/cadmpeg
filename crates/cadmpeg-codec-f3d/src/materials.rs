@@ -358,7 +358,7 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
 
 fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&(PAGE_SIZE as u32).to_le_bytes());
+    bytes.extend_from_slice(&u32::try_from(PAGE_SIZE).map_err(|_| CodecError::malformed("Protein page size exceeds u32"))?.to_le_bytes());
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     let first = logical.len().min(PAGE_SIZE - 4);

@@ -2606,7 +2606,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 design_stream(owner.id()) == native_stream
                                     && owner.record_index() == *record_index
                                     && owner.scope_record_index() == scope.record_index
-                                    && owner.local_ordinal() == ordinal as u32
+                                    && u32::try_from(ordinal) == Ok(owner.local_ordinal())
                                     && owner.evaluated_value().get() == value
                                     && owner.evaluated_value_offset() == value_offset
                             })
@@ -2925,12 +2925,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 [0, 1]
                             };
                             let limit_lanes =
-                                limit_order.into_iter().enumerate().map(|(ordinal, index)| {
+                                limit_order.into_iter().zip([4_u32, 5]).map(|(index, local_ordinal)| {
                                     (
                                         limits.owner_record_indices[index],
                                         limits.value_offsets[index],
                                         [limits.minimum(), limits.maximum()][index],
-                                        4 + ordinal as u32,
+                                        local_ordinal,
                                     )
                                 });
                             limits.kind == generation.limit_kind()
@@ -2958,8 +2958,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                         design_stream(owner.id()) == native_stream
                                             && owner.record_index() == lane.value
                                             && owner.scope_record_index() == scope.record_index
-                                            && owner.local_ordinal()
-                                                == (alignment_start + ordinal) as u32
+                                            && u32::try_from(alignment_start + ordinal)
+                                                == Ok(owner.local_ordinal())
                                             && owner.evaluated_value().get() == *value
                                             && owner.evaluated_value_offset() == lane.offset
                                     })
@@ -4521,7 +4521,7 @@ fn valid_component_pattern_occurrences(
                             .occurrence_guid
                             .as_str()
                             .eq_ignore_ascii_case(row.occurrence_guid.as_str())
-                        && occurrence.occurrence_ordinal() == ordinal as u32 + 2
+                        && u32::try_from(ordinal).ok().and_then(|ordinal| ordinal.checked_add(2)) == Some(occurrence.occurrence_ordinal())
                         && occurrence.transform() == Some(row.instance.transform)
                 })
         })
@@ -9116,7 +9116,7 @@ fn validate_body_links(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result
         if links
             .iter()
             .enumerate()
-            .any(|(ordinal, link)| link.ordinal != ordinal as u32)
+            .any(|(ordinal, link)| u32::try_from(ordinal) != Ok(link.ordinal))
         {
             ctx.push_constant_finding(
                 findings,
@@ -9179,7 +9179,7 @@ fn validate_subentity_tags(
         if tags
             .iter()
             .enumerate()
-            .any(|(ordinal, tag)| tag.ordinal != ordinal as u32)
+            .any(|(ordinal, tag)| u32::try_from(ordinal) != Ok(tag.ordinal))
         {
             ctx.push_constant_finding(
                 findings,

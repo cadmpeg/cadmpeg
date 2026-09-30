@@ -192,7 +192,8 @@ fn patch_asm_geometry(
                 .get(&crate::ids::brep_entity_id(body.index))
                 .and_then(|transform| {
                     body.ref_at(5)
-                        .map(|reference| (reference as usize, *transform))
+                        .and_then(|reference| usize::try_from(reference).ok())
+                        .map(|reference| (reference, *transform))
                 })
         })
         .collect::<BTreeMap<_, _>>();

@@ -129,7 +129,10 @@ pub(crate) fn decode_parameter_scopes(
                         {
                             continue;
                         }
-                        if let Some(at) = first_at.get(&(entity.entity_id.suffix() as u32)) {
+                        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
+                            continue;
+                        };
+                        if let Some(at) = first_at.get(&suffix) {
                             if unique_match.replace((entity, at + 1)).is_some() {
                                 multiple_matches = true;
                             }

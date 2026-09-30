@@ -1007,7 +1007,7 @@ fn decode_persistent_references_from_stream(
                         "f3d persistent reference ID allocation",
                     )?,
                     byte_offset: cadmpeg_core::decode::u64_from_index(offset),
-                    value_offset: (value_offset - offset) as u32,
+                    value_offset: u32::try_from(value_offset - offset).map_err(|_| ctx.refuse_codec_limit("f3d persistent reference relative offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(value_offset - offset)))?,
                     kind,
                     value,
                 },
@@ -1059,7 +1059,7 @@ fn decode_lost_edge_references_from_stream(
         };
         if after_tag != header_offset + 7
             || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-            || View::u32_le_at(bytes, header_offset + 25) != Some(marker.len() as u32)
+            || View::u32_le_at(bytes, header_offset + 25) != Some(u32::try_from(marker.len()).map_err(|_| ctx.refuse_codec_limit("f3d lost edge marker length", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(marker.len())))?)
         {
             continue;
         }
@@ -1888,7 +1888,7 @@ fn admit_sketch_relation(
         parsed.members.into_iter().map(|member| {
             (
                 member.reference.value,
-                member.reference.offset as u32,
+                member.reference.offset,
                 member.relation_ordinal,
             )
         }),
@@ -1899,7 +1899,7 @@ fn admit_sketch_relation(
             parsed
                 .return_members
                 .into_iter()
-                .map(|member| (member.value, member.offset as u32)),
+                .map(|member| (member.value, member.offset)),
         )?;
     let auxiliary_count = parsed.auxiliary_references.len();
     ctx.charge_collection_items(
@@ -1919,7 +1919,7 @@ fn admit_sketch_relation(
     for row in parsed.auxiliary_references {
         auxiliary_references.push(crate::records::identity::Located {
             value: row.value,
-            offset: row.offset as u32,
+            offset: u32::try_from(row.offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation auxiliary offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(row.offset)))?,
         });
     }
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -1934,10 +1934,10 @@ fn admit_sketch_relation(
         record_index: record.record_index,
         class_tag: record.class_tag.clone(),
         byte_offset: record.byte_offset,
-        state_offset: parsed.state_offset as u32,
+        state_offset: u32::try_from(parsed.state_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation state offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(parsed.state_offset)))?,
         owner_reference: parsed.owner_reference,
         owner_entity_id: None,
-        owner_reference_offset: parsed.owner_reference_offset as u32,
+        owner_reference_offset: u32::try_from(parsed.owner_reference_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation owner offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(parsed.owner_reference_offset)))?,
         auxiliary_references: crate::records::identity::ReferenceRun::located(auxiliary_references),
         rectangular_counted_reference_count,
         members,
@@ -2725,7 +2725,7 @@ fn decode_sketch_text_tail(
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         // Vertical alignment enum, one flag byte, and the font weight.
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
-        let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
+        let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
         cursor = cursor.checked_add(9)?;
         // The class tail opens with the text-type enum, which gates the placement
@@ -2809,7 +2809,7 @@ fn decode_txt_tag_sketch_text_tail(
             take_reference(payload, &mut cursor)?;
         }
         let font_weight =
-            View::u32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)? as i32;
+            i32::try_from(View::u32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)?).ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
         cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
         let owner = take_reference(payload, &mut cursor)?;
@@ -2857,7 +2857,7 @@ fn decode_indexed_sketch_text_tail(
         cursor = after_text;
         let second_reference = read_text_reference(payload, &mut cursor, second_slot)?;
         let vertical_alignment = View::u32_le_at(payload, cursor)?;
-        let font_weight = View::u32_le_at(payload, cursor.checked_add(5)?)? as i32;
+        let font_weight = i32::try_from(View::u32_le_at(payload, cursor.checked_add(5)?)?).ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
         cursor = cursor.checked_add(9)?;
         if !matches!(View::u32_le_at(payload, cursor)?, 0 | 1)
@@ -3572,7 +3572,7 @@ fn decode_sketch_curve_identities_from_stream(
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
             byte_offset: cadmpeg_core::decode::u64_from_index(frame.start),
-            geometry_offset: geometry_offset as u32,
+            geometry_offset: u32::try_from(geometry_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch curve geometry offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(geometry_offset)))?,
             entity_genesis,
             primary_id,
             secondary_id,
