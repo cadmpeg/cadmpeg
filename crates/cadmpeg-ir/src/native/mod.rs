@@ -136,6 +136,9 @@ pub enum NativeConvertError {
     /// JSON conversion failed.
     #[error("native record conversion failed: {0}")]
     Serde(#[from] serde_json::Error),
+    /// Canonical conversion refused an input member without a JSON parse error.
+    #[error("native record conversion failed: {0}")]
+    ConversionMessage(String),
     /// A stored record does not satisfy its codec-owned reader.
     #[error("native record {id}: {source}")]
     ReadRecord {
@@ -362,21 +365,18 @@ impl NativeRecord {
     /// keys must be distinct, and a `RawValue` payload is read through
     /// one-container replay rather than a recursion-limited parse.
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
-        Self::from_typed_with_sink(record, None)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        Self::from_typed_with_sink(&ctx, record, None)
     }
 
     fn from_typed_with_sink<T: Serialize>(
-        record: &T,
+        ctx: &DecodeContext<'_>, record: &T,
         sink: Option<&dyn canon::ByteSink>,
     ) -> Result<Self, NativeConvertError> {
-        let serialized = record
-            .serialize(canon::CanonValue::for_record_with_sink(sink))
-            .map_err(|error| match error {
-                canon::CanonError::NonFinite(steps) => NativeConvertError::NonFiniteNumber {
-                    field: canon::CanonError::field_path(&steps),
-                },
-                canon::CanonError::Json(error) => NativeConvertError::Serde(error),
-            })?;
+        let serialized = record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
+        ctx.charge_work(0, "construct canonical native value")?;
+        let serialized = serialized.map_err(|error| error.into_native(ctx))?;
         let canon::Node::Object(mut fields) = serialized else {
             return Err(NativeConvertError::NonObject);
         };
@@ -675,7 +675,7 @@ where
             refusal: None,
         });
         let sink = |bytes: &[u8]| writer.borrow_mut().write_all(bytes);
-        let result = NativeRecord::from_typed_with_sink(&record, Some(&sink));
+        let result = NativeRecord::from_typed_with_sink(ctx, &record, Some(&sink));
         let value = match result {
             Ok(record) => record,
             Err(error) => {

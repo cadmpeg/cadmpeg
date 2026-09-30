@@ -1729,3 +1729,40 @@ fn native_store_refuses_work_limit() {
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits));
 }
+
+fn assert_native_store_dimension_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec.decode(
+        &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let native = sldprt_native(decoded.ir());
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut expected = cadmpeg_ir::NativeNamespace::default();
+    native.store(&service, &mut expected).unwrap();
+    assert!(!expected.arenas()["features"].is_empty());
+
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 1,
+        ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 0,
+        _ => panic!("unsupported native-store test dimension"),
+    }
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+}
+
+#[test]
+fn native_store_refuses_collection_limit() {
+    assert_native_store_dimension_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn native_store_refuses_nesting_limit() {
+    assert_native_store_dimension_refusal(cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+}
