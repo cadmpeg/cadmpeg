@@ -1446,7 +1446,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
         width.record_index = 42;
         native.push(width);
     }
-    let materialized = expression_lookup;
+    let materialized = expression_lookup && operation != "f3d expression owner lookup";
     let max_limit = if retained { 4096 } else { 128 };
     for limit in 0..max_limit {
         let arena = DecodeArena::new();
@@ -1744,8 +1744,8 @@ fn expression_identifier_lookup_refuses_materialized_limit() {
 }
 
 #[test]
-fn expression_owner_lookup_refuses_materialized_limit() {
-    assert_projected_feature_refusal("f3d expression owner lookup", false);
+fn expression_owner_lookup_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d expression owner lookup", true);
 }
 
 #[test]

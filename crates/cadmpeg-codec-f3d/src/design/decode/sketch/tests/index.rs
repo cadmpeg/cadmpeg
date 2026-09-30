@@ -128,7 +128,7 @@ fn scoped_stream_copy_refuses_materialized_limit() {
     policy.limits.max_materialized_bytes = 5;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::decode::sketch::copy_scoped_stream(&ctx, "stream"),
+        (&ctx).format_scoped(format_args!("{}", "stream"), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text)),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));

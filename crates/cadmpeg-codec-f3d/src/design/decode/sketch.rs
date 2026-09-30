@@ -195,17 +195,7 @@ fn clone_sketch_entity_id_charged(
 }
 
 /// Copy a stream identity for a mutable decode pass under a scoped byte charge.
-pub(in crate::design) fn copy_scoped_stream<'a>(
-    ctx: &'a DecodeContext<'_>,
-    stream: &str,
-) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
-    let mut reservation =
-        ctx.reserve_scoped(0, "f3d scoped stream identity")?;
-    let mut copy = String::new();
-    ctx.reserve_scoped_string(&mut reservation, &mut copy, stream.len(), "f3d scoped stream identity")?;
-    copy.push_str(stream);
-    Ok((reservation, copy))
-}
+
 
 /// Cache a stream index under its borrowed identity after charging the map slot.
 pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
