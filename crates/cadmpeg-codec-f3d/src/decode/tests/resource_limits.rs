@@ -63,13 +63,7 @@ fn document_digest_attribute_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
     let mut attributes = std::collections::BTreeMap::new();
-    let error = super::super::insert_btree_item(
-        &ctx,
-        &mut attributes,
-        || cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-        "0".repeat(64),
-        "record F3D document digest",
-    )
+    let error = (&ctx).insert_btree_map(&mut attributes, (|| cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE))(), "0".repeat(64), "record F3D document digest").map(|_| ())
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -467,8 +461,7 @@ macro_rules! append_refuses_collection_limit {
             let arena = DecodeArena::new();
             let ctx = context(&arena, 1);
             let mut target = vec![1u32];
-            let error = super::super::append_decode_items(
-                &ctx,
+            let error = ctx.extend_vec(
                 &mut target,
                 vec![2u32, 3u32],
                 $operation,
@@ -557,11 +550,7 @@ fn primary_brep_name_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::copy_decode_string(
-        &ctx,
-        "Breps.BlobParts/BREP0.smb",
-        "retain F3D primary BREP name",
-    )
+    let error = ctx.copy_retained_text("Breps.BlobParts/BREP0.smb", "retain F3D primary BREP name")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -575,7 +564,7 @@ fn asm_history_collection_refuses_collection_limit() {
     let ctx = context(&arena, 0);
     let mut histories = Vec::new();
     let error =
-        super::super::push_decode_item(&ctx, &mut histories, 1_u32, "collect F3D ASM histories")
+        ctx.push_vec(&mut histories, 1_u32, "collect F3D ASM histories")
             .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -687,12 +676,7 @@ fn body_visibility_collection_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
     let mut visibilities = Vec::new();
-    let error = super::super::push_decode_item(
-        &ctx,
-        &mut visibilities,
-        7_u64,
-        "collect F3D body visibilities",
-    )
+    let error = ctx.push_vec(&mut visibilities, 7_u64, "collect F3D body visibilities")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -797,7 +781,7 @@ fn mesh_texture_asset_collection_refuses_limit() {
     let ctx = context(&arena, 0);
     let mut assets = Vec::new();
     let error =
-        super::super::push_decode_item(&ctx, &mut assets, 1_u32, "collect F3D mesh texture assets")
+        ctx.push_vec(&mut assets, 1_u32, "collect F3D mesh texture assets")
             .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -870,7 +854,7 @@ macro_rules! mesh_projection_item_refuses_collection_limit {
             let arena = DecodeArena::new();
             let ctx = context(&arena, 0);
             let mut items = Vec::new();
-            let error = super::super::push_decode_item(&ctx, &mut items, 1_u32, $operation)
+            let error = ctx.push_vec(&mut items, 1_u32, $operation)
                 .unwrap_err();
             assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.operation == $operation));
@@ -1119,11 +1103,7 @@ fn text_brep_fact_name_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::copy_decode_string(
-        &ctx,
-        "Breps.BlobParts/BREP0.sat",
-        "retain F3D text B-rep fact name",
-    )
+    let error = ctx.copy_retained_text("Breps.BlobParts/BREP0.sat", "retain F3D text B-rep fact name")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1137,11 +1117,7 @@ fn text_brep_loss_text_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::format_decode_string(
-        &ctx,
-        "report F3D text geometry loss",
-        format_args!("text carrier {}", "BREP0.sat"),
-    )
+    let error = ctx.format_retained(format_args!("text carrier {}", "BREP0.sat"), "report F3D text geometry loss")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1242,11 +1218,7 @@ fn dimension_native() -> crate::native::F3dNative {
 fn container_only_dimension_companion_index_refuses_collection_limit() {
     let arena = DecodeArena::new();
     let ctx = context(&arena, 0);
-    let error = super::super::collect_decode_set(
-        &ctx,
-        [("f3d:Design", 30)],
-        "index F3D container-only dimension companions",
-    )
+    let error = ctx.collect_hash_set([("f3d:Design", 30)], "index F3D container-only dimension companions")
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
