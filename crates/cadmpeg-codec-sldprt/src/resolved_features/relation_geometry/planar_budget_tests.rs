@@ -272,11 +272,19 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
         entity_index: 0,
         entity_ref: Some("canonical-point".into()),
     }];
+    lane.relation_instances[0].feature_ref = "unowned-feature".into();
+    markers[0].feature_ref = Some("feature".into());
+    markers[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
     lane.sketch_entities = markers;
+    let (mut owner_sketch, mut owner, _) = planar_fixture();
+    owner_sketch.id = sketch.clone();
+    owner.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(sketch)) },
+    ));
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
     let mut constraints = Vec::new();
-    project_relation_bindings(&ctx, &mut constraints, &[], &[], &entities, &[], &[lane])?;
+    project_relation_bindings(&ctx, &mut constraints, &[owner_sketch], &[owner], &entities, &[], &[lane])?;
     assert!(constraints.is_empty());
     Ok(())
 }

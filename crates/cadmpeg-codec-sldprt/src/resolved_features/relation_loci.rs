@@ -3868,37 +3868,67 @@ pub(super) fn profile_loci_by_marker(
             canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }
     }
+    const GROUP_OPERATION: &str = "group SLDPRT transformed profile markers";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketches_by_feature.len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(transforms.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+    let feature_key_bytes = sketches_by_feature.keys().try_fold(0u64, |sum, key| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(key.len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let transform_key_bytes = transforms.keys().try_fold(0u64, |sum, key| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(key.len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?;
     for lane in lanes {
         let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
         for marker in &lane.sketch_entities {
-            let Some(feature) = marker.feature_ref.as_deref() else {
-                continue;
-            };
+            ctx.charge_work(1, GROUP_OPERATION)?;
+            let Some(feature) = marker.feature_ref.as_deref() else { continue; };
+            ctx.charge_work(feature_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.len()))
+                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
             if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
-                markers_by_feature.entry(feature).or_default().push(marker);
+                reserve_profile_locus_map_slot(ctx, &mut markers_by_feature, &feature, feature_key_bytes,
+                    cadmpeg_core::decode::u64_from_index(feature.len()), GROUP_OPERATION)?;
+                let group = markers_by_feature.entry(feature).or_default();
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(group.len()).checked_add(1)
+                    .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<&SketchInputEntity>())))
+                    .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+                ctx.reserve_collection_vec(group, 1, GROUP_OPERATION)?;
+                group.push(marker);
             }
         }
         for (feature, markers) in markers_by_feature {
-            let Some(sketch) = sketches_by_feature.get(feature) else {
-                continue;
-            };
-            let Some(loci) = profile_loci.get(sketch) else {
-                continue;
-            };
-            let transforms = transforms
-                .get(feature)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            let loci_by_point = loci.iter().fold(
-                HashMap::<GridPoint, Vec<SketchLocus>>::new(),
-                |mut by_point, (point, locus)| {
-                    by_point
-                        .entry(quantize(*point, QUANTUM))
-                        .or_default()
-                        .push(locus.clone());
-                    by_point
-                },
-            );
+            ctx.charge_work(feature_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.len()))
+                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+            let Some(sketch) = sketches_by_feature.get(feature) else { continue; };
+            ctx.charge_work(sketch_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(sketch.as_str().len()))
+                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+            let Some(loci) = profile_loci.get(sketch) else { continue; };
+            ctx.charge_work(transform_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.len()))
+                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+            let transforms = transforms.get(feature).map(Vec::as_slice).unwrap_or_default();
+            let point_key_bytes = cadmpeg_core::decode::u64_from_index(loci.len()).checked_mul(64)
+                .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?;
+            let mut loci_by_point = HashMap::<GridPoint, Vec<SketchLocus>>::new();
+            for (point, locus) in loci {
+                let point = quantize(*point, QUANTUM);
+                reserve_profile_locus_map_slot(ctx, &mut loci_by_point, &point, point_key_bytes, 64, GROUP_OPERATION)?;
+                let bucket = loci_by_point.entry(point).or_default();
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(bucket.len()).checked_add(1)
+                    .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>())))
+                    .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
+                ctx.reserve_collection_vec(bucket, 1, GROUP_OPERATION)?;
+                let role = match locus {
+                    SketchLocus::Entity(_) => super::transforms::SketchLocusRole::Entity,
+                    SketchLocus::Start(_) => super::transforms::SketchLocusRole::Start,
+                    SketchLocus::End(_) => super::transforms::SketchLocusRole::End,
+                    SketchLocus::Center(_) => super::transforms::SketchLocusRole::Center,
+                };
+                bucket.push(role.copy_locus(ctx, locus_entity(locus), GROUP_OPERATION)?);
+            }
             for marker in markers {
                 let qualified_point = qualified_point_markers.contains(marker.id());
                 let result_key = if qualified_point {
