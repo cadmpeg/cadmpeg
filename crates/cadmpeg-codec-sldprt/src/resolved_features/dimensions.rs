@@ -1201,40 +1201,33 @@ fn extended_terminal_repeated_radial_circle_index(payload: &[u8], offset: usize)
 }
 
 fn terminal_repeated_radial_circle_pairs<'a>(
+    ctx: &DecodeContext<'_>,
     radial_index: usize,
     roster: &[&'a SketchInputEntity],
     radius: f64,
-) -> Option<Vec<(&'a SketchInputEntity, &'a SketchInputEntity)>> {
-    if radial_index != roster.len() || radius <= 0.0 || !radius.is_finite() {
-        return None;
-    }
-    let terminal = *roster.last()?;
-    let mut pairs = roster
-        .iter()
-        .zip(roster.iter().skip(1))
-        .filter_map(|(center, radial)| {
-            let center_index = center.object_index()?;
-            let radial_index = radial.object_index()?;
-            if center_index != radial_index.checked_add(1)? {
-                return None;
-            }
-            let [cu, cv] = center.coordinates_m?.get();
-            let [ru, rv] = radial.coordinates_m?.get();
-            same_dimension_length((ru - cu).hypot(rv - cv), radius).then_some((*center, *radial))
-        })
-        .collect::<Vec<_>>();
-    if pairs.len() < 2 || pairs.last().map(|(_, radial)| radial.id()) != Some(terminal.id()) {
-        return None;
-    }
+) -> Result<Option<Vec<(&'a SketchInputEntity, &'a SketchInputEntity)>>, cadmpeg_core::CodecError> {
+    if radial_index != roster.len() || radius <= 0.0 || !radius.is_finite() { return Ok(None); }
+    let Some(terminal) = roster.last().copied() else { return Ok(None); };
+    charge_marker_circle_work(ctx, roster.len(), 64)?;
+    let mut pairs = collect_marker_circle_items(ctx, roster.iter().zip(roster.iter().skip(1)).filter_map(|(center, radial)| {
+        let center_index = center.object_index()?;
+        let radial_index = radial.object_index()?;
+        if center_index != radial_index.checked_add(1)? { return None; }
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
+        same_dimension_length((ru - cu).hypot(rv - cv), radius).then_some((*center, *radial))
+    }))?;
+    charge_marker_circle_work(ctx, terminal.id().len(), 1)?;
+    if let Some((_, radial)) = pairs.last() { charge_marker_circle_work(ctx, radial.id().len(), 1)?; }
+    if pairs.len() < 2 || pairs.last().map(|(_, radial)| radial.id()) != Some(terminal.id()) { return Ok(None); }
     let mut used = HashSet::new();
-    if pairs
-        .iter()
-        .any(|(center, radial)| !used.insert(center.id()) || !used.insert(radial.id()))
-    {
-        return None;
+    for (center, radial) in &pairs {
+        if !insert_marker_circle_key(ctx, &mut used, center.id(), |key| key.len())?
+            || !insert_marker_circle_key(ctx, &mut used, radial.id(), |key| key.len())? { return Ok(None); }
     }
+    charge_marker_circle_sort(ctx, pairs.len())?;
     pairs.sort_unstable_by_key(|(center, _)| center.offset());
-    Some(pairs)
+    Ok(Some(pairs))
 }
 
 pub(super) fn extended_radial_circle_index(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1435,6 +1428,116 @@ fn copy_circle_carrier_entity_id(
     SketchEntityId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT circle carrier entity identity"))
 }
 
+const MARKER_CIRCLE_OPERATION: &str = "project SLDPRT marker circles";
+
+fn charge_marker_circle_work(ctx: &DecodeContext<'_>, count: usize, units: u64) -> Result<(), cadmpeg_core::CodecError> {
+    let work = u64::try_from(count).ok().and_then(|count| count.checked_add(1)).and_then(|count| count.checked_mul(units))
+        .ok_or_else(|| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, MARKER_CIRCLE_OPERATION)
+}
+
+fn collect_marker_circle_items<T>(ctx: &DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for item in items {
+        ctx.reserve_collection_vec(&mut result, 1, MARKER_CIRCLE_OPERATION)?;
+        result.push(item);
+    }
+    Ok(result)
+}
+
+fn insert_marker_circle_key<T: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>, keys: &mut HashSet<T>, key: T, key_len: impl Fn(&T) -> usize,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    charge_marker_circle_work(ctx, key_len(&key), 4)?;
+    if keys.contains(&key) { return Ok(false); }
+    ctx.charge_collection_items(1, MARKER_CIRCLE_OPERATION)?;
+    if keys.len() == keys.capacity() {
+        for old in &*keys { charge_marker_circle_work(ctx, key_len(old), 1)?; }
+    }
+    keys.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    Ok(keys.insert(key))
+}
+
+fn charge_marker_circle_sort(ctx: &DecodeContext<'_>, len: usize) -> Result<(), cadmpeg_core::CodecError> {
+    let levels = u64::from(len.checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(32))
+        .ok_or_else(|| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_marker_circle_work(ctx, len, levels)
+}
+
+fn marker_circle_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
+    charge_marker_circle_work(ctx, text.len(), 4)?;
+    ctx.format_retained(format_args!("{text}"), MARKER_CIRCLE_OPERATION)
+}
+
+fn charge_marker_circle_format(ctx: &DecodeContext<'_>, key_len: usize) -> Result<(), cadmpeg_core::CodecError> {
+    let len = key_len.checked_add(128).ok_or_else(|| ctx.refuse_codec_limit(MARKER_CIRCLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_marker_circle_work(ctx, len, 4)
+}
+
+fn marker_circle_carrier_reference(ctx: &DecodeContext<'_>, lane_key: &str, offset: usize) -> Result<String, cadmpeg_core::CodecError> {
+    charge_marker_circle_format(ctx, lane_key.len())?;
+    ctx.format_retained(format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"), MARKER_CIRCLE_OPERATION)
+}
+
+fn unique_marker_circle_center(
+    ctx: &DecodeContext<'_>, transforms: &[super::transforms::MarkerTransform], native: super::grid::GridPoint, quantum: f64,
+) -> Result<Option<Point2>, cadmpeg_core::CodecError> {
+    let mut unique = None;
+    for transform in transforms {
+        ctx.charge_work(64, MARKER_CIRCLE_OPERATION)?;
+        let Some(center) = transform.apply(native) else { continue; };
+        if unique.is_some_and(|previous| previous != center) { return Ok(None); }
+        unique = Some(center);
+    }
+    Ok(unique.map(|center| super::grid::GridPoint::from(center).point(quantum)))
+}
+
+fn marker_circle_one_to_one(
+    ctx: &DecodeContext<'_>, markers: &[(&SketchInputEntity, [f64; 2])], dimensions: &[(&cadmpeg_ir::features::DesignParameter, f64)], center: [f64; 2],
+) -> Result<bool, cadmpeg_core::CodecError> {
+    if markers.len() != dimensions.len() { return Ok(false); }
+    let [cu, cv] = center;
+    let mut used = HashSet::new();
+    for (_, radius) in dimensions {
+        let mut unique = None;
+        for (index, (_, [ru, rv])) in markers.iter().enumerate() {
+            ctx.charge_work(64, MARKER_CIRCLE_OPERATION)?;
+            if !same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, *radius) { continue; }
+            if unique.is_some() { return Ok(false); }
+            unique = Some(index);
+        }
+        let Some(index) = unique else { return Ok(false); };
+        if !insert_marker_circle_key(ctx, &mut used, index, |_| 16)? { return Ok(false); }
+    }
+    Ok(used.len() == markers.len())
+}
+
+fn charge_marker_circle_entities(ctx: &DecodeContext<'_>, entities: &[SketchEntity], sketch_id: &cadmpeg_ir::sketches::SketchId) -> Result<(), cadmpeg_core::CodecError> {
+    for entity in entities {
+        charge_marker_circle_work(ctx, sketch_id.as_str().len(), 1)?;
+        charge_marker_circle_work(ctx, entity.sketch.as_str().len(), 1)?;
+        charge_marker_circle_work(ctx, entity.id().as_str().len(), 4)?;
+        charge_marker_circle_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 4)?;
+        ctx.charge_work(64, MARKER_CIRCLE_OPERATION)?;
+    }
+    Ok(())
+}
+
+fn append_marker_circle(ctx: &DecodeContext<'_>, entities: &mut Vec<SketchEntity>, sketch: &mut Sketch, entity: SketchEntity, profile: bool) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.reserve_collection_vec(entities, 1, MARKER_CIRCLE_OPERATION)?;
+    if profile {
+        let id = copy_circle_carrier_entity_id(ctx, entity.id())?;
+        sketch.profiles.push_single(ctx, SketchEntityUse { entity: id, reversed: false })?;
+    }
+    entities.push(entity);
+    Ok(())
+}
+
+fn copy_marker_circle_sketch_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::sketches::SketchId) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
+    let text = marker_circle_text(ctx, id.as_str())?;
+    cadmpeg_ir::sketches::SketchId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT marker circle sketch identity"))
+}
+
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
@@ -1449,16 +1552,33 @@ pub(crate) fn project_marker_dimensioned_circles(
     const QUANTUM: f64 = 1.0e-8;
 
     let transforms = marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
-    let radial_records_by_lane = lanes
-        .iter()
-        .map(|lane| {
-            (
-                lane.id.as_str(),
-                radial_circle_records(&lane.native_payload).collect::<Vec<_>>(),
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    const OPERATION: &str = "project SLDPRT marker circles";
+    let mut radial_records_by_lane = HashMap::<&str, Vec<_>>::new();
+    for lane in lanes {
+        let work = u64::try_from(lane.native_payload.len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(512))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        let mut records = Vec::new();
+        for record in radial_circle_records(&lane.native_payload) {
+            ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
+            records.push(record);
+        }
+        ctx.charge_work(u64::try_from(lane.id.len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !radial_records_by_lane.contains_key(lane.id.as_str()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            if radial_records_by_lane.len() == radial_records_by_lane.capacity() {
+                for key in radial_records_by_lane.keys() {
+                    ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
+            radial_records_by_lane.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        radial_records_by_lane.insert(lane.id.as_str(), records);
+    }
     'feature: for feature in features {
+        charge_marker_circle_work(ctx, feature.id.as_str().len(), 4)?;
         let (
             Some(native_ref),
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -1474,616 +1594,343 @@ pub(crate) fn project_marker_dimensioned_circles(
         reconcile_direct_circle_dimension_carriers(
             ctx, entities, sketches, sketch_id, native_ref, lanes,
         )?;
-        let radial_dimensions = parameters
-            .iter()
-            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
-            .filter_map(|parameter| {
-                radial_dimension_radius(parameter).map(|radius| (parameter, radius))
-            })
-            .collect::<Vec<_>>();
+        let mut radial_dimensions = Vec::new();
+        for parameter in parameters {
+            let work = parameter.owner.as_ref().map_or(0, |owner| owner.as_str().len()).checked_add(feature.id.as_str().len())
+                .and_then(|len| len.checked_add(64)).and_then(|len| u64::try_from(len).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if parameter.owner.as_ref() != Some(&feature.id) { continue; }
+            let Some(radius) = radial_dimension_radius(parameter) else { continue; };
+            ctx.reserve_collection_vec(&mut radial_dimensions, 1, OPERATION)?;
+            radial_dimensions.push((parameter, radius));
+        }
         if radial_dimensions.is_empty() {
             continue;
         }
-        let owned_lanes = lanes
-            .iter()
-            .filter(|lane| {
-                lane.sketch_entities
-                    .iter()
-                    .any(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-            })
-            .collect::<Vec<_>>();
-        let markers = owned_lanes
-            .iter()
-            .flat_map(|lane| &lane.sketch_entities)
-            .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-            .filter_map(|marker| {
-                marker
-                    .coordinates_m
-                    .map(|coordinates| (marker, coordinates.get()))
-            })
-            .collect::<Vec<_>>();
-        let native_carriers = entities
-            .iter()
-            .filter(|entity| entity.sketch == *sketch_id)
-            .filter(|entity| {
-                matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Native { .. }
-                )
-            })
-            .collect::<Vec<_>>();
+        let feature_key = feature.id.as_str().rsplit_once('#').map_or(feature.id.as_str(), |(_, key)| key);
+        let mut owned_lanes = Vec::new();
+        for lane in lanes {
+            for marker in &lane.sketch_entities {
+                let work = marker.feature_ref.as_deref().map_or(0, str::len).checked_add(native_ref.len()).and_then(|len| len.checked_add(1))
+                    .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
+            if lane.sketch_entities.iter().any(|marker| marker.feature_ref.as_deref() == Some(native_ref)) {
+                ctx.reserve_collection_vec(&mut owned_lanes, 1, OPERATION)?;
+                owned_lanes.push(lane);
+            }
+        }
+        let mut markers = Vec::new();
+        for marker in owned_lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+            let work = marker.feature_ref.as_deref().map_or(0, str::len).checked_add(native_ref.len()).and_then(|len| len.checked_add(1))
+                .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if marker.feature_ref.as_deref() != Some(native_ref) { continue; }
+            let Some(coordinates) = marker.coordinates_m else { continue; };
+            ctx.reserve_collection_vec(&mut markers, 1, OPERATION)?;
+            markers.push((marker, coordinates.get()));
+        }
+        charge_marker_circle_work(ctx, native_ref.len(), 4)?;
+        let feature_transforms: &[super::transforms::MarkerTransform] = transforms.get(native_ref).map_or(&[], Vec::as_slice);
+        charge_marker_circle_entities(ctx, entities, sketch_id)?;
+        let native_carriers = collect_marker_circle_items(ctx, entities.iter().filter(|entity| {
+            entity.sketch == *sketch_id && matches!(entity.geometry.definition(), SketchGeometryDefinition::Native { .. })
+        }))?;
         let has_resolved_curves = entities.iter().any(|entity| {
-            entity.sketch == *sketch_id
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                        | SketchGeometryDefinition::Arc { .. }
-                        | SketchGeometryDefinition::Circle { .. }
-                        | SketchGeometryDefinition::Ellipse { .. }
-                        | SketchGeometryDefinition::Nurbs { .. }
-                )
+            entity.sketch == *sketch_id && matches!(entity.geometry.definition(),
+                SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
+                | SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Ellipse { .. } | SketchGeometryDefinition::Nurbs { .. })
         });
         let circle_only_carrier = match native_carriers.as_slice() {
             [carrier] if !has_resolved_curves => {
-                carrier.native_ref.as_ref().and_then(|reference| {
-                    native_radial_record_for_marker(lanes, native_ref, reference).map(
-                        |(radial_index, construction)| {
-                            (
-                                carrier.id().clone(),
-                                reference.clone(),
-                                radial_index,
-                                construction,
-                            )
-                        },
-                    )
-                })
+                if let Some(reference) = carrier.native_ref.as_deref() {
+                    for lane in lanes {
+                        charge_marker_circle_work(ctx, lane.native_payload.len(), 512)?;
+                        for marker in &lane.sketch_entities {
+                            charge_marker_circle_work(ctx, marker.id().len(), 1)?;
+                            charge_marker_circle_work(ctx, reference.len(), 1)?;
+                            charge_marker_circle_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 1)?;
+                            charge_marker_circle_work(ctx, native_ref.len(), 1)?;
+                        }
+                    }
+                    native_radial_record_for_marker(lanes, native_ref, reference).map(|(radial_index, construction)|
+                        (carrier.id(), reference, radial_index, construction))
+                } else { None }
             }
             _ => None,
         };
-        if let Some((carrier_id, carrier_ref, radial_index, carrier_construction)) =
-            circle_only_carrier
-        {
-            let mut roster = markers
-                .iter()
-                .copied()
-                .filter(|(marker, _)| {
-                    matches!(
-                        marker.kind(),
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-                })
-                .collect::<Vec<_>>();
+        if let Some((carrier_id, carrier_ref, radial_index, carrier_construction)) = circle_only_carrier {
+            charge_marker_circle_work(ctx, markers.len(), 64)?;
+            let mut roster = collect_marker_circle_items(ctx, markers.iter().copied().filter(|(marker, _)|
+                matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)))?;
+            charge_marker_circle_sort(ctx, roster.len())?;
             roster.sort_unstable_by_key(|(marker, _)| marker.offset());
-            let centers = roster
-                .iter()
-                .copied()
-                .enumerate()
-                .filter_map(|(center_index, (_, [cu, cv]))| {
-                    let later = &roster[center_index + 1..];
-                    let mut matched_radials = HashSet::new();
-                    let one_to_one = later.len() == radial_dimensions.len()
-                        && radial_dimensions.iter().all(|(_, radius)| {
-                            let matches = later
-                                .iter()
-                                .copied()
-                                .enumerate()
-                                .filter_map(|(index, (_, [ru, rv]))| {
-                                    same_dimension_length(
-                                        (ru - cu).hypot(rv - cv) * NATIVE_TO_IR,
-                                        *radius,
-                                    )
-                                    .then_some(index)
-                                })
-                                .collect::<Vec<_>>();
-                            let [index] = matches.as_slice() else {
-                                return false;
-                            };
-                            matched_radials.insert(*index)
-                        });
-                    (one_to_one && matched_radials.len() == later.len()).then_some([cu, cv])
-                })
-                .collect::<Vec<_>>();
-            if let [center] = centers.as_slice() {
-                let [cu, cv] = *center;
-                let radii = radial_dimensions
-                    .iter()
-                    .map(|(_, radius)| *radius)
-                    .collect::<Vec<_>>();
-                let carrier_radius = roster
-                    .get(radial_index)
-                    .map(|(_, [ru, rv])| (ru - cu).hypot(rv - cv) * NATIVE_TO_IR);
-                let native_center =
-                    quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
-                let centers = transforms
-                    .get(native_ref)
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|transform| transform.apply(native_center))
-                    .collect::<HashSet<_>>();
-                if let [center] = centers.into_iter().collect::<Vec<_>>().as_slice() {
-                    let center = Point2::new(center.0 as f64 * QUANTUM, center.1 as f64 * QUANTUM);
-                    let removed = carrier_id;
-                    entities.retain(|entity| entity.id() != &removed);
-                    let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                    else {
+            // Only this suffix can have exactly one witness per dimension.
+            if let Some(center_index) = roster.len().checked_sub(radial_dimensions.len()).and_then(|index| index.checked_sub(1)) {
+                let (_, [cu, cv]) = roster[center_index];
+                if marker_circle_one_to_one(ctx, &roster[center_index + 1..], &radial_dimensions, [cu, cv])? {
+                    let carrier_radius = roster.get(radial_index).map(|(_, [ru, rv])| (ru - cu).hypot(rv - cv) * NATIVE_TO_IR);
+                    let native_center = quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
+                    charge_marker_circle_work(ctx, native_ref.len(), 4)?;
+                    if let Some(center) = unique_marker_circle_center(ctx, feature_transforms, native_center, QUANTUM)? {
+                        let removed = copy_circle_carrier_entity_id(ctx, carrier_id)?;
+                        let carrier_ref = marker_circle_text(ctx, carrier_ref)?;
+                        charge_marker_circle_entities(ctx, entities, sketch_id)?;
+                        entities.retain(|entity| entity.id() != &removed);
+                        for sketch in &*sketches {
+                            charge_marker_circle_work(ctx, sketch.id.as_str().len(), 1)?;
+                            charge_marker_circle_work(ctx, sketch_id.as_str().len(), 1)?;
+                        }
+                        let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else { continue; };
+                        sketch.profiles.retain_uses(ctx, |usage| usage.entity != removed)?;
+                        for (index, (parameter, radius)) in radial_dimensions.iter().copied().enumerate() {
+                            charge_marker_circle_format(ctx, feature_key.len())?;
+                            let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"), OPERATION)?;
+                            let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
+                            let geometry = match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                                center,
+                                radius: Length::new(radius).ok_or_else(|| cadmpeg_core::CodecError::Malformed("SolidWorks projected length must be finite".into()))?,
+                            }) { Ok(geometry) => geometry, Err(_) => continue };
+                            let same_carrier = carrier_radius.is_some_and(|carrier| same_dimension_length(carrier, radius));
+                            let native_reference = if same_carrier { Some(marker_circle_text(ctx, &carrier_ref)?) } else { None };
+                            let geometry_reference = parameter.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
+                            let entity = SketchEntity::new(entity_id, copy_marker_circle_sketch_id(ctx, sketch_id)?, geometry)
+                                .with_construction(carrier_construction && same_carrier)
+                                .with_native_ref(native_reference).with_geometry_ref(geometry_reference);
+                            append_marker_circle(ctx, entities, sketch, entity, true)?;
+                        }
                         continue;
-                    };
-                    sketch.profiles.retain_uses(ctx, |usage| usage.entity != removed)?;
-                    let feature_key = feature
-                        .id
-                        .as_str()
-                        .rsplit_once('#')
-                        .map_or(feature.id.as_str(), |(_, key)| key);
-                    for (index, ((parameter, _), radius)) in
-                        radial_dimensions.iter().copied().zip(radii).enumerate()
-                    {
-                        let Ok(entity_id) = SketchEntityId::mint(format!(
-                            "sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"
-                        )) else {
-                            continue;
-                        };
-                        entities.push(
-                            SketchEntity::new(
-                                entity_id.clone(),
-                                sketch_id.clone(),
-                                match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                                    center,
-                                    radius: Length::new(radius).ok_or_else(|| {
-                                        cadmpeg_core::CodecError::Malformed(
-                                            "SolidWorks projected length must be finite".into(),
-                                        )
-                                    })?,
-                                }) {
-                                    Ok(geometry) => geometry,
-                                    Err(_) => continue,
-                                },
-                            )
-                            .with_construction(
-                                carrier_construction
-                                    && carrier_radius.is_some_and(|carrier| {
-                                        same_dimension_length(carrier, radius)
-                                    }),
-                            )
-                            .with_native_ref(
-                                carrier_radius
-                                    .is_some_and(|carrier| same_dimension_length(carrier, radius))
-                                    .then(|| carrier_ref.clone()),
-                            )
-                            .with_geometry_ref(parameter.native_ref.clone()),
-                        );
-                        sketch.profiles.push_single(ctx, SketchEntityUse {
-                            entity: entity_id,
-                            reversed: false,
-                        })?;
                     }
-                    continue;
                 }
             }
             continue 'feature;
         }
-        let radial_records = owned_lanes
-            .iter()
-            .flat_map(|lane| {
-                let range = lane
-                    .sketch_entities
-                    .iter()
-                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .map(|marker| marker.offset() as usize)
-                    .collect::<Vec<_>>();
-                // A lane with no marker for this feature states no offset
-                // range, so it admits no radial record.
-                let start = range.iter().min().copied();
-                let end = range.iter().max().copied();
-                radial_records_by_lane
-                    .get(lane.id.as_str())
-                    .into_iter()
-                    .flatten()
-                    .filter(move |(offset, ..)| {
-                        start.is_some_and(|start| *offset >= start)
-                            && end.is_some_and(|end| *offset <= end)
-                    })
-                    .map(move |record| (*lane, *record))
-            })
-            .filter(|(lane, (offset, ..))| {
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key);
-                let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
-                entities.iter().any(|entity| {
-                    entity.sketch == *sketch_id
-                        && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
-                        && matches!(
-                            *entity.geometry.definition(),
-                            SketchGeometryDefinition::Native { .. }
-                        )
-                })
-            })
-            .collect::<Vec<_>>();
-        let repeated_radial_sets = radial_records
-            .iter()
-            .flat_map(|(lane, (offset, radial_index, construction))| {
-                if *construction {
-                    return Vec::new();
+        let mut radial_records = Vec::new();
+        for lane in &owned_lanes {
+            let mut range: Option<(usize, usize)> = None;
+            for marker in &lane.sketch_entities {
+                charge_marker_circle_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 1)?;
+                charge_marker_circle_work(ctx, native_ref.len(), 1)?;
+                if marker.feature_ref.as_deref() != Some(native_ref) { continue; }
+                let offset = usize::try_from(marker.offset()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                range = Some(range.map_or((offset, offset), |(start, end)| (start.min(offset), end.max(offset))));
+            }
+            let Some((start, end)) = range else { continue; };
+            charge_marker_circle_work(ctx, lane.id.len(), 8)?;
+            let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+            for record in radial_records_by_lane.get(lane.id.as_str()).into_iter().flatten() {
+                ctx.charge_work(64, OPERATION)?;
+                if record.0 < start || record.0 > end { continue; }
+                let carrier_ref = marker_circle_carrier_reference(ctx, lane_key, record.0)?;
+                charge_marker_circle_entities(ctx, entities, sketch_id)?;
+                charge_marker_circle_work(ctx, carrier_ref.len(), u64::try_from(entities.len()).ok().and_then(|len| len.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?)?;
+                if entities.iter().any(|entity| entity.sketch == *sketch_id && entity.native_ref.as_deref() == Some(carrier_ref.as_str())
+                    && matches!(entity.geometry.definition(), SketchGeometryDefinition::Native { .. })) {
+                    ctx.reserve_collection_vec(&mut radial_records, 1, OPERATION)?;
+                    radial_records.push((*lane, *record));
                 }
-                let mut roster = lane
-                    .sketch_entities
-                    .iter()
-                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .filter(|marker| marker.coordinates_m.is_some())
-                    .collect::<Vec<_>>();
-                roster.sort_unstable_by_key(|marker| marker.offset());
-                radial_dimensions
-                    .iter()
-                    .filter_map(|(parameter, radius)| {
-                        let pairs = terminal_repeated_radial_circle_pairs(
-                            *radial_index,
-                            &roster,
-                            *radius / NATIVE_TO_IR,
-                        )?;
-                        Some((*lane, *offset, *parameter, *radius, pairs))
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
+            }
+        }
+        let mut repeated_radial_sets = Vec::new();
+        for (lane, (offset, radial_index, construction)) in &radial_records {
+            if *construction { continue; }
+            for marker in &lane.sketch_entities {
+                charge_marker_circle_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 1)?;
+                charge_marker_circle_work(ctx, native_ref.len(), 1)?;
+            }
+            let mut roster = collect_marker_circle_items(ctx, lane.sketch_entities.iter()
+                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref)).filter(|marker| marker.coordinates_m.is_some()))?;
+            charge_marker_circle_sort(ctx, roster.len())?;
+            roster.sort_unstable_by_key(|marker| marker.offset());
+            for (parameter, radius) in &radial_dimensions {
+                let Some(pairs) = terminal_repeated_radial_circle_pairs(ctx, *radial_index, &roster, *radius / NATIVE_TO_IR)? else { continue; };
+                ctx.reserve_collection_vec(&mut repeated_radial_sets, 1, OPERATION)?;
+                repeated_radial_sets.push((*lane, *offset, *parameter, *radius, pairs));
+            }
+        }
         if let [(lane, offset, parameter, radius, pairs)] = repeated_radial_sets.as_slice() {
-            let transformed = pairs
-                .iter()
-                .filter_map(|(center, _)| {
-                    let [cu, cv] = center.coordinates_m?.get();
-                    let native =
-                        quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
-                    let centers = transforms
-                        .get(native_ref)
-                        .into_iter()
-                        .flatten()
-                        .filter_map(|transform| transform.apply(native))
-                        .collect::<HashSet<_>>();
-                    let centers = centers.into_iter().collect::<Vec<_>>();
-                    let [(u, v)] = centers.as_slice() else {
-                        return None;
-                    };
-                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                        center: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
-                        radius: Length::new(*radius)?,
-                    })
-                    .ok()
-                })
-                .collect::<Vec<_>>();
+            let mut transformed = Vec::new();
+            charge_marker_circle_work(ctx, native_ref.len(), 4)?;
+            for (center, _) in pairs {
+                let Some([cu, cv]) = center.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
+                let native = quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
+                let Some(center) = unique_marker_circle_center(ctx, feature_transforms, native, QUANTUM)? else { continue; };
+                let Some(radius) = Length::new(*radius) else { continue; };
+                let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Circle { center, radius }) else { continue; };
+                ctx.reserve_collection_vec(&mut transformed, 1, OPERATION)?;
+                transformed.push(geometry);
+            }
             if transformed.len() == pairs.len() {
-                let lane_key = lane
-                    .id
-                    .rsplit_once('#')
-                    .map_or(lane.id.as_str(), |(_, key)| key);
-                let carrier_ref = format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}");
-                let pair_radial_object_indices = pairs
-                    .iter()
-                    .filter_map(|(_, radial)| radial.object_index())
-                    .collect::<HashSet<_>>();
-                let consumed_carrier_refs = radial_records_by_lane
-                    .get(lane.id.as_str())
-                    .into_iter()
-                    .flatten()
-                    .filter(|(candidate_offset, candidate_radial_index, construction)| {
-                        !*construction
-                            && lane.sketch_entities.iter().any(|marker| {
-                                marker.feature_ref.as_deref() == Some(native_ref)
-                                    && marker.offset() == *candidate_offset as u64
-                            })
-                            && (*candidate_offset == *offset
-                                || id_from_index(*candidate_radial_index).is_some_and(|index| {
-                                    pair_radial_object_indices.contains(&index)
-                                }))
-                    })
-                    .map(|(candidate_offset, ..)| {
-                        format!("sldprt:feature-input:sketch-entity#{lane_key}:{candidate_offset}")
-                    })
-                    .collect::<HashSet<_>>();
-                let removed = entities
-                    .iter()
-                    .filter(|entity| {
-                        entity.sketch == *sketch_id
-                            && entity.native_ref.as_deref().is_some_and(|native_ref| {
-                                consumed_carrier_refs.contains(native_ref)
-                            })
-                    })
-                    .map(|entity| entity.id().clone())
-                    .collect::<HashSet<_>>();
+                charge_marker_circle_work(ctx, lane.id.len(), 4)?;
+                let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+                let carrier_ref = marker_circle_carrier_reference(ctx, lane_key, *offset)?;
+                let mut pair_radial_object_indices = HashSet::new();
+                for (_, radial) in pairs {
+                    ctx.charge_work(64, OPERATION)?;
+                    if let Some(index) = radial.object_index() { insert_marker_circle_key(ctx, &mut pair_radial_object_indices, index, |_| 16)?; }
+                }
+                let mut consumed_carrier_refs = HashSet::new();
+                charge_marker_circle_work(ctx, lane.id.len(), 4)?;
+                for (candidate_offset, candidate_radial_index, construction) in radial_records_by_lane.get(lane.id.as_str()).into_iter().flatten() {
+                    ctx.charge_work(64, OPERATION)?;
+                    if *construction { continue; }
+                    for marker in &lane.sketch_entities {
+                        charge_marker_circle_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 1)?;
+                        charge_marker_circle_work(ctx, native_ref.len(), 1)?;
+                    }
+                    let candidate_offset_u64 = u64::try_from(*candidate_offset).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    if lane.sketch_entities.iter().any(|marker| marker.feature_ref.as_deref() == Some(native_ref) && marker.offset() == candidate_offset_u64)
+                        && (*candidate_offset == *offset || id_from_index(*candidate_radial_index).is_some_and(|index| pair_radial_object_indices.contains(&index))) {
+                        let reference = marker_circle_carrier_reference(ctx, lane_key, *candidate_offset)?;
+                        insert_marker_circle_key(ctx, &mut consumed_carrier_refs, reference, |key| key.len())?;
+                    }
+                }
+                let mut removed = HashSet::new();
+                charge_marker_circle_entities(ctx, entities, sketch_id)?;
+                for entity in &*entities {
+                    if entity.sketch == *sketch_id && entity.native_ref.as_deref().is_some_and(|reference| consumed_carrier_refs.contains(reference)) {
+                        let id = copy_circle_carrier_entity_id(ctx, entity.id())?;
+                        insert_marker_circle_key(ctx, &mut removed, id, |key| key.as_str().len())?;
+                    }
+                }
+                charge_marker_circle_entities(ctx, entities, sketch_id)?;
                 entities.retain(|entity| !removed.contains(entity.id()));
-                let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                else {
-                    continue;
-                };
-                sketch
-                    .profiles
-                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                for sketch in &*sketches { charge_marker_circle_work(ctx, sketch.id.as_str().len(), 1)?; charge_marker_circle_work(ctx, sketch_id.as_str().len(), 1)?; }
+                let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else { continue; };
+                sketch.profiles.retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                 for (index, geometry) in transformed.into_iter().enumerate() {
-                    let Ok(entity_id) = SketchEntityId::mint(format!(
-                        "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
-                    )) else { continue };
-                    entities.push(
-                        SketchEntity::new(entity_id.clone(), sketch_id.clone(), geometry)
-                            .with_native_ref(
-                                (index == pairs.len() - 1).then(|| carrier_ref.clone()),
-                            )
-                            .with_geometry_ref(parameter.native_ref.clone()),
-                    );
-                    sketch.profiles.push_single(ctx, SketchEntityUse {
-                        entity: entity_id,
-                        reversed: false,
-                    })?;
+                    charge_marker_circle_format(ctx, lane_key.len())?;
+                    let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)?;
+                    let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
+                    let native_reference = if index == pairs.len() - 1 { Some(marker_circle_text(ctx, &carrier_ref)?) } else { None };
+                    let geometry_reference = parameter.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
+                    let entity = SketchEntity::new(entity_id, copy_marker_circle_sketch_id(ctx, sketch_id)?, geometry)
+                        .with_native_ref(native_reference).with_geometry_ref(geometry_reference);
+                    append_marker_circle(ctx, entities, sketch, entity, true)?;
                 }
                 continue 'feature;
             }
         }
         if !radial_records.is_empty() {
             let radial_record_count = radial_records.len();
-            let mut resolved = Vec::with_capacity(radial_records.len());
+            let mut resolved = Vec::new();
+            ctx.reserve_collection_vec(&mut resolved, radial_record_count, OPERATION)?;
             for (lane, (offset, radial_index, construction)) in radial_records {
-                let mut roster = lane
-                    .sketch_entities
-                    .iter()
-                    .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
-                    .filter_map(|marker| {
-                        marker
-                            .coordinates_m
-                            .map(|coordinates| (marker, coordinates.get()))
-                    })
-                    .collect::<Vec<_>>();
+                for marker in &lane.sketch_entities {
+                    charge_marker_circle_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 1)?;
+                    charge_marker_circle_work(ctx, native_ref.len(), 1)?;
+                }
+                let mut roster = collect_marker_circle_items(ctx, lane.sketch_entities.iter().filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                    .filter_map(|marker| marker.coordinates_m.map(|coordinates| (marker, coordinates.get()))))?;
+                charge_marker_circle_sort(ctx, roster.len())?;
                 roster.sort_unstable_by_key(|(marker, _)| marker.offset());
-                let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else {
-                    continue;
-                };
-                let mut candidates = markers
-                    .iter()
-                    .copied()
-                    .filter(|(marker, _)| marker.id() != radial.id())
-                    .filter_map(|(marker, [cu, cv])| {
-                        let radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
-                        let parameters = radial_dimensions
-                            .iter()
-                            .filter(|(_, candidate)| same_dimension_length(*candidate, radius))
-                            .collect::<Vec<_>>();
-                        let [(parameter, radius)] = parameters.as_slice() else {
-                            return None;
-                        };
-                        Some((
-                            quantize(Point2::new(cu, cv), QUANTUM),
-                            marker,
-                            *parameter,
-                            *radius,
-                        ))
-                    })
-                    .collect::<Vec<_>>();
-                candidates
-                    .sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset()));
+                let Some((radial, [ru, rv])) = roster.get(radial_index).copied() else { continue; };
+                let mut candidates = Vec::new();
+                for (marker, [cu, cv]) in &markers {
+                    charge_marker_circle_work(ctx, marker.id().len(), 1)?;
+                    charge_marker_circle_work(ctx, radial.id().len(), 1)?;
+                    if marker.id() == radial.id() { continue; }
+                    let measured_radius = (ru - cu).hypot(rv - cv) * NATIVE_TO_IR;
+                    let mut unique = None;
+                    let mut ambiguous = false;
+                    for (parameter, radius) in &radial_dimensions {
+                        ctx.charge_work(64, OPERATION)?;
+                        if !same_dimension_length(*radius, measured_radius) { continue; }
+                        if unique.is_some() { ambiguous = true; break; }
+                        unique = Some((*parameter, *radius));
+                    }
+                    if ambiguous { continue; }
+                    let Some((parameter, radius)) = unique else { continue; };
+                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    candidates.push((quantize(Point2::new(*cu, *cv), QUANTUM), *marker, parameter, radius));
+                }
+                charge_marker_circle_sort(ctx, candidates.len())?;
+                candidates.sort_unstable_by_key(|(center, marker, _, _)| (*center, marker.offset()));
+                charge_marker_circle_work(ctx, candidates.len(), 64)?;
                 candidates.dedup_by_key(|(center, _, _, _)| *center);
-                let [(center, marker, parameter, radius)] = candidates.as_slice() else {
-                    continue;
-                };
-                resolved.push((
-                    lane,
-                    offset,
-                    construction,
-                    *center,
-                    *marker,
-                    *parameter,
-                    *radius,
-                ));
+                let [(center, marker, parameter, radius)] = candidates.as_slice() else { continue; };
+                resolved.push((lane, offset, construction, *center, *marker, *parameter, *radius));
             }
             if resolved.len() == radial_record_count {
-                let transformed = resolved
-                    .iter()
-                    .filter_map(|record| {
-                        let native = quantize(
-                            Point2::new(
-                                record.3.point(QUANTUM).u * NATIVE_TO_IR,
-                                record.3.point(QUANTUM).v * NATIVE_TO_IR,
-                            ),
-                            QUANTUM,
-                        );
-                        let centers = transforms
-                            .get(native_ref)
-                            .into_iter()
-                            .flatten()
-                            .filter_map(|transform| transform.apply(native))
-                            .collect::<HashSet<_>>();
-                        let centers = centers.into_iter().collect::<Vec<_>>();
-                        let [(u, v)] = centers.as_slice() else {
-                            return None;
-                        };
-                        Some((
-                            record,
-                            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                                center: Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM),
-                                radius: Length::new(record.6)?,
-                            })
-                            .ok()?,
-                        ))
-                    })
-                    .collect::<Vec<_>>();
+                let mut transformed = Vec::new();
+                charge_marker_circle_work(ctx, native_ref.len(), 4)?;
+                for record in &resolved {
+                    let native = quantize(Point2::new(record.3.point(QUANTUM).u * NATIVE_TO_IR, record.3.point(QUANTUM).v * NATIVE_TO_IR), QUANTUM);
+                    let Some(center) = unique_marker_circle_center(ctx, feature_transforms, native, QUANTUM)? else { continue; };
+                    let Some(radius) = Length::new(record.6) else { continue; };
+                    let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Circle { center, radius }) else { continue; };
+                    ctx.reserve_collection_vec(&mut transformed, 1, OPERATION)?;
+                    transformed.push((record, geometry));
+                }
                 if transformed.len() == resolved.len() {
-                    let carrier_refs = resolved
-                        .iter()
-                        .map(|(lane, offset, ..)| {
-                            format!(
-                                "sldprt:feature-input:sketch-entity#{}:{offset}",
-                                lane.id
-                                    .rsplit_once('#')
-                                    .map_or(lane.id.as_str(), |(_, key)| key)
-                            )
-                        })
-                        .collect::<HashSet<_>>();
-                    let center_refs = resolved
-                        .iter()
-                        .map(|record| record.4.id())
-                        .collect::<HashSet<_>>();
-                    let removed = entities
-                        .iter()
-                        .filter(|entity| {
-                            entity.sketch == *sketch_id
-                                && entity.native_ref.as_deref().is_some_and(|reference| {
-                                    carrier_refs.contains(reference)
-                                        || (center_refs.contains(reference)
-                                            && !matches!(
-                                                *entity.geometry.definition(),
-                                                SketchGeometryDefinition::Point { .. }
-                                            ))
-                                })
-                        })
-                        .map(|entity| entity.id().clone())
-                        .collect::<HashSet<_>>();
-                    entities.retain(|entity| !removed.contains(entity.id()));
-                    let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id)
-                    else {
-                        continue;
-                    };
-                    sketch
-                        .profiles
-                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
-                    for (record, geometry) in transformed {
-                        let lane_key = record
-                            .0
-                            .id
-                            .rsplit_once('#')
-                            .map_or(record.0.id.as_str(), |(_, key)| key);
-                        let Ok(entity_id) = SketchEntityId::mint(format!(
-                            "sldprt:model:sketch-entity#radial-circle:{lane_key}:{}",
-                            record.1
-                        )) else {
-                            continue;
-                        };
-                        entities.push(
-                            SketchEntity::new(entity_id.clone(), sketch_id.clone(), geometry)
-                                .with_construction(record.2)
-                                .with_native_ref(Some(format!(
-                                    "sldprt:feature-input:sketch-entity#{lane_key}:{}",
-                                    record.1
-                                )))
-                                .with_geometry_ref(record.5.native_ref.clone()),
-                        );
-                        if !record.2 {
-                            sketch.profiles.push_single(ctx, SketchEntityUse {
-                                entity: entity_id,
-                                reversed: false,
-                            })?;
+                    let mut carrier_refs = HashSet::new();
+                    let mut center_refs = HashSet::new();
+                    for (lane, offset, _, _, marker, ..) in &resolved {
+                        charge_marker_circle_work(ctx, lane.id.len(), 4)?;
+                        let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
+                        let reference = marker_circle_carrier_reference(ctx, lane_key, *offset)?;
+                        insert_marker_circle_key(ctx, &mut carrier_refs, reference, |key| key.len())?;
+                        insert_marker_circle_key(ctx, &mut center_refs, marker.id(), |key| key.len())?;
+                    }
+                    let mut removed = HashSet::new();
+                    charge_marker_circle_entities(ctx, entities, sketch_id)?;
+                    for entity in &*entities {
+                        if entity.sketch == *sketch_id && entity.native_ref.as_deref().is_some_and(|reference|
+                            carrier_refs.contains(reference) || (center_refs.contains(reference) && !matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }))) {
+                            let id = copy_circle_carrier_entity_id(ctx, entity.id())?;
+                            insert_marker_circle_key(ctx, &mut removed, id, |key| key.as_str().len())?;
                         }
+                    }
+                    charge_marker_circle_entities(ctx, entities, sketch_id)?;
+                    entities.retain(|entity| !removed.contains(entity.id()));
+                    for sketch in &*sketches { charge_marker_circle_work(ctx, sketch.id.as_str().len(), 1)?; charge_marker_circle_work(ctx, sketch_id.as_str().len(), 1)?; }
+                    let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else { continue; };
+                    sketch.profiles.retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
+                    for (record, geometry) in transformed {
+                        charge_marker_circle_work(ctx, record.0.id.len(), 4)?;
+                        let lane_key = record.0.id.rsplit_once('#').map_or(record.0.id.as_str(), |(_, key)| key);
+                        charge_marker_circle_format(ctx, lane_key.len())?;
+                        let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#radial-circle:{lane_key}:{}", record.1), OPERATION)?;
+                        let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
+                        let native_reference = marker_circle_carrier_reference(ctx, lane_key, record.1)?;
+                        let geometry_reference = record.5.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
+                        let entity = SketchEntity::new(entity_id, copy_marker_circle_sketch_id(ctx, sketch_id)?, geometry)
+                            .with_construction(record.2).with_native_ref(Some(native_reference)).with_geometry_ref(geometry_reference);
+                        append_marker_circle(ctx, entities, sketch, entity, !record.2)?;
                     }
                     continue;
                 }
             }
         }
-        let centers = markers
-            .iter()
-            .copied()
-            .filter(|(marker, _)| marker.kind() == SketchInputKind::LineOrCircle)
-            .collect::<Vec<_>>();
-        let radial = markers
-            .iter()
-            .copied()
-            .filter(|(marker, _)| {
-                matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-            })
-            .collect::<Vec<_>>();
-        let [(center_marker, coordinates)] = centers.as_slice() else {
-            continue;
-        };
-        if radial.len() != radial_dimensions.len() {
-            continue;
-        }
+        charge_marker_circle_work(ctx, markers.len(), 64)?;
+        let centers = collect_marker_circle_items(ctx, markers.iter().copied().filter(|(marker, _)| marker.kind() == SketchInputKind::LineOrCircle))?;
+        let radial = collect_marker_circle_items(ctx, markers.iter().copied().filter(|(marker, _)| matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)))?;
+        let [(center_marker, coordinates)] = centers.as_slice() else { continue; };
         let [cu, cv] = *coordinates;
-        let matches = radial_dimensions
-            .iter()
-            .map(|(_, radius)| {
-                radial
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, (_, [u, v]))| {
-                        same_dimension_length((u - cu).hypot(v - cv) * NATIVE_TO_IR, *radius)
-                            .then_some(index)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        if matches.iter().any(|matches| matches.len() != 1)
-            || matches
-                .iter()
-                .map(|matches| matches[0])
-                .collect::<HashSet<_>>()
-                .len()
-                != radial.len()
-        {
-            continue;
-        }
+        if !marker_circle_one_to_one(ctx, &radial, &radial_dimensions, [cu, cv])? { continue; }
         let native_center = quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
-        let centers = transforms
-            .get(native_ref)
-            .into_iter()
-            .flatten()
-            .filter_map(|transform| transform.apply(native_center))
-            .collect::<HashSet<_>>();
-        let centers = centers.into_iter().collect::<Vec<_>>();
-        let [(u, v)] = centers.as_slice() else {
-            continue;
-        };
-        let center = Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM);
-        let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else {
-            continue;
-        };
+        charge_marker_circle_work(ctx, native_ref.len(), 4)?;
+        let Some(center) = unique_marker_circle_center(ctx, feature_transforms, native_center, QUANTUM)? else { continue; };
+        for sketch in &*sketches { charge_marker_circle_work(ctx, sketch.id.as_str().len(), 1)?; charge_marker_circle_work(ctx, sketch_id.as_str().len(), 1)?; }
+        let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else { continue; };
         for (parameter, radius) in radial_dimensions {
-            let Some(construction) = native_dimensioned_circle_construction_state(
-                lanes,
-                native_ref,
-                center_marker,
-                radius,
-            ) else {
-                continue;
-            };
-            if entities.iter().any(|entity| {
-                entity.sketch == *sketch_id
-                    && matches!(entity.geometry.definition(), SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
-                        if quantize(existing.get(), QUANTUM) == quantize(center, QUANTUM)
-                            && same_dimension_length(existing_radius.get(), radius))
-            }) {
-                continue;
-            }
-            let feature_key = feature
-                .id
-                .as_str()
-                .rsplit_once('#')
-                .map_or(feature.id.as_str(), |(_, key)| key);
-            let Ok(entity_id) = SketchEntityId::mint(format!(
-                "sldprt:model:sketch-entity#marker-circle:{}:{}",
-                feature_key, parameter.ordinal
-            )) else {
-                continue;
-            };
-            entities.push(
-                SketchEntity::new(
-                    entity_id.clone(),
-                    sketch_id.clone(),
-                    match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                        center,
-                        radius: Length::new(radius).ok_or_else(|| {
-                            cadmpeg_core::CodecError::Malformed(
-                                "SolidWorks projected length must be finite".into(),
-                            )
-                        })?,
-                    }) {
-                        Ok(geometry) => geometry,
-                        Err(_) => continue,
-                    },
-                )
-                .with_construction(construction)
-                .with_geometry_ref(parameter.native_ref.clone()),
-            );
-            sketch.profiles.push_single(ctx, SketchEntityUse {
-                entity: entity_id,
-                reversed: false,
-            })?;
+            let Some(construction) = native_dimensioned_circle_construction_state(lanes, native_ref, center_marker, radius) else { continue; };
+            charge_marker_circle_entities(ctx, entities, sketch_id)?;
+            if entities.iter().any(|entity| entity.sketch == *sketch_id && matches!(entity.geometry.definition(),
+                SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
+                    if quantize(existing.get(), QUANTUM) == quantize(center, QUANTUM) && same_dimension_length(existing_radius.get(), radius))) { continue; }
+            charge_marker_circle_format(ctx, feature_key.len())?;
+            let id_text = ctx.format_retained(format_args!("sldprt:model:sketch-entity#marker-circle:{feature_key}:{}", parameter.ordinal), OPERATION)?;
+            let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
+            let geometry = match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center, radius: Length::new(radius).ok_or_else(|| cadmpeg_core::CodecError::Malformed("SolidWorks projected length must be finite".into()))?,
+            }) { Ok(geometry) => geometry, Err(_) => continue };
+            let geometry_reference = parameter.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
+            let entity = SketchEntity::new(entity_id, copy_marker_circle_sketch_id(ctx, sketch_id)?, geometry)
+                .with_construction(construction).with_geometry_ref(geometry_reference);
+            append_marker_circle(ctx, entities, sketch, entity, true)?;
         }
     }
 

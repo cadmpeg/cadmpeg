@@ -182,8 +182,9 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
     ];
     let roster = markers.iter().collect::<Vec<_>>();
 
-    let pairs = terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.0025)
-        .expect("terminal one-based address and repeated radius");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let pairs = terminal_repeated_radial_circle_pairs(&ctx, roster.len(), &roster, 0.0025)
+        .unwrap().expect("terminal one-based address and repeated radius");
     assert_eq!(pairs.len(), 4);
     assert_eq!(
         pairs
@@ -197,8 +198,8 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
             (Some(13), Some(12)),
         ]
     );
-    assert!(terminal_repeated_radial_circle_pairs(roster.len() - 1, &roster, 0.0025).is_none());
-    assert!(terminal_repeated_radial_circle_pairs(roster.len(), &roster, 0.003).is_none());
+    assert!(terminal_repeated_radial_circle_pairs(&ctx, roster.len() - 1, &roster, 0.0025).unwrap().is_none());
+    assert!(terminal_repeated_radial_circle_pairs(&ctx, roster.len(), &roster, 0.003).unwrap().is_none());
 }
 
 #[test]
