@@ -97,33 +97,35 @@ fn reload_items(ir: &cadmpeg_ir::CadIr) -> u64 {
     1 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
 }
 
-fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = native(valid);
-    if valid {
-        ir.native
-            .namespace_mut("f3d")
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "design_edge_operands",
-                &native.design_edge_operands,
-            )
-            .unwrap();
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = if valid {
-        reload_items(&ir) + after_reload_items
-    } else {
-        after_reload_items
-    };
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_edge_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
-}) }
+fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(valid);
+        if valid {
+            ir.native
+                .namespace_mut("f3d")
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "design_edge_operands",
+                    &native.design_edge_operands,
+                )
+                .unwrap();
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = if valid {
+            reload_items(&ir) + after_reload_items
+        } else {
+            after_reload_items
+        };
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_edge_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn edge_operand_expected_index_refuses_collection_limit() {

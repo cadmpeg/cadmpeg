@@ -192,8 +192,8 @@ fn assert_projected_fillet_limit(
         native: &parameters,
         scopes: std::slice::from_ref(&scope),
         fillet_radius_groups: std::slice::from_ref(&assignment),
-..Default::default()
-};
+        ..Default::default()
+    };
     let mut found = false;
     for limit in 0..128 {
         let arena = DecodeArena::new();
@@ -250,8 +250,8 @@ fn fillet_single_radius_scope_id_refuses_retained_limit() {
     let inputs = crate::design::feature_project::ProjectInputs {
         native: std::slice::from_ref(&radius),
         scopes: std::slice::from_ref(&scope),
-..Default::default()
-};
+        ..Default::default()
+    };
     let native_scope = crate::ids::native_stream(&scope.id).unwrap();
     for limit in 0..128 {
         let mut policy = DecodePolicy::default();

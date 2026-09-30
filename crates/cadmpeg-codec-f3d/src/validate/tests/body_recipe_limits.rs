@@ -140,33 +140,35 @@ fn body_recipe_error(
     valid: bool,
     after_reload_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = native(valid);
-    if valid {
-        ir.native
-            .namespace_mut("f3d")
-            .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
-                "design_body_recipe_operands",
-                &native.design_body_recipe_operands,
-            )
-            .unwrap();
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = if valid {
-        reload_items(&ir) + after_reload_items
-    } else {
-        after_reload_items
-    };
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_body_recipe_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(valid);
+        if valid {
+            ir.native
+                .namespace_mut("f3d")
+                .set_arena(
+                    &cadmpeg_test_support::service_decode_context(),
+                    "design_body_recipe_operands",
+                    &native.design_body_recipe_operands,
+                )
+                .unwrap();
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = if valid {
+            reload_items(&ir) + after_reload_items
+        } else {
+            after_reload_items
+        };
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_body_recipe_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn body_recipe_expected_index_refuses_collection_limit() {

@@ -50,33 +50,35 @@ fn resolution_error(
     with_selection: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut native = crate::native::F3dNative::default();
-    if with_selection {
-        native
-            .design_entity_selection_operands
-            .push(selection_operand());
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_face_group_member_resolution(
-        &ctx,
-        &mut Vec::new(),
-        [("f3d:Design/BulkStream.dat", 100, 201)]
-            .into_iter()
-            .collect(),
-        &std::collections::HashSet::new(),
-        &native.design_entity_selection_operands,
-    )
-    .unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        if with_selection {
+            native
+                .design_entity_selection_operands
+                .push(selection_operand());
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_face_group_member_resolution(
+            &ctx,
+            &mut Vec::new(),
+            [("f3d:Design/BulkStream.dat", 100, 201)]
+                .into_iter()
+                .collect(),
+            &std::collections::HashSet::new(),
+            &native.design_entity_selection_operands,
+        )
+        .unwrap_err()
+    })
+}
 
 #[test]
 fn face_group_entity_selection_index_refuses_collection_limit() {
@@ -169,19 +171,21 @@ fn operand_native(valid: bool) -> crate::native::F3dNative {
     native
 }
 
-fn operand_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = operand_native(valid);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_entity_selection_operands(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+fn operand_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = operand_native(valid);
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_entity_selection_operands(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn entity_selection_slot_refuses_collection_limit() {
@@ -211,11 +215,13 @@ fn entity_selection_invalid_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn entity_selection_valid_slot_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = operand_native(true);
-    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    let mut findings = Vec::new();
-    super::super::validate_entity_selection_operands(&ctx, &mut findings).unwrap();
-    assert!(findings.is_empty());
-}) }
+fn entity_selection_valid_slot_has_no_finding() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = operand_native(true);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_entity_selection_operands(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+    })
+}

@@ -120,86 +120,90 @@ pub(super) fn exact_assembly_alignment(
             .ok()
             .map(Ok);
         }
-        let (angle, offset, owners) =
+        let (angle, offset, owners) = {
+            if matches!(scope.frame_length(), 671 | 744 | 748)
+                && generation.operand_frame_variant().is_none()
             {
-                if matches!(scope.frame_length(), 671 | 744 | 748)
-                    && generation.operand_frame_variant().is_none()
+                return None;
+            }
+            let (alignment_start, alignment_end) = generation.alignment_lane_bounds(lanes.len())?;
+            let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
+            let (angle, offset) = match alignment_lanes {
+                [angle, offset_x, offset_y, offset_z] => (
+                    angle.evaluated_value().get(),
+                    [
+                        offset_x.evaluated_value().get(),
+                        offset_y.evaluated_value().get(),
+                        offset_z.evaluated_value().get(),
+                    ],
+                ),
+                [angle, axial_offset] => (
+                    angle.evaluated_value().get(),
+                    [0.0, 0.0, axial_offset.evaluated_value().get()],
+                ),
+                _ => return None,
+            };
+            // Both supported alignment lanes use one fixed four-owner allocation.
+            let mut owners = match ctx.collection_vec(4, "collect F3D assembly alignment owners") {
+                Ok(values) => values,
+                Err(error) => return Some(Err(error)),
+            };
+            for owner in alignment_lanes {
+                owners.push(crate::records::identity::Located {
+                    value: owner.record_index(),
+                    offset: owner.evaluated_value_offset(),
+                });
+            }
+            if legacy_class_388 {
+                let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
+                    .into_iter()
+                    .zip(lanes.iter())
+                    .all(|(scope_ordinal, owner)| {
+                        scope.reference_members().values().nth(scope_ordinal)
+                            == Some(&owner.record_index())
+                    });
+                if lanes
+                    .iter()
+                    .any(|owner| owner.class_tag().as_str() != "282" || owner.frame_length() != 103)
+                    || !owner_reference_order_matches
+                    || !scope
+                        .reference_members()
+                        .values()
+                        .skip(4)
+                        .take(4)
+                        .eq(owners.iter().map(|owner| &owner.value))
                 {
                     return None;
                 }
-                let (alignment_start, alignment_end) =
-                    generation.alignment_lane_bounds(lanes.len())?;
-                let alignment_lanes = lanes.get(alignment_start..alignment_end)?;
-                let (angle, offset) = match alignment_lanes {
-                    [angle, offset_x, offset_y, offset_z] => (
-                        angle.evaluated_value().get(),
-                        [
-                            offset_x.evaluated_value().get(),
-                            offset_y.evaluated_value().get(),
-                            offset_z.evaluated_value().get(),
-                        ],
-                    ),
-                    [angle, axial_offset] => (
-                        angle.evaluated_value().get(),
-                        [0.0, 0.0, axial_offset.evaluated_value().get()],
-                    ),
-                    _ => return None,
-                };
-                // Both supported alignment lanes use one fixed four-owner allocation.
-                let mut owners = Vec::with_capacity(4);
-                for owner in alignment_lanes {
-                    owners.push(crate::records::identity::Located {
-                        value: owner.record_index(),
-                        offset: owner.evaluated_value_offset(),
+            } else if legacy_class_383 {
+                let owner_reference_order_matches = CLASS_383_OWNER_REFERENCE_ORDINALS
+                    .into_iter()
+                    .zip(lanes.iter())
+                    .all(|(scope_ordinal, owner)| {
+                        scope.reference_members().values().nth(scope_ordinal)
+                            == Some(&owner.record_index())
                     });
+                if lanes
+                    .iter()
+                    .any(|owner| owner.class_tag().as_str() != "284" || owner.frame_length() != 103)
+                    || !owner_reference_order_matches
+                    || !scope
+                        .reference_members()
+                        .values()
+                        .skip(8)
+                        .take(4)
+                        .eq(owners.iter().map(|owner| &owner.value))
+                {
+                    return None;
                 }
-                if legacy_class_388 {
-                    let owner_reference_order_matches = CLASS_388_OWNER_REFERENCE_ORDINALS
-                        .into_iter()
-                        .zip(lanes.iter())
-                        .all(|(scope_ordinal, owner)| {
-                            scope.reference_members().values().nth(scope_ordinal)
-                                == Some(&owner.record_index())
-                        });
-                    if lanes.iter().any(|owner| {
-                        owner.class_tag().as_str() != "282" || owner.frame_length() != 103
-                    }) || !owner_reference_order_matches
-                        || !scope
-                            .reference_members()
-                            .values()
-                            .skip(4)
-                            .take(4)
-                            .eq(owners.iter().map(|owner| &owner.value))
-                    {
-                        return None;
-                    }
-                } else if legacy_class_383 {
-                    let owner_reference_order_matches = CLASS_383_OWNER_REFERENCE_ORDINALS
-                        .into_iter()
-                        .zip(lanes.iter())
-                        .all(|(scope_ordinal, owner)| {
-                            scope.reference_members().values().nth(scope_ordinal)
-                                == Some(&owner.record_index())
-                        });
-                    if lanes.iter().any(|owner| {
-                        owner.class_tag().as_str() != "284" || owner.frame_length() != 103
-                    }) || !owner_reference_order_matches
-                        || !scope
-                            .reference_members()
-                            .values()
-                            .skip(8)
-                            .take(4)
-                            .eq(owners.iter().map(|owner| &owner.value))
-                    {
-                        return None;
-                    }
-                } else if crate::design::assembly::variable_reference_assembly_generation(
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                ) {
-                    if lanes.iter().any(|owner| {
-                        owner.class_tag().as_str() != "289" || owner.frame_length() != 103
-                    }) || (0..scope.reference_members().len())
+            } else if crate::design::assembly::variable_reference_assembly_generation(
+                scope.class_tag.as_str(),
+                scope.paired_class_tag.as_str(),
+            ) {
+                if lanes
+                    .iter()
+                    .any(|owner| owner.class_tag().as_str() != "289" || owner.frame_length() != 103)
+                    || (0..scope.reference_members().len())
                         .filter(|&start| {
                             scope
                                 .reference_members()
@@ -210,20 +214,20 @@ pub(super) fn exact_assembly_alignment(
                         })
                         .count()
                         != 1
-                    {
-                        return None;
-                    }
-                } else if !scope
-                    .reference_members()
-                    .values()
-                    .rev()
-                    .take(owners.len())
-                    .eq(owners.iter().map(|owner| &owner.value).rev())
                 {
                     return None;
                 }
-                (angle, offset, owners)
-            };
+            } else if !scope
+                .reference_members()
+                .values()
+                .rev()
+                .take(owners.len())
+                .eq(owners.iter().map(|owner| &owner.value).rev())
+            {
+                return None;
+            }
+            (angle, offset, owners)
+        };
         let form = if scope.kind() == scope::DesignFeatureKind::AsBuilt {
             let paths = match exact_assembly_operand_paths(ctx, bytes, records, scope) {
                 Ok(paths) => paths,

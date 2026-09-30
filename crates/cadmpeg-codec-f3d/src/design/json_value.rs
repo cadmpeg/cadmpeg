@@ -22,7 +22,8 @@ impl<'de> DeserializeSeed<'de> for TextSeed<'_, '_> {
         D: serde::Deserializer<'de>,
     {
         if self.entry {
-            { let ctx = self.ctx;
+            {
+                let ctx = self.ctx;
                 if let Err(error) =
                     ctx.charge_collection_items(1, "f3d configuration JSON object entry")
                 {
@@ -113,7 +114,9 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
     where
         E: serde::de::Error,
     {
-        let copied = self.ctx.copy_retained_text(text, "f3d configuration JSON text");
+        let copied = self
+            .ctx
+            .copy_retained_text(text, "f3d configuration JSON text");
         self.admit(copied).map(Value::String)
     }
     fn visit_seq<S>(mut self, mut sequence: S) -> Result<Value, S::Error>
@@ -126,7 +129,11 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
             refusal: &mut *self.refusal,
             member: true,
         })? {
-            self.admit(DecodeContext::reserve_admitted_vec(&mut values, 1, "f3d configuration JSON array allocation"))?;
+            self.admit(DecodeContext::reserve_admitted_vec(
+                &mut values,
+                1,
+                "f3d configuration JSON array allocation",
+            ))?;
             values.push(value);
         }
         Ok(Value::Array(values))
@@ -183,4 +190,3 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
         Ok(Value::Object(fields))
     }
 }
-

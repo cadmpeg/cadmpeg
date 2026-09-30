@@ -29,7 +29,7 @@ pub(super) fn merge_archive(
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
     let table = xref_table_from_ir(ctx, ir)?;
-    
+
     let mut stack = Vec::new();
     ctx.reserve_vec(&mut stack, 1, "seed F3Z merge stack")?;
     stack.push(model_root);
@@ -58,7 +58,6 @@ pub(super) fn make_sibling_ordinals_unique(
             cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } => Some(occurrence),
         };
         if !used.contains_key(&parent) {
-            
             ctx.reserve_map(&mut used, 1, "index F3Z sibling parents")?;
         }
         let siblings = used.entry(parent).or_default();
@@ -98,9 +97,10 @@ fn xref_table_from_ir(
             Ok(records) => Ok(records),
             Err(error) => match CodecError::from(error) {
                 error @ CodecError::ResourceLimit(_) => Err(error),
-                CodecError::Malformed(message) => {
-                    Err(CodecError::Malformed(ctx.format_retained(format_args!("invalid F3D native data: {message}"), "report invalid F3D native data")?))
-                }
+                CodecError::Malformed(message) => Err(CodecError::Malformed(ctx.format_retained(
+                    format_args!("invalid F3D native data: {message}"),
+                    "report invalid F3D native data",
+                )?)),
                 error => Err(error),
             },
         }
@@ -208,7 +208,12 @@ impl MergeSession<'_, '_> {
                 body: mut component_report,
                 source_fidelity: mut component_fidelity,
             } = component;
-            self.ctx.push_formatted_retained(&mut self.stack, format_args!("{}", reference.relative_path), "grow F3Z merge stack", "retain F3Z merge stack path")?;
+            self.ctx.push_formatted_retained(
+                &mut self.stack,
+                format_args!("{}", reference.relative_path),
+                "grow F3Z merge stack",
+                "retain F3Z merge stack path",
+            )?;
             let descendants = self.merge(
                 &mut component_ir,
                 &mut component_report,
@@ -251,9 +256,16 @@ impl MergeSession<'_, '_> {
                 parent_report.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
             }
             for loss in &mut component_report.losses {
-                loss.message = self.ctx.format_retained(format_args!("xref {label}: {}", loss.message), "prefix F3Z component loss")?;
+                loss.message = self.ctx.format_retained(
+                    format_args!("xref {label}: {}", loss.message),
+                    "prefix F3Z component loss",
+                )?;
             }
-            self.ctx.append_vec(&mut parent_report.losses, &mut { component_report.losses }, "append F3Z report losses")?;
+            self.ctx.append_vec(
+                &mut parent_report.losses,
+                &mut { component_report.losses },
+                "append F3Z report losses",
+            )?;
             let placement = if reference.transform.is_some() {
                 "Design occurrence transform"
             } else {
@@ -345,12 +357,18 @@ fn rescope_fidelity(
         .map_err(CodecError::from)?;
     // The occurrence is one owner component. Escape its separators so two
     // different occurrences cannot share an owner by shifting a path boundary.
-    let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(format_args!("f3d:xref/{}/", EscapedOccurrenceComponent(occurrence)), "retain F3Z fidelity owner")?)
+    let owner = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
+        format_args!("f3d:xref/{}/", EscapedOccurrenceComponent(occurrence)),
+        "retain F3Z fidelity owner",
+    )?)
     .map_err(CodecError::malformed)?;
     let provenance = std::mem::take(&mut annotations.provenance);
     let mut builder = AnnotationBuilder::resume(annotations);
     for (id, provenance) in provenance {
-        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(format_args!("{}{}", owner.as_str(), provenance.stream()), "retain F3Z provenance stream")?)
+        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
+            format_args!("{}{}", owner.as_str(), provenance.stream()),
+            "retain F3Z provenance stream",
+        )?)
         .map_err(CodecError::malformed)?;
         ctx.charge_collection_items(1, "create F3Z provenance stream handle")?;
         let stream = StreamHandle::new(stream);
@@ -366,12 +384,17 @@ fn rescope_fidelity(
     for (id, record) in records {
         let id_text = match rescope_charged(ctx, id.as_str(), occurrence)? {
             Some(id) => id,
-            None => ctx.format_retained(format_args!("{id}"), "copy F3Z retained record identity")?,
+            None => {
+                ctx.format_retained(format_args!("{id}"), "copy F3Z retained record identity")?
+            }
         };
         let id = UnknownId::mint(id_text).map_err(|error| {
             CodecError::malformed(format_args!("F3Z retained record {id}: {error}"))
         })?;
-        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(format_args!("{}{}", owner.as_str(), record.stream()), "retain F3Z record stream")?)
+        let stream = cadmpeg_ir::StreamName::try_from(ctx.format_retained(
+            format_args!("{}{}", owner.as_str(), record.stream()),
+            "retain F3Z record stream",
+        )?)
         .map_err(CodecError::malformed)?;
         ctx.charge_collection_items(1, "collect F3Z rescoped retained records")?;
         rescoped.insert_retained_record(id, record.with_owner(stream))?;
@@ -384,19 +407,25 @@ fn occurrence_key(
     reference: &XrefReference,
 ) -> Result<String, CodecError> {
     if reference.neutron_role.is_empty() {
-        return ctx.format_retained(format_args!(
+        return ctx.format_retained(
+            format_args!(
                 "ordinal-{}/occurrence-{}",
                 reference.ordinal, reference.occurrence_ordinal
-            ), "retain F3Z occurrence key");
+            ),
+            "retain F3Z occurrence key",
+        );
     }
     let role = EscapedOccurrenceComponent(&reference.neutron_role);
     // `occurrence_ordinal` restarts for each Redirections reference. Keep the
     // source reference ordinal in the scope so two admitted rows carrying the
     // same role cannot merge their model or fidelity identities.
-    ctx.format_retained(format_args!(
+    ctx.format_retained(
+        format_args!(
             "role-{role}/reference-{}/occurrence-{}",
             reference.ordinal, reference.occurrence_ordinal
-        ), "retain F3Z occurrence key")
+        ),
+        "retain F3Z occurrence key",
+    )
 }
 
 struct EscapedOccurrenceComponent<'a>(&'a str);
@@ -459,7 +488,10 @@ fn rescope_charged(
 ) -> Result<Option<String>, CodecError> {
     text.strip_prefix("f3d:")
         .map(|rest| {
-            ctx.format_retained(format_args!("f3d:xref/{occurrence}/{rest}"), "rescope F3Z identity")
+            ctx.format_retained(
+                format_args!("f3d:xref/{occurrence}/{rest}"),
+                "rescope F3Z identity",
+            )
         })
         .transpose()
 }
@@ -555,9 +587,7 @@ fn rescope_record(
     let mut fields = typed_fields(ctx, record, arena, occurrence)?;
     rescope_native_reference_fields(ctx, arena, &mut fields, occurrence)?;
     let id = rescope_charged(ctx, record.id(), occurrence)?.map_or_else(
-        || {
-            ctx.format_retained(format_args!("{}", record.id()), "copy F3Z native identity")
-        },
+        || ctx.format_retained(format_args!("{}", record.id()), "copy F3Z native identity"),
         Ok,
     )?;
     NativeRecord::new(
@@ -600,7 +630,10 @@ fn typed_fields(
             ctx.charge_collection_items(1, "insert F3Z typed native identity field")?;
             fields.insert(
                 "id".into(),
-                Value::String(ctx.format_retained(format_args!("{}", record.id()), "copy F3Z typed native identity")?),
+                Value::String(ctx.format_retained(
+                    format_args!("{}", record.id()),
+                    "copy F3Z typed native identity",
+                )?),
             );
             let typed: $type = serde_json::from_value(value).map_err(typed_error)?;
             let refusal = std::cell::RefCell::new(None);

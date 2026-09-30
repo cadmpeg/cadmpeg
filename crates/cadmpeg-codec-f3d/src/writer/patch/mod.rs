@@ -2,7 +2,6 @@
 //! Edit-and-patch engine: diff a neutral `CadIr` against a decoded baseline and
 //! patch a retained F3D archive in place.
 
-
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
@@ -608,7 +607,11 @@ pub(crate) fn write_semantic(
             if read == 0 {
                 break;
             }
-            encode_ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "retain F3D patch ZIP entry")?;
+            encode_ctx.extend_retained_bytes(
+                &mut bytes,
+                &chunk[..read],
+                "retain F3D patch ZIP entry",
+            )?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);

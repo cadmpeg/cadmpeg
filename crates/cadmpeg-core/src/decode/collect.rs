@@ -1165,6 +1165,25 @@ impl DecodeContext<'_> {
         Ok(())
     }
 
+    /// Resizes a byte buffer after admitting additional retained storage.
+    pub fn resize_retained_bytes(
+        &self,
+        values: &mut Vec<u8>,
+        length: usize,
+        fill: u8,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(additional) = length.checked_sub(values.len()) {
+            self.reserve_retained_admitted_vec(values, additional, operation)?;
+            for _ in 0..additional {
+                values.push(fill);
+            }
+        } else {
+            values.truncate(length);
+        }
+        Ok(())
+    }
+
     /// Extends retained bytes after charging both their slots and storage.
     pub fn extend_retained_bytes(
         &self,
@@ -3226,7 +3245,8 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, 1);
         let mut groups = HashMap::<u8, Vec<u8>>::new();
-        let error = ctx.push_hash_group(&mut groups, 1, 7, "group index", "group value")
+        let error = ctx
+            .push_hash_group(&mut groups, 1, 7, "group index", "group value")
             .expect_err("two slots exceed one");
         assert!(matches!(error, CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
@@ -3240,9 +3260,40 @@ mod tests {
         let arena = DecodeArena::new();
         let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
         let mut groups = HashMap::<u8, Vec<u8>>::new();
-        ctx.push_hash_group(&mut groups, 1, 7, "group index", "group value").expect("first value");
-        ctx.push_hash_group(&mut groups, 1, 8, "group index", "group value").expect("same group");
+        ctx.push_hash_group(&mut groups, 1, 7, "group index", "group value")
+            .expect("first value");
+        ctx.push_hash_group(&mut groups, 1, 8, "group index", "group value")
+            .expect("same group");
         assert_eq!(groups.get(&1), Some(&vec![7, 8]));
     }
+    #[test]
+    fn resize_retained_bytes_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
+        let mut values = Vec::new();
+        let error = ctx
+            .resize_retained_bytes(&mut values, 2, 7, "test retained resize")
+            .expect_err("one below required storage");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 2));
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), 0);
+    }
 
+    #[test]
+    fn resize_retained_bytes_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = Vec::new();
+        ctx.resize_retained_bytes(&mut values, 2, 7, "test retained resize")
+            .expect("service admission");
+        assert_eq!(values, [7, 7]);
+        ctx.resize_retained_bytes(&mut values, 4, 9, "test retained resize")
+            .expect("growth");
+        assert_eq!(values, [7, 7, 9, 9]);
+        ctx.resize_retained_bytes(&mut values, 1, 0, "test retained resize")
+            .expect("truncate");
+        assert_eq!(values, [7]);
+    }
 }

@@ -4599,7 +4599,8 @@ fn native_conic_interval_curve(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let mut control_points = ctx.collection_vec(pole_count, "f3d generated conic control points")?;
+    let mut control_points =
+        ctx.collection_vec(pole_count, "f3d generated conic control points")?;
     let mut weights = ctx.collection_vec(pole_count, "f3d generated conic weights")?;
     let mut knots = ctx.collection_vec(knot_count, "f3d generated conic knots")?;
     let point = |angle: f64, scale: f64| {
@@ -4658,9 +4659,12 @@ mod native_interval_curve_tests {
     fn generated_conic_interval_refuses_default_collection_limit() {
         let circle = SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0), 5.0,
-            ).unwrap(),
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                5.0,
+            )
+            .unwrap(),
         );
         let error = native_interval_curve(&circle, [0.0, 1.0e9]).unwrap_err();
         assert!(matches!(error, CodecError::ResourceLimit(limit)
@@ -4867,7 +4871,10 @@ mod native_interval_curve_tests {
                 let error = result.expect_err("unallocatable conic interval must be refused");
                 if let CodecError::ResourceLimit(limit) = &error {
                     assert_eq!(limit.operation, "f3d generated conic control points");
-                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+                    assert_eq!(
+                        limit.dimension,
+                        cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    );
                 } else {
                     assert!(error.to_string().contains("conic"), "{error}");
                 }

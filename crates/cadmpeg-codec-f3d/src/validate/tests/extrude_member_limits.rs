@@ -98,74 +98,78 @@ fn member_error(
     identity: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut native = native(valid);
-    if identity {
-        with_matching_identity(&mut native);
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(valid);
+        if identity {
+            with_matching_identity(&mut native);
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
-fn extrude_member_history_states_refuse_collection_limit() { crate::test_support::with_decode_context(|service_ctx| {
-    use crate::{
-        history_records::{AsmDeltaState, AsmHistory, AsmTopologyCache},
-        records::topology::{body_recipe::AsmHistoricalEntityKind, fillet::HistoricalBinding},
-    };
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut native = native(true);
-    native.design_extrude_selection_members[0].historical = Some(HistoricalBinding {
-        kind: AsmHistoricalEntityKind::Edge,
-        entity_ref: 42,
-        state_ids: vec![1],
-    });
-    native.asm_histories.push(AsmHistory {
-        id: "f3d:asm-history#1".into(),
-        byte_offset: 0,
-        preamble: None,
-        record_table_binding_budget_exceeded: false,
-        states: vec![AsmDeltaState {
-            id: "f3d:asm-delta-state#1".into(),
-            parent: "f3d:asm-history#1".into(),
+fn extrude_member_history_states_refuse_collection_limit() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use crate::{
+            history_records::{AsmDeltaState, AsmHistory, AsmTopologyCache},
+            records::topology::{body_recipe::AsmHistoricalEntityKind, fillet::HistoricalBinding},
+        };
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(true);
+        native.design_extrude_selection_members[0].historical = Some(HistoricalBinding {
+            kind: AsmHistoricalEntityKind::Edge,
+            entity_ref: 42,
+            state_ids: vec![1],
+        });
+        native.asm_histories.push(AsmHistory {
+            id: "f3d:asm-history#1".into(),
             byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 0,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: Vec::new(),
-            records: Vec::new(),
-            entity_versions: Vec::new(),
-            topology_cache: AsmTopologyCache::Released,
-            transition: None,
-        }],
-    });
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 4;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    let error =
-        super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            preamble: None,
+            record_table_binding_budget_exceeded: false,
+            states: vec![AsmDeltaState {
+                id: "f3d:asm-delta-state#1".into(),
+                parent: "f3d:asm-history#1".into(),
+                byte_offset: 0,
+                state_id: 1,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+                topology_cache: AsmTopologyCache::Released,
+                transition: None,
+            }],
+        });
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 4;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error =
+            super::super::validate_extrude_selection_members(&ctx, &mut Vec::new()).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D Extrude selection history states")
-    );
-}) }
+        );
+    })
+}
 
 #[test]
 fn extrude_member_identity_index_refuses_collection_limit() {
@@ -213,11 +217,13 @@ fn extrude_member_invalid_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn extrude_member_valid_slot_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = native(true);
-    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    let mut findings = Vec::new();
-    super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
-    assert!(findings.is_empty());
-}) }
+fn extrude_member_valid_slot_has_no_finding() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = native(true);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_extrude_selection_members(&ctx, &mut findings).unwrap();
+        assert!(findings.is_empty());
+    })
+}

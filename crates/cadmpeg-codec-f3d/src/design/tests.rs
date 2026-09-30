@@ -361,10 +361,20 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         .is_err()
     );
 
-    let (mut sketches, mut entities) =
-        crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6))
-            .expect("sketch lanes pair");
-    let mut constraints = crate::test_support::with_decode_context(|decode_ctx| project_sketch_constraints(decode_ctx, &placements, &[], (&points, &[], &[]), &relations, &entities))
+    let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6)
+    })
+    .expect("sketch lanes pair");
+    let mut constraints = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_constraints(
+            decode_ctx,
+            &placements,
+            &[],
+            (&points, &[], &[]),
+            &relations,
+            &entities,
+        )
+    })
     .unwrap();
     assert_eq!(sketches.len(), 2);
     assert_eq!(entities.len(), 2);
@@ -410,18 +420,23 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         parameter
     };
     let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
-let scopes = &[];
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[
-            parameter("A", 40, "Width", "1 mm"),
-            parameter("A", 41, "Half", "Width / 2"),
-            parameter("B", 40, "Width", "2 mm"),
-        ],
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &[
+                    parameter("A", 40, "Width", "1 mm"),
+                    parameter("A", 41, "Half", "Width / 2"),
+                    parameter("B", 40, "Width", "2 mm"),
+                ],
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let half = parameters
         .iter()
         .find(|parameter| parameter.name == "Half")

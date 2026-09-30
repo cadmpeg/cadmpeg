@@ -139,8 +139,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let mut point_entities = entities.clone();
     point_entities.push(point);
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::unique_point_line_dimension_definition(ctx, &point_entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            ctx,
+            &point_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

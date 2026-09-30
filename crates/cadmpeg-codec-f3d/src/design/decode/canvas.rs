@@ -2,11 +2,11 @@
 //! Parse exact image-plane bindings owned by Design `Canvas` scopes.
 
 use crate::container::ContainerScan;
-use crate::design::decode::image::{  embedded_image_asset};
+use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset_with_index;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{  lp_ascii_filtered_view};
 use crate::ids;
 use crate::records::{
     canvas::{
@@ -65,12 +65,13 @@ pub(crate) fn project_canvas_images(
         let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
-        let asset_id = asset.id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let asset_id = asset
+            .id
+            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
         if !assets
             .iter()
             .any(|candidate: &Asset| candidate.id == asset_id)
         {
-
             ctx.reserve_vec(&mut assets, 1, "f3d Canvas assets")?;
             assets.push(asset);
         }
@@ -237,7 +238,10 @@ fn parse_canvas_image(
                 Ok(value) => value,
                 Err(error) => return Some(Err(error)),
             };
-        let paired_geometry_class_tag = match ctx.copy_retained_text(paired_geometry_class_tag, "f3d Canvas paired geometry class tag") {
+        let paired_geometry_class_tag = match ctx.copy_retained_text(
+            paired_geometry_class_tag,
+            "f3d Canvas paired geometry class tag",
+        ) {
             Ok(value) => value,
             Err(error) => return Some(Err(error)),
         };

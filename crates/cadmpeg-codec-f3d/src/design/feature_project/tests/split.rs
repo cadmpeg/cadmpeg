@@ -167,7 +167,11 @@ fn assert_split_body_refusal(
 fn split_body_path_tool_group_id_refuses_retained_limit() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &scope, &groups, &[])).unwrap().unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_split(decode_ctx, &scope, &groups, &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -189,9 +193,11 @@ fn split_body_face_tool_id_refuses_retained_limit() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let tool = split_body_face_tool();
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &scope, &groups, std::slice::from_ref(&tool)))
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_split(decode_ctx, &scope, &groups, std::slice::from_ref(&tool))
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -218,9 +224,11 @@ fn split_body_historical_face_tool_id_refuses_retained_limit() {
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let mut tool = split_body_face_tool();
     tool.resolved_face_slots = vec![42];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_split(decode_ctx, &scope, &groups, std::slice::from_ref(&tool)))
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_split(decode_ctx, &scope, &groups, std::slice::from_ref(&tool))
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -257,9 +265,11 @@ fn delete_face_fallback_group_id_refuses_retained_limit() {
         })
         .unwrap();
     let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_delete_face(decode_ctx, &scope, std::slice::from_ref(&selected), &[]))
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_delete_face(decode_ctx, &scope, std::slice::from_ref(&selected), &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
@@ -327,9 +337,11 @@ fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOpe
 #[test]
 fn class_277_258_compact_split_face_frame_projects() {
     let (mut scope, groups) = compact_split_face_fixture();
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_split_face(decode_ctx, &scope, &[scope.clone()], &groups, &[], &[], &[]))
-        .expect("projection resource budget")
-        .expect("class-277 SplitFace frame");
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_split_face(decode_ctx, &scope, &[scope.clone()], &groups, &[], &[], &[])
+    })
+    .expect("projection resource budget")
+    .expect("class-277 SplitFace frame");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -345,9 +357,17 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| project_split_face(decode_ctx, &scope, &[scope.clone()], &groups, &[], &[], &[]))
-            .expect("projection resource budget")
-            .is_some()
+        crate::test_support::with_decode_context(|decode_ctx| project_split_face(
+            decode_ctx,
+            &scope,
+            &[scope.clone()],
+            &groups,
+            &[],
+            &[],
+            &[]
+        ))
+        .expect("projection resource budget")
+        .is_some()
     );
 
     scope.class_tag =
@@ -355,9 +375,17 @@ fn class_277_258_compact_split_face_frame_projects() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("266".to_owned()).unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| project_split_face(decode_ctx, &scope, &[scope.clone()], &groups, &[], &[], &[]))
-            .expect("projection resource budget")
-            .is_none()
+        crate::test_support::with_decode_context(|decode_ctx| project_split_face(
+            decode_ctx,
+            &scope,
+            &[scope.clone()],
+            &groups,
+            &[],
+            &[],
+            &[]
+        ))
+        .expect("projection resource budget")
+        .is_none()
     );
 }
 
@@ -455,7 +483,15 @@ fn assert_selected_plane_limit(operation: &'static str) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let (scope, group, selection, plane) = selected_plane_fixture();
-    let selected = crate::test_support::with_decode_context(|decode_ctx| selected_work_planes(decode_ctx, &scope, &group, std::slice::from_ref(&selection), std::slice::from_ref(&plane)))
+    let selected = crate::test_support::with_decode_context(|decode_ctx| {
+        selected_work_planes(
+            decode_ctx,
+            &scope,
+            &group,
+            std::slice::from_ref(&selection),
+            std::slice::from_ref(&plane),
+        )
+    })
     .unwrap()
     .unwrap();
     assert_eq!(selected.len(), 1);
@@ -563,7 +599,17 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
         .unwrap(),
     ];
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_split_face(decode_ctx, &scope, &[scope.clone()], &groups, &selections, &[], &[]))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_split_face(
+            decode_ctx,
+            &scope,
+            &[scope.clone()],
+            &groups,
+            &selections,
+            &[],
+            &[],
+        )
+    })
     .expect("projection resource budget")
     .expect("class-277 direct edge path");
     let FeatureDefinition::Operation(FeatureOperation::SplitFace {
@@ -682,7 +728,13 @@ fn assert_historical_split_face_path_refusal(
             + u64::try_from(feature.as_str().len() + prefix.as_str().len() + state_bytes).unwrap();
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::resolved_split_face_path(&ctx, &scope, &group, std::slice::from_ref(&selection), &[]);
+    let result = super::super::resolved_split_face_path(
+        &ctx,
+        &scope,
+        &group,
+        std::slice::from_ref(&selection),
+        &[],
+    );
     let dimension = if collection_limit.is_some() {
         ResourceDimension::CollectionItems
     } else {
@@ -768,7 +820,13 @@ fn draft_historical_face_group_id_refuses_retained_limit() {
     )
     .unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::selected_historical_face_selection(&ctx, &scope, &group, std::slice::from_ref(&selection), &[]);
+    let result = super::super::selected_historical_face_selection(
+        &ctx,
+        &scope,
+        &group,
+        std::slice::from_ref(&selection),
+        &[],
+    );
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == "f3d Draft historical face group id"

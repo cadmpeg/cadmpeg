@@ -1368,9 +1368,17 @@ impl DesignAssemblyOperandPath {
             return Ok(None);
         }
         let mut occurrences = self.occurrence_guids;
-        ctx.extend_vec(&mut occurrences, continuation.occurrence_guids, "f3d assembly path appended occurrences")?;
+        ctx.extend_vec(
+            &mut occurrences,
+            continuation.occurrence_guids,
+            "f3d assembly path appended occurrences",
+        )?;
         let mut identities = self.identity_guids;
-        ctx.extend_vec(&mut identities, continuation.identity_guids, "f3d assembly path appended identities")?;
+        ctx.extend_vec(
+            &mut identities,
+            continuation.identity_guids,
+            "f3d assembly path appended identities",
+        )?;
         Ok(Self::try_new(
             self.link,
             self.record_index,

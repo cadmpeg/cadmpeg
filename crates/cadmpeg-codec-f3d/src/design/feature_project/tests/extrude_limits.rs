@@ -141,9 +141,11 @@ fn assert_profile_fallback(
     let scope = scope();
     let parameters = parameters();
     let owned = [(0, &parameters[0]), (1, &parameters[1])];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_extrude(decode_ctx, &scope, &owned, groups, &[], &[], &[]))
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_extrude(decode_ctx, &scope, &owned, groups, &[], &[], &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -212,9 +214,11 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
     ))
     .unwrap();
     let owned = [(0, &side_offset), (1, &taper)];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| project_extrude(decode_ctx, &scope, &owned, &groups, &[], &[], &[]))
-        .unwrap()
-        .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_extrude(decode_ctx, &scope, &owned, &groups, &[], &[], &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude { .. })

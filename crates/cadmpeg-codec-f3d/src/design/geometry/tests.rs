@@ -69,9 +69,11 @@ fn profile_polyline_keeps_finite_samples_in_a_wide_nurbs_domain() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = crate::test_support::with_decode_context(|decode_ctx| super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, decode_ctx))
-        .unwrap()
-        .expect("finite wide NURBS profile samples");
+    let points = crate::test_support::with_decode_context(|decode_ctx| {
+        super::profile_use_polyline(&entity, [-f64::MAX, f64::MAX], false, 0.01, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite wide NURBS profile samples");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
     assert!(points.iter().all(Point2::is_finite));
@@ -87,9 +89,11 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
         false,
     )
     .expect("wide finite NURBS pcurve");
-    let tubes = crate::test_support::with_decode_context(|decode_ctx| super::certified_nurbs_tubes(&curve, 0.5, decode_ctx))
-        .unwrap()
-        .expect("finite wide-domain tubes");
+    let tubes = crate::test_support::with_decode_context(|decode_ctx| {
+        super::certified_nurbs_tubes(&curve, 0.5, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite wide-domain tubes");
     assert_eq!(
         tubes.first().map(|tube| tube.start),
         Some(Point2::new(0.0, 0.0))
@@ -144,9 +148,11 @@ fn profile_polyline_keeps_a_finite_midpoint_near_the_float_limit() {
         sketch_id,
         SketchGeometry::try_from(SketchGeometryDefinition::Nurbs { curve }).unwrap(),
     );
-    let points = crate::test_support::with_decode_context(|decode_ctx| super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, decode_ctx))
-        .unwrap()
-        .expect("finite midpoint near the float limit");
+    let points = crate::test_support::with_decode_context(|decode_ctx| {
+        super::profile_use_polyline(&entity, [lower, f64::MAX], false, 0.01, decode_ctx)
+    })
+    .unwrap()
+    .expect("finite midpoint near the float limit");
     assert_eq!(points.first(), Some(&Point2::new(0.0, 0.0)));
     assert_eq!(points.last(), Some(&Point2::new(1.0, 0.0)));
     assert!(points.iter().any(|point| point.u > 0.0 && point.u < 1.0));
@@ -214,12 +220,21 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
     let Some(SketchProfileRegion::Trimmed {
         outer_boundary,
         hole_boundaries,
-    }) = crate::test_support::with_decode_context(|decode_ctx| arrangement_region_containing_points(&sketch, &entities, &[
-            Point2::new(0.0, 0.0),
-            Point2::new(31.0, 0.0),
-            Point2::new(31.0, 19.0),
-            Point2::new(0.0, 19.0),
-        ], 1.0e-6, &arrangement_budget, decode_ctx))
+    }) = crate::test_support::with_decode_context(|decode_ctx| {
+        arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, 0.0),
+                Point2::new(31.0, 0.0),
+                Point2::new(31.0, 19.0),
+                Point2::new(0.0, 19.0),
+            ],
+            1.0e-6,
+            &arrangement_budget,
+            decode_ctx,
+        )
+    })
     .expect("arrangement collection admitted")
     else {
         panic!("selected face must resolve from raw sketch geometry")
@@ -299,12 +314,24 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(12.0, 21.0, 12.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, Vec::new()).unwrap())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(15.0, 21.0, 12.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -330,7 +357,13 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
         .unwrap(),
     ));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&incomplete, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &incomplete,
+            &entities,
+            &[Point3::new(12.0, 21.0, 12.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -393,27 +426,57 @@ fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(3.0, 3.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(1, vec![2]).unwrap())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(5.0, 5.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(2, Vec::new()).unwrap())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(2.0, 5.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         None
     );
@@ -506,7 +569,13 @@ fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(0, vec![1]).unwrap())
     );
@@ -584,15 +653,26 @@ fn coincident_circle_arc_arrangement() -> (Sketch, Vec<SketchEntity>, SketchEnti
 fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
     let (sketch, entities, line_id, arc_id) = coincident_circle_arc_arrangement();
     let arrangement_budget = local_arrangement_budget();
-    let faces = crate::test_support::with_decode_context(|decode_ctx| sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, decode_ctx))
-        .expect("arrangement collection admitted")
-        .expect("endpoint arrangement faces");
+    let faces = crate::test_support::with_decode_context(|decode_ctx| {
+        sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &arrangement_budget, decode_ctx)
+    })
+    .expect("arrangement collection admitted")
+    .expect("endpoint arrangement faces");
     assert_eq!(faces.len(), 2);
-    let selected = crate::test_support::with_decode_context(|decode_ctx| arrangement_region_containing_points(&sketch, &entities, &[
-            Point2::new(0.0, -1.0),
-            Point2::new(0.0, 1.0),
-            Point2::new(-1.0, 0.0),
-        ], 1.0e-7, &arrangement_budget, decode_ctx))
+    let selected = crate::test_support::with_decode_context(|decode_ctx| {
+        arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, -1.0),
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            1.0e-7,
+            &arrangement_budget,
+            decode_ctx,
+        )
+    })
     .expect("arrangement collection admitted")
     .expect("left half-disk arrangement face");
     let SketchProfileRegion::Trimmed {
@@ -797,12 +877,24 @@ fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
     let expected = SketchProfileRegion::loops(0, vec![1]).unwrap();
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(4.0, 0.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(expected.clone())
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| region_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(0.0, 0.0, 0.0)],
+            1.0e-6,
+            decode_ctx
+        ))
         .unwrap(),
         Some(SketchProfileRegion::loops(1, Vec::new()).unwrap())
     );
@@ -832,7 +924,10 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(crate::test_support::with_decode_context(|ctx| boundary.strictly_contains(&hole, ctx)).unwrap());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| boundary.strictly_contains(&hole, ctx))
+            .unwrap()
+    );
 }
 
 #[test]
@@ -856,8 +951,14 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    assert!(crate::test_support::with_decode_context(|ctx| polygon.strictly_contains(&arc_loop, ctx)).unwrap());
-    assert!(!crate::test_support::with_decode_context(|ctx| arc_loop.strictly_contains(&polygon, ctx)).unwrap());
+    assert!(crate::test_support::with_decode_context(
+        |ctx| polygon.strictly_contains(&arc_loop, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| arc_loop.strictly_contains(&polygon, ctx)
+    )
+    .unwrap());
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -871,8 +972,14 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!crate::test_support::with_decode_context(|ctx| polygon.strictly_contains(&crossing, ctx)).unwrap());
-    assert!(!crate::test_support::with_decode_context(|ctx| crossing.strictly_contains(&polygon, ctx)).unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| polygon.strictly_contains(&crossing, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| crossing.strictly_contains(&polygon, ctx)
+    )
+    .unwrap());
 }
 
 #[test]
@@ -896,10 +1003,22 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    assert!(crate::test_support::with_decode_context(|ctx| outer.strictly_contains(&inner, ctx)).unwrap());
-    assert!(!crate::test_support::with_decode_context(|ctx| inner.strictly_contains(&outer, ctx)).unwrap());
-    assert!(!crate::test_support::with_decode_context(|ctx| outer.strictly_contains(&crossing, ctx)).unwrap());
-    assert!(!crate::test_support::with_decode_context(|ctx| outer.strictly_contains(&touching, ctx)).unwrap());
+    assert!(
+        crate::test_support::with_decode_context(|ctx| outer.strictly_contains(&inner, ctx))
+            .unwrap()
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|ctx| inner.strictly_contains(&outer, ctx))
+            .unwrap()
+    );
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| outer.strictly_contains(&crossing, ctx)
+    )
+    .unwrap());
+    assert!(!crate::test_support::with_decode_context(
+        |ctx| outer.strictly_contains(&touching, ctx)
+    )
+    .unwrap());
 }
 
 #[test]
@@ -936,13 +1055,27 @@ fn historical_edge_positions_require_a_complete_state_chain() {
         ..crate::history_records::AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::historical_entity_positions(crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge, 7, &topology, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_entity_positions(
+                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
     );
     topology.point_positions.pop();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::historical_entity_positions(crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge, 7, &topology, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_entity_positions(
+                crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
+                7,
+                &topology,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         None
     );
@@ -976,17 +1109,38 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::historical_owned_faces(AsmHistoricalEntityKind::Body, 1, &topology, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Body,
+                1,
+                &topology,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::historical_owned_faces(AsmHistoricalEntityKind::Region, 2, &topology, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Region,
+                2,
+                &topology,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::historical_owned_faces(AsmHistoricalEntityKind::Shell, 3, &topology, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::geometry::historical_owned_faces(
+                AsmHistoricalEntityKind::Shell,
+                3,
+                &topology,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(vec![5, 7])
     );
@@ -1012,12 +1166,22 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     );
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(0.0, 2.0), &arc, EPS_CONTAINMENT_LINEAR))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(0.0, 2.0),
+            &arc,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(-2.0, 0.0), &arc, EPS_CONTAINMENT_LINEAR))
-            .expect("resource allocation did not fail")
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-2.0, 0.0),
+            &arc,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -1028,11 +1192,21 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(decode_ctx, Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2), &clockwise_arc.geometry))
-    .expect("resource allocation did not fail"));
     assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(decode_ctx, Point2::new(-2.0, 0.0), &clockwise_arc.geometry))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
+            decode_ctx,
+            Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
+            &clockwise_arc.geometry
+        ))
+        .expect("resource allocation did not fail")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode_ctx| point_lies_on_sketch_geometry(
+            decode_ctx,
+            Point2::new(-2.0, 0.0),
+            &clockwise_arc.geometry
+        ))
+        .expect("resource allocation did not fail")
     );
 
     let ellipse = entity(
@@ -1050,12 +1224,33 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(-1.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR))
-    .expect("resource allocation did not fail"));
-    assert!(!crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(3.0, -1.0), &ellipse, EPS_CONTAINMENT_LINEAR))
-    .expect("resource allocation did not fail"));
-    assert!(!crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(-1.0, -0.9), &ellipse, EPS_CONTAINMENT_LINEAR))
-    .expect("resource allocation did not fail"));
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-1.0, -1.0),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(3.0, -1.0),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
+    );
+    assert!(
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(-1.0, -0.9),
+            &ellipse,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
+    );
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1072,12 +1267,22 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     ));
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(3.0, 2.0), &nurbs, EPS_CONTAINMENT_LINEAR))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(3.0, 2.0),
+            &nurbs,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     assert!(
-        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, Point2::new(2.0, 4.0), &nurbs, EPS_CONTAINMENT_LINEAR))
-            .expect("resource allocation did not fail")
+        !crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            Point2::new(2.0, 4.0),
+            &nurbs,
+            EPS_CONTAINMENT_LINEAR
+        ))
+        .expect("resource allocation did not fail")
     );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
@@ -1093,8 +1298,13 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
     )
     .unwrap();
     assert!(
-        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(decode_ctx, *interior.as_raw(), &nurbs, EPS_CONTAINMENT_DISTANCE))
-            .expect("resource allocation did not fail")
+        crate::test_support::with_decode_context(|decode_ctx| point_on_sketch_entity(
+            decode_ctx,
+            *interior.as_raw(),
+            &nurbs,
+            EPS_CONTAINMENT_DISTANCE
+        ))
+        .expect("resource allocation did not fail")
     );
 }
 
@@ -1145,7 +1355,10 @@ fn unbranched_closed_sketch_components_project_as_ordered_profiles_and_refuse_vi
         ),
     ];
 
-    let profiles = crate::test_support::with_decode_context(|decode_ctx| closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 4;
@@ -1201,7 +1414,10 @@ fn branched_line_graph_projects_each_bounded_face() {
         line("synthetic:test:id#divider", (1.0, 0.0), (1.0, 1.0)),
     ];
 
-    let profiles = crate::test_support::with_decode_context(|decode_ctx| closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     assert_eq!(profiles.len(), 2);
     assert!(profiles.iter().all(|profile| profile.len() == 4));
     assert!(profiles.iter().all(|profile| profile
@@ -1234,7 +1450,10 @@ fn branched_line_graph_with_a_shared_corner_projects_bounded_faces() {
         line("synthetic:test:id#inner-left", (0.0, 41.0), (0.0, 47.0)),
     ];
 
-    let profiles = crate::test_support::with_decode_context(|decode_ctx| closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)).unwrap();
+    let profiles = crate::test_support::with_decode_context(|decode_ctx| {
+        closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0e-6)
+    })
+    .unwrap();
     assert_eq!(
         profiles
             .iter()
@@ -1503,7 +1722,15 @@ fn numerical_0922b_large_line_split() {
             end: Point2::new(scale, 0.),
         })
         .unwrap();
-        let r = crate::test_support::with_decode_context(|decode_ctx| super::arrangement_split_parameters(&line, [0., 1.], &[Point2::new(0.5 * scale, 0.)], LARGE_LINE_TOLERANCE, decode_ctx))
+        let r = crate::test_support::with_decode_context(|decode_ctx| {
+            super::arrangement_split_parameters(
+                &line,
+                [0., 1.],
+                &[Point2::new(0.5 * scale, 0.)],
+                LARGE_LINE_TOLERANCE,
+                decode_ctx,
+            )
+        })
         .unwrap()
         .unwrap();
         println!("Fusion split scale{scale:e}: {r:?}");

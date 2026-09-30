@@ -97,50 +97,52 @@ fn mesh_error_with_feature(
     tessellation: bool,
     max_items: u64,
     max_retained_bytes: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    if asset {
-        ir.model.assets.push(
-            cadmpeg_ir::assets::Asset::try_new(
-                cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
-                None,
-                None,
-                cadmpeg_ir::assets::AssetContent::External {
-                    uri: cadmpeg_core::text::NonBlankString::new("asset").unwrap(),
-                },
-                None,
-            )
-            .unwrap(),
-        );
-    }
-    if tessellation {
-        ir.model.tessellations.push(
-            cadmpeg_ir::tessellation::Tessellation::new(
-                cadmpeg_ir::tessellation::TessellationId::mint("f3d:model:tessellation#one")
-                    .expect("valid identity"),
-                cadmpeg_ir::tessellation::TessellationMesh::List {
-                    vertices: Vec::new(),
-                    triangles: Vec::new(),
-                },
-                Vec::new(),
-            )
-            .unwrap(),
-        );
-    }
-    let mut native = crate::native::F3dNative::default();
-    if let Some(feature) = feature {
-        native.design_mesh_features.push(feature());
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained_bytes;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_mesh_features(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        if asset {
+            ir.model.assets.push(
+                cadmpeg_ir::assets::Asset::try_new(
+                    cadmpeg_ir::assets::AssetId::mint("f3d:model:asset#one").unwrap(),
+                    None,
+                    None,
+                    cadmpeg_ir::assets::AssetContent::External {
+                        uri: cadmpeg_core::text::NonBlankString::new("asset").unwrap(),
+                    },
+                    None,
+                )
+                .unwrap(),
+            );
+        }
+        if tessellation {
+            ir.model.tessellations.push(
+                cadmpeg_ir::tessellation::Tessellation::new(
+                    cadmpeg_ir::tessellation::TessellationId::mint("f3d:model:tessellation#one")
+                        .expect("valid identity"),
+                    cadmpeg_ir::tessellation::TessellationMesh::List {
+                        vertices: Vec::new(),
+                        triangles: Vec::new(),
+                    },
+                    Vec::new(),
+                )
+                .unwrap(),
+            );
+        }
+        let mut native = crate::native::F3dNative::default();
+        if let Some(feature) = feature {
+            native.design_mesh_features.push(feature());
+        }
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained_bytes;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_mesh_features(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 fn body_feature() -> crate::records::mesh::DesignMeshFeature {
     mesh_feature_with_body(false)

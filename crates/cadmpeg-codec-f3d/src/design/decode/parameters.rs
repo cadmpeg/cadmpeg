@@ -563,7 +563,6 @@ pub(crate) fn decode_parameter_owners(
             continue;
         };
         if !headers_by_stream.contains_key(stream) {
-
             ctx.reserve_map(&mut headers_by_stream, 1, "f3d owner header stream")?;
         }
         let stream_headers = headers_by_stream.entry(stream).or_default();
@@ -571,10 +570,13 @@ pub(crate) fn decode_parameter_owners(
             ctx.reserve_map(stream_headers, 1, "f3d owner header index")?;
         }
         if stream_headers.insert(header.record_index, header).is_some() {
-            return Err(crate::design::text::malformed_design(ctx, format_args!(
+            return Err(crate::design::text::malformed_design(
+                ctx,
+                format_args!(
                     "Fusion Design stream has duplicate primary headers for record {}",
                     header.record_index
-                )));
+                ),
+            ));
         }
     }
     let mut streams = HashMap::new();
@@ -602,10 +604,13 @@ pub(crate) fn decode_parameter_owners(
             continue;
         };
         let malformed = |invariant: &str| {
-            crate::design::text::malformed_design(ctx, format_args!(
+            crate::design::text::malformed_design(
+                ctx,
+                format_args!(
                     "Fusion Design parameter {} owner {} {invariant}",
                     parameter.record_index, owner_index
-                ))
+                ),
+            )
         };
         let scope = native_stream(&parameter.id)
             .ok_or_else(|| malformed("has no Design stream identity"))?;
@@ -954,7 +959,6 @@ pub(crate) fn decode_parameter_companions(
         };
         let key = (stream, header.record_index);
         if !headers_by_record.contains_key(&key) {
-
             ctx.reserve_map(&mut headers_by_record, 1, "f3d parameter companion headers")?;
         }
         headers_by_record.insert(key, header);
@@ -1015,7 +1019,13 @@ impl ParsedParameterCompanion {
         let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
             return Ok(None);
         };
-        let id = design_record_id_charged(ctx, stream, ":design-parameter-companion#", frame_start, "f3d parameter companion identifier")?;
+        let id = design_record_id_charged(
+            ctx,
+            stream,
+            ":design-parameter-companion#",
+            frame_start,
+            "f3d parameter companion identifier",
+        )?;
         Ok(Some(DesignParameterCompanion::unbound(
             id,
             frame_start,
@@ -1081,9 +1091,12 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
-
     let mut bound = Vec::new();
-    ctx.reserve_vec(&mut bound, companions.len(), "f3d bound parameter companions")?;
+    ctx.reserve_vec(
+        &mut bound,
+        companions.len(),
+        "f3d bound parameter companions",
+    )?;
     for companion in companions {
         bound.push(match companion_payload(ctx, &companion, inputs)? {
             Some(payload) => companion.bound(payload),
@@ -1169,7 +1182,6 @@ fn companion_payload<S: std::hash::BuildHasher>(
             && recipe.byte_offset >= u64_from_index(start)
             && recipe.byte_offset < u64_from_index(end)
     }) {
-
         ctx.reserve_vec(&mut owned, 1, "f3d companion owned recipes")?;
         owned.push(recipe);
     }

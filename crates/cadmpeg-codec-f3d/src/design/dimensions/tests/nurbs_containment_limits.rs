@@ -19,7 +19,11 @@ fn fixture(operation: &'static str) {
         .unwrap(),
     );
     super::assert_dimension_refusal(operation, ResourceDimension::CollectionItems, |ctx| {
-        crate::design::dimensions::point_lies_on_sketch_geometry(ctx, Point2::new(3.0, 2.0), &geometry)
+        crate::design::dimensions::point_lies_on_sketch_geometry(
+            ctx,
+            Point2::new(3.0, 2.0),
+            &geometry,
+        )
         .map(|_| ())
     });
 }

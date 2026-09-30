@@ -117,7 +117,14 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
     ];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| side_one_recipe_edge(decode_ctx, Some(&structure), &contexts, &[], &[40, 41, 42])).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| side_one_recipe_edge(
+            decode_ctx,
+            Some(&structure),
+            &contexts,
+            &[],
+            &[40, 41, 42]
+        ))
+        .unwrap(),
         Some(41)
     );
 
@@ -134,7 +141,13 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
         boundary_count_matching_edge_slots: Vec::new(),
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| side_one_recipe_edge(decode_ctx, Some(&structure), &ambiguous_contexts, &[selector], &[40, 41, 42]))
+        crate::test_support::with_decode_context(|decode_ctx| side_one_recipe_edge(
+            decode_ctx,
+            Some(&structure),
+            &ambiguous_contexts,
+            &[selector],
+            &[40, 41, 42]
+        ))
         .unwrap(),
         Some(41)
     );

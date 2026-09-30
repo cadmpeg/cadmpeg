@@ -2140,12 +2140,9 @@ impl SketchNurbsGeometry {
         &self.knots
     }
 
-    pub(crate) fn knots_copy(
-        &self,
-        ctx: &DecodeContext<'_>,
-    ) -> Result<Vec<f64>, CodecError> {
+    pub(crate) fn knots_copy(&self, ctx: &DecodeContext<'_>) -> Result<Vec<f64>, CodecError> {
         ctx.copy_slice(&self.knots, "copy F3D sketch NURBS knots")
-}
+    }
 
     pub(crate) fn knot_count(&self) -> usize {
         self.knots.len()

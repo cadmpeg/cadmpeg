@@ -1283,7 +1283,14 @@ fn projection_loss_refuses_collection_limit() {
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
-    let error = super::super::push_loss_vec(&ctx, &mut report.losses, crate::loss::F3dLossCode::FeatureDefinitionIncomplete, format_args!("one incomplete feature"), "collect F3D projection losses", "retain F3D projection loss")
+    let error = super::super::push_loss_vec(
+        &ctx,
+        &mut report.losses,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
+    )
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1301,7 +1308,14 @@ fn projection_loss_refuses_retained_limit() {
     let mut report = cadmpeg_ir::codec::DecodeBody::new(
         cadmpeg_ir::report::decode::DecodeTransfer::ContainerOnly {},
     );
-    let error = super::super::push_loss_vec(&ctx, &mut report.losses, crate::loss::F3dLossCode::FeatureDefinitionIncomplete, format_args!("one incomplete feature"), "collect F3D projection losses", "retain F3D projection loss")
+    let error = super::super::push_loss_vec(
+        &ctx,
+        &mut report.losses,
+        crate::loss::F3dLossCode::FeatureDefinitionIncomplete,
+        format_args!("one incomplete feature"),
+        "collect F3D projection losses",
+        "retain F3D projection loss",
+    )
     .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

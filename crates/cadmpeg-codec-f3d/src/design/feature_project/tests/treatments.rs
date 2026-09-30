@@ -176,13 +176,18 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     )
     .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-                scopes: std::slice::from_ref(&scope),
-                timelines: std::slice::from_ref(&timeline),
-                construction_groups: &groups,
-                entity_selection_operands: std::slice::from_ref(selection),
-..Default::default()
-}))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                decode_ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: std::slice::from_ref(&scope),
+                    timelines: std::slice::from_ref(&timeline),
+                    construction_groups: &groups,
+                    entity_selection_operands: std::slice::from_ref(selection),
+                    ..Default::default()
+                },
+            )
+        })
         .expect("authored Draft timeline")
     };
 
@@ -271,13 +276,18 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     let radius = parameter(3, "MidRadius", Some("mm"), 0.4);
     let position = parameter(4, "MidParams", None, 0.25);
     let weight = parameter(5, "TangencyWeight", None, 0.75);
-    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[
-            (0, &start),
-            (1, &end),
-            (2, &radius),
-            (3, &position),
-            (4, &weight),
-        ]))
+    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::variable_fillet_law(
+            decode_ctx,
+            &[
+                (0, &start),
+                (1, &end),
+                (2, &radius),
+                (3, &position),
+                (4, &weight),
+            ],
+        )
+    })
     .unwrap()
     .expect("complete variable Fillet law");
     assert_eq!(
@@ -326,10 +336,11 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     };
     let start = parameter(1, "StartRadius", Some("mm"), 0.2);
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
-    let (points, tangency_weight) =
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)]))
-            .unwrap()
-            .expect("variable Fillet law without an explicit weight");
+    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)])
+    })
+    .unwrap()
+    .expect("variable Fillet law without an explicit weight");
     assert_eq!(
         points
             .as_slice()
@@ -369,7 +380,12 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let weight_one = parameter(3, "TangencyWeight", None, 0.5);
     let weight_two = parameter(4, "TangencyWeight", None, 0.75);
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two),]))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::variable_fillet_law(
+            decode_ctx,
+            &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two)],
+        )
+    })
     .unwrap()
     .is_none());
 }
@@ -674,17 +690,22 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         }
     );
     let (chord_features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &chord_parameters,
-owners: &chord_owners,
-scopes,
-construction_groups: &operand_groups[..1],
-fillet_radius_groups: &chord_assignments,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &chord_parameters,
+                owners: &chord_owners,
+                scopes,
+                construction_groups: &operand_groups[..1],
+                fillet_radius_groups: &chord_assignments,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         chord_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -719,17 +740,22 @@ timelines: &timelines,
         None
     );
     let (chord_only_features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &chord_only_parameters,
-owners: &chord_only_owners,
-scopes,
-construction_groups: &operand_groups[..1],
-fillet_radius_groups: &chord_only_assignments,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &chord_only_parameters,
+                owners: &chord_only_owners,
+                scopes,
+                construction_groups: &operand_groups[..1],
+                fillet_radius_groups: &chord_only_assignments,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         chord_only_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -765,17 +791,22 @@ timelines: &timelines,
         }
     );
     let (asymmetric_features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &asymmetric_parameters,
-owners: &asymmetric_owners,
-scopes,
-construction_groups: &operand_groups[..1],
-fillet_radius_groups: &asymmetric_assignments,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &asymmetric_parameters,
+                owners: &asymmetric_owners,
+                scopes,
+                construction_groups: &operand_groups[..1],
+                fillet_radius_groups: &asymmetric_assignments,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert!(matches!(
         asymmetric_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -796,17 +827,22 @@ timelines: &timelines,
         .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
     let (features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &parameters,
-owners: &owners,
-scopes,
-construction_groups: &operand_groups,
-fillet_radius_groups: &assignments,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &parameters,
+                owners: &owners,
+                scopes,
+                construction_groups: &operand_groups,
+                fillet_radius_groups: &assignments,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[0].evaluation.definition()
     else {
@@ -938,7 +974,15 @@ timelines: &timelines,
         .unwrap()
     };
     let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
-    let resolved = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group], &[], &identities))
+    let resolved = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_surface_patch(
+            decode_ctx,
+            &patch_scope,
+            &[patch_group.clone(), second_patch_group],
+            &[],
+            &identities,
+        )
+    })
     .unwrap()
     .expect("resolved multi-group SurfacePatch path");
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
@@ -988,7 +1032,15 @@ timelines: &timelines,
         })
         .unwrap();
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_surface_patch(
+                decode_ctx,
+                &patch_scope,
+                std::slice::from_ref(&patch_group),
+                &[],
+                &[],
+            )
+        })
         .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
@@ -1008,7 +1060,15 @@ timelines: &timelines,
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_surface_patch(
+                decode_ctx,
+                &patch_scope,
+                std::slice::from_ref(&patch_group),
+                &[],
+                &[],
+            )
+        })
         .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
@@ -1023,7 +1083,15 @@ timelines: &timelines,
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_surface_patch(
+            decode_ctx,
+            &patch_scope,
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
+        )
+    })
     .unwrap()
     .is_none());
 
@@ -1049,7 +1117,15 @@ timelines: &timelines,
                 .collect(),
         )
         .unwrap();
-    let grouped_projection = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
+    let grouped_projection = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_surface_patch(
+            decode_ctx,
+            &patch_scope,
+            std::slice::from_ref(&patch_group),
+            &[],
+            &[],
+        )
+    })
     .unwrap();
     assert!(matches!(
         grouped_projection,
@@ -1116,17 +1192,22 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &variable_parameters,
     );
     let (variable_features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &variable_parameters,
-owners: &variable_owners,
-scopes,
-construction_groups: &operand_groups[1..],
-fillet_radius_groups: &variable_assignments,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &variable_parameters,
+                owners: &variable_owners,
+                scopes,
+                construction_groups: &operand_groups[1..],
+                fillet_radius_groups: &variable_assignments,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         variable_features[0].evaluation.definition()
     else {
@@ -1160,16 +1241,21 @@ timelines: &timelines,
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
     let (unassigned_features, _) = crate::test_support::with_decode_context(|ctx| {
-let scopes = std::slice::from_ref(&scope);
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &variable_parameters,
-owners: &variable_owners,
-scopes,
-construction_groups: &operand_groups[1..],
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = std::slice::from_ref(&scope);
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &variable_parameters,
+                owners: &variable_owners,
+                scopes,
+                construction_groups: &operand_groups[1..],
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: unassigned_groups,
     }) = unassigned_features[0].evaluation.definition()
@@ -1255,10 +1341,18 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         let inputs = crate::design::feature_project::ProjectInputs {
             fillet_radius_groups: std::slice::from_ref(&assignment),
-..Default::default()
-};
+            ..Default::default()
+        };
         assert!(matches!(
-            crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fillet_arm(decode_ctx, &inputs, &scope, &parameters, "f3d:native")),
+            crate::test_support::with_decode_context(|decode_ctx| {
+                crate::design::feature_project::project_fillet_arm(
+                    decode_ctx,
+                    &inputs,
+                    &scope,
+                    &parameters,
+                    "f3d:native",
+                )
+            }),
             Ok(FeatureDefinition::Operation(
                 FeatureOperation::Native { .. }
             ))
@@ -1282,11 +1376,11 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     let start = parameter("StartRadius", f64::MAX);
     let end = parameter("EndRadius", 1.0);
     assert!(crate::design::feature_project::design_length(&start).is_none());
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)]))
-            .unwrap()
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)])
+    })
+    .unwrap()
+    .is_none());
 }
 
 mod chamfer;

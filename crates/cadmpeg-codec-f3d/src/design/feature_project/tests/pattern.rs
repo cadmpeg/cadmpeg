@@ -147,10 +147,11 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             )),
         ),
     ] {
-        let definition =
-            crate::test_support::with_decode_context(|decode_ctx| project_circular_pattern(decode_ctx, &circular_scope(), &[group(10, 20, role)], &[]))
-                .unwrap()
-                .expect("circular pattern");
+        let definition = crate::test_support::with_decode_context(|decode_ctx| {
+            project_circular_pattern(decode_ctx, &circular_scope(), &[group(10, 20, role)], &[])
+        })
+        .unwrap()
+        .expect("circular pattern");
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
         else {
             panic!("circular pattern definition");
@@ -221,10 +222,11 @@ fn assert_linear_seed(definition: FeatureDefinition, expected_seed: PatternSeed)
 fn rectangular_pattern_seed_role_selects_body_or_face() {
     let body_scope = rectangular_scope();
     let body_group = group(10, 20, DesignOperandRole::BODIES_B);
-    let body_definition =
-        crate::test_support::with_decode_context(|decode_ctx| project_rectangular_pattern_scalars(decode_ctx, &body_scope, &[body_group], &[]))
-            .unwrap()
-            .expect("body rectangular pattern");
+    let body_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_rectangular_pattern_scalars(decode_ctx, &body_scope, &[body_group], &[])
+    })
+    .unwrap()
+    .expect("body rectangular pattern");
     assert_linear_seed(
         body_definition,
         PatternSeed::Bodies(BodySelection::Native(
@@ -234,10 +236,11 @@ fn rectangular_pattern_seed_role_selects_body_or_face() {
 
     let face_scope = rectangular_scope();
     let face_group = group(10, 30, DesignOperandRole::BODIES_A);
-    let face_definition =
-        crate::test_support::with_decode_context(|decode_ctx| project_rectangular_pattern_scalars(decode_ctx, &face_scope, &[face_group], &[]))
-            .unwrap()
-            .expect("face rectangular pattern");
+    let face_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project_rectangular_pattern_scalars(decode_ctx, &face_scope, &[face_group], &[])
+    })
+    .unwrap()
+    .expect("face rectangular pattern");
     assert_linear_seed(
         face_definition,
         PatternSeed::Faces(FaceSelection::Native(
@@ -288,9 +291,7 @@ fn rectangular_pattern_seed_output_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(
-        matches!(project_rectangular_pattern_scalars(&ctx, &scope,
+    assert!(matches!(project_rectangular_pattern_scalars(&ctx, &scope,
         std::slice::from_ref(&seed_group), &[]), Err(CodecError::ResourceLimit(failure))
-        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d rectangular pattern seeds")
-    );
+        if failure.dimension == ResourceDimension::CollectionItems && failure.operation == "f3d rectangular pattern seeds"));
 }

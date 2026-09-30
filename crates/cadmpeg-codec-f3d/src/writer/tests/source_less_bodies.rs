@@ -303,7 +303,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
-    assert!(crate::test_support::with_decode_context(|ctx| crate::validate::validate_native_charged(ctx, round_trip.ir()).expect("service native validation")).is_empty());
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        crate::validate::validate_native_charged(ctx, round_trip.ir())
+            .expect("service native validation")
+    })
+    .is_empty());
     assert!(native.persistent_subentity_tags.iter().any(|tag| {
         tag.token == "-1"
             && tag.design_references == [511]

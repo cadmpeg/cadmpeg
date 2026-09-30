@@ -24,22 +24,36 @@ const EPS_EXTRUDE_START_ANGULAR: f64 = 1.0e-10;
 fn extrude_start_plane_geometry_fallback_requires_complete_nested_recipe() {
     let (operand, group, faces) = start_geometry_fixture();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| extrude_start_plane_geometry_candidates(decode_ctx, &group, std::slice::from_ref(&operand), &faces))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            extrude_start_plane_geometry_candidates(
+                decode_ctx,
+                &group,
+                std::slice::from_ref(&operand),
+                &faces,
+            )
+        })
         .unwrap(),
         Some(vec![face(10)])
     );
     let mut bound = operand.clone();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| retain_face_operand_resolution(decode_ctx, &group, std::slice::from_mut(&mut bound), &face(10)))
-    .unwrap());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| retain_face_operand_resolution(
+            decode_ctx,
+            &group,
+            std::slice::from_mut(&mut bound),
+            &face(10)
+        ))
+        .unwrap()
+    );
     assert_eq!(bound.resolved_active_face, Some(face(10)));
 
     let mut incomplete = operand;
     incomplete.recipe_nodes.clear();
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| extrude_start_plane_geometry_candidates(decode_ctx, &group, &[incomplete], &faces))
-            .unwrap()
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        extrude_start_plane_geometry_candidates(decode_ctx, &group, &[incomplete], &faces)
+    })
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -615,7 +629,10 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
             linear_tolerance: TARGET_LINEAR_TOLERANCE,
             angular_tolerance: TARGET_ANGULAR_TOLERANCE,
         };
-        crate::test_support::with_decode_context(|decode_ctx| extrude_target_plane_candidate(decode_ctx, &group, &resolution, origin, sweep_direction)).unwrap()
+        crate::test_support::with_decode_context(|decode_ctx| {
+            extrude_target_plane_candidate(decode_ctx, &group, &resolution, origin, sweep_direction)
+        })
+        .unwrap()
     };
 
     assert_eq!(candidate(&[1, 3, 4]), Some(face(1)));
@@ -722,9 +739,11 @@ fn assert_extrude_root_collection_limit(operation: &'static str) {
     use cadmpeg_core::CodecError;
 
     let (scope, groups) = extrude_root_fixture();
-    let roots = crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups))
-        .unwrap()
-        .unwrap();
+    let roots = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::face_resolve::extrude_profile_group_roots(decode_ctx, &scope, &groups)
+    })
+    .unwrap()
+    .unwrap();
     assert_eq!(
         roots
             .iter()
@@ -863,7 +882,11 @@ fn assert_extrude_leaf_collection_limit(operation: &'static str) {
 
     let (root, groups, operands) = extrude_leaf_fixture();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::extrude_profile_group_operand_indices(decode_ctx, &root, &groups, &operands))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::face_resolve::extrude_profile_group_operand_indices(
+                decode_ctx, &root, &groups, &operands,
+            )
+        })
         .unwrap()
         .unwrap(),
         [0]
@@ -946,9 +969,15 @@ fn extrude_active_face_id_refuses_retained_limit() {
 
     let (_, _, operands) = extrude_leaf_fixture();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_extrude_profile_active_faces(decode_ctx, &[0], &operands))
-            .unwrap()
-            .unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::face_resolve::resolved_extrude_profile_active_faces(
+                decode_ctx,
+                &[0],
+                &operands,
+            )
+        })
+        .unwrap()
+        .unwrap(),
         [face(10)]
     );
     let mut policy = DecodePolicy::default();

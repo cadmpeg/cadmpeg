@@ -121,11 +121,17 @@ pub(super) fn encode_design_bulkstream(
     parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let decode_ctx = &decode_ctx;
 
     let (_, projected_parameters) =
-        crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            decode_ctx,
+            &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
@@ -144,7 +150,8 @@ pub(super) fn encode_design_bulkstream(
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
-            })?;
+            },
+        )?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
@@ -339,9 +346,10 @@ pub(super) fn encode_design_bulkstream(
         }
         let companion_class_tag = super::presentation::dynamic_class_tag(companion_type_ordinal)?;
         primary_records.push(primary_record(point.record_index, out.len())?);
-        encode_sketch_point(&mut out, point)?;
+        encode_sketch_point(decode_ctx, &mut out, point)?;
         primary_records.push(primary_record(point.paired_reference, out.len())?);
         encode_sketch_point_companion(
+            decode_ctx,
             &mut out,
             &companion_class_tag,
             point.paired_reference,
@@ -351,7 +359,7 @@ pub(super) fn encode_design_bulkstream(
     }
     for curve in &native.sketch_curve_identities {
         primary_records.push(primary_record(curve.record_index, out.len())?);
-        encode_sketch_curve_identity(&mut out, curve)?;
+        encode_sketch_curve_identity(decode_ctx, &mut out, curve)?;
     }
     for text in &native.sketch_texts {
         primary_records.push(primary_record(text.record_index, out.len())?);
@@ -359,7 +367,7 @@ pub(super) fn encode_design_bulkstream(
     }
     for relation in &native.sketch_relations {
         primary_records.push(primary_record(relation.record_index, out.len())?);
-        encode_sketch_relation(&mut out, relation)?;
+        encode_sketch_relation(decode_ctx, &mut out, relation)?;
     }
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));
@@ -490,6 +498,7 @@ fn encode_sketch_record_header(
 }
 
 fn encode_sketch_point(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     point: &crate::records::sketch_geometry::SketchPoint,
 ) -> Result<(), CodecError> {
@@ -515,7 +524,13 @@ fn encode_sketch_point(
         )));
     };
     let shift = usize::from(entity_genesis.is_some()) * 52;
-    let mut record = std::iter::repeat_n(0u8, 105 + shift).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        105 + shift,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(1 + u32::from(entity_genesis.is_some())).to_le_bytes());
@@ -551,6 +566,7 @@ fn encode_sketch_point(
 }
 
 fn encode_sketch_point_companion(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     class_tag: &crate::records::references::DesignClassTag,
     record_index: u32,
@@ -565,7 +581,13 @@ fn encode_sketch_point_companion(
         )
     })?;
     let prefix_len = if prefix_present_zero { 25 } else { 21 };
-    let mut record = std::iter::repeat_n(0u8, prefix_len).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        prefix_len,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, class_tag, record_index);
     if prefix_present_zero {
         record[20] = 1;
@@ -581,6 +603,7 @@ fn encode_sketch_point_companion(
 }
 
 fn encode_sketch_curve_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     curve: &crate::records::sketch_geometry::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
@@ -591,7 +614,13 @@ fn encode_sketch_curve_identity(
         ))
     })?;
     let shift = usize::from(curve.entity_genesis.is_some()) * 52;
-    let mut record = std::iter::repeat_n(0u8, 133 + shift).collect::<Vec<_>>();
+    let mut record = Vec::new();
+    ctx.resize_retained_bytes(
+        &mut record,
+        133 + shift,
+        0,
+        "generate F3D sketch record bytes",
+    )?;
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index);
     record[20] = 1;
     record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
@@ -668,6 +697,7 @@ fn encode_sketch_curve_identity(
             subtype_record_index,
             geometry,
         }) => encode_sketch_nurbs(
+            ctx,
             &mut record,
             *carrier_reference,
             subtype_class_tag,
@@ -707,6 +737,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
 const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 
 fn encode_sketch_nurbs(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
     subtype_class_tag: &crate::records::references::DesignClassTag,
@@ -723,7 +754,7 @@ fn encode_sketch_nurbs(
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());
-    record.resize(133 + 88, 0);
+    ctx.resize_retained_bytes(record, 133 + 88, 0, "generate F3D sketch NURBS bytes")?;
     record.push(1);
     record.push(0);
     record.extend_from_slice(&geometry.degree().to_le_bytes());
@@ -762,10 +793,22 @@ fn encode_sketch_nurbs(
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&text.raw_bytes, &decode_arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &text.raw_bytes,
+        &decode_arena,
+        &cadmpeg_core::decode::DecodePolicy::default(),
+    )?;
     let decode_ctx = &decode_ctx;
 
-    let decoded = crate::design::decode::sketch::decode_sketch_text_record(decode_ctx, &text.raw_bytes, "Design/BulkStream.dat", text.class_tag.clone(), text.class_version, text.record_index, 0)?
+    let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+        decode_ctx,
+        &text.raw_bytes,
+        "Design/BulkStream.dat",
+        text.class_tag.clone(),
+        text.class_version,
+        text.record_index,
+        0,
+    )?
     .ok_or_else(|| {
         CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
     })?;
@@ -803,6 +846,7 @@ fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecE
 const SKETCH_RELATION_RECORD_FILLED_LEN: usize = 101;
 
 fn encode_sketch_relation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     relation: &crate::records::sketch_relations::SketchRelation,
 ) -> Result<(), CodecError> {
@@ -860,7 +904,12 @@ fn encode_sketch_relation(
     }
     record.push(0);
     if record.len() < SKETCH_RELATION_RECORD_FILLED_LEN {
-        record.resize(SKETCH_RELATION_RECORD_FILLED_LEN, 0);
+        ctx.resize_retained_bytes(
+            &mut record,
+            SKETCH_RELATION_RECORD_FILLED_LEN,
+            0,
+            "generate F3D sketch relation bytes",
+        )?;
     }
     out.extend_from_slice(&record);
     Ok(())
@@ -1094,7 +1143,10 @@ mod tests {
 
     fn encoded(member_count: u32) -> Vec<u8> {
         let mut out = Vec::new();
-        encode_sketch_relation(&mut out, &relation(member_count)).unwrap();
+        crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(ctx, &mut out, &relation(member_count))
+        })
+        .unwrap();
         out
     }
 
@@ -1178,13 +1230,24 @@ mod relation_ordinal_tests {
         };
 
         let mut out = Vec::new();
-        encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(Some(0))).unwrap())
-            .expect("a stated ordinal writes");
+        crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(
+                ctx,
+                &mut out,
+                &SketchRelation::try_new(draft(Some(0))).unwrap(),
+            )
+        })
+        .expect("a stated ordinal writes");
 
         let mut out = Vec::new();
-        let error =
-            encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
-                .expect_err("a member that retains no ordinal has no bytes to write");
+        let error = crate::test_support::with_decode_context(|ctx| {
+            encode_sketch_relation(
+                ctx,
+                &mut out,
+                &SketchRelation::try_new(draft(None)).unwrap(),
+            )
+        })
+        .expect_err("a member that retains no ordinal has no bytes to write");
         assert!(
             error.to_string().contains("relation_ordinal"),
             "the refusal names the field: {error}"

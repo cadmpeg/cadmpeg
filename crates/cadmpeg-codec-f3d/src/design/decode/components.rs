@@ -32,7 +32,11 @@ pub(crate) fn decode_component_occurrences(
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
-                ctx.push_vec(&mut occurrences, occurrence, "f3d decoded component occurrence")?;
+                ctx.push_vec(
+                    &mut occurrences,
+                    occurrence,
+                    "f3d decoded component occurrence",
+                )?;
             }
             let Some(next_at) = start.checked_add(1) else {
                 break;
@@ -379,7 +383,12 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = ctx.push_vec(&mut Vec::new(), occurrence, "f3d decoded component occurrence")
+        let error = ctx
+            .push_vec(
+                &mut Vec::new(),
+                occurrence,
+                "f3d decoded component occurrence",
+            )
             .expect_err("one decoded occurrence needs one collection item");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

@@ -39,10 +39,18 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
-    assert!(crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 0.5, diameter_parameter.clone()))
-    .transpose()
-    .unwrap()
-    .is_none());
+    assert!(
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(
+            decode_ctx,
+            &entity,
+            "Diameter Dimension-2",
+            0.5,
+            diameter_parameter.clone()
+        ))
+        .transpose()
+        .unwrap()
+        .is_none()
+    );
     let parameter = parse_design_parameter_record(&parameter_record(
         Some(1),
         "10 mm",
@@ -84,7 +92,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     })
     .unwrap();
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        owner_scoped_radial_dimension_definition(ctx, &[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, EPS_REFUSAL_LINEAR)
+        owner_scoped_radial_dimension_definition(
+            ctx,
+            &[entity.clone(), duplicate.clone()],
+            &entity.sketch,
+            &parameter,
+            &diameter_parameter,
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

@@ -790,11 +790,18 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
                 && *actual == parameter
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0))
+    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
+        )
+    })
     .unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_dimension_candidate_entities(decode_ctx, &candidates)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::dimensions::recipe_dimension_candidate_entities(decode_ctx, &candidates)
+        })
+        .unwrap(),
         [
             SketchEntityId::mint("synthetic:test:id#first").unwrap(),
             SketchEntityId::mint("synthetic:test:id#second").unwrap(),
@@ -951,21 +958,35 @@ fn recipe_dimension_resolves_one_parallel_line_pair() {
         Point2::new(-1.0, 4.0),
         Point2::new(3.0, 4.0),
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::unique_parallel_line_dimension_definition(decode_ctx, &entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), 0.0))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::unique_parallel_line_dimension_definition(
+            decode_ctx,
+            &entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
     point_entities.push(entities.last().expect("third line").clone());
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::unique_point_line_dimension_definition(decode_ctx, &point_entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), 1.0e-6))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::unique_point_line_dimension_definition(
+            decode_ctx,
+            &point_entities,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            1.0e-6,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -999,7 +1020,11 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
         point("synthetic:test:id#off-carrier-horizontal", 2.0, 3.0),
         point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0))
+    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
+        )
+    })
     .unwrap();
     assert!(candidates.len() > 2);
     assert!(matches!(
@@ -1024,9 +1049,20 @@ fn recipe_dimension_resolves_unique_axis_aligned_extension_point() {
             .unwrap(),
         ),
     ]);
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &ambiguous, &sketch, 2.0, &parameter, 0.0))
+    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            decode_ctx, &ambiguous, &sketch, 2.0, &parameter, 0.0,
+        )
+    })
     .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_extension_point_dimension(decode_ctx, &candidates, &ambiguous, &sketch))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_extension_point_dimension(
+            decode_ctx,
+            &candidates,
+            &ambiguous,
+            &sketch,
+        )
+    })
     .transpose()
     .unwrap()
     .is_none());
@@ -1084,8 +1120,17 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         circle("synthetic:test:id#outer-b", Point2::new(20.0, 0.0), 8.0),
         circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
-    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::concentric_circle_dimension_definition(decode_ctx, &circles, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-            .expect("identity grammar"), 0.0))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            decode_ctx,
+            &circles,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
+    })
     .transpose()
     .unwrap()
     .expect("two disjoint concentric pairs");
@@ -1119,13 +1164,20 @@ fn concentric_circle_dimensions_require_disjoint_matching_pairs() {
         Point2::new(0.0, 0.0),
         1.0,
     ));
-    assert!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::concentric_circle_dimension_definition(decode_ctx, &circles, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), 0.0))
-        .transpose()
-        .unwrap()
-        .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            decode_ctx,
+            &circles,
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
+    })
+    .transpose()
+    .unwrap()
+    .is_none());
 }
 
 #[test]
@@ -1151,16 +1203,24 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         parameter("B", 1, "1 mm", "External"),
     ];
     let (_, mut projected) = crate::test_support::with_decode_context(|ctx| {
-let scopes = &[];
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &native,
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &native,
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)
+        })
+        .unwrap(),
         0
     );
 
@@ -1171,7 +1231,10 @@ timelines: &timelines,
         .dependencies
         .clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)
+        })
+        .unwrap(),
         1
     );
 }
@@ -1201,14 +1264,19 @@ fn assert_expression_audit_limit(operation: &'static str) {
         parameter("B", 1, "1 mm", "External"),
     ];
     let (_, projected) = crate::test_support::with_decode_context(|ctx| {
-let scopes = &[];
-let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &native,
-scopes,
-timelines: &timelines,
-..Default::default()
-}).expect("test projection has a synthetic exact timeline") });
+        let scopes = &[];
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                native: &native,
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
     let mut found = false;
     for limit in 0..64 {
         let arena = DecodeArena::new();

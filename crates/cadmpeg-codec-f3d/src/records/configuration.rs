@@ -72,15 +72,6 @@ pub(crate) enum ConfigurationScalar {
 }
 
 impl ConfigurationScalar {
-    pub(crate) fn text(&self) -> String {
-        match self {
-            Self::Null => "null".into(),
-            Self::Bool(value) => value.to_string(),
-            Self::Number(value) => value.to_string(),
-            Self::String(value) => value.clone(),
-        }
-    }
-
     pub(crate) fn text_charged(&self, ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
         struct ScalarText<'a>(&'a ConfigurationScalar);
         impl std::fmt::Display for ScalarText<'_> {
@@ -93,7 +84,10 @@ impl ConfigurationScalar {
                 }
             }
         }
-        ctx.format_retained(format_args!("{}", ScalarText(self)), "project F3D configuration scalar text")
+        ctx.format_retained(
+            format_args!("{}", ScalarText(self)),
+            "project F3D configuration scalar text",
+        )
     }
 
     fn value(&self) -> Value {
@@ -133,7 +127,12 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
-                    ctx.insert_btree_map(&mut admitted, key, value, "admit configuration parameter")?;
+                    ctx.insert_btree_map(
+                        &mut admitted,
+                        key,
+                        value,
+                        "admit configuration parameter",
+                    )?;
                 }
                 Some(admitted)
             }
@@ -157,7 +156,11 @@ impl ConfigurationVariant {
                         return Err(suppressed_error());
                     };
                     {
-                        ctx.reserve_vec(&mut suppressed, 1, "admit suppressed configuration member")?;
+                        ctx.reserve_vec(
+                            &mut suppressed,
+                            1,
+                            "admit suppressed configuration member",
+                        )?;
                     }
                     suppressed.push(value);
                 }
@@ -437,18 +440,20 @@ pub(crate) enum DesignConfigurationKind {
 }
 
 impl DesignConfiguration {
-pub(crate) fn try_new(
+    pub(crate) fn try_new(
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
         payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
         Self::try_new_with_context(&ctx, entry_name, kind, variant_order, payload)
     }
-
-
 
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
@@ -526,7 +531,12 @@ pub(crate) fn try_new(
                 let mut admitted = BTreeMap::new();
                 for (name, value) in variants {
                     let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
-                    ctx.insert_btree_map(&mut admitted, name, value, "admit configuration variant")?;
+                    ctx.insert_btree_map(
+                        &mut admitted,
+                        name,
+                        value,
+                        "admit configuration variant",
+                    )?;
                 }
                 let mut variants = admitted;
                 let explicit_order = !variant_order.is_empty();

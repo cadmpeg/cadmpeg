@@ -39,7 +39,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         line(4, 4.0, 8.0, 2.0),
     ];
     super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(ctx, &entities, &sketch, &parameter, &parameter_id, 0.0)
+        crate::design::dimensions::owner_scoped_spatial_parallel_line_set_dimension_definition(
+            ctx,
+            &entities,
+            &sketch,
+            &parameter,
+            &parameter_id,
+            0.0,
+        )
         .transpose()
         .map(|_| ())
     });

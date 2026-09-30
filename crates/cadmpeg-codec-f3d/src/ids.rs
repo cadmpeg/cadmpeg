@@ -86,8 +86,6 @@ pub(crate) fn brep_face_id(
     )
 }
 
-
-
 /// Build an appearance identity from its source visual token.
 #[cfg(test)]
 pub(crate) fn appearance_id(key: cadmpeg_ir::ids::IdentityKey) -> cadmpeg_ir::ids::AppearanceId {
@@ -306,27 +304,32 @@ fn identity_key_component_charged(
 }
 
 /// Reverse [`identity_key_component`] for a complete encoded component.
-pub(crate) fn decode_identity_key_component(value: &str) -> Option<String> {
+pub(crate) fn decode_identity_key_component(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    value: &str,
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
     let bytes = value.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut at = 0;
-    while at < bytes.len() {
-        if bytes[at] != b'%' {
-            decoded.push(bytes[at]);
-            at += 1;
-            continue;
+    let mut decoded = ctx.retained_admitted_vec(bytes.len(), "decode F3D identity key bytes")?;
+    Ok((|| {
+        let mut at = 0;
+        while at < bytes.len() {
+            if bytes[at] != b'%' {
+                decoded.push(bytes[at]);
+                at += 1;
+                continue;
+            }
+            let pair = bytes.get(at + 1..at + 3)?;
+            let digit = |byte: u8| match byte {
+                b'0'..=b'9' => Some(byte - b'0'),
+                b'a'..=b'f' => Some(byte - b'a' + 10),
+                b'A'..=b'F' => Some(byte - b'A' + 10),
+                _ => None,
+            };
+            decoded.push(digit(pair[0])? * 16 + digit(pair[1])?);
+            at += 3;
         }
-        let pair = bytes.get(at + 1..at + 3)?;
-        let digit = |byte: u8| match byte {
-            b'0'..=b'9' => Some(byte - b'0'),
-            b'a'..=b'f' => Some(byte - b'a' + 10),
-            b'A'..=b'F' => Some(byte - b'A' + 10),
-            _ => None,
-        };
-        decoded.push(digit(pair[0])? * 16 + digit(pair[1])?);
-        at += 3;
-    }
-    String::from_utf8(decoded).ok()
+        String::from_utf8(decoded).ok()
+    })())
 }
 
 /// The neutral B-rep topology entity key for entity `index`.
@@ -455,7 +458,10 @@ pub(crate) fn configuration_entry_id_charged(
             write_escaped_identity_component(formatter, self.0)
         }
     }
-    ctx.format_retained(format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)), "retain F3D configuration entry ID")
+    ctx.format_retained(
+        format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)),
+        "retain F3D configuration entry ID",
+    )
 }
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
@@ -1027,6 +1033,7 @@ pub(crate) fn history_input_vertex_id(
 }
 
 /// The history-input face key for `slot` under a `prefix`.
+#[cfg(test)]
 pub(crate) fn history_input_face_id(
     prefix: &cadmpeg_ir::ids::IdentityKey,
     slot: impl Into<cadmpeg_ir::ids::IdentityKey>,
@@ -1062,10 +1069,13 @@ fn history_input_entity_id_charged(
         .split_once('#')
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
         .1;
-    ctx.format_retained(format_args!(
+    ctx.format_retained(
+        format_args!(
             "f3d:history-input:{kind}#{}:{feature_key}:{previous_state_id}:{slot}",
             feature_key.len(),
-        ), "retain F3D history input identity")
+        ),
+        "retain F3D history input identity",
+    )
 }
 
 macro_rules! charged_history_input_entity_id {
@@ -1120,10 +1130,13 @@ pub(crate) fn history_input_state_id_charged(
         .split_once('#')
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
         .1;
-    let value = ctx.format_retained(format_args!(
+    let value = ctx.format_retained(
+        format_args!(
             "f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
             feature_key.len()
-        ), "retain F3D history input identity")?;
+        ),
+        "retain F3D history input identity",
+    )?;
     cadmpeg_ir::ids::FeatureInputTopologyId::mint(value)
         .map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -1380,6 +1393,7 @@ native_record_id!(
 );
 native_record_id!(
     /// The native sketch-text record key.
+    #[cfg(test)]
     native_sketch_text_id,
     "sketch-text"
 );
@@ -1496,7 +1510,10 @@ mod tests {
         );
         assert_eq!(
             super::neutral_assembly_joint_id(&ctx, &scope).unwrap(),
-            crate::test_support::with_decode_context(|ctx| super::neutral_assembly_joint_id(ctx, &scope)).unwrap(),
+            crate::test_support::with_decode_context(|ctx| super::neutral_assembly_joint_id(
+                ctx, &scope
+            ))
+            .unwrap(),
         );
     }
 
@@ -1736,7 +1753,11 @@ mod tests {
             .expect("native scheme")
             .to_owned();
         assert_eq!(
-            decode_identity_key_component(&encoded).as_deref(),
+            crate::test_support::with_decode_context(|ctx| decode_identity_key_component(
+                ctx, &encoded
+            )
+            .expect("service admission"))
+            .as_deref(),
             Some(entry)
         );
         assert_eq!(

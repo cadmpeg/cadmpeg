@@ -40,7 +40,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             .and_then(assembly::DesignAssemblyAlignment::operand_frames)
         {
             for frame in frames {
-
                 ctx.reserve_vec(&mut candidates, 1, "f3d joint-origin frame candidates")?;
                 candidates.push((
                     frame.reference_record_index,
@@ -51,7 +50,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
-
             ctx.reserve_vec(&mut envelopes, 1, "f3d joint-origin assembly envelopes")?;
             envelopes.push((scope.record_index, joint_origin, frame.transform));
 
@@ -106,7 +104,6 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             continue;
         };
         if !resolved_origins.contains_key(&scope.record_index) {
-
             ctx.reserve_map(&mut resolved_origins, 1, "f3d resolved joint origins")?;
         }
         resolved_origins.insert(scope.record_index, transform);

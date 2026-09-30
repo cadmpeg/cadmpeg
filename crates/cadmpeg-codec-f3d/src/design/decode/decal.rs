@@ -2,11 +2,11 @@
 //! Parse exact raster and face bindings owned by Design `Decal` scopes.
 
 use crate::container::ContainerScan;
-use crate::design::decode::image::{  embedded_image_asset};
+use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
 use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::design::decode::text::lp_ascii_filtered_view;
 use crate::design::decode::text::lp_utf16_bounded_charged;
-use crate::design::decode::text::{  lp_ascii_filtered_view};
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
 use crate::layout::design_decal_image_name_prefix as decal_name;
@@ -105,7 +105,9 @@ pub(crate) fn project_decal_images(
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let asset_id = asset.id.try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
+        let asset_id = asset
+            .id
+            .try_clone_for_decode(ctx, "f3d image feature asset identifier")?;
         let native_id = String::from_utf8(
             ctx.copy_retained(operand.id.as_bytes(), "f3d Decal native operand identifier")?,
         )

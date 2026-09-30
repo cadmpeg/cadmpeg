@@ -187,10 +187,10 @@ fn exact_assembly_operand_path_envelope(
         }
         let span_count =
             usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
-        
 
         let mut path_spans = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut path_spans, span_count, "f3d assembly path spans") {
+        if let Err(error) = ctx.reserve_vec(&mut path_spans, span_count, "f3d assembly path spans")
+        {
             return Some(Err(error));
         }
         let mut record_index = path_record_index;
@@ -364,9 +364,12 @@ fn exact_assembly_operand_path(
                 if !(1..=64).contains(&count) {
                     return None;
                 }
-                
 
-                if let Err(error) = ctx.reserve_vec(&mut occurrence_guids, count, "f3d assembly path occurrences") {
+                if let Err(error) = ctx.reserve_vec(
+                    &mut occurrence_guids,
+                    count,
+                    "f3d assembly path occurrences",
+                ) {
                     return Some(Err(error));
                 }
                 let mut position = after_tag + 18;

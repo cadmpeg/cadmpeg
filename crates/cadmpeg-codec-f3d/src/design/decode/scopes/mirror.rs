@@ -7,9 +7,7 @@ use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::{
-    cached_owned_record_offsets, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -257,7 +255,6 @@ pub(crate) fn bind_mirror_constructions(
         };
         let key = (stream, header.record_index);
         if !headers_by_record.contains_key(&key) {
-
             ctx.reserve_map(&mut headers_by_record, 1, "f3d Mirror record headers")?;
         }
         headers_by_record.insert(key, header);
@@ -270,7 +267,9 @@ pub(crate) fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let (_stream_reservation, stream) = ctx.format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
+        let (_stream_reservation, stream) = ctx
+            .format_scoped(format_args!("{stream}"), "f3d scoped stream identity")
+            .map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;

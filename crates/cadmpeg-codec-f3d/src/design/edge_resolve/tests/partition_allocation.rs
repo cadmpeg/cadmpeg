@@ -33,7 +33,13 @@ fn assert_partition_refusal(operation: &'static str, through_scope: bool) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if through_scope {
-            scope_partition_edge_group_candidates(&scope_groups[1], &scope_groups, &operands, scope_groups[1].members(), &ctx)
+            scope_partition_edge_group_candidates(
+                &scope_groups[1],
+                &scope_groups,
+                &operands,
+                scope_groups[1].members(),
+                &ctx,
+            )
         } else {
             partition_unique_incomplete_edge_group(1, &groups, &ctx)
         };

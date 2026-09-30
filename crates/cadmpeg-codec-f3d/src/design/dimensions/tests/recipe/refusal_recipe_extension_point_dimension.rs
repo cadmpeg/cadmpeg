@@ -34,11 +34,20 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         point("synthetic:test:id#off-carrier-horizontal", 2.0, 3.0),
         point("synthetic:test:id#off-carrier-vertical", 4.0, 2.0),
     ];
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0))
+    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
+        )
+    })
     .unwrap();
     assert!(candidates.len() > 2);
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::recipe_extension_point_dimension(ctx, &candidates, &entities, &sketch)
+        crate::design::dimensions::recipe_extension_point_dimension(
+            ctx,
+            &candidates,
+            &entities,
+            &sketch,
+        )
         .transpose()
         .map(|_| ())
     });

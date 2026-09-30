@@ -73,7 +73,15 @@ fn assert_historical_selection_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_selection_regions(&[&member], &sketch, &[], &histories, 0.000_001, &arrangement_budget, &ctx) {
+        match super::super::historical_selection_regions(
+            &[&member],
+            &sketch,
+            &[],
+            &histories,
+            0.000_001,
+            &arrangement_budget,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected historical selection refusal at {operation}: {other:?}"),
@@ -145,7 +153,14 @@ fn assert_historical_boundary_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::selection_containing_points(&sketch, std::slice::from_ref(&entity), &[Point3::new(0.5, 0.0, 0.0)], 0.000_001, &arrangement_budget, &ctx) {
+        match super::super::selection_containing_points(
+            &sketch,
+            std::slice::from_ref(&entity),
+            &[Point3::new(0.5, 0.0, 0.0)],
+            0.000_001,
+            &arrangement_budget,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected historical boundary refusal at {operation}: {other:?}"),
@@ -219,7 +234,11 @@ fn assert_merged_profile_refusal(operation: &'static str, region: bool, retained
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::merge_resolved_profile_selections(&sketch, std::slice::from_ref(&selection), &ctx) {
+        match super::super::merge_resolved_profile_selections(
+            &sketch,
+            std::slice::from_ref(&selection),
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected merged profile refusal at {operation}: {other:?}"),
@@ -278,7 +297,11 @@ fn assert_merged_trimmed_region_refusal(operation: &'static str, retained: bool)
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::merge_resolved_profile_selections(&sketch, std::slice::from_ref(&selection), &ctx) {
+        match super::super::merge_resolved_profile_selections(
+            &sketch,
+            std::slice::from_ref(&selection),
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected trimmed region refusal at {operation}: {other:?}"),
@@ -350,7 +373,12 @@ fn assert_boundary_region_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::region_with_boundary_selection_members(&[&member, &member], &sketch, &selections, &ctx) {
+        match super::super::region_with_boundary_selection_members(
+            &[&member, &member],
+            &sketch,
+            &selections,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected boundary region refusal at {operation}: {other:?}"),
@@ -398,7 +426,15 @@ fn assert_fallback_point_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_selection_regions(&[&member], &sketch, std::slice::from_ref(&entity), &histories, 0.000_001, &arrangement_budget, &ctx) {
+        match super::super::historical_selection_regions(
+            &[&member],
+            &sketch,
+            std::slice::from_ref(&entity),
+            &histories,
+            0.000_001,
+            &arrangement_budget,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected fallback point refusal at {operation}: {other:?}"),
@@ -457,7 +493,14 @@ fn historical_selected_arrangement_region_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::selection_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 0.000_001, &arrangement_budget, &ctx) {
+        match super::super::selection_containing_points(
+            &sketch,
+            &entities,
+            &[Point3::new(1.0, 1.0, 0.0)],
+            0.000_001,
+            &arrangement_budget,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d historical selected arrangement region" =>
             {
@@ -765,7 +808,13 @@ fn assert_inserted_selection_refusal(operation: &'static str, region: bool) {
                 Some(ResolvedProfileSelection::Loops(vec![1])),
             ]
         };
-        match super::super::transition_inserted_profile_selection(&sketch, &[], 0.000_001, selections, &ctx) {
+        match super::super::transition_inserted_profile_selection(
+            &sketch,
+            &[],
+            0.000_001,
+            selections,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected inserted selection refusal at {operation}: {other:?}"),
@@ -917,7 +966,15 @@ fn cylindrical_profile_projected_points_refuse_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::inserted_cylindrical_profile_selection(&sketch, std::slice::from_ref(&circle), &topology, 10, 0.000_001, 0.000_000_001, &ctx) {
+        match super::super::inserted_cylindrical_profile_selection(
+            &sketch,
+            std::slice::from_ref(&circle),
+            &topology,
+            10,
+            0.000_001,
+            0.000_000_001,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d cylindrical profile projected point" =>
             {
@@ -984,7 +1041,14 @@ fn assert_historical_face_profile_refusal(operation: &'static str, retained: boo
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_face_profile_selection(&[&group], std::slice::from_ref(&member), Some(2), &feature, &histories, &ctx) {
+        match super::super::historical_face_profile_selection(
+            &[&group],
+            std::slice::from_ref(&member),
+            Some(2),
+            &feature,
+            &histories,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected historical face profile refusal at {operation}: {other:?}"),

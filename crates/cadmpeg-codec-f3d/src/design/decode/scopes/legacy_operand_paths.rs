@@ -708,7 +708,13 @@ fn exact_legacy_class_388_operand_path_envelope(
                 return None;
             }
             let path_end = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
-            let path = exact_legacy_class_412_path(bytes, path_at, path_record_index, path_end)?;
+            let path =
+                match exact_legacy_class_412_path(ctx, bytes, path_at, path_record_index, path_end)
+                {
+                    Ok(Some(path)) => path,
+                    Ok(None) => return None,
+                    Err(error) => return Some(Err(error)),
+                };
             path_records[usize::try_from(ordinal).ok()?] = Some(path);
             let (referenced_path_record_index, reference_offset) =
                 exact_same_segment_record_reference(
@@ -733,7 +739,11 @@ fn exact_legacy_class_388_operand_path_envelope(
         let final_path = path_records[final_index].take()?;
 
         let mut occurrence_guids = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut occurrence_guids, usize::try_from(path_count).ok()?, "f3d legacy occurrence GUIDs") {
+        if let Err(error) = ctx.reserve_vec(
+            &mut occurrence_guids,
+            usize::try_from(path_count).ok()?,
+            "f3d legacy occurrence GUIDs",
+        ) {
             return Some(Err(error));
         }
         for path in path_records.into_iter().flatten() {
@@ -766,70 +776,81 @@ fn exact_legacy_class_388_operand_path_envelope(
 }
 
 fn exact_legacy_class_412_path(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     record_index: u32,
     end: usize,
-) -> Option<LegacyClass412Path> {
-    if exact_indexed_header_at(bytes, start, record_index)?.as_str() != "412"
-        || end != start.checked_add(class_412_path::LEN)?
-        || bytes.get(start.checked_add(11)?..start.checked_add(class_412_path::PATH_MARKER)?)?
-            != [0; 10]
-        || bytes.get(start.checked_add(class_412_path::PATH_MARKER)?)
-            != Some(&class_412_path::PATH_MARKER_VALUE)
-        || bytes.get(
-            start.checked_add(class_412_path::PATH_MARKER + 1)?
-                ..start.checked_add(class_412_path::OCCURRENCE_GUID)?,
-        )? != [0; 3]
-        || View::u64_le_at(
-            bytes,
-            start.checked_add(class_412_path::IDENTITY_SEPARATOR)?,
-        )? != class_412_path::IDENTITY_SEPARATOR_VALUE
-        || View::u32_le_at(bytes, start.checked_add(class_412_path::PATH_TAIL_COUNT)?)?
-            != class_412_path::PATH_TAIL_COUNT_VALUE
-        || bytes.get(start.checked_add(class_412_path::PATH_TAIL_COUNT + 4)?..end)? != [0; 8]
-    {
-        return None;
-    }
-    let (occurrence_guid, occurrence_end) =
-        fixed_relaxed_guid_text(bytes, start.checked_add(class_412_path::OCCURRENCE_GUID)?)?;
-    if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
-        return None;
-    }
-    let identity_offsets = [
-        class_412_path::FIRST_IDENTITY_GUID,
-        class_412_path::SECOND_IDENTITY_GUID,
-        class_412_path::THIRD_IDENTITY_GUID,
-        class_412_path::FOURTH_IDENTITY_GUID,
-    ];
-    let mut identity_guids = Vec::with_capacity(identity_offsets.len());
-    for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
-        let identity_at = start.checked_add(relative_offset)?;
-        let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
-        let expected_end = match ordinal {
-            0 => class_412_path::SECOND_IDENTITY_GUID,
-            1 => class_412_path::IDENTITY_SEPARATOR,
-            2 => class_412_path::FOURTH_IDENTITY_GUID,
-            3 => class_412_path::PATH_TAIL_COUNT,
-            _ => return None,
-        };
-        if identity_end != start.checked_add(expected_end)? {
+) -> Result<Option<LegacyClass412Path>, CodecError> {
+    let parsed = (|| {
+        if exact_indexed_header_at(bytes, start, record_index)?.as_str() != "412"
+            || end != start.checked_add(class_412_path::LEN)?
+            || bytes.get(start.checked_add(11)?..start.checked_add(class_412_path::PATH_MARKER)?)?
+                != [0; 10]
+            || bytes.get(start.checked_add(class_412_path::PATH_MARKER)?)
+                != Some(&class_412_path::PATH_MARKER_VALUE)
+            || bytes.get(
+                start.checked_add(class_412_path::PATH_MARKER + 1)?
+                    ..start.checked_add(class_412_path::OCCURRENCE_GUID)?,
+            )? != [0; 3]
+            || View::u64_le_at(
+                bytes,
+                start.checked_add(class_412_path::IDENTITY_SEPARATOR)?,
+            )? != class_412_path::IDENTITY_SEPARATOR_VALUE
+            || View::u32_le_at(bytes, start.checked_add(class_412_path::PATH_TAIL_COUNT)?)?
+                != class_412_path::PATH_TAIL_COUNT_VALUE
+            || bytes.get(start.checked_add(class_412_path::PATH_TAIL_COUNT + 4)?..end)? != [0; 8]
+        {
             return None;
         }
-        identity_guids.push(crate::records::identity::Located {
-            value: identity_guid,
-            offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
-        });
-    }
-    Some(LegacyClass412Path {
-        record_index,
-        byte_offset: u64::try_from(start).ok()?,
-        occurrence_guid: crate::records::identity::Located {
-            value: occurrence_guid,
-            offset: u64::try_from(start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?).ok()?,
-        },
-        identity_guids,
-    })
+        let (occurrence_guid, occurrence_end) =
+            fixed_relaxed_guid_text(bytes, start.checked_add(class_412_path::OCCURRENCE_GUID)?)?;
+        if occurrence_end != start.checked_add(class_412_path::FIRST_IDENTITY_GUID)? {
+            return None;
+        }
+        let identity_offsets = [
+            class_412_path::FIRST_IDENTITY_GUID,
+            class_412_path::SECOND_IDENTITY_GUID,
+            class_412_path::THIRD_IDENTITY_GUID,
+            class_412_path::FOURTH_IDENTITY_GUID,
+        ];
+        let mut identity_guids = match ctx.collection_vec(
+            identity_offsets.len(),
+            "collect F3D legacy path identity GUIDs",
+        ) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
+        for (ordinal, relative_offset) in identity_offsets.iter().copied().enumerate() {
+            let identity_at = start.checked_add(relative_offset)?;
+            let (identity_guid, identity_end) = fixed_relaxed_guid_text(bytes, identity_at)?;
+            let expected_end = match ordinal {
+                0 => class_412_path::SECOND_IDENTITY_GUID,
+                1 => class_412_path::IDENTITY_SEPARATOR,
+                2 => class_412_path::FOURTH_IDENTITY_GUID,
+                3 => class_412_path::PATH_TAIL_COUNT,
+                _ => return None,
+            };
+            if identity_end != start.checked_add(expected_end)? {
+                return None;
+            }
+            identity_guids.push(crate::records::identity::Located {
+                value: identity_guid,
+                offset: u64::try_from(identity_at.checked_add(4)?).ok()?,
+            });
+        }
+        Some(Ok(LegacyClass412Path {
+            record_index,
+            byte_offset: u64::try_from(start).ok()?,
+            occurrence_guid: crate::records::identity::Located {
+                value: occurrence_guid,
+                offset: u64::try_from(start.checked_add(class_412_path::OCCURRENCE_GUID + 4)?)
+                    .ok()?,
+            },
+            identity_guids,
+        }))
+    })();
+    parsed.transpose()
 }
 
 #[cfg(test)]

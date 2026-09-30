@@ -107,9 +107,11 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        crate::test_support::with_decode_context(|decode_ctx| project_mirror(decode_ctx, &body_scope, &body_groups, &[], &[]))
-            .unwrap()
-            .expect("body mirror")
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_mirror(decode_ctx, &body_scope, &body_groups, &[], &[])
+        })
+        .unwrap()
+        .expect("body mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -129,9 +131,11 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        crate::test_support::with_decode_context(|decode_ctx| project_mirror(decode_ctx, &face_scope, &face_groups, &[], &[]))
-            .unwrap()
-            .expect("face mirror")
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project_mirror(decode_ctx, &face_scope, &face_groups, &[], &[])
+        })
+        .unwrap()
+        .expect("face mirror")
     else {
         panic!("mirror projects a pattern");
     };

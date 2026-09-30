@@ -35,10 +35,18 @@ fn configuration_identifier_preserves_encoded_bytes() {
 
 #[test]
 fn projected_configuration_identifier_refuses_retained_limit() {
-    let table = crate::test_support::with_decode_context(|ctx| crate::records::configuration::DesignConfiguration::try_new_charged(ctx, "asset/a:#% b\u{2003}ç.dsgcfg".to_owned(), crate::records::configuration::DesignConfigurationKind::Table, vec!["v:#%\u{a0}ç".to_owned()], serde_json::json!({"configurations":{"v:#%\u{a0}ç":{}}})
-            .as_object()
-            .unwrap()
-            .clone()))
+    let table = crate::test_support::with_decode_context(|ctx| {
+        crate::records::configuration::DesignConfiguration::try_new_charged(
+            ctx,
+            "asset/a:#% b\u{2003}ç.dsgcfg".to_owned(),
+            crate::records::configuration::DesignConfigurationKind::Table,
+            vec!["v:#%\u{a0}ç".to_owned()],
+            serde_json::json!({"configurations":{"v:#%\u{a0}ç":{}}})
+                .as_object()
+                .unwrap()
+                .clone(),
+        )
+    })
     .unwrap();
     let name_bytes = u64::try_from(table.variants()[0].0.len()).unwrap();
     let id = crate::ids::neutral_configuration_id(table.entry_name(), &table.variants()[0].0);
@@ -121,7 +129,10 @@ fn neutral_component_insert_occurrence_id_refuses_before_allocation_and_preserve
 fn neutral_assembly_joint_id_refuses_before_allocation_and_preserves_bytes() {
     let scope = encoded_scope();
     assert_identity_budget(
-        &crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scope)).expect("joint identifier"),
+        &crate::test_support::with_decode_context(|ctx| {
+            crate::ids::neutral_assembly_joint_id(ctx, &scope)
+        })
+        .expect("joint identifier"),
         "f3d assembly joint identifier",
         |ctx| super::neutral_assembly_joint_id(ctx, &scope),
     );
@@ -336,7 +347,12 @@ fn history_input_vertex_id_refuses_before_allocation_and_preserves_bytes() {
         &crate::ids::history_input_vertex_id(&prefix, i64::MIN),
         "f3d historical vertex identifier",
         |ctx| {
-            super::history_input_vertex_id(ctx, &prefix, i64::MIN, "f3d historical vertex identifier")
+            super::history_input_vertex_id(
+                ctx,
+                &prefix,
+                i64::MIN,
+                "f3d historical vertex identifier",
+            )
         },
     );
 }

@@ -488,7 +488,14 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         ..Default::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| super::super::surface_patch_edge_operand_slot(decode_ctx, Some(&structure), &references, &topology))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::surface_patch_edge_operand_slot(
+                decode_ctx,
+                Some(&structure),
+                &references,
+                &topology,
+            )
+        })
         .unwrap(),
         Some(22)
     );
@@ -504,7 +511,14 @@ fn surface_patch_recipe_uses_the_unique_common_boundary_edge() {
         radial_next: 13,
     });
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| super::super::surface_patch_edge_operand_slot(decode_ctx, Some(&structure), &references, &ambiguous))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            super::super::surface_patch_edge_operand_slot(
+                decode_ctx,
+                Some(&structure),
+                &references,
+                &ambiguous,
+            )
+        })
         .unwrap(),
         None
     );
@@ -833,7 +847,15 @@ fn body_recipe_history_fixture() -> (
 #[test]
 fn body_recipe_history_resolves_the_complete_input_body_boundary() {
     let (scope, history, mut operands, candidate) = body_recipe_history_fixture();
-    crate::test_support::with_decode_context(|decode_ctx| bind_body_recipe_operand_history_candidates(decode_ctx, &mut operands, &[], std::slice::from_ref(&scope), std::slice::from_ref(&history)))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_body_recipe_operand_history_candidates(
+            decode_ctx,
+            &mut operands,
+            &[],
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&history),
+        )
+    })
     .unwrap();
 
     assert_eq!(
@@ -855,8 +877,9 @@ fn body_recipe_history_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = bind_body_recipe_operand_history_candidates(&ctx, &mut operands, &[], &[scope], &[history])
-    .unwrap_err();
+    let error =
+        bind_body_recipe_operand_history_candidates(&ctx, &mut operands, &[], &[scope], &[history])
+            .unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -877,20 +900,34 @@ fn complete_body_boundary_rejects_incomplete_or_ambiguous_incidence() {
         ..AsmHistoricalTopology::default()
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(decode_ctx, &topology, 1)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx, &topology, 1
+        ))
+        .unwrap(),
         Some(vec![10, 11])
     );
 
     let mut incomplete = topology.clone();
     incomplete.shell_faces[0].member_refs.clear();
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(decode_ctx, &incomplete, 1)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx,
+            &incomplete,
+            1
+        ))
+        .unwrap(),
         None
     );
 
     let mut ambiguous = topology;
     ambiguous.shell_faces.push(relation(4, vec![10]));
-    assert_eq!(crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(decode_ctx, &ambiguous, 1)).unwrap(), None);
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| complete_body_face_slots(
+            decode_ctx, &ambiguous, 1
+        ))
+        .unwrap(),
+        None
+    );
 }
 
 #[test]

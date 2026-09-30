@@ -228,7 +228,7 @@ pub(crate) struct CopyPasteRecordLocation {
 }
 
 impl DesignCopyPasteBodiesOperation {
-pub(crate) fn try_new(
+    pub(crate) fn try_new(
         bodies: Vec<DesignCopiedBody>,
         body_group_record_index: u32,
         body_group_class_tag: DesignClassTag,
@@ -238,7 +238,12 @@ pub(crate) fn try_new(
         relation_byte_offset: u64,
     ) -> Result<Self, String> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(|error| error.to_string())?;
         Self::try_new_inner(
             &ctx,
             bodies,
@@ -259,16 +264,13 @@ pub(crate) fn try_new(
         })
     }
 
-
-
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
-        Self::try_new_inner(ctx, bodies, body_group, relation)
-        .map_err(|error| match error {
+        Self::try_new_inner(ctx, bodies, body_group, relation).map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
             CopyPasteBodiesError::Resource(error) => error,
         })
@@ -303,7 +305,8 @@ pub(crate) fn try_new(
                 }
                 {
                     let operation = "index F3D copied body suffixes";
-                    ctx.reserve_set(&mut suffixes, 1, operation).map_err(CopyPasteBodiesError::Resource)?;
+                    ctx.reserve_set(&mut suffixes, 1, operation)
+                        .map_err(CopyPasteBodiesError::Resource)?;
                 }
                 suffixes.insert(suffix);
             }

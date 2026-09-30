@@ -32,12 +32,15 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 && *actual == parameter
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
-    let candidates = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0))
+    let candidates = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::dimensions::recipe_linear_dimension_candidates(
+            decode_ctx, &entities, &sketch, 2.0, &parameter, 0.0,
+        )
+    })
     .unwrap();
     assert_eq!(candidates.len(), 2);
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::recipe_dimension_candidate_entities(ctx, &candidates)
-            .map(|_| ())
+        crate::design::dimensions::recipe_dimension_candidate_entities(ctx, &candidates).map(|_| ())
     });
 }
 

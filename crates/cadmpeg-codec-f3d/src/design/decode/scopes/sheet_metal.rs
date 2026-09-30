@@ -25,7 +25,8 @@ use crate::records::feature::sheet_metal::DesignHemParameterOwners;
 use crate::records::feature::sheet_metal::DesignSheetMetalHeightDatum;
 use crate::records::parameters::DesignParameter;
 use crate::records::parameters::DesignParameterOwner;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
 
 pub(super) fn exact_base_flange_operation(
     bytes: &[u8],
@@ -80,13 +81,14 @@ const SHEET_METAL_HEADER_SHIFTS: [usize; 2] = [0, 4];
 const MAX_EDGE_WIDTH_DISTANCE_OWNERS: usize = 2;
 
 pub(super) fn exact_edge_flange_operation(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     class_tag: &str,
     paired_class_tag: &str,
     references: &[u32],
-) -> Option<DesignEdgeFlangeOperation> {
+) -> Result<Option<DesignEdgeFlangeOperation>, CodecError> {
     // The legacy form is keyed by both class tags. The current form recovers
     // its optional header shift by agreement, so a frame that reads under more
     // than one candidate is refused as ambiguous.
@@ -154,30 +156,27 @@ pub(super) fn exact_edge_flange_operation(
         ],
         _ => [None, None, None, None],
     };
-    for candidate in classed_candidates.into_iter().flatten().chain(
-        SHEET_METAL_HEADER_SHIFTS
-            .into_iter()
-            .flat_map(|header_shift| {
-                [
-                    edge_flange_operation_at(bytes, start, paired_at, references, header_shift),
-                    edge_flange_to_object_operation_at(
-                        bytes,
-                        start,
-                        paired_at,
-                        references,
-                        header_shift,
-                    ),
-                ]
-                .into_iter()
-                .flatten()
-            }),
-    ) {
+    for candidate in classed_candidates.into_iter().flatten() {
         if resolved.is_some() {
-            return None;
+            return Ok(None);
         }
         resolved = Some(candidate);
     }
-    resolved
+    for header_shift in SHEET_METAL_HEADER_SHIFTS {
+        for candidate in [
+            edge_flange_operation_at(ctx, bytes, start, paired_at, references, header_shift)?,
+            edge_flange_to_object_operation_at(bytes, start, paired_at, references, header_shift),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if resolved.is_some() {
+                return Ok(None);
+            }
+            resolved = Some(candidate);
+        }
+    }
+    Ok(resolved)
 }
 
 #[derive(Clone, Copy)]
@@ -533,113 +532,126 @@ fn legacy_edge_flange_operation_at(
 /// Read the `EdgeFlange` fixed operation section for one candidate header shift
 /// and refuse the candidate unless every slot agrees.
 fn edge_flange_operation_at(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     paired_at: usize,
     references: &[u32],
     header_shift: usize,
-) -> Option<DesignEdgeFlangeOperation> {
-    // The ordered reference table is in record-index order, so no role has a
-    // fixed table position. Every role is instead named by a marked slot in the
-    // fixed operation section, and the operand of a group is the record three
-    // after it. The table entries no role claims are the width-distance
-    // parameter owners the edge-width mode adds.
-    //
-    // Only the single-edge form is accounted for. A frame selecting more edges
-    // names one edge group and one aggregate group in the same two slots, so
-    // neither the further groups nor the order of their operands against the
-    // aggregate operands is established, and such a frame is refused.
-    if !(8..=8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS).contains(&references.len()) {
-        return None;
-    }
-    let common = start.checked_add(85)?.checked_add(header_shift)?;
-    let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
-    if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
-        return None;
-    }
-    // Every reference the fixed section names is removed from this pool, so the
-    // entries that remain at the end are exactly the unclaimed ones.
-    // The three width modes share one fixed ten-slot allocation.
-    let mut unclaimed = Vec::with_capacity(8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS);
-    unclaimed.extend_from_slice(references);
-    let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
-        let at = pool.iter().position(|entry| *entry == index)?;
-        pool.remove(at);
-        Some(index)
-    };
+) -> Result<Option<DesignEdgeFlangeOperation>, CodecError> {
+    let parsed = (|| {
+        // The ordered reference table is in record-index order, so no role has a
+        // fixed table position. Every role is instead named by a marked slot in the
+        // fixed operation section, and the operand of a group is the record three
+        // after it. The table entries no role claims are the width-distance
+        // parameter owners the edge-width mode adds.
+        //
+        // Only the single-edge form is accounted for. A frame selecting more edges
+        // names one edge group and one aggregate group in the same two slots, so
+        // neither the further groups nor the order of their operands against the
+        // aggregate operands is established, and such a frame is refused.
+        if !(8..=8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS).contains(&references.len()) {
+            return None;
+        }
+        let common = start.checked_add(85)?.checked_add(header_shift)?;
+        let bend_position = DesignBendPosition::from_code(View::u32_le_at(bytes, common)?);
+        if View::u32_le_at(bytes, common.checked_add(edge_flange::EDGE_COUNT)?)? != 1 {
+            return None;
+        }
+        // Every reference the fixed section names is removed from this pool, so the
+        // entries that remain at the end are exactly the unclaimed ones.
+        // The three width modes share one fixed ten-slot allocation.
+        let mut unclaimed = match ctx.collection_vec(
+            8 + MAX_EDGE_WIDTH_DISTANCE_OWNERS,
+            "collect F3D unclaimed flange references",
+        ) {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
+        unclaimed.extend_from_slice(references);
+        let claim = |index: u32, pool: &mut Vec<u32>| -> Option<u32> {
+            let at = pool.iter().position(|entry| *entry == index)?;
+            pool.remove(at);
+            Some(index)
+        };
 
-    let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
-    let edge_wrapper_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
-    let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
-    let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
-    cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
-    let angle_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
-    let height_owner_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
-    let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
-    let bend_radius =
-        cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
-    let result_count =
-        usize::try_from(View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
-    // The aggregate-group and role-`0x08` group slots close the section after the
-    // result-record run, so they also confirm the recovered result count.
-    let aggregate_slot = bend_radius_offset
-        .checked_add(22)?
-        .checked_add(result_count.checked_mul(15)?)?;
-    let aggregate_group_record_index = claim(
-        marked_record_reference(bytes, aggregate_slot)?,
-        &mut unclaimed,
-    )?;
-    let first_edge_group = marked_record_reference(bytes, aggregate_slot.checked_add(27)?)?;
+        let mut cursor = common.checked_add(edge_flange::EDGE_WRAPPER_REFERENCE)?;
+        let edge_wrapper_record_index =
+            claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+        cursor = common.checked_add(edge_flange::SETTINGS_REFERENCE)?;
+        let settings_record_index = claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+        cursor = common.checked_add(edge_flange::HEIGHT_DATUM)?;
+        let height_datum = DesignSheetMetalHeightDatum::from_code(View::u32_le_at(bytes, cursor)?);
+        cursor = common.checked_add(edge_flange::ANGLE_OWNER_REFERENCE)?;
+        let angle_owner_record_index =
+            claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+        cursor = common.checked_add(edge_flange::HEIGHT_OWNER_REFERENCE)?;
+        let height_owner_record_index =
+            claim(marked_record_reference(bytes, cursor)?, &mut unclaimed)?;
+        let bend_radius_offset = common.checked_add(edge_flange::INSIDE_BEND_RADIUS)?;
+        let bend_radius =
+            cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, bend_radius_offset)?)?;
+        let result_count =
+            usize::try_from(View::u32_le_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
+        // The aggregate-group and role-`0x08` group slots close the section after the
+        // result-record run, so they also confirm the recovered result count.
+        let aggregate_slot = bend_radius_offset
+            .checked_add(22)?
+            .checked_add(result_count.checked_mul(15)?)?;
+        let aggregate_group_record_index = claim(
+            marked_record_reference(bytes, aggregate_slot)?,
+            &mut unclaimed,
+        )?;
+        let first_edge_group = marked_record_reference(bytes, aggregate_slot.checked_add(27)?)?;
 
-    // A group's recipe-backed operand is the record three after the group.
-    let aggregate_operand_record_index =
-        claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
-    let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
-    claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
+        // A group's recipe-backed operand is the record three after the group.
+        let aggregate_operand_record_index =
+            claim(aggregate_group_record_index.checked_add(3)?, &mut unclaimed)?;
+        let edge_group_record_index = claim(first_edge_group, &mut unclaimed)?;
+        claim(first_edge_group.checked_add(3)?, &mut unclaimed)?;
 
-    if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
-        return None;
-    }
-    let width_count = unclaimed.len();
-    let width_distance_owner_record_indices = unclaimed;
+        if unclaimed.len() > MAX_EDGE_WIDTH_DISTANCE_OWNERS {
+            return None;
+        }
+        let width_count = unclaimed.len();
+        let width_distance_owner_record_indices = unclaimed;
 
-    let expected_length = 493usize
-        .checked_add(result_count.checked_mul(15)?)?
-        .checked_add(width_count.checked_mul(11)?)?
-        .checked_add(header_shift)?;
-    if paired_at.checked_sub(start)? != expected_length {
-        return None;
-    }
-    Some(DesignEdgeFlangeOperation {
-        height_owner_record_index,
-        angle_owner_record_index,
-        auxiliary_reference_record_indices: Vec::new(),
-        settings_record_index,
-        bend_radius,
-        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
-        height_datum,
-        bend_position,
-        selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
-            crate::records::feature::sheet_metal::DesignEdgeFlangeShape::from_wire(
-                vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                    wrapper_record_index: edge_wrapper_record_index,
-                    group_record_index: edge_group_record_index.try_into().ok()?,
-                    aggregate_operand_record_index,
-                }],
-                None,
-                width_distance_owner_record_indices,
-                Vec::new(),
-                DesignEdgeFlangeWidthParameterSource::EdgeWidth,
-                DesignEdgeFlangeHeightExtent::Distance,
+        let expected_length = 493usize
+            .checked_add(result_count.checked_mul(15)?)?
+            .checked_add(width_count.checked_mul(11)?)?
+            .checked_add(header_shift)?;
+        if paired_at.checked_sub(start)? != expected_length {
+            return None;
+        }
+        Some(Ok(DesignEdgeFlangeOperation {
+            height_owner_record_index,
+            angle_owner_record_index,
+            auxiliary_reference_record_indices: Vec::new(),
+            settings_record_index,
+            bend_radius,
+            bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+            height_datum,
+            bend_position,
+            selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
+                crate::records::feature::sheet_metal::DesignEdgeFlangeShape::from_wire(
+                    vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
+                        wrapper_record_index: edge_wrapper_record_index,
+                        group_record_index: edge_group_record_index.try_into().ok()?,
+                        aggregate_operand_record_index,
+                    }],
+                    None,
+                    width_distance_owner_record_indices,
+                    Vec::new(),
+                    DesignEdgeFlangeWidthParameterSource::EdgeWidth,
+                    DesignEdgeFlangeHeightExtent::Distance,
+                )
+                .ok()?,
+                aggregate_group_record_index,
             )
             .ok()?,
-            aggregate_group_record_index,
-        )
-        .ok()?,
-    })
+        }))
+    })();
+    parsed.transpose()
 }
 
 /// Read the single-edge `EdgeFlange` form whose height is measured from a

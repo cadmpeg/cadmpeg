@@ -38,7 +38,13 @@ fn relation_kind_text_refuses_retained_limit_and_preserves_order() {
     assert!(matches!(relation_kind_name(&relation, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d sketch constraint native kind"));
-    assert_eq!(crate::test_support::with_decode_context(|decode_ctx| relation_kind_name(&relation, decode_ctx)).unwrap(), expected);
+    assert_eq!(
+        crate::test_support::with_decode_context(|decode_ctx| relation_kind_name(
+            &relation, decode_ctx
+        ))
+        .unwrap(),
+        expected
+    );
 }
 
 #[test]

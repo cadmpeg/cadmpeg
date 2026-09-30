@@ -107,7 +107,7 @@ pub(crate) fn lp_ascii_strict_charged(
     let Ok(value) = std::str::from_utf8(raw) else {
         return Ok(None);
     };
-    
+
     let mut owned = ctx.retained_string(length, "retain F3D ASCII string")?;
     owned.push_str(value);
     Ok(Some((owned, end)))
@@ -189,8 +189,7 @@ pub(crate) fn lp_utf16_bounded_charged(
             .checked_add(character.len_utf8())
             .ok_or_else(|| ctx.refuse_codec_limit("decode F3D UTF-16 string", 0, u64::MAX))?;
     }
-    
-    
+
     let mut value = ctx.retained_string(utf8_len, "retain F3D UTF-16 string")?;
     for decoded in char::decode_utf16(units()) {
         let Ok(character) = decoded else {
@@ -254,8 +253,7 @@ pub(crate) fn take_lp_utf8_charged(
     let Ok(value) = std::str::from_utf8(raw) else {
         return Ok(None);
     };
-    
-    
+
     let mut owned = ctx.retained_string(raw.len(), "retain F3D UTF-8 string")?;
     owned.push_str(value);
     Ok(Some(owned))

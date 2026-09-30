@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact hole constructions and hole face selections.
 
-
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;
@@ -249,7 +248,9 @@ fn hole_construction_frame_at(
         }
 
         let mut input_records = Vec::new();
-        if let Err(error) = ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records") {
+        if let Err(error) =
+            ctx.reserve_vec(&mut input_records, input_count, "f3d Hole input records")
+        {
             return Some(Err(error));
         }
         for _ in 0..input_count {

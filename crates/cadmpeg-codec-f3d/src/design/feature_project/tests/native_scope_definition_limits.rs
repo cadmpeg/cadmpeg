@@ -79,8 +79,10 @@ fn native_parameter_property_refuses_collection_limit() {
 #[test]
 fn native_parameter_restated_key_keeps_refusal() {
     let (scope, parameter) = fixture();
-    let error =
-        crate::test_support::with_decode_context(|decode_ctx| native_scope_definition(decode_ctx, &scope, &[(0, &parameter), (1, &parameter)])).unwrap_err();
+    let error = crate::test_support::with_decode_context(|decode_ctx| {
+        native_scope_definition(decode_ctx, &scope, &[(0, &parameter), (1, &parameter)])
+    })
+    .unwrap_err();
     assert!(error
         .to_string()
         .contains("states the property Length a second time"));
@@ -101,7 +103,10 @@ fn native_scope_kind_refuses_retained_limit() {
     assert!(matches!(native_scope_definition(&ctx, &scope, &[]),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d native feature kind"
             && failure.dimension == ResourceDimension::RetainedBytes));
-    let definition = crate::test_support::with_decode_context(|decode_ctx| native_scope_definition(decode_ctx, &scope, &[])).unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        native_scope_definition(decode_ctx, &scope, &[])
+    })
+    .unwrap();
     assert!(
         matches!(definition, cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Native {

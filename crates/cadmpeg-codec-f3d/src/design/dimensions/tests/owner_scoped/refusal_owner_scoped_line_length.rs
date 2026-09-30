@@ -49,7 +49,14 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![first.clone(), second.clone()]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        owner_scoped_line_length_dimension_definition(ctx, &selected, &sketch, &parameter, &parameter_id, EPS_REFUSAL_LINEAR)
+        owner_scoped_line_length_dimension_definition(
+            ctx,
+            &selected,
+            &sketch,
+            &parameter,
+            &parameter_id,
+            EPS_REFUSAL_LINEAR,
+        )
         .transpose()
         .map(|_| ())
     });

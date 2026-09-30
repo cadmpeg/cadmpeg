@@ -219,7 +219,15 @@ fn sketch_text_with_retained_limit(
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = maximum;
     let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    crate::design::decode::sketch::decode_sketch_text_record(&ctx, bytes, "Design/BulkStream.dat", crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(), class_version, 304, 7)
+    crate::design::decode::sketch::decode_sketch_text_record(
+        &ctx,
+        bytes,
+        "Design/BulkStream.dat",
+        crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+        class_version,
+        304,
+        7,
+    )
     .unwrap_err()
 }
 
@@ -1169,7 +1177,17 @@ fn decode_sketch_text_at(
     bytes: &[u8],
     class_version: u32,
 ) -> Option<crate::records::sketch_geometry::SketchText> {
-    crate::test_support::with_decode_context(|decode_ctx| crate::design::decode::sketch::decode_sketch_text_record(decode_ctx, bytes, "Design/BulkStream.dat", crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(), class_version, 304, 7))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::decode::sketch::decode_sketch_text_record(
+            decode_ctx,
+            bytes,
+            "Design/BulkStream.dat",
+            crate::records::references::DesignClassTag::try_from("329".to_owned()).unwrap(),
+            class_version,
+            304,
+            7,
+        )
+    })
     .unwrap()
 }
 

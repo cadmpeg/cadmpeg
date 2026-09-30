@@ -32,7 +32,12 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ParameterId::mint("generated:test:parameter#axis-angle").expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::parallel_group_axis_angle_definition(ctx, &[&first, &second], &parameter, &parameter_id)
+        crate::design::dimensions::parallel_group_axis_angle_definition(
+            ctx,
+            &[&first, &second],
+            &parameter,
+            &parameter_id,
+        )
         .transpose()
         .map(|_| ())
     });

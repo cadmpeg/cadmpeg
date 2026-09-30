@@ -731,23 +731,27 @@ fn reads_class_325_cage_table_entries() {
     ]
     .concat();
     assert_eq!(
-        form_class_325_cage_objects(
+        crate::test_support::with_decode_context(|ctx| form_class_325_cage_objects(
+            ctx,
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             scope_record,
             [owner_record].into_iter(),
-        ),
+        )
+        .expect("service admission")),
         Some((0..32u32).map(|ordinal| 1_000 + ordinal * 2).collect())
     );
     let mut duplicate_discriminator = bytes.clone();
     duplicate_discriminator[41 + 30 + 11..41 + 30 + 19].copy_from_slice(&307u64.to_le_bytes());
     assert_eq!(
-        form_class_325_cage_objects(
+        crate::test_support::with_decode_context(|ctx| form_class_325_cage_objects(
+            ctx,
             &duplicate_discriminator,
             &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_discriminator),
             scope_record,
             [owner_record].into_iter(),
-        ),
+        )
+        .expect("service admission")),
         None
     );
 }

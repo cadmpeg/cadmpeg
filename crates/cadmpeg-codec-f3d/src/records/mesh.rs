@@ -228,15 +228,18 @@ impl From<&'static str> for TextureTableError {
     }
 }
 
-
-
 impl DesignMeshTextureTable {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, String> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(|error| error.to_string())?;
         Self::new_inner(&ctx, record, resources).map_err(|error| match error {
             TextureTableError::Payload(message) => message,
             TextureTableError::Resource(error) => error.to_string(),
@@ -286,11 +289,20 @@ impl DesignMeshTextureTable {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
 
-
-
-            ctx.insert_hash_set(&mut flags, resource.ordinal, "index F3D texture flag ordinals").map_err(TextureTableError::Resource)?;
-            ctx.insert_hash_set(&mut filenames, resource.filename_ordinal, "index F3D texture filename ordinals").map_err(TextureTableError::Resource)?;
-            ctx.insert_hash_set(&mut guids, guid, "index F3D texture GUIDs").map_err(TextureTableError::Resource)?;
+            ctx.insert_hash_set(
+                &mut flags,
+                resource.ordinal,
+                "index F3D texture flag ordinals",
+            )
+            .map_err(TextureTableError::Resource)?;
+            ctx.insert_hash_set(
+                &mut filenames,
+                resource.filename_ordinal,
+                "index F3D texture filename ordinals",
+            )
+            .map_err(TextureTableError::Resource)?;
+            ctx.insert_hash_set(&mut guids, guid, "index F3D texture GUIDs")
+                .map_err(TextureTableError::Resource)?;
         }
         Ok(Self { record, resources })
     }

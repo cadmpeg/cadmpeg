@@ -74,11 +74,12 @@ pub(crate) fn bind_form_cages(
         )?;
         if scope.class_tag.as_str() == "325" {
             if let Some(cage_objects) = form_class_325_cage_objects(
+                ctx,
                 bytes,
                 &records,
                 scope.record_index,
                 scope.reference_members().values().copied(),
-            ) {
+            )? {
                 let serializers = form_cage_serializers(ctx, bytes, &records)?;
                 let mut resolved = Vec::new();
                 let mut valid = true;
@@ -698,121 +699,128 @@ fn one_indexed_frame(records: &IndexedRecordOffsets, record_index: u32) -> Optio
 }
 
 fn form_class_325_cage_objects(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope_record_index: u32,
     mut owner_record_indices: impl Iterator<Item = u32>,
-) -> Option<Vec<u32>> {
-    const CAGE_COUNT: usize = 32;
-    const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
+) -> Result<Option<Vec<u32>>, CodecError> {
+    let parsed = (|| {
+        const CAGE_COUNT: usize = 32;
+        const TYPE_DISCRIMINATOR_FIRST: u32 = 307;
 
-    let mut frames = records.frames(scope_record_index);
-    let (start, paired) = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    if bytes.get(start + 4..start + 7) != Some(b"325")
-        || bytes.get(paired + 4..paired + 7) != Some(b"258")
-        || paired.checked_sub(start)? != form_class_325_cage_table::LEN
-        || bytes.get(
-            start + form_class_325_cage_table::ZERO_RUN_9
-                ..start + form_class_325_cage_table::LIST_MARKER,
-        )? != [0; 9]
-        || bytes.get(start + form_class_325_cage_table::LIST_MARKER) != Some(&1)
-        || bytes.get(
-            start + form_class_325_cage_table::ZERO_RUN_5
-                ..start + form_class_325_cage_table::OWNER_MARKER,
-        )? != [0; 5]
-        || bytes.get(start + form_class_325_cage_table::OWNER_MARKER) != Some(&1)
-        || bytes.get(
-            start + form_class_325_cage_table::ZERO_RUN_2
-                ..start + form_class_325_cage_table::CAGE_COUNT,
-        )? != [0; 2]
-    {
-        return None;
-    }
-    let owner_record = u32::try_from(View::u64_le_at(
-        bytes,
-        start + form_class_325_cage_table::OWNER_RESULT_RECORD_INDEX,
-    )?)
-    .ok()?;
-    let [owner_at, ..] = records.offsets(owner_record) else {
-        return None;
-    };
-    if !owner_record_indices.any(|index| index == owner_record)
-        || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
-    {
-        return None;
-    }
-    let count = bounded_len(
-        u64::from(View::u32_le_at(
-            bytes,
-            start + form_class_325_cage_table::CAGE_COUNT,
-        )?),
-        form_class_325_cage_entry::LEN,
-        paired.checked_sub(start + form_class_325_cage_table::CAGE_ENTRIES)?,
-    )?;
-    if count != CAGE_COUNT {
-        return None;
-    }
-    let mut objects = Vec::with_capacity(count);
-    let mut seen_type_discriminators = [false; CAGE_COUNT];
-    for ordinal in 0..count {
-        let entry = start
-            .checked_add(form_class_325_cage_table::CAGE_ENTRIES)?
-            .checked_add(form_class_325_cage_entry::LEN.checked_mul(ordinal)?)?;
-        if bytes.get(entry + form_class_325_cage_entry::CAGE_OBJECT_MARKER) != Some(&1)
+        let mut frames = records.frames(scope_record_index);
+        let (start, paired) = frames.next()?;
+        if frames.next().is_some() {
+            return None;
+        }
+        if bytes.get(start + 4..start + 7) != Some(b"325")
+            || bytes.get(paired + 4..paired + 7) != Some(b"258")
+            || paired.checked_sub(start)? != form_class_325_cage_table::LEN
             || bytes.get(
-                entry + form_class_325_cage_entry::CAGE_OBJECT_ZERO
-                    ..entry + form_class_325_cage_entry::TYPE_DISCRIMINATOR,
-            )? != [0, 0]
-            || bytes.get(entry + form_class_325_cage_entry::COMPANION_MARKER) != Some(&1)
+                start + form_class_325_cage_table::ZERO_RUN_9
+                    ..start + form_class_325_cage_table::LIST_MARKER,
+            )? != [0; 9]
+            || bytes.get(start + form_class_325_cage_table::LIST_MARKER) != Some(&1)
             || bytes.get(
-                entry + form_class_325_cage_entry::COMPANION_ZERO
-                    ..entry + form_class_325_cage_entry::LEN,
-            )? != [0, 0]
+                start + form_class_325_cage_table::ZERO_RUN_5
+                    ..start + form_class_325_cage_table::OWNER_MARKER,
+            )? != [0; 5]
+            || bytes.get(start + form_class_325_cage_table::OWNER_MARKER) != Some(&1)
+            || bytes.get(
+                start + form_class_325_cage_table::ZERO_RUN_2
+                    ..start + form_class_325_cage_table::CAGE_COUNT,
+            )? != [0; 2]
         {
             return None;
         }
-        let type_discriminator = u32::try_from(View::u64_le_at(
+        let owner_record = u32::try_from(View::u64_le_at(
             bytes,
-            entry + form_class_325_cage_entry::TYPE_DISCRIMINATOR,
+            start + form_class_325_cage_table::OWNER_RESULT_RECORD_INDEX,
         )?)
         .ok()?;
-        let type_slot =
-            usize::try_from(type_discriminator.checked_sub(TYPE_DISCRIMINATOR_FIRST)?).ok()?;
-        if type_slot >= CAGE_COUNT || seen_type_discriminators[type_slot] {
-            return None;
-        }
-        seen_type_discriminators[type_slot] = true;
-        let object = u32::try_from(View::u64_le_at(
-            bytes,
-            entry + form_class_325_cage_entry::CAGE_OBJECT_RECORD_INDEX,
-        )?)
-        .ok()?;
-        let companion = u32::try_from(View::u64_le_at(
-            bytes,
-            entry + form_class_325_cage_entry::COMPANION_RECORD_INDEX,
-        )?)
-        .ok()?;
-        let mut object_frames = records
-            .frames(object)
-            .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
-        let (object_at, _) = object_frames.next()?;
-        if object_frames.next().is_some() {
-            return None;
-        }
-        let [companion_at, ..] = records.offsets(companion) else {
+        let [owner_at, ..] = records.offsets(owner_record) else {
             return None;
         };
-        if bytes.get(object_at + 4..object_at + 7) != Some(b"289")
-            || bytes.get(*companion_at + 4..*companion_at + 7) != Some(b"273")
+        if !owner_record_indices.any(|index| index == owner_record)
+            || bytes.get(*owner_at + 4..*owner_at + 7) != Some(b"407")
         {
             return None;
         }
-        objects.push(object);
-    }
-    Some(objects)
+        let count = bounded_len(
+            u64::from(View::u32_le_at(
+                bytes,
+                start + form_class_325_cage_table::CAGE_COUNT,
+            )?),
+            form_class_325_cage_entry::LEN,
+            paired.checked_sub(start + form_class_325_cage_table::CAGE_ENTRIES)?,
+        )?;
+        if count != CAGE_COUNT {
+            return None;
+        }
+        let mut objects = match ctx.collection_vec(count, "collect F3D class 325 cage objects") {
+            Ok(values) => values,
+            Err(error) => return Some(Err(error)),
+        };
+        let mut seen_type_discriminators = [false; CAGE_COUNT];
+        for ordinal in 0..count {
+            let entry = start
+                .checked_add(form_class_325_cage_table::CAGE_ENTRIES)?
+                .checked_add(form_class_325_cage_entry::LEN.checked_mul(ordinal)?)?;
+            if bytes.get(entry + form_class_325_cage_entry::CAGE_OBJECT_MARKER) != Some(&1)
+                || bytes.get(
+                    entry + form_class_325_cage_entry::CAGE_OBJECT_ZERO
+                        ..entry + form_class_325_cage_entry::TYPE_DISCRIMINATOR,
+                )? != [0, 0]
+                || bytes.get(entry + form_class_325_cage_entry::COMPANION_MARKER) != Some(&1)
+                || bytes.get(
+                    entry + form_class_325_cage_entry::COMPANION_ZERO
+                        ..entry + form_class_325_cage_entry::LEN,
+                )? != [0, 0]
+            {
+                return None;
+            }
+            let type_discriminator = u32::try_from(View::u64_le_at(
+                bytes,
+                entry + form_class_325_cage_entry::TYPE_DISCRIMINATOR,
+            )?)
+            .ok()?;
+            let type_slot =
+                usize::try_from(type_discriminator.checked_sub(TYPE_DISCRIMINATOR_FIRST)?).ok()?;
+            if type_slot >= CAGE_COUNT || seen_type_discriminators[type_slot] {
+                return None;
+            }
+            seen_type_discriminators[type_slot] = true;
+            let object = u32::try_from(View::u64_le_at(
+                bytes,
+                entry + form_class_325_cage_entry::CAGE_OBJECT_RECORD_INDEX,
+            )?)
+            .ok()?;
+            let companion = u32::try_from(View::u64_le_at(
+                bytes,
+                entry + form_class_325_cage_entry::COMPANION_RECORD_INDEX,
+            )?)
+            .ok()?;
+            let mut object_frames = records
+                .frames(object)
+                .filter(|(_, paired)| bytes.get(paired + 4..paired + 7) == Some(b"258"));
+            let (object_at, _) = object_frames.next()?;
+            if object_frames.next().is_some() {
+                return None;
+            }
+            let [companion_at, ..] = records.offsets(companion) else {
+                return None;
+            };
+            if bytes.get(object_at + 4..object_at + 7) != Some(b"289")
+                || bytes.get(*companion_at + 4..*companion_at + 7) != Some(b"273")
+            {
+                return None;
+            }
+            objects.push(object);
+        }
+        Some(Ok(objects))
+    })();
+    parsed.transpose()
 }
 
 fn form_class_325_cage_surface(
@@ -1089,7 +1097,11 @@ fn form_cage_serializers(
             continue;
         };
         let mut entry_name = String::new();
-DecodeContext::reserve_admitted_string(&mut entry_name, utf8_len, "f3d form serializer name materialization")?;
+        DecodeContext::reserve_admitted_string(
+            &mut entry_name,
+            utf8_len,
+            "f3d form serializer name materialization",
+        )?;
         let mut view = View::over_retained(raw_name);
         for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
             let character = decoded.map_err(|_| {
@@ -1132,7 +1144,12 @@ DecodeContext::reserve_admitted_string(&mut entry_name, utf8_len, "f3d form seri
                     .map_err(|_| ctx.refuse_codec_limit("f3d form serializer entry name", 0, 1))?,
                 "f3d form serializer entry name",
             )?;
-            ctx.insert_hash_map(&mut entries, surface, FormCageEntry::Unique(entry_name), "f3d form serializer entry index")?;
+            ctx.insert_hash_map(
+                &mut entries,
+                surface,
+                FormCageEntry::Unique(entry_name),
+                "f3d form serializer entry index",
+            )?;
             ctx.push_vec(&mut ordered, surface, "f3d form serializer order")?;
         }
     }

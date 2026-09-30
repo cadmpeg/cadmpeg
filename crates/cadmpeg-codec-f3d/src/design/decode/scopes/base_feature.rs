@@ -8,7 +8,7 @@ use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
-use cadmpeg_core::decode::{  DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use super::shared_frames::marked_record_reference;
@@ -652,8 +652,6 @@ use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::records::feature::scope;
 
-
-
 fn read_base_feature_entry_at(
     bytes: &[u8],
     cursor: &mut usize,
@@ -885,19 +883,17 @@ pub(super) fn exact_base_feature_construction(
             return None;
         }
         let mut cursor = start + result_body::LEN;
-        let mut entities =
-            match ctx.collection_vec(body_count, "f3d BaseFeature entities") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut entities = match ctx.collection_vec(body_count, "f3d BaseFeature entities") {
+            Ok(rows) => rows,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..body_count {
             entities.push(read_base_feature_entry_at(bytes, &mut cursor)?);
         }
-        let mut references =
-            match ctx.collection_vec(body_count, "f3d BaseFeature references") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut references = match ctx.collection_vec(body_count, "f3d BaseFeature references") {
+            Ok(rows) => rows,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..body_count {
             let entry = read_base_feature_entry_at(bytes, &mut cursor)?;
             references.push(DesignBaseFeatureEntry {
@@ -951,10 +947,11 @@ pub(super) fn exact_base_feature_construction(
             }
             cursor += 4;
         }
-        let mut repeated_reference_fields = match ctx.collection_vec(body_count, "f3d BaseFeature repeated reference fields") {
-            Ok(rows) => rows,
-            Err(error) => return Some(Err(error)),
-        };
+        let mut repeated_reference_fields =
+            match ctx.collection_vec(body_count, "f3d BaseFeature repeated reference fields") {
+                Ok(rows) => rows,
+                Err(error) => return Some(Err(error)),
+            };
         for ordinal in 0..body_count {
             let expected = if compact {
                 u32::try_from(entities[ordinal].value).ok()?
@@ -997,7 +994,10 @@ pub(super) fn exact_base_feature_construction(
         }
         cursor += 4;
         let mut first = None;
-        let mut rest = match ctx.collection_vec(body_count.checked_sub(1)?, "f3d BaseFeature remaining result bodies") {
+        let mut rest = match ctx.collection_vec(
+            body_count.checked_sub(1)?,
+            "f3d BaseFeature remaining result bodies",
+        ) {
             Ok(rows) => rows,
             Err(error) => return Some(Err(error)),
         };
@@ -1078,11 +1078,10 @@ fn exact_base_feature_body_snapshot(
             return None;
         }
         let mut cursor = start + snapshot::LEN;
-        let mut bodies =
-            match ctx.collection_vec(body_count, "f3d BaseFeature snapshot bodies") {
-                Ok(rows) => rows,
-                Err(error) => return Some(Err(error)),
-            };
+        let mut bodies = match ctx.collection_vec(body_count, "f3d BaseFeature snapshot bodies") {
+            Ok(rows) => rows,
+            Err(error) => return Some(Err(error)),
+        };
         for _ in 0..body_count {
             if bytes.get(cursor) != Some(&1) {
                 return None;

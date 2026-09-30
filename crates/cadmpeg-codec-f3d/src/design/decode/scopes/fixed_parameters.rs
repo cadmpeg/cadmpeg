@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact fixed extrude, fillet and chamfer parameter scopes.
 
-
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
@@ -203,7 +202,6 @@ pub(super) fn exact_fixed_fillet_parameters(
         if let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index)
             .filter(|scalar| scalar.owner_record_index == Some(scope.record_index))
         {
-
             ctx.reserve_vec(&mut lanes, 1, "f3d fixed Fillet scalar lanes")?;
             lanes.push((*record_index, scalar));
         }
@@ -252,7 +250,11 @@ pub(super) fn exact_fixed_fillet_parameters(
         let intermediate_count = (lanes.len() - 3) / 2;
 
         let mut intermediate = Vec::new();
-        ctx.reserve_vec(&mut intermediate, intermediate_count, "f3d fixed Fillet intermediate rows")?;
+        ctx.reserve_vec(
+            &mut intermediate,
+            intermediate_count,
+            "f3d fixed Fillet intermediate rows",
+        )?;
         for pair in lanes[3..].chunks_exact(2) {
             intermediate.push(DesignFixedFilletIntermediate {
                 radius: scalar(&pair[0]),

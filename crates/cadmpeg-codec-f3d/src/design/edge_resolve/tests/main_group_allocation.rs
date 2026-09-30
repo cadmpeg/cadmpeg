@@ -53,7 +53,15 @@ fn assert_main_group_refusal_with_limit(
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &operands, &[], Some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &operands,
+            &[],
+            Some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -140,7 +148,15 @@ fn edge_group_matched_identity_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), Some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            Some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d edge group matched identity" =>
             {
@@ -163,7 +179,18 @@ fn assert_identity_transition_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(&group, std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), &[], &[], Some(7), &feature_id, None, &ctx) {
+        match resolved_edge_treatment_group_with_corners(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            Some(7),
+            &feature_id,
+            None,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -198,7 +225,15 @@ fn assert_combined_edge_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), std::slice::from_ref(&recipe), std::slice::from_ref(&identity), Some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&recipe),
+            std::slice::from_ref(&identity),
+            Some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -232,7 +267,15 @@ fn assert_complete_identity_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), Some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            Some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -289,7 +332,18 @@ fn assert_identity_historical_refusal(
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_treatment_group_with_corners(&group, std::slice::from_ref(&group), &[], std::slice::from_ref(&operand), &[], &[], Some(7), &feature_id, radius, &ctx) {
+        match resolved_edge_treatment_group_with_corners(
+            &group,
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&operand),
+            &[],
+            &[],
+            Some(7),
+            &feature_id,
+            radius,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -386,7 +440,15 @@ fn assert_combined_historical_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), &recipes, &identities, Some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            &recipes,
+            &identities,
+            Some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -423,7 +485,15 @@ fn assert_native_group_refusal(standard_recipe: bool) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_edge_group(&group, std::slice::from_ref(&group), std::slice::from_ref(&operand), &[], standard_recipe.then_some(7), &feature_id, &ctx) {
+        match resolved_edge_group(
+            &group,
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&operand),
+            &[],
+            standard_recipe.then_some(7),
+            &feature_id,
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d native edge group id" =>
             {
@@ -453,7 +523,11 @@ fn edge_assignment_reference_candidate_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::edge_group_assignment_candidates(&[], [&[17, 18][..], &[18, 19][..]], &ctx) {
+        match crate::design::edge_resolve::edge_group_assignment_candidates(
+            &[],
+            [&[17, 18][..], &[18, 19][..]],
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d edge assignment reference candidate" =>
             {
@@ -481,7 +555,11 @@ fn corroborated_edge_candidate_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::edge_resolve::edge_assignment_candidates(&selectors, [&[17, 18][..]], &ctx) {
+        match crate::design::edge_resolve::edge_assignment_candidates(
+            &selectors,
+            [&[17, 18][..]],
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d corroborated edge candidate" =>
             {

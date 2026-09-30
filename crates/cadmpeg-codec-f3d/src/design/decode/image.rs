@@ -10,8 +10,6 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 use std::fmt::Write;
 
-
-
 pub(super) fn neutral_asset_id_charged(
     ctx: &DecodeContext<'_>,
     entry_name: &str,
@@ -136,7 +134,6 @@ pub(super) fn decode_scoped_images<T>(
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
             if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
-
                 ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
                 images.push(image);
             }

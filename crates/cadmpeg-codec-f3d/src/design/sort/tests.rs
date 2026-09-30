@@ -56,9 +56,7 @@ fn stable_sort_matches_equal_key_order_without_cloning() {
         let mut expected: Vec<_> = values.iter().map(|item| (item.key, item.ordinal)).collect();
         expected.sort_by_key(|(key, _)| *key);
         crate::design::test_support::with_test_decode_context(|ctx| {
-            sort_by(ctx, &mut values, |left, right| {
-                left.key.cmp(&right.key)
-            })
+            sort_by(ctx, &mut values, |left, right| left.key.cmp(&right.key))
         })
         .unwrap();
         assert_eq!(

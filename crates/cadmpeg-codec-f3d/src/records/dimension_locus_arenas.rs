@@ -1,4 +1,3 @@
-
 use super::{dimension_null_locus_wire, dimensions::DesignDimensionLocusPair};
 use cadmpeg_core::decode::DecodeContext;
 use serde::{Deserialize, Serialize};

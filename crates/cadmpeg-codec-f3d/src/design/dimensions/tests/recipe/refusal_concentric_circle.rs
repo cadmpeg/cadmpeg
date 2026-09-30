@@ -57,14 +57,21 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         circle("synthetic:test:id#inner-b", Point2::new(20.0, 0.0), 6.0),
     ];
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::concentric_circle_dimension_definition(ctx, if operation.starts_with("f3d concentric circle ")
+        crate::design::dimensions::concentric_circle_dimension_definition(
+            ctx,
+            if operation.starts_with("f3d concentric circle ")
                 && operation != "f3d concentric circle candidate"
             {
                 &circles[..2]
             } else {
                 &circles
-            }, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"), 0.0)
+            },
+            &sketch,
+            &parameter,
+            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"),
+            0.0,
+        )
         .transpose()
         .map(|_| ())
     });

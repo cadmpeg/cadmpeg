@@ -428,7 +428,17 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
     };
 
     let mut operands = vec![operand.clone()];
-    crate::test_support::with_decode_context(|decode_ctx| bind_face_operand_history_candidates(decode_ctx, &mut operands, std::slice::from_ref(&scope), std::slice::from_ref(&group), &[], std::slice::from_ref(&history), &HashMap::new()))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_face_operand_history_candidates(
+            decode_ctx,
+            &mut operands,
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&history),
+            &HashMap::new(),
+        )
+    })
     .unwrap();
     assert_eq!(operands[0].preceding_candidate_faces, [face(7), face(8)]);
     assert_eq!(operands[0].changed_candidate_faces, [face(7)]);
@@ -489,7 +499,17 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         },
     ];
     let mut cylinder_operands = vec![cylinder_operand];
-    crate::test_support::with_decode_context(|decode_ctx| bind_face_operand_history_candidates(decode_ctx, &mut cylinder_operands, std::slice::from_ref(&cylinder_scope), std::slice::from_ref(&group), &[], std::slice::from_ref(&cylinder_history), &HashMap::new()))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_face_operand_history_candidates(
+            decode_ctx,
+            &mut cylinder_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&cylinder_history),
+            &HashMap::new(),
+        )
+    })
     .unwrap();
     assert_eq!(cylinder_operands[0].resolved_face_slots, [7]);
 
@@ -498,7 +518,17 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .candidate_faces
         .push(FaceId::mint("f3d:brep/input/brep:entity#998").expect("identity grammar"));
     let mut stale_active_operands = vec![stale_active_operand];
-    crate::test_support::with_decode_context(|decode_ctx| bind_face_operand_history_candidates(decode_ctx, &mut stale_active_operands, std::slice::from_ref(&cylinder_scope), std::slice::from_ref(&group), &[], std::slice::from_ref(&cylinder_history), &HashMap::new()))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_face_operand_history_candidates(
+            decode_ctx,
+            &mut stale_active_operands,
+            std::slice::from_ref(&cylinder_scope),
+            std::slice::from_ref(&group),
+            &[],
+            std::slice::from_ref(&cylinder_history),
+            &HashMap::new(),
+        )
+    })
     .unwrap();
     assert_eq!(stale_active_operands[0].resolved_face_slots, [7]);
 
@@ -517,7 +547,17 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         .surface_cylinders[1]
         .radius = 1.6;
     let mut ambiguous_geometry_operands = vec![cylinder_operands.remove(0)];
-    crate::test_support::with_decode_context(|decode_ctx| bind_face_operand_history_candidates(decode_ctx, &mut ambiguous_geometry_operands, &[cylinder_scope], std::slice::from_ref(&group), &[], &[ambiguous_geometry_history], &HashMap::new()))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_face_operand_history_candidates(
+            decode_ctx,
+            &mut ambiguous_geometry_operands,
+            &[cylinder_scope],
+            std::slice::from_ref(&group),
+            &[],
+            &[ambiguous_geometry_history],
+            &HashMap::new(),
+        )
+    })
     .unwrap();
     assert!(ambiguous_geometry_operands[0]
         .resolved_face_slots
@@ -529,7 +569,17 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
             DesignOperandRole::FACES,
         );
     let mut rejected = vec![operand];
-    crate::test_support::with_decode_context(|decode_ctx| bind_face_operand_history_candidates(decode_ctx, &mut rejected, &[scope], &[unrelated_group], &[], &[history], &HashMap::new()))
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_face_operand_history_candidates(
+            decode_ctx,
+            &mut rejected,
+            &[scope],
+            &[unrelated_group],
+            &[],
+            &[history],
+            &HashMap::new(),
+        )
+    })
     .unwrap();
     assert_eq!(rejected[0].preceding_candidate_faces, [face(9), face(10)]);
     assert!(rejected[0].changed_candidate_faces.is_empty());

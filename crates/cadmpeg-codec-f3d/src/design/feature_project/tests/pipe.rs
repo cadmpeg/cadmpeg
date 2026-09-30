@@ -147,7 +147,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .unwrap();
 
-    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
@@ -182,7 +191,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    let hollow_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    let hollow_definition = crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
@@ -225,7 +243,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &too_thick_parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &too_thick_parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_none());
 
@@ -265,7 +292,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_none());
 
@@ -286,7 +322,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::references::DesignClassTag::try_from("475".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_some());
 
@@ -316,7 +361,16 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
+    assert!(crate::test_support::with_decode_context(|decode_ctx| {
+        crate::design::feature_project::project_fixed_pipe(
+            &scope,
+            &parameter_refs,
+            std::slice::from_ref(&path_group),
+            &[],
+            &[],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .is_some());
 }

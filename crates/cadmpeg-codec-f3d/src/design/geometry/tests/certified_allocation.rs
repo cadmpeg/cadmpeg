@@ -70,9 +70,11 @@ fn certified_circle_refuses_arc_tube_limit() {
 
 #[test]
 fn certified_boundary_borrow_avoids_clone_limit() {
-    let loop_ = crate::test_support::with_decode_context(|decode_ctx| super::super::CertifiedProfileLoop::from_vertices(&triangle(), decode_ctx))
-        .unwrap()
-        .unwrap();
+    let loop_ = crate::test_support::with_decode_context(|decode_ctx| {
+        super::super::CertifiedProfileLoop::from_vertices(&triangle(), decode_ctx)
+    })
+    .unwrap()
+    .unwrap();
     let boundary = super::super::ProfileBoundary::CertifiedLoop(loop_);
     let (arena, policy) = zero_collection_context();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
@@ -85,11 +87,16 @@ fn certified_boundary_borrow_avoids_clone_limit() {
 #[test]
 fn certified_boundary_containment_propagates_tube_limit() {
     let outer = super::super::ProfileBoundary::Polygon(triangle().to_vec());
-    let inner_loop = crate::test_support::with_decode_context(|decode_ctx| super::super::CertifiedProfileLoop::from_vertices(&[
-            Point2::new(0.25, 0.25),
-            Point2::new(0.5, 0.25),
-            Point2::new(0.25, 0.5),
-        ], decode_ctx))
+    let inner_loop = crate::test_support::with_decode_context(|decode_ctx| {
+        super::super::CertifiedProfileLoop::from_vertices(
+            &[
+                Point2::new(0.25, 0.25),
+                Point2::new(0.5, 0.25),
+                Point2::new(0.25, 0.5),
+            ],
+            decode_ctx,
+        )
+    })
     .unwrap()
     .unwrap();
     let inner = super::super::ProfileBoundary::CertifiedLoop(inner_loop);

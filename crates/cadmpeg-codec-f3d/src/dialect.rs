@@ -139,7 +139,7 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3D manifest dialect";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_TOP_LEVEL_MANIFEST_VERSION);
-        ctx.admit_btree_entry(&mut declared, &key, OPERATION)?;
+        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
         declared.insert(key, ctx.copy_retained_text(version, OPERATION)?);
         let dialect = if version == TOP_LEVEL_MANIFEST_VERSION {
             Self::Manifest3200
@@ -162,8 +162,11 @@ impl F3dDialect {
         const OPERATION: &str = "classify F3Z root document members";
         let mut declared = BTreeMap::new();
         let key = cadmpeg_core::nonblank_const!(DECLARED_ROOT_DOCUMENT_MEMBERS);
-        ctx.admit_btree_entry(&mut declared, &key, OPERATION)?;
-        declared.insert(key, ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?);
+        ctx.admit_btree_entry(&declared, &key, OPERATION)?;
+        declared.insert(
+            key,
+            ctx.join_retained(root_document_members, MEMBER_SEPARATOR, OPERATION)?,
+        );
         Ok(Self::F3zMultiDocument.matched(declared))
     }
 
@@ -195,7 +198,6 @@ pub(crate) fn classify_layers(
     let mut losses = Vec::new();
     let mut add_layer = |layer: DialectMatch| -> Result<(), CodecError> {
         if let Err(rejected) = layers.insert_charged(ctx, layer, "collect F3D dialect layers")? {
-            
             ctx.reserve_vec(&mut losses, 1, "collect F3D dialect collision losses")?;
             let format = rejected.format();
             let instance = rejected.instance().unwrap_or("unidentified");
@@ -268,8 +270,6 @@ pub(crate) fn dialect_losses(
     Ok(losses)
 }
 
-
-
 fn archive_loss_text(
     ctx: &DecodeContext<'_>,
     matched: &DialectMatch,
@@ -277,7 +277,9 @@ fn archive_loss_text(
 ) -> Result<String, CodecError> {
     let operation = "retain F3D dialect recovery loss";
     match matched.declared().get(DECLARED_ARCHIVE_MEMBER) {
-        Some(member) => ctx.format_retained(format_args!("archive member {member}: {body}"), operation),
+        Some(member) => {
+            ctx.format_retained(format_args!("archive member {member}: {body}"), operation)
+        }
         None => ctx.format_retained(format_args!("{body}"), operation),
     }
 }

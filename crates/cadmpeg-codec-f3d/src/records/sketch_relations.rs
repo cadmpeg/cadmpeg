@@ -303,7 +303,11 @@ impl SketchRelationReturnMembers {
     ) -> Result<(), CodecError> {
         let mut resolved = Vec::new();
         for row in &self.0 {
-            ctx.reserve_vec(&mut resolved, 1, "resolve F3D sketch relation return members")?;
+            ctx.reserve_vec(
+                &mut resolved,
+                1,
+                "resolve F3D sketch relation return members",
+            )?;
             resolved.push(resolve(row.reference.record_index()));
         }
         for (row, operand) in self.0.iter_mut().zip(resolved) {
@@ -446,7 +450,9 @@ enum SketchRelationWireError {
 }
 
 impl From<CodecError> for SketchRelationWireError {
-    fn from(error: CodecError) -> Self { Self::Resource(error) }
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 impl From<SketchRelationPayloadError> for SketchRelationWireError {
@@ -850,10 +856,6 @@ impl SketchRelation {
     }
 }
 
-
-
-
-
 fn zip_relation_members(
     ctx: &DecodeContext<'_>,
     members: Vec<u32>,
@@ -865,16 +867,22 @@ fn zip_relation_members(
     let offsets = pad_or_check(ctx, "member_offsets", offsets, len)?;
     let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        ctx.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals").map_err(SketchRelationWireError::Resource)?
+        ctx.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals")
+            .map_err(SketchRelationWireError::Resource)?
     } else if ordinals.len() == len {
-        ctx.collect_vec(ordinals.into_iter().map(Some), "admit sketch relation ordinals").map_err(SketchRelationWireError::Resource)?
+        ctx.collect_vec(
+            ordinals.into_iter().map(Some),
+            "admit sketch relation ordinals",
+        )
+        .map_err(SketchRelationWireError::Resource)?
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
         )
         .into());
     };
-    ctx.try_collect_vec((members
+    ctx.try_collect_vec(
+        (members
             .into_iter()
             .zip(offsets)
             .zip(ordinals)
@@ -889,7 +897,10 @@ fn zip_relation_members(
                     offset,
                     relation_ordinal,
                 })
-            })).into_iter().map(|item| item.map_err(SketchRelationWireError::Payload)), "admit sketch relation members")?
+            }))
+        .map(|item| item.map_err(SketchRelationWireError::Payload)),
+        "admit sketch relation members",
+    )?
     .try_into()
     .map_err(Into::into)
 }
@@ -903,11 +914,9 @@ fn zip_return_members(
     let len = members.len();
     let offsets = pad_or_check(ctx, "return_member_offsets", offsets, len)?;
     let resolved = pad_resolved(ctx, "resolved_return_members", resolved, len)?;
-    ctx.try_collect_vec((members
-            .into_iter()
-            .zip(offsets)
-            .zip(resolved)
-            .map(|((record_index, offset), resolved)| {
+    ctx.try_collect_vec(
+        (members.into_iter().zip(offsets).zip(resolved).map(
+            |((record_index, offset), resolved)| {
                 Ok(SketchRelationReturnMember {
                     reference: SketchRelationReference::from_wire(
                         record_index,
@@ -916,7 +925,11 @@ fn zip_return_members(
                     )?,
                     offset,
                 })
-            })).into_iter().map(|item| item.map_err(SketchRelationWireError::Payload)), "admit sketch relation return members")?
+            },
+        ))
+        .map(|item| item.map_err(SketchRelationWireError::Payload)),
+        "admit sketch relation return members",
+    )?
     .try_into()
     .map_err(Into::into)
 }
@@ -928,9 +941,8 @@ fn pad_or_check(
     len: usize,
 ) -> Result<Vec<u32>, SketchRelationWireError> {
     if values.is_empty() {
-        ctx
-                .alloc_filled(len, 0, "pad sketch relation offsets")
-                .map_err(SketchRelationWireError::Resource)
+        ctx.alloc_filled(len, 0, "pad sketch relation offsets")
+            .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         Ok(values)
     } else {
@@ -949,11 +961,14 @@ fn pad_resolved(
     len: usize,
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
-        ctx
-                .alloc_filled(len, None, "pad sketch relation resolutions")
-                .map_err(SketchRelationWireError::Resource)
+        ctx.alloc_filled(len, None, "pad sketch relation resolutions")
+            .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
-        ctx.collect_vec(values.into_iter().map(Some), "admit sketch relation resolutions").map_err(SketchRelationWireError::Resource)
+        ctx.collect_vec(
+            values.into_iter().map(Some),
+            "admit sketch relation resolutions",
+        )
+        .map_err(SketchRelationWireError::Resource)
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
@@ -1016,8 +1031,12 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
-            .map_err(|error| SketchRelationPayloadError(error.to_string()))?;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )
+        .map_err(|error| SketchRelationPayloadError(error.to_string()))?;
         Self::from_wire_with_context(&ctx, wire).map_err(|error| match error {
             SketchRelationWireError::Payload(error) => error,
             SketchRelationWireError::Resource(error) => {
@@ -1071,10 +1090,16 @@ impl SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::located(ctx.collect_vec(wire.auxiliary_references
-                    .into_iter()
-                    .zip(wire.auxiliary_reference_offsets)
-                    .map(|(value, offset)| Located { value, offset }), "admit sketch relation auxiliary references").map_err(SketchRelationWireError::Resource)?),
+            auxiliary_references: ReferenceRun::located(
+                ctx.collect_vec(
+                    wire.auxiliary_references
+                        .into_iter()
+                        .zip(wire.auxiliary_reference_offsets)
+                        .map(|(value, offset)| Located { value, offset }),
+                    "admit sketch relation auxiliary references",
+                )
+                .map_err(SketchRelationWireError::Resource)?,
+            ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 ctx,

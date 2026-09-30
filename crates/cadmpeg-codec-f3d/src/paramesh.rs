@@ -103,14 +103,6 @@ const ELEMENT_TRIANGLE_DELTA_CODE: u32 = 7;
 /// Bytes of one [`ELEMENT_PACKED_DIRECTION`] element.
 const PACKED_DIRECTION_BYTES: u32 = 8;
 
-
-
-
-
-
-
-
-
 /// One mesh body's decoded geometry.
 pub(crate) struct MeshContainer {
     /// The ASCII GUID the protobuf message carries as `fusion_uuid`, which the
@@ -421,14 +413,22 @@ fn protobuf_fields<'a>(
         match key & 0x07 {
             0 => {
                 let value = take_varint(message, &mut at)?;
-                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Varint(value)), "collect paramesh protobuf fields")?;
+                ctx.push_vec(
+                    &mut fields,
+                    (key >> 3, ProtobufValue::Varint(value)),
+                    "collect paramesh protobuf fields",
+                )?;
             }
             1 => {
                 at = at
                     .checked_add(8)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed64 field is truncated"))?;
-                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
+                ctx.push_vec(
+                    &mut fields,
+                    (key >> 3, ProtobufValue::Skipped),
+                    "collect paramesh protobuf fields",
+                )?;
             }
             2 => {
                 let count = usize::try_from(take_varint(message, &mut at)?)
@@ -438,14 +438,22 @@ fn protobuf_fields<'a>(
                     .and_then(|end| message.get(at..end))
                     .ok_or_else(|| malformed("paramesh protobuf byte field is truncated"))?;
                 at += count;
-                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Bytes(bytes)), "collect paramesh protobuf fields")?;
+                ctx.push_vec(
+                    &mut fields,
+                    (key >> 3, ProtobufValue::Bytes(bytes)),
+                    "collect paramesh protobuf fields",
+                )?;
             }
             5 => {
                 at = at
                     .checked_add(4)
                     .filter(|end| *end <= message.len())
                     .ok_or_else(|| malformed("paramesh protobuf fixed32 field is truncated"))?;
-                ctx.push_vec(&mut fields, (key >> 3, ProtobufValue::Skipped), "collect paramesh protobuf fields")?;
+                ctx.push_vec(
+                    &mut fields,
+                    (key >> 3, ProtobufValue::Skipped),
+                    "collect paramesh protobuf fields",
+                )?;
             }
             _ => {
                 return Err(malformed(
@@ -719,7 +727,12 @@ fn mesh_registry(ctx: &DecodeContext<'_>, message: &[u8]) -> Result<MeshRegistry
                 if properties.contains_key(&key) {
                     return Err(malformed("paramesh registry repeats a property key"));
                 }
-                ctx.insert_btree_map(&mut properties, key, value, "index paramesh registry properties")?;
+                ctx.insert_btree_map(
+                    &mut properties,
+                    key,
+                    value,
+                    "index paramesh registry properties",
+                )?;
             }
             (REGISTRY_FACE_GROUP_COUNT, ProtobufValue::Varint(value)) => {
                 let value = u32::try_from(value)
@@ -969,13 +982,20 @@ fn stream_descriptor(
             .get(at..at + key_count)
             .ok_or_else(|| malformed("paramesh stream descriptor is truncated"))?;
         at += key_count;
-        let key = ctx.copy_retained_text(std::str::from_utf8(raw)
-                .map_err(|_| malformed("paramesh stream descriptor key is not UTF-8"))?, "retain paramesh descriptor key")?;
+        let key = ctx.copy_retained_text(
+            std::str::from_utf8(raw)
+                .map_err(|_| malformed("paramesh stream descriptor key is not UTF-8"))?,
+            "retain paramesh descriptor key",
+        )?;
         if entries.iter().any(|(existing, _)| existing == &key) {
             return Err(malformed("paramesh stream descriptor repeats a key"));
         }
         let descriptor_value = value(bytes, &mut at)?;
-        ctx.push_vec(&mut entries, (key, descriptor_value), "collect paramesh descriptor entries")?;
+        ctx.push_vec(
+            &mut entries,
+            (key, descriptor_value),
+            "collect paramesh descriptor entries",
+        )?;
     }
     if at != bytes.len() {
         return Err(malformed("paramesh stream descriptor has trailing bytes"));
@@ -1034,12 +1054,13 @@ fn inflate_stream(ctx: &DecodeContext<'_>, body: &[u8]) -> Result<MeshStream, Co
         .len()
         .checked_add(5)
         .ok_or_else(|| ctx.refuse_codec_limit("frame paramesh compressed stream", 0, u64::MAX))?;
-    let (mut framed, _framed_reservation) = ctx.scoped_admitted_vec(framed_len, "frame paramesh compressed stream")?;
+    let (mut framed, _framed_reservation) =
+        ctx.scoped_admitted_vec(framed_len, "frame paramesh compressed stream")?;
     framed.push(LZMA_PROPERTIES);
     framed.extend_from_slice(&(1u32 << LZMA_DICTIONARY_LOG).to_le_bytes());
     framed.extend_from_slice(payload);
-    let mut out = ctx.retained_admitted_vec(declared_len, "retain paramesh stream bytes")?;
-    out.resize(declared_len, 0);
+    let mut out = Vec::new();
+    ctx.resize_retained_bytes(&mut out, declared_len, 0, "retain paramesh stream bytes")?;
     let mut writer = std::io::Cursor::new(out.as_mut_slice());
     lzma_rs::lzma_decompress_with_options(
         &mut std::io::Cursor::new(framed.as_slice()),
@@ -1153,7 +1174,10 @@ fn attribute_names(
     let body = xml
         .strip_prefix("<?xml version=\"1.0\"?>")
         .ok_or_else(|| malformed("paramesh attribute-name stream has no XML declaration"))?;
-    let (wrapped, _wrapped_reservation) = ctx.format_scoped(format_args!("<Root>{body}</Root>"), "wrap paramesh attribute XML")?;
+    let (wrapped, _wrapped_reservation) = ctx.format_scoped(
+        format_args!("<Root>{body}</Root>"),
+        "wrap paramesh attribute XML",
+    )?;
     let wrapped_count = u64_from_index(wrapped.len());
     ctx.charge_collection_items(wrapped_count, "parse paramesh XML nodes")?;
     let document = roxmltree::Document::parse(&wrapped)
@@ -1239,11 +1263,17 @@ fn attribute_names(
                 "paramesh attribute-name stream repeats a channel GUID",
             ));
         }
-        let authored_name = ctx.copy_retained_text(authored_name, "retain paramesh attribute name")?;
-        ctx.insert_btree_map(&mut names, key, RegisteredAttributeName {
+        let authored_name =
+            ctx.copy_retained_text(authored_name, "retain paramesh attribute name")?;
+        ctx.insert_btree_map(
+            &mut names,
+            key,
+            RegisteredAttributeName {
                 kind,
                 authored_name,
-            }, "index paramesh attribute names")?;
+            },
+            "index paramesh attribute names",
+        )?;
     }
     if names.is_empty() {
         return Err(malformed(
@@ -1359,7 +1389,8 @@ fn decode_terminal_delta_values(
     stream: &[u8],
 ) -> Result<Vec<u32>, CodecError> {
     let mut view = View::over_retained(stream);
-    let mut words = ctx.collection_vec(stream.len() / 4, "collect paramesh terminal delta words")?;
+    let mut words =
+        ctx.collection_vec(stream.len() / 4, "collect paramesh terminal delta words")?;
     while !view.is_empty() {
         words.push(view.u32_le().ok_or_else(|| {
             malformed("paramesh terminal-delta stream is not a whole number of values")
@@ -1512,7 +1543,10 @@ fn decode_corner_normals(
         ));
     }
     let mut view = View::over_retained(values);
-    let mut table = ctx.collection_vec(values.len() / index_from_u32(PACKED_DIRECTION_BYTES), "collect paramesh normal table")?;
+    let mut table = ctx.collection_vec(
+        values.len() / index_from_u32(PACKED_DIRECTION_BYTES),
+        "collect paramesh normal table",
+    )?;
     while !view.is_empty() {
         let pair = view.f32_le().zip(view.f32_le()).ok_or_else(|| {
             malformed("paramesh corner-normal channel has no complete packed-direction table")
@@ -1607,7 +1641,11 @@ fn registry_feature_edges(
             if left != right {
                 let edge = [left.min(right), left.max(right)];
                 if !topology_edges.contains(&edge) {
-                    ctx.insert_btree_set(&mut topology_edges, edge, "index paramesh topology edges")?;
+                    ctx.insert_btree_set(
+                        &mut topology_edges,
+                        edge,
+                        "index paramesh topology edges",
+                    )?;
                 }
             }
         }
@@ -2017,7 +2055,12 @@ fn registry_triangle_groups(
             source_id,
             triangles: Vec::new(),
         });
-        ctx.insert_btree_map(&mut group_indices, *key, index, "index paramesh face group keys")?;
+        ctx.insert_btree_map(
+            &mut group_indices,
+            *key,
+            index,
+            "index paramesh face group keys",
+        )?;
     }
     for (triangle, key) in values.iter().enumerate() {
         let group_index = group_indices
@@ -2025,7 +2068,11 @@ fn registry_triangle_groups(
             .ok_or_else(|| malformed("paramesh triangle selects no face-group record"))?;
         let ordinal = u32::try_from(triangle)
             .map_err(|_| malformed("paramesh triangle ordinal is out of range"))?;
-        ctx.push_vec(&mut memberships[*group_index].triangles, ordinal, "collect paramesh face group triangles")?;
+        ctx.push_vec(
+            &mut memberships[*group_index].triangles,
+            ordinal,
+            "collect paramesh face group triangles",
+        )?;
     }
     if memberships.iter().any(|group| group.triangles.is_empty()) {
         return Err(malformed(

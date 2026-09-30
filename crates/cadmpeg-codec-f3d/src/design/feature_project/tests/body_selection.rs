@@ -40,7 +40,12 @@ fn assert_selection_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = design_body_selection(&ctx, &scope, [20].into_iter(), std::slice::from_ref(&binding));
+        let result = design_body_selection(
+            &ctx,
+            &scope,
+            [20].into_iter(),
+            std::slice::from_ref(&binding),
+        );
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -115,8 +120,8 @@ fn project_copied_body(
             scopes: std::slice::from_ref(scope),
             timelines: std::slice::from_ref(&timeline),
             body_bindings: std::slice::from_ref(binding),
-..Default::default()
-},
+            ..Default::default()
+        },
     )
     .map(|(features, _)| features)
 }
@@ -207,7 +212,10 @@ fn copied_body_output_id_refuses_retained_limit() {
 #[test]
 fn copied_body_output_preserves_resolved_body() {
     let (scope, binding) = copied_body_fixture();
-    let features = crate::test_support::with_decode_context(|decode_ctx| project_copied_body(decode_ctx, &scope, &binding)).unwrap();
+    let features = crate::test_support::with_decode_context(|decode_ctx| {
+        project_copied_body(decode_ctx, &scope, &binding)
+    })
+    .unwrap();
     assert_eq!(features.len(), 1);
     assert_eq!(
         features[0].evaluation.outputs().as_slice(),

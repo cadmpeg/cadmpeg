@@ -188,7 +188,17 @@ pub(super) fn fixed_kind_path_operations(
         })) if sections.len() == 2
     ));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &legacy_cut, &[], &[], &[], &[], decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &loft_scope,
+                &legacy_cut,
+                &[],
+                &[],
+                &[],
+                &[],
+                decode_ctx,
+            )
+        })
         .unwrap(),
         None
     );
@@ -241,7 +251,17 @@ pub(super) fn fixed_kind_path_operations(
         loft_group(3, DesignOperandRole::ROLE_0X7),
     ];
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_loft(&loft_scope, &mixed, &[], &[], &[], &[], decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_loft(
+                &loft_scope,
+                &mixed,
+                &[],
+                &[],
+                &[],
+                &[],
+                decode_ctx,
+            )
+        })
         .unwrap(),
         None
     );
@@ -456,7 +476,17 @@ pub(super) fn fixed_kind_path_operations(
             ..
         })) if matches!((&shape.mode(),), (cadmpeg_ir::features::SweepMode::Solid { op: cadmpeg_ir::features::SolidSweepOperation::NewBody },))));
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_sweep(&sweep_scope, &[profile.clone(), path.clone(), body.clone()], &[], &[], &[], &[], decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            crate::design::feature_project::project_fixed_sweep(
+                &sweep_scope,
+                &[profile.clone(), path.clone(), body.clone()],
+                &[],
+                &[],
+                &[],
+                &[],
+                decode_ctx,
+            )
+        })
         .unwrap(),
         None
     );

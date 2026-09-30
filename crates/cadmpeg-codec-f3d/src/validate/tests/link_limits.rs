@@ -32,74 +32,80 @@ fn body_link_error(
     ordinal: u32,
     extra_items: u64,
     retained: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let target = if valid {
-        cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone())
-    } else {
-        cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone())
-    };
-    let mut native = crate::native::F3dNative::default();
-    native
-        .persistent_design_links
-        .push(body_link(target, ordinal));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        u64::try_from(ir.model.bodies.len()).unwrap() + extra_items;
-    policy.limits.max_retained_bytes = retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_body_links(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let target = if valid {
+            cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone())
+        } else {
+            cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone())
+        };
+        let mut native = crate::native::F3dNative::default();
+        native
+            .persistent_design_links
+            .push(body_link(target, ordinal));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items =
+            u64::try_from(ir.model.bodies.len()).unwrap() + extra_items;
+        policy.limits.max_retained_bytes = retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_body_links(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 fn subentity_tag_error(
     valid: bool,
     ordinal: u32,
     extra_items: u64,
     retained: u64,
-) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let target = if valid {
-        cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone())
-    } else {
-        cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone())
-    };
-    let mut native = crate::native::F3dNative::default();
-    native
-        .persistent_subentity_tags
-        .push(subentity_tag(target, ordinal));
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items =
-        u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items;
-    policy.limits.max_retained_bytes = retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_subentity_tags(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let target = if valid {
+            cadmpeg_ir::attributes::AttributeTarget::Face(ir.model.faces[0].id.clone())
+        } else {
+            cadmpeg_ir::attributes::AttributeTarget::Body(ir.model.bodies[0].id.clone())
+        };
+        let mut native = crate::native::F3dNative::default();
+        native
+            .persistent_subentity_tags
+            .push(subentity_tag(target, ordinal));
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items =
+            u64::try_from(ir.model.faces.len() + ir.model.edges.len()).unwrap() + extra_items;
+        policy.limits.max_retained_bytes = retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_subentity_tags(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
-fn persistent_body_target_index_refuses_collection_limit() { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = crate::native::F3dNative::default();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    let error = super::super::validate_body_links(&ctx, &mut Vec::new()).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+fn persistent_body_target_index_refuses_collection_limit() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let error = super::super::validate_body_links(&ctx, &mut Vec::new()).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D persistent body targets")
-    );
-}) }
+        );
+    })
+}
 
 #[test]
 fn persistent_body_group_index_refuses_collection_limit() {
@@ -155,18 +161,20 @@ fn persistent_face_target_index_refuses_collection_limit() {
     );
 }
 
-fn subentity_target_index_error(max_items: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let native = crate::native::F3dNative::default();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    super::super::validate_subentity_tags(&ctx, &mut Vec::new()).unwrap_err()
-}) }
+fn subentity_target_index_error(max_items: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let native = crate::native::F3dNative::default();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        super::super::validate_subentity_tags(&ctx, &mut Vec::new()).unwrap_err()
+    })
+}
 
 #[test]
 fn persistent_edge_target_index_refuses_collection_limit() {

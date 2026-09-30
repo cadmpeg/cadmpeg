@@ -210,8 +210,18 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
     };
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6, decode_ctx))
-            .unwrap(),
+        crate::test_support::with_decode_context(
+            |decode_ctx| transition_spatial_profile_selection(
+                &sketch,
+                &entities,
+                &[history],
+                2,
+                1,
+                1.0e-6,
+                decode_ctx
+            )
+        )
+        .unwrap(),
         None
     );
 }
@@ -281,8 +291,12 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     ];
 
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6, decode_ctx))
-            .unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| {
+            spatial_polyline_profile_containing_points(
+                &sketch, &entities, &points, 1.0e-6, decode_ctx,
+            )
+        })
+        .unwrap(),
         None
     );
     let polyline_only = SpatialSketch {
@@ -290,7 +304,15 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ..sketch
     };
     assert_eq!(
-        crate::test_support::with_decode_context(|decode_ctx| spatial_polyline_profile_containing_points(&polyline_only, &entities, &points, 1.0e-6, decode_ctx))
+        crate::test_support::with_decode_context(|decode_ctx| {
+            spatial_polyline_profile_containing_points(
+                &polyline_only,
+                &entities,
+                &points,
+                1.0e-6,
+                decode_ctx,
+            )
+        })
         .unwrap(),
         Some(0)
     );

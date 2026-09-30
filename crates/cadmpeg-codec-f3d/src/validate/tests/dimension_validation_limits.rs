@@ -56,42 +56,47 @@ fn pair(has_first: bool) -> DesignDimensionLocusPair {
 }
 
 fn annotation() -> DesignDimensionAnnotationFrame {
-    crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, DesignDimensionAnnotationFrameDraft {
-        id: "f3d:native:annotation#0".into(),
-        companion_record_index: None,
-        governing_companion_record_index: 2,
-        byte_offset: 100,
-        class_tag: "256".to_owned().try_into().unwrap(),
-        record_index: 3,
-        frame_length: 300,
-        operands: [0, 10, 11, 10]
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, index)| DesignDimensionAnnotationOperand {
-                geometry_record_index: NonZeroU32::new(index),
-                geometry_reference_offset: 125 + u64_from_index(ordinal) * 15,
-                role: 1,
-                role_offset: 135 + u64_from_index(ordinal) * 15,
-            })
-            .collect(),
-        entity_genesis: 0,
-        annotation_bytes: vec![7, 8],
-        annotation_byte_offset: 241,
-        governing_owner_record_index: 4,
-        governing_owner_reference_offset: 244,
-        return_members: [10, 10, 11]
-            .into_iter()
-            .enumerate()
-            .map(|(ordinal, index)| Located {
-                value: NonZeroU32::new(index).unwrap(),
-                offset: 259 + u64_from_index(ordinal) * 11,
-            })
-            .collect(),
-        paired_class_tag: "259".to_owned().try_into().unwrap(),
-        paired_byte_offset: 400,
-        owner_reference: 5,
-        owner_reference_offset: 420,
-    }))
+    crate::test_support::with_decode_context(|ctx| {
+        DesignDimensionAnnotationFrame::try_new_charged(
+            ctx,
+            DesignDimensionAnnotationFrameDraft {
+                id: "f3d:native:annotation#0".into(),
+                companion_record_index: None,
+                governing_companion_record_index: 2,
+                byte_offset: 100,
+                class_tag: "256".to_owned().try_into().unwrap(),
+                record_index: 3,
+                frame_length: 300,
+                operands: [0, 10, 11, 10]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, index)| DesignDimensionAnnotationOperand {
+                        geometry_record_index: NonZeroU32::new(index),
+                        geometry_reference_offset: 125 + u64_from_index(ordinal) * 15,
+                        role: 1,
+                        role_offset: 135 + u64_from_index(ordinal) * 15,
+                    })
+                    .collect(),
+                entity_genesis: 0,
+                annotation_bytes: vec![7, 8],
+                annotation_byte_offset: 241,
+                governing_owner_record_index: 4,
+                governing_owner_reference_offset: 244,
+                return_members: [10, 10, 11]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, index)| Located {
+                        value: NonZeroU32::new(index).unwrap(),
+                        offset: 259 + u64_from_index(ordinal) * 11,
+                    })
+                    .collect(),
+                paired_class_tag: "259".to_owned().try_into().unwrap(),
+                paired_byte_offset: 400,
+                owner_reference: 5,
+                owner_reference_offset: 420,
+            },
+        )
+    })
     .unwrap()
 }
 
@@ -125,87 +130,97 @@ fn group() -> DesignDimensionLocusGroup {
     }
 }
 
-fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let mut native = crate::native::F3dNative::default();
-    match case {
-        Case::Recipe => native
-            .design_dimension_recipe_records
-            .push(DesignDimensionRecipeRecord {
-                id: "f3d:native:recipe#0".into(),
-                companion_record_index: 2,
-                recipe_ordinal: 0,
-                recipe_id: "f3d:native:construction-recipe#0".into(),
-                recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
-                byte_offset: 100,
-                class_tag: "256".to_owned().try_into().unwrap(),
-                record_index: 3,
-                frame_length: 11,
-                prefix_offset: 111,
-                prefix_bytes: Vec::new(),
-                references: Vec::new(),
-                program_offset: 111,
-                program: Vec::new(),
-                matching_edge_operand_ids: Vec::new(),
-            }),
-        Case::Pair => native.design_dimension_locus_pairs = vec![pair(true)].try_into().unwrap(),
-        Case::Annotation => native.design_dimension_annotation_frames.push(annotation()),
-        Case::Presentation => {
-            native
-                .design_dimension_presentation_frames
-                .push(DesignDimensionPresentationFrame {
-                    id: "f3d:native:presentation#0".into(),
-                    byte_offset: 100,
-                    class_tag: "256".to_owned().try_into().unwrap(),
-                    record_index: 3,
-                    frame_length: 100,
-                    operands: Vec::new(),
-                    presentation_bytes: Vec::new(),
-                    presentation_byte_offset: 124,
-                    paired_class_tag: "257".to_owned().try_into().unwrap(),
-                    paired_byte_offset: 200,
-                    owner_reference: 5,
-                    owner_reference_offset: 220,
-                    governing_owner_record_index: 4,
-                    governing_parameter_record_index: 6,
-                    governing_companion_record_index: 2,
-                })
+fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+    crate::test_support::with_decode_context(|service_ctx| {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        match case {
+            Case::Recipe => {
+                native
+                    .design_dimension_recipe_records
+                    .push(DesignDimensionRecipeRecord {
+                        id: "f3d:native:recipe#0".into(),
+                        companion_record_index: 2,
+                        recipe_ordinal: 0,
+                        recipe_id: "f3d:native:construction-recipe#0".into(),
+                        recipe_kind: crate::records::recipes::ConstructionRecipeKind::Face,
+                        byte_offset: 100,
+                        class_tag: "256".to_owned().try_into().unwrap(),
+                        record_index: 3,
+                        frame_length: 11,
+                        prefix_offset: 111,
+                        prefix_bytes: Vec::new(),
+                        references: Vec::new(),
+                        program_offset: 111,
+                        program: Vec::new(),
+                        matching_edge_operand_ids: Vec::new(),
+                    })
+            }
+            Case::Pair => {
+                native.design_dimension_locus_pairs = vec![pair(true)].try_into().unwrap()
+            }
+            Case::Annotation => native.design_dimension_annotation_frames.push(annotation()),
+            Case::Presentation => {
+                native
+                    .design_dimension_presentation_frames
+                    .push(DesignDimensionPresentationFrame {
+                        id: "f3d:native:presentation#0".into(),
+                        byte_offset: 100,
+                        class_tag: "256".to_owned().try_into().unwrap(),
+                        record_index: 3,
+                        frame_length: 100,
+                        operands: Vec::new(),
+                        presentation_bytes: Vec::new(),
+                        presentation_byte_offset: 124,
+                        paired_class_tag: "257".to_owned().try_into().unwrap(),
+                        paired_byte_offset: 200,
+                        owner_reference: 5,
+                        owner_reference_offset: 220,
+                        governing_owner_record_index: 4,
+                        governing_parameter_record_index: 6,
+                        governing_companion_record_index: 2,
+                    })
+            }
+            Case::Group => native.design_dimension_locus_groups.push(group()),
+            Case::NullPair => {
+                native.design_dimension_null_locus_pairs = vec![pair(false)].try_into().unwrap()
+            }
         }
-        Case::Group => native.design_dimension_locus_groups.push(group()),
-        Case::NullPair => {
-            native.design_dimension_null_locus_pairs = vec![pair(false)].try_into().unwrap()
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        policy.limits.max_retained_bytes = max_retained;
+        let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+        ctx.decode = &decode;
+        let mut findings = Vec::new();
+        match case {
+            Case::Recipe => {
+                super::super::validate_dimension_recipe_records(&ctx, &mut findings).map(|_| ())
+            }
+            Case::Pair => {
+                super::super::validate_dimension_locus_pairs(&ctx, &mut findings).map(|_| ())
+            }
+            Case::Annotation => {
+                super::super::validate_dimension_annotation_frames(&ctx, &mut findings)
+            }
+            Case::Presentation => {
+                super::super::validate_dimension_presentation_frames(&ctx, &mut findings)
+            }
+            Case::Group => {
+                super::super::validate_dimension_locus_groups(&ctx, &mut findings).map(|_| ())
+            }
+            Case::NullPair => super::super::validate_dimension_null_locus_pairs(
+                &ctx,
+                &mut findings,
+                &Default::default(),
+                &Default::default(),
+            ),
         }
-    }
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = max_items;
-    policy.limits.max_retained_bytes = max_retained;
-    let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
-    ctx.decode = &decode;
-    let mut findings = Vec::new();
-    match case {
-        Case::Recipe => {
-            super::super::validate_dimension_recipe_records(&ctx, &mut findings).map(|_| ())
-        }
-        Case::Pair => super::super::validate_dimension_locus_pairs(&ctx, &mut findings).map(|_| ()),
-        Case::Annotation => super::super::validate_dimension_annotation_frames(&ctx, &mut findings),
-        Case::Presentation => {
-            super::super::validate_dimension_presentation_frames(&ctx, &mut findings)
-        }
-        Case::Group => {
-            super::super::validate_dimension_locus_groups(&ctx, &mut findings).map(|_| ())
-        }
-        Case::NullPair => super::super::validate_dimension_null_locus_pairs(
-            &ctx,
-            &mut findings,
-            &Default::default(),
-            &Default::default(),
-        ),
-    }
-    .unwrap_err()
-}) }
+        .unwrap_err()
+    })
+}
 
 macro_rules! limit_case {
     ($name:ident, $case:expr, $items:expr, $retained:expr, $operation:literal) => {
