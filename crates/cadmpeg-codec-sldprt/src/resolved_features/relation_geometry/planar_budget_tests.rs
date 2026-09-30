@@ -490,3 +490,46 @@ fn planar_dimensional_lines_refuse_retained_limit() {
 fn planar_dimensional_lines_refuse_work_limit() {
     assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_dimensional_lines_with_policy);
 }
+
+fn project_repeated_circles_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition};
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances[0].scalars = crate::records::relation_scalars::RelationScalars::from_refs(
+        vec!["scalar".into(), "scalar-other".into()], Some("scalar".into()), None).unwrap();
+    let entities: Vec<_> = (0..2).map(|index| SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#repeated-circle-{index}")).unwrap(), sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: cadmpeg_ir::math::Point2::new(f64::from(index) * 3.0, 0.0), radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        }).unwrap()).with_geometry_ref(Some("scalar".into()))).collect();
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#dimension").unwrap(), owner: None, ordinal: 0,
+        name: "D1".into(), expression: "2mm".into(), display: Some(DimensionDisplay::Diameter),
+        value: Some(ParameterValue::Length(cadmpeg_ir::scalar::Length::new(2.0).unwrap())),
+        dependencies: DistinctMembers::default(), properties: BTreeMap::new(), pmi: None, native_ref: Some("scalar".into()),
+    };
+    let expected = SketchConstraintDefinitionInput::RepeatedDiameter { entities: entities.iter().map(|entity| entity.id().clone()).collect(), parameter: parameter.id.clone() };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut constraints = Vec::new();
+    project_relation_bindings(&ctx, &mut constraints, &[sketch], &[feature], &entities, &[parameter], &[lane])?;
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].definition.kind(), &expected);
+    Ok(())
+}
+
+
+#[test]
+fn planar_repeated_circles_refuse_collection_limit() {
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems, project_repeated_circles_with_policy);
+}
+
+#[test]
+fn planar_repeated_circles_refuse_retained_limit() {
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes, project_repeated_circles_with_policy);
+}
+
+#[test]
+fn planar_repeated_circles_refuse_work_limit() {
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_repeated_circles_with_policy);
+}

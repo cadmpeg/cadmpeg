@@ -150,7 +150,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let entities = vec![center, circle.clone()];
 
     assert_eq!(
-        marker_center_dimensioned_entity("center-marker", &sketch, &entities, &parameter),
+        marker_center_dimensioned_entity(&cadmpeg_test_support::service_decode_context(), "center-marker", &sketch, &entities, &parameter).unwrap(),
         Some(circle.id().clone())
     );
 
@@ -166,7 +166,7 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     .with_endpoint_refs(circle.endpoint_refs.clone());
     ambiguous.push(duplicate);
     assert_eq!(
-        marker_center_dimensioned_entity("center-marker", &sketch, &ambiguous, &parameter),
+        marker_center_dimensioned_entity(&cadmpeg_test_support::service_decode_context(), "center-marker", &sketch, &ambiguous, &parameter).unwrap(),
         None
     );
 }
