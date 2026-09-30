@@ -1844,6 +1844,50 @@ pub struct PcurveNurbs {
 }
 
 impl PcurveNurbs {
+    /// Copy admitted knots and poles with fallible storage allocation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an allocation error when a knot or pole lane cannot reserve storage.
+    pub fn try_clone(&self) -> Result<Self, std::collections::TryReserveError> {
+        let knots = self.knots.try_clone()?;
+        let poles = match &self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                PcurveNurbsPoles::Polynomial { points: copied }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                let mut copied = Vec::new();
+                copied.try_reserve_exact(points.len())?;
+                copied.extend_from_slice(points);
+                PcurveNurbsPoles::Rational { points: copied }
+            }
+        };
+        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+    }
+
+    /// Map admitted pole positions in place without allocating storage.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first mapper refusal. Earlier positions keep their edits.
+    pub fn try_map_control_points_in_place<E>(
+        &mut self,
+        mut map: impl FnMut(FinitePoint2) -> Result<FinitePoint2, E>,
+    ) -> Result<(), E> {
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points { *point = map(*point)?; }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points { pole.point = map(pole.point)?; }
+            }
+        }
+        Ok(())
+    }
+
     /// Build a parameter-space NURBS with consistent cardinalities.
     ///
     /// Raw pole positions are admitted; admitted positions are kept, so a

@@ -2526,11 +2526,11 @@ fn assemble_sketch_block_profile(
                 return Ok(None);
             };
             let Some(geometry) = transform_sketch_block_geometry(
-                &source_entity.geometry,
+                ctx, &source_entity.geometry,
                 instance.transform,
                 placement,
                 rotation,
-            ) else {
+            )? else {
                 return Ok(None);
             };
             let native_ref = ctx.format_retained(
@@ -2719,11 +2719,13 @@ fn sketch_block_assembly_frame(
 }
 
 fn transform_sketch_block_geometry(
-    geometry: &SketchGeometry,
+    ctx: &DecodeContext<'_>, geometry: &SketchGeometry,
     transform: Transform,
     frame: SketchBlockAssemblyFrame,
     rotation: f64,
-) -> Option<SketchGeometry> {
+) -> Result<Option<SketchGeometry>, CodecError> {
+    const OPERATION: &str = "transform SLDPRT sketch block geometry";
+    ctx.charge_work(1, OPERATION)?;
     let point = |point| transform_sketch_block_point(point, transform, frame);
     let finite_point =
         |value| transform_sketch_block_point(value, transform, frame).and_then(FinitePoint2::new);
@@ -2731,7 +2733,56 @@ fn transform_sketch_block_geometry(
         transform_sketch_block_direction(direction, transform, frame).and_then(FinitePoint2::new)
     };
     let angle = |value: Angle| Angle::new(value.get() + rotation);
-    Some(match geometry.definition() {
+    match geometry.definition() {
+        SketchGeometryDefinition::Nurbs { curve } => {
+            let count = curve.pole_rows().count().checked_add(curve.knots().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_collection_items(u64_from_index(count), OPERATION)?;
+            ctx.charge_work(u64_from_index(count), OPERATION)?;
+            let mut copied = curve.try_clone()
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            if copied.try_map_control_points_in_place(|pole| {
+                point(pole.get()).and_then(FinitePoint2::new).ok_or(())
+            }).is_err() { return Ok(None); }
+            return Ok(Some(SketchGeometry::nurbs(copied)));
+        }
+        SketchGeometryDefinition::Text {
+            text,
+            font_family,
+            font_weight,
+            height,
+            width_factor,
+            placement,
+            horizontal_alignment,
+            vertical_alignment,
+        } => {
+            let prepared = (|| Some((
+                match placement {
+                    Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
+                        anchor: finite_point(placement.anchor.get())?, rotation: angle(placement.rotation)?,
+                    }),
+                    None => None,
+                },
+            )))();
+            let Some((placement,)) = prepared else { return Ok(None); };
+            return Ok(SketchGeometry::from_parts(SketchGeometryDefinition::Text {
+            text: cadmpeg_core::text::NonBlankString::new(copy_profile_text(ctx, text.as_str(), OPERATION)?)
+                .ok_or_else(|| CodecError::malformed("blank decoded sketch text"))?,
+            font_family: cadmpeg_core::text::NonBlankString::new(copy_profile_text(ctx, font_family.as_str(), OPERATION)?)
+                .ok_or_else(|| CodecError::malformed("blank decoded sketch font"))?,
+            font_weight: *font_weight,
+            height: *height,
+            width_factor: *width_factor,
+            placement,
+            horizontal_alignment: *horizontal_alignment,
+            vertical_alignment: *vertical_alignment,
+        })
+        .ok());
+        }
+        _ => {}
+    }
+    Ok((|| Some(match geometry.definition() {
+
         SketchGeometryDefinition::Point { position } => {
             SketchGeometry::from_parts(SketchGeometryDefinition::Point {
                 position: finite_point(position.get())?,
@@ -2816,54 +2867,10 @@ fn transform_sketch_block_geometry(
             bounds: *bounds,
         })
         .ok()?,
-        SketchGeometryDefinition::Nurbs { curve } => {
-            let mut curve = curve.clone();
-            let transformed = curve
-                .pole_rows()
-                .raw_points()
-                .into_iter()
-                .map(point)
-                .collect::<Option<Vec<_>>>()?;
-            let mut transformed = transformed.into_iter();
-            curve
-                .edit_control_points(|point| {
-                    if let Some(next) = transformed.next() {
-                        *point = next;
-                    }
-                    Ok(())
-                })
-                .ok()?;
-            SketchGeometry::nurbs(curve)
-        }
-        SketchGeometryDefinition::Text {
-            text,
-            font_family,
-            font_weight,
-            height,
-            width_factor,
-            placement,
-            horizontal_alignment,
-            vertical_alignment,
-        } => SketchGeometry::from_parts(SketchGeometryDefinition::Text {
-            text: text.clone(),
-            font_family: font_family.clone(),
-            font_weight: *font_weight,
-            height: *height,
-            width_factor: *width_factor,
-            placement: match placement {
-                Some(placement) => Some(cadmpeg_ir::sketches::TextPlacement {
-                    anchor: finite_point(placement.anchor.get())?,
-                    rotation: angle(placement.rotation)?,
-                }),
-                None => None,
-            },
-            horizontal_alignment: *horizontal_alignment,
-            vertical_alignment: *vertical_alignment,
-        })
-        .ok()?,
-        SketchGeometryDefinition::ExternalReference { .. }
+        SketchGeometryDefinition::Nurbs { .. } | SketchGeometryDefinition::Text { .. }
+        | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => return None,
-    })
+    }))())
 }
 
 fn transform_sketch_block_point(
@@ -4213,6 +4220,65 @@ mod detached_legacy_sketch_tests {
         .unwrap_err();
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn sketch_block_profile_assembly_preserves_nurbs_weights_and_text() {
+        let source_id = SketchId::mint("synthetic:test:id#source-sketch").unwrap();
+        let curve_id = SketchEntityId::mint("synthetic:test:id#source-curve").unwrap();
+        let text_id = SketchEntityId::mint("synthetic:test:id#source-text").unwrap();
+        let mut source = sketch();
+        source.id = source_id.clone();
+        source.profiles = vec![vec![SketchEntityUse { entity: curve_id.clone(), reversed: false }]].try_into().unwrap();
+        let curve = cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1, vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 2.0)], Some(vec![1.0, 2.0]), false,
+        ).unwrap();
+        let entities = [
+            SketchEntity::new(curve_id, source_id.clone(), SketchGeometry::nurbs(curve)),
+            SketchEntity::new(text_id, source_id.clone(), SketchGeometry::try_from(SketchGeometryDefinition::Text {
+                text: cadmpeg_core::text::NonBlankString::new("label").unwrap(),
+                font_family: cadmpeg_core::text::NonBlankString::new("font").unwrap(),
+                font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
+                height: Length::new(2.0).unwrap(), width_factor: Some(1.5),
+                placement: Some(cadmpeg_ir::sketches::TextPlacement {
+                    anchor: Point2::new(1.0, 2.0), rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+                }), horizontal_alignment: None, vertical_alignment: None,
+            }).unwrap()),
+        ];
+        let instances = [
+            SketchBlockInstancePlacement { feature_id: "synthetic:test:id#first".into(), block_source: 23, transform: Transform::identity() },
+            SketchBlockInstancePlacement { feature_id: "synthetic:test:id#second".into(), block_source: 23, transform: Transform::affine([
+                [0.0, -1.0, 0.0, 5.0], [1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0],
+            ]).unwrap() },
+        ];
+        let sources = HashMap::from([(23, source_id)]);
+        let assembled_id = SketchId::mint("synthetic:test:id#assembled-sketch").unwrap();
+        let native = feature();
+        let sketches = [source];
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
+        let assembled = assemble_sketch_block_profile(&ctx, &SketchBlockProfileInput {
+            sketch_id: &assembled_id, native_profile: &native, native_ref: "lane", configuration: None,
+            block_sketches: &sources, instances: &instances, sketches: &sketches, sketch_entities: &entities,
+        }).unwrap().unwrap();
+        assert_eq!(assembled.entities.len(), 4);
+        let SketchGeometryDefinition::Nurbs { curve } = assembled.entities[2].geometry.definition() else { panic!("transformed curve"); };
+        assert_eq!(curve.degree(), 1);
+        assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(curve.pole_rows().raw_points(), [Point2::new(5.0, 0.0), Point2::new(3.0, 1.0)]);
+        assert_eq!(curve.pole_rows().weights(), Some(vec![1.0, 2.0]));
+        assert!(!curve.periodic());
+        let SketchGeometryDefinition::Text { text, font_family, placement, height, width_factor, .. } = assembled.entities[3].geometry.definition() else { panic!("transformed text"); };
+        assert_eq!(text.as_str(), "label");
+        assert_eq!(font_family.as_str(), "font");
+        assert_eq!(height.get(), 2.0);
+        assert_eq!(width_factor.unwrap().get(), 1.5);
+        let placement = placement.unwrap();
+        assert_eq!(placement.anchor.get(), Point2::new(3.0, 1.0));
+        assert!((placement.rotation.get() - std::f64::consts::FRAC_PI_2).abs() <= f64::EPSILON);
     }
 
     #[test]
