@@ -1250,7 +1250,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                     points.push(marker);
                 }
             }
-            points.sort_by_key(|marker| marker.offset());
+            ctx.stable_sort_by(&mut points, |left, right| left.offset().cmp(&right.offset()), |_| 0, "sort SLDPRT solved-line point markers")?;
             let endpoint_line_markers = |operand_index: usize| -> Result<Option<[&SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
                 let marker = relation_operand_marker(ctx, relation, operand_index, sketch, &markers_by_id)?
                     .and_then(|marker_id| lane.sketch_entities.iter().find(|marker| marker.id() == marker_id));

@@ -196,7 +196,7 @@ pub(crate) fn enrich_history_reference_planes(
                 }
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if classify(feature) != Some(FeatureClass::ReferencePlane)
@@ -320,7 +320,7 @@ pub(crate) fn enrich_history_reference_planes(
                     anchored_frames.push(frame);
                 }
             }
-            anchored_frames.sort_by_key(reference_plane_frame_key);
+            ctx.stable_sort_by(&mut anchored_frames, |left, right| reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right)), |_| 0, "sort SLDPRT reference frames")?;
             anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
             let explicit = if offset_frames.is_some() {
                 None
@@ -544,7 +544,7 @@ pub(crate) fn enrich_history_reference_planes(
             format_args!("{},{},{}", u_axis.x, u_axis.y, u_axis.z))?;
     }
     for ((history_index, feature_index), mut frames) in candidates {
-        frames.sort_by_key(reference_plane_frame_key);
+        ctx.stable_sort_by(&mut frames, |left, right| reference_plane_frame_key(left).cmp(&reference_plane_frame_key(right)), |_| 0, "sort SLDPRT reference frames")?;
         frames.dedup();
         let [(origin, normal, u_axis)] = frames.as_slice() else {
             continue;
@@ -589,7 +589,7 @@ pub(crate) fn enrich_history_reference_points(
                 }
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(_, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if feature.input_class.as_deref() != Some("moRefPoint_c")
@@ -729,7 +729,7 @@ pub(crate) fn enrich_history_coordinate_systems(
                 }
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if feature.input_class.as_deref() != Some("moCoordSys_c")
@@ -1458,7 +1458,7 @@ pub(crate) fn enrich_history_sketch_block_references(
                 names.push(name);
             }
             ctx.charge_work(u64_from_index(names.len()), "sort SLDPRT sketch block names")?;
-            names.sort_by_key(|name| name.offset);
+            ctx.stable_sort_by(&mut names, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort SLDPRT sketch block names")?;
             let mut instance_names = Vec::new();
             for &name in &names {
                 let Some(source) = name.object_id.and_then(ObjectId::value) else { continue };
@@ -1577,8 +1577,7 @@ pub(crate) fn enrich_history_sketch_block_references(
             properties.insert(cadmpeg_core::nonblank_literal!("BlockDefinition"), value);
         }
         for (feature_index, mut origins) in placement_candidates {
-            origins
-                .sort_by_key(|origin| [origin.x.to_bits(), origin.y.to_bits(), origin.z.to_bits()]);
+            ctx.stable_sort_by(&mut origins, |left, right| [left.x.to_bits(), left.y.to_bits(), left.z.to_bits()].cmp(&[right.x.to_bits(), right.y.to_bits(), right.z.to_bits()]), |_| 0, "sort SLDPRT sketch block origins")?;
             origins.dedup();
             let [origin] = origins.as_slice() else {
                 continue;
@@ -1753,7 +1752,7 @@ pub(crate) fn enrich_history_reference_axes(
                 }
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let feature = &histories[history_index].features[feature_index];
             if native_object_class(feature.input_class.as_deref().unwrap_or_default())
@@ -1802,7 +1801,7 @@ pub(crate) fn enrich_history_reference_axes(
                     anchored_frames.push(frame);
                 }
             }
-            anchored_frames.sort_by_key(reference_axis_frame_key);
+            ctx.stable_sort_by(&mut anchored_frames, |left, right| reference_axis_frame_key(left).cmp(&reference_axis_frame_key(right)), |_| 0, "sort SLDPRT reference frames")?;
             anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
             let explicit_frame = if axis_data_classes.is_empty() {
                 explicit_reference_axis_frame(ctx, bytes)?

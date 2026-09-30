@@ -97,7 +97,7 @@ pub(crate) fn extract_streams_with_offsets(
         }
     }
     if !out.is_empty() {
-        out.sort_by_key(|stream| stream.offset);
+        ctx.stable_sort_by(&mut out, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort wrapped Parasolid streams")?;
         return Ok(out);
     }
 
@@ -607,7 +607,7 @@ pub(crate) fn mesh_polyline_from_header(
             candidates.push((scalar_count, points));
         }
     }
-    candidates.sort_by_key(|(scalar_count, _)| std::cmp::Reverse(*scalar_count));
+    ctx.stable_sort_by(&mut candidates, |left, right| right.0.cmp(&left.0), |_| 0, "sort Parasolid mesh candidates")?;
     let Some((largest_count, _)) = candidates.first() else {
         return Ok(None);
     };

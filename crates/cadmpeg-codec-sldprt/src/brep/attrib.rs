@@ -452,7 +452,7 @@ pub(super) fn scan(
     let mut out = Vec::new();
     ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
     out.extend(found.into_values().flatten());
-    out.sort_by_key(|atom| atom.face_attr);
+    ctx.stable_sort_by(&mut out, |left, right| left.face_attr.cmp(&right.face_attr), |_| 0, "sort Parasolid face atoms")?;
     Ok(out)
 }
 
@@ -518,7 +518,7 @@ pub(super) fn scan_body_modifiers(
     let mut out = Vec::new();
     ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
     out.extend(found.into_values().flatten());
-    out.sort_by_key(|modifier| modifier.body_attr);
+    ctx.stable_sort_by(&mut out, |left, right| left.body_attr.cmp(&right.body_attr), |_| 0, "sort Parasolid body modifiers")?;
     Ok(out)
 }
 

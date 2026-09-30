@@ -567,7 +567,7 @@ fn shell_face_components(
                 }
             }
         }
-        component.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+        ctx.stable_sort_by(&mut component, |left, right| left.as_str().cmp(right.as_str()), |id| id.as_str().len(), "sort Parasolid shell faces")?;
         ctx.reserve_collection_vec(&mut components, 1, "group Parasolid shell components")?;
         components.push(component);
     }
@@ -1404,10 +1404,10 @@ pub(crate) fn decode_bodies(
     let mut facts = entity::Facts::default();
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
-    let mut ordered = Vec::new();
+    let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
     ctx.reserve_collection_vec(&mut ordered, bodies.len(), "order Parasolid body streams")?;
     ordered.extend(bodies.iter());
-    ordered.sort_by_key(|(_, header)| is_deltas_stream(header));
+    ctx.stable_sort_by(&mut ordered, |left, right| is_deltas_stream(left.1).cmp(&is_deltas_stream(right.1)), |stream| stream.1.description.len(), "sort Parasolid body streams")?;
     let mut entity_streams = Vec::new();
     ctx.reserve_collection_vec(
         &mut entity_streams,
@@ -1595,7 +1595,7 @@ fn unique_body_modifiers(
         ctx.reserve_collection_vec(&mut out, 1, "collect Parasolid body modifiers")?;
         out.push(modifier);
     }
-    out.sort_by_key(|modifier| modifier.body_attr);
+    ctx.stable_sort_by(&mut out, |left, right| left.body_attr.cmp(&right.body_attr), |_| 0, "sort Parasolid body modifiers")?;
     Ok(out)
 }
 
@@ -1667,7 +1667,7 @@ fn unique_face_colors(
             unresolved += candidates.len();
         }
     }
-    out.sort_by_key(|color| (color.face_attr, color.offset));
+    ctx.stable_sort_by(&mut out, |left, right| (left.face_attr, left.offset).cmp(&(right.face_attr, right.offset)), |_| 0, "sort Parasolid face colors")?;
     Ok((out, unresolved))
 }
 
@@ -1725,7 +1725,7 @@ fn typed_body_records(
                     refs,
                 });
             }
-            shells.sort_by_key(|shell| shell.attr);
+            ctx.stable_sort_by(&mut shells, |left, right| left.attr.cmp(&right.attr), |_| 0, "sort Parasolid topology")?;
             ctx.reserve_collection_vec(&mut regions, 1, "collect typed Parasolid body regions")?;
             regions.push(RegionRecord {
                 attr: region.attr,
@@ -1733,7 +1733,7 @@ fn typed_body_records(
                 shells,
             });
         }
-        regions.sort_by_key(|region| region.attr);
+        ctx.stable_sort_by(&mut regions, |left, right| left.attr.cmp(&right.attr), |_| 0, "sort Parasolid topology")?;
         ctx.reserve_collection_vec(&mut records, 1, "collect typed Parasolid body records")?;
         records.push(BodyRecord {
             attr: hierarchy.body.attr,
@@ -1743,7 +1743,7 @@ fn typed_body_records(
             regions,
         });
     }
-    records.sort_by_key(|record| record.attr);
+    ctx.stable_sort_by(&mut records, |left, right| left.attr.cmp(&right.attr), |_| 0, "sort Parasolid topology")?;
     Ok((!records.is_empty()).then_some(records))
 }
 
@@ -1874,7 +1874,7 @@ fn decode_graph(
             ctx.refuse_codec_limit("resolve Parasolid face owners", u64::MAX - 1, u64::MAX)
         })?;
         ctx.charge_work(work, "resolve Parasolid face owners")?;
-        uses.sort_by_key(|(bridge, _)| (bridge.offset, bridge.attr));
+        ctx.stable_sort_by(&mut uses, |left, right| (left.0.offset, left.0.attr).cmp(&(right.0.offset, right.0.attr)), |_| 0, "sort Parasolid face owners")?;
         let Some((first_bridge, first_face)) = uses.first() else {
             continue;
         };
@@ -1894,7 +1894,7 @@ fn decode_graph(
             ambiguous_face_owners += 1;
         }
     }
-    faces.sort_by_key(|face| face.bridge_attr);
+    ctx.stable_sort_by(&mut faces, |left, right| left.bridge_attr.cmp(&right.bridge_attr), |_| 0, "sort Parasolid topology")?;
     out.stats.ambiguous_face_owners += ambiguous_face_owners;
 
     // Edge attr -> [(coedge attr, start vuse, next coedge's start vuse)] from
@@ -2970,19 +2970,19 @@ fn decode_graph(
             }
         }
     }
-    out.bodies.sort_by(|a, b| a.id.cmp(&b.id));
-    out.regions.sort_by(|a, b| a.id.cmp(&b.id));
-    out.shells.sort_by(|a, b| a.id.cmp(&b.id));
-    out.faces.sort_by(|a, b| a.id.cmp(&b.id));
-    out.loops.sort_by(|a, b| a.id.cmp(&b.id));
-    out.coedges.sort_by(|a, b| a.id.cmp(&b.id));
-    out.edges.sort_by(|a, b| a.id.cmp(&b.id));
-    out.vertices.sort_by(|a, b| a.id.cmp(&b.id));
-    out.points.sort_by(|a, b| a.id.cmp(&b.id));
-    out.surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    out.procedural_surfaces.sort_by(|a, b| a.id.cmp(&b.id));
-    out.curves.sort_by(|a, b| a.id.cmp(&b.id));
-    out.pcurves.sort_by(|a, b| a.id.cmp(&b.id));
+    ctx.stable_sort_by(&mut out.bodies, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.regions, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.shells, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.faces, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.loops, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.coedges, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.edges, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.vertices, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.points, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.surfaces, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.procedural_surfaces, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.curves, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
+    ctx.stable_sort_by(&mut out.pcurves, |a, b| a.id.cmp(&b.id), |record| record.id.as_str().len(), "sort Parasolid graph ids")?;
     out.annotations = annotations.build();
     let retained_ids = collect_graph_ids(ctx, out
         .bodies
@@ -3881,15 +3881,17 @@ where
 }
 
 fn unique_inverse_parameter(
+    ctx: &DecodeContext<'_>,
     mut candidates: Vec<(f64, f64)>,
     tolerance: f64,
     parameter_domain: [f64; 2],
-) -> InverseResolution<f64> {
+) -> Result<InverseResolution<f64>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidates.len()), "select Parasolid inverse parameters")?;
     let tolerance_squared = tolerance * tolerance;
     candidates.retain(|(parameter, error)| {
         parameter.is_finite() && error.is_finite() && *error <= tolerance_squared
     });
-    candidates.sort_by(|left, right| left.0.total_cmp(&right.0));
+    ctx.stable_sort_by(&mut candidates, |left, right| left.0.total_cmp(&right.0), |_| 0, "sort Parasolid inverse parameters")?;
     let parameter_tolerance = (INVERSE_PARAMETER_TOLERANCE * parameter_domain[1]
         - INVERSE_PARAMETER_TOLERANCE * parameter_domain[0])
         .abs();
@@ -3908,11 +3910,11 @@ fn unique_inverse_parameter(
         }
     }
     candidates.truncate(unique_len);
-    match candidates.as_slice() {
+    Ok(match candidates.as_slice() {
         [] => InverseResolution::NoMatch,
         [(parameter, _)] => InverseResolution::Unique(*parameter),
         _ => InverseResolution::Ambiguous,
-    }
+    })
 }
 
 fn nurbs_parameter_at_point(
@@ -3948,11 +3950,7 @@ fn nurbs_parameter_at_point(
             inverse_coordinate_tolerance(points.iter().map(|pole| pole.point.get()).chain(std::iter::once(target)))
         }
     };
-    Ok(unique_inverse_parameter(
-        candidates,
-        tolerance,
-        domain,
-    ))
+    unique_inverse_parameter(ctx, candidates, tolerance, domain)
 }
 
 fn quadratic_nurbs_has_constant_radius(
@@ -5821,7 +5819,7 @@ fn nurbs_curve_sample_parameters(
             parameters.push(parameter.get());
         }
     }
-    parameters.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut parameters, f64::total_cmp, |_| 0, "sort NURBS sample parameters")?;
     // Every distinct sample participates in the fit bound, including tiny spans.
     parameters.dedup();
     Ok((!parameters.is_empty()).then_some(parameters))
@@ -6187,6 +6185,7 @@ fn ruled_surface_line_pcurve(
         return Ok(InverseResolution::NoMatch);
     };
     let resolution = unique_inverse_parameter(
+        ctx,
         candidates,
         inverse_coordinate_tolerance(
             admitted_surface_poles(surface)
@@ -6194,7 +6193,7 @@ fn ruled_surface_line_pcurve(
                 .chain(std::iter::once(line_origin)),
         ),
         [fixed_min, fixed_max],
-    );
+    )?;
     let fixed = match resolution {
         InverseResolution::Unique(fixed) => fixed,
         InverseResolution::NoMatch => return Ok(InverseResolution::NoMatch),
@@ -6739,7 +6738,7 @@ fn synthesize_sphere_seams(
                 ctx.reserve_collection_vec(&mut pole_vertices, 1, "collect Parasolid sphere pole vertices")?;
                 pole_vertices.push(vertex.clone());
             }
-            pole_vertices.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+            ctx.stable_sort_by(&mut pole_vertices, |left, right| left.as_str().cmp(right.as_str()), |id| id.as_str().len(), "sort Parasolid sphere pole vertices")?;
             pole_vertices.dedup();
             let mut ring = Vec::new();
             ctx.reserve_collection_vec(&mut ring, lp.coedges().len(), "copy Parasolid sphere seam ring")?;
@@ -6960,21 +6959,27 @@ mod tests {
 
     #[test]
     fn numerical_followup_inverse_ambiguity_is_independent_of_parameter_units() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
         for domain in [1e-200, 1e-12, 1.0, 1e200] {
             assert!(matches!(
                 super::unique_inverse_parameter(
+                    &ctx,
                     vec![(0.25 * domain, 0.), (0.75 * domain, 0.)],
                     0.001,
                     [0., domain]
-                ),
+                ).unwrap(),
                 super::InverseResolution::Ambiguous
             ));
             assert!(matches!(
                 super::unique_inverse_parameter(
+                    &ctx,
                     vec![(0.25 * domain, 0.), (0.25 * domain, 0.)],
                     0.001,
                     [0., domain]
-                ),
+                ).unwrap(),
                 super::InverseResolution::Unique(_)
             ));
         }

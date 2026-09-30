@@ -141,7 +141,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 starts.push((name.offset, history_index, feature_index));
             }
         }
-        starts.sort_by_key(|start| start.0);
+        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
             let feature = &histories[history_index].features[feature_index];

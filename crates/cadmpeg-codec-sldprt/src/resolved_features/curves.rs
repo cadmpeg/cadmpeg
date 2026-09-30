@@ -1574,12 +1574,10 @@ pub(super) fn lane_sketch_plane_frames(
         candidates.push(frame);
     }
     for (source, mut candidates) in lane_candidates {
-        candidates.sort_by_key(|frame| {
-            (
-                reference_plane_frame_key(&frame.as_tuple()),
-                frame.u_axis_source,
-            )
-        });
+        ctx.stable_sort_by(&mut candidates, |left, right| {
+            (reference_plane_frame_key(&left.as_tuple()), left.u_axis_source)
+                .cmp(&(reference_plane_frame_key(&right.as_tuple()), right.u_axis_source))
+        }, |_| 0, "sort SLDPRT sketch plane frames")?;
         candidates.dedup_by_key(|frame| reference_plane_frame_key(&frame.as_tuple()));
         if let [frame] = candidates.as_slice() {
             if !frames.contains_key(&source) {

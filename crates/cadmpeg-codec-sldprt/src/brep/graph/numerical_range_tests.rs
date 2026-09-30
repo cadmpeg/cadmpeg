@@ -24,11 +24,16 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
 }
 #[test]
 fn numerical_0922_wide_domain_keeps_distinct_roots() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let r = unique_inverse_parameter(
+        &ctx,
         vec![(-5e307, 0.), (5e307, 0.)],
         INVERSE_FIT_TOLERANCE,
         [-1e308, 1e308],
-    );
+    ).unwrap();
     assert!(matches!(r, InverseResolution::Ambiguous));
 }
 #[test]
