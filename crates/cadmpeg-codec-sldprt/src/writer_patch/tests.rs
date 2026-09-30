@@ -35,8 +35,11 @@ use crate::SldprtCodec;
 fn native_patch_edits_compact_counted_nurbs_surface_arrays() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut bytes = compact_counted_nurbs_surface_carrier(180, 181, 10);

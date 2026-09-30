@@ -1077,13 +1077,25 @@ impl crate::geometry::nurbs::KnotVector {
     /// `first..=last`, in increasing order.
     #[must_use]
     pub(crate) fn active_spans(
-        &self, first: usize, last: usize,
+        &self,
+        first: usize,
+        last: usize,
     ) -> Result<Option<Vec<IncreasingParameterInterval>>, cadmpeg_core::decode::ResourceLimit> {
-        let Some(knots) = self.get(first..=last) else { return Ok(None); };
+        let Some(knots) = self.get(first..=last) else {
+            return Ok(None);
+        };
         let mut spans = Vec::new();
-        crate::geometry::nurbs::scratch::reserve_exact(&mut spans, knots.len(), "IR active knot spans")?;
-        spans.extend(knots.windows(2).filter(|pair| pair[0] < pair[1])
-            .map(|pair| IncreasingParameterInterval([pair[0], pair[1]])));
+        crate::geometry::nurbs::scratch::reserve_exact(
+            &mut spans,
+            knots.len(),
+            "IR active knot spans",
+        )?;
+        spans.extend(
+            knots
+                .windows(2)
+                .filter(|pair| pair[0] < pair[1])
+                .map(|pair| IncreasingParameterInterval([pair[0], pair[1]])),
+        );
         Ok(Some(spans))
     }
 }

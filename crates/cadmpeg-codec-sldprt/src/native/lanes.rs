@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::admission::{admit_temporary_clones, admit_validation_candidates, invalid_owner};
 use super::SldprtNative;
-use cadmpeg_core::decode::DecodeContext;
-use crate::records::FeatureInputLane;
 use crate::records::charged_clone::CloneCharged;
+use crate::records::FeatureInputLane;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
+use cadmpeg_core::decode::DecodeContext;
 
 pub(super) fn admit(
     native: &SldprtNative,
@@ -40,12 +40,18 @@ pub(super) fn admit(
                 &lane.names,
             )
         {
-            let characters = || std::char::decode_utf16(crate::resolved_features::names::utf16_units(expected_units));
+            let characters = || {
+                std::char::decode_utf16(crate::resolved_features::names::utf16_units(
+                    expected_units,
+                ))
+            };
             let length = characters().fold(0usize, |length, character| {
                 length + character.map_or(0, char::len_utf8)
             });
-            let (mut expected, _reservation) = crate::text_admission::reserve_scoped_string(ctx, 
-                length, "decode SLDPRT native validation name",
+            let (mut expected, _reservation) = crate::text_admission::reserve_scoped_string(
+                ctx,
+                length,
+                "decode SLDPRT native validation name",
             )?;
             expected.extend(characters().filter_map(Result::ok));
             return Err(invalid_owner(
@@ -102,16 +108,16 @@ pub(super) fn admit(
             &lane.scalars,
             &expected_lane.scalars,
         ) {
-            let mismatch = lane
-                .scalars
-                .iter()
-                .zip(&expected_lane.scalars)
-                .find(|(actual, expected)| {
-                    !crate::resolved_features::scalars::scalar_indices_match(
-                        std::slice::from_ref(actual),
-                        std::slice::from_ref(expected),
-                    )
-                });
+            let mismatch =
+                lane.scalars
+                    .iter()
+                    .zip(&expected_lane.scalars)
+                    .find(|(actual, expected)| {
+                        !crate::resolved_features::scalars::scalar_indices_match(
+                            std::slice::from_ref(actual),
+                            std::slice::from_ref(expected),
+                        )
+                    });
             return match mismatch {
                 Some((actual, expected)) => Err(invalid_owner(
                     ctx,
@@ -173,7 +179,9 @@ pub(crate) fn expected_lanes_charged<'a>(
         })
         .ok_or_else(|| {
             cadmpeg_ir::NativeConvertError::from(ctx.refuse_codec_limit(
-                "validate SLDPRT derived lanes", u64::MAX - 1, u64::MAX,
+                "validate SLDPRT derived lanes",
+                u64::MAX - 1,
+                u64::MAX,
             ))
         })?;
     let _derived_reservation = admit_validation_candidates(
@@ -183,9 +191,12 @@ pub(crate) fn expected_lanes_charged<'a>(
     )?;
     {
         for lane in &native.feature_input_lanes {
-            if lane.scalars.iter().enumerate().any(|(index, scalar)| {
-                u32::try_from(index).ok() != Some(scalar.ordinal)
-            }) {
+            if lane
+                .scalars
+                .iter()
+                .enumerate()
+                .any(|(index, scalar)| u32::try_from(index).ok() != Some(scalar.ordinal))
+            {
                 ctx.preflight_retained(1, "format SLDPRT native validation error")?;
                 break;
             }
@@ -202,8 +213,13 @@ pub(crate) fn expected_lanes_charged<'a>(
         primary_count,
         "validate SLDPRT expected primary lanes",
     )?;
-    for lane in native.feature_input_lanes.iter().filter(|lane| !is_supplemental_config_lane(lane)) {
-        expected_primary_lanes.push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
+    for lane in native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| !is_supplemental_config_lane(lane))
+    {
+        expected_primary_lanes
+            .push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
     }
     let supplemental_count = native.feature_input_lanes.len() - primary_count;
     let mut expected_supplemental_lanes = Vec::new();
@@ -212,8 +228,13 @@ pub(crate) fn expected_lanes_charged<'a>(
         supplemental_count,
         "validate SLDPRT expected supplemental lanes",
     )?;
-    for lane in native.feature_input_lanes.iter().filter(|lane| is_supplemental_config_lane(lane)) {
-        expected_supplemental_lanes.push(lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?);
+    for lane in native
+        .feature_input_lanes
+        .iter()
+        .filter(|lane| is_supplemental_config_lane(lane))
+    {
+        expected_supplemental_lanes
+            .push(lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?);
     }
     for lane in expected_primary_lanes
         .iter_mut()
@@ -250,7 +271,12 @@ fn copy_feature_ref(
         .as_deref()
         .map(|feature| {
             let mut copy = String::new();
-            crate::text_admission::reserve_retained_string(ctx, &mut copy, feature.len(), "retain SLDPRT native lane owner")?;
+            crate::text_admission::reserve_retained_string(
+                ctx,
+                &mut copy,
+                feature.len(),
+                "retain SLDPRT native lane owner",
+            )?;
             copy.push_str(feature);
             Ok(copy)
         })
@@ -262,7 +288,10 @@ fn expected_lane_pairs_impl<'a>(
     mut expected_primary_lanes: Vec<FeatureInputLane>,
     mut expected_supplemental_lanes: Vec<FeatureInputLane>,
     ctx: &DecodeContext<'_>,
-) -> Result<impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a, cadmpeg_ir::NativeConvertError> {
+) -> Result<
+    impl Iterator<Item = (&'a FeatureInputLane, FeatureInputLane)> + 'a,
+    cadmpeg_ir::NativeConvertError,
+> {
     crate::resolved_features::bindings::bind_scalar_operands(
         ctx,
         &native.feature_histories,

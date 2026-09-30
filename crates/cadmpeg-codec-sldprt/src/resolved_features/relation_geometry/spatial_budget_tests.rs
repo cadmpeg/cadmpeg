@@ -40,7 +40,8 @@ fn project_with_policy(policy: DecodePolicy) -> Result<(), CodecError> {
         native_ref: Some("feature".into()),
     };
     let mut lane = relation_lane();
-    lane.relation_instances[0].scalars = RelationScalars::from_refs(Vec::new(), None, None).unwrap();
+    lane.relation_instances[0].scalars =
+        RelationScalars::from_refs(Vec::new(), None, None).unwrap();
     lane.relation_instances[0].operands = vec![FeatureInputOperand {
         offset: 0,
         reference_ref: "reference".into(),

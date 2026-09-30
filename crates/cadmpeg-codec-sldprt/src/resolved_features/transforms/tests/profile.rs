@@ -108,7 +108,16 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
     .with_native_ref(Some(corner.id().to_string()))];
 
     assert_eq!(
-        doubled_profile_distance_loci(&cadmpeg_test_support::service_decode_context(), &relation, (0, 1), &sketch, &parameter, &entities, &markers,).unwrap(),
+        doubled_profile_distance_loci(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            (0, 1),
+            &sketch,
+            &parameter,
+            &entities,
+            &markers,
+        )
+        .unwrap(),
         Some((
             SketchLocus::Start(line_id.clone()),
             SketchLocus::End(line_id.clone()),
@@ -120,14 +129,16 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        doubled_profile_distance_loci(&cadmpeg_test_support::service_decode_context(), 
+        doubled_profile_distance_loci(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             (0, 1),
             &sketch,
             &parameter,
             &entities,
             &markers_without_handle,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -318,12 +329,14 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
     };
 
     assert_eq!(
-        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
+        relation_operand_marker(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some("point")
     );
     let mut constrained_operand = relation.operands[0].clone();
@@ -333,21 +346,25 @@ fn compact_d6_operand_indexes_point_handles_in_byte_order() {
         ..relation.clone()
     };
     assert_eq!(
-        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
+        relation_operand_marker(
+            &cadmpeg_test_support::service_decode_context(),
             &constrained_relation,
             0,
             &SketchId::mint("sldprt:model:sketch#compact:lane:1").unwrap(),
             &markers,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some("constrained-point")
     );
     assert_eq!(
-        relation_operand_marker(&cadmpeg_test_support::service_decode_context(), 
+        relation_operand_marker(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             0,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &markers
-        ).unwrap(),
+        )
+        .unwrap(),
         Some("stored-marker")
     );
 }
@@ -904,7 +921,12 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 #[test]
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1030,7 +1052,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     invalid_lane.sketch_entities.push(extra);
     let mut invalid_entities = entities.clone();
     let mut invalid_sketches = sketches.clone();
-    project_marker_dimensioned_circles(&resource_ctx,
+    project_marker_dimensioned_circles(
+        &resource_ctx,
         &mut invalid_entities,
         &mut invalid_sketches,
         std::slice::from_ref(&feature),
@@ -1041,7 +1064,8 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     assert_eq!(invalid_entities.len(), 3);
     assert!(invalid_sketches[0].profiles.is_empty());
 
-    project_marker_dimensioned_circles(&resource_ctx,
+    project_marker_dimensioned_circles(
+        &resource_ctx,
         &mut entities,
         &mut sketches,
         std::slice::from_ref(&feature),
@@ -1237,7 +1261,13 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
     };
     let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-    project_dissected_sketches(&cadmpeg_test_support::service_decode_context(), &mut features, &sketches, std::slice::from_ref(&history)).unwrap();
+    project_dissected_sketches(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+        &sketches,
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
 
     assert!(matches!(
         features[1].evaluation.definition(),

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native Keywords parameter projection and equation evaluation.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
-use cadmpeg_core::CodecError;
 use crate::classification::{classify, FeatureClass, NativeClassKind};
 use crate::records::{Feature, FeatureHistory};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::{
     features::{
         DesignParameter, DimensionDisplay, FeatureDefinition, FeatureId, FeatureOperation,
@@ -39,22 +39,34 @@ mod literal_tests;
 
 use self::eval::{exact_integer_f64, ParameterExpressionParser};
 
-pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHistory]) -> Result<Vec<DesignParameter>, CodecError> {
+pub(crate) fn project_parameters(
+    ctx: &DecodeContext<'_>,
+    histories: &[FeatureHistory],
+) -> Result<Vec<DesignParameter>, CodecError> {
     let mut feature_names = HashMap::new();
     let mut global_owners = HashSet::new();
     let mut parameters = Vec::new();
     for history in histories {
         for feature in &history.features {
-            ctx.charge_work(history.features.len() as u64, "classify SLDPRT parameter owners")?;
-            if is_history_metadata_record(feature, &history.features) { continue; }
+            ctx.charge_work(
+                history.features.len() as u64,
+                "classify SLDPRT parameter owners",
+            )?;
+            if is_history_metadata_record(feature, &history.features) {
+                continue;
+            }
             if !feature.name.is_empty() {
                 let id = neutral_feature_id_charged(ctx, &feature.id)?;
                 let name = copy_projected_feature_text(ctx, &feature.name)?;
                 if !feature_names.contains_key(&id) {
                     ctx.charge_collection_items(1, "index SLDPRT parameter owner names")?;
-                    feature_names.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                        "index SLDPRT parameter owner names", u64::MAX - 1, u64::MAX,
-                    ))?;
+                    feature_names.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "index SLDPRT parameter owner names",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                 }
                 feature_names.insert(id, name);
             }
@@ -62,39 +74,73 @@ pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHi
                 let owner = neutral_feature_id_charged(ctx, &feature.id)?;
                 if !global_owners.contains(&owner) {
                     ctx.charge_collection_items(1, "index SLDPRT global parameter owners")?;
-                    global_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                        "index SLDPRT global parameter owners", u64::MAX - 1, u64::MAX,
-                    ))?;
+                    global_owners.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "index SLDPRT global parameter owners",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                     global_owners.insert(owner);
                 }
             }
-            for (ordinal, name) in projected_parameter_names(ctx, feature)?.into_iter().enumerate() {
+            for (ordinal, name) in projected_parameter_names(ctx, feature)?
+                .into_iter()
+                .enumerate()
+            {
                 let expression = &feature.parameters[name.as_str()];
                 let display = dimension_display(expression);
-                let properties = feature.dimension_properties.get(&name)
-                    .map(|properties| copy_projected_feature_properties(ctx, properties,
-                        "collect SLDPRT projected parameter properties")).transpose()?.unwrap_or_default();
+                let properties = feature
+                    .dimension_properties
+                    .get(&name)
+                    .map(|properties| {
+                        copy_projected_feature_properties(
+                            ctx,
+                            properties,
+                            "collect SLDPRT projected parameter properties",
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
                 let parse_value = |value: &str| match display {
                     Some(DimensionDisplay::Diameter | DimensionDisplay::Radius) => {
                         parse_dimension_display_length(value).map(ParameterValue::Length)
                     }
                     None => parse_native_parameter_literal(feature, &name, value),
                 };
-                let value = properties.get("Value").and_then(|value| parse_value(value))
+                let value = properties
+                    .get("Value")
+                    .and_then(|value| parse_value(value))
                     .or_else(|| parse_value(expression));
-                let ordinal_u32 = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
-                    "index SLDPRT parameter ordinal", u64::from(u32::MAX), ordinal as u64,
-                ))?;
+                let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT parameter ordinal",
+                        u64::from(u32::MAX),
+                        ordinal as u64,
+                    )
+                })?;
                 let parameter = DesignParameter {
                     id: neutral_parameter_id(ctx, feature, ordinal)?,
                     owner: Some(neutral_feature_id_charged(ctx, &feature.id)?),
-                    ordinal: ordinal_u32, properties, name,
-                    expression: crate::text_admission::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT parameter expression")?,
-                    display, value,
+                    ordinal: ordinal_u32,
+                    properties,
+                    name,
+                    expression: crate::text_admission::format_retained(
+                        ctx,
+                        format_args!("{expression}"),
+                        "retain SLDPRT parameter expression",
+                    )?,
+                    display,
+                    value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    native_ref: None, pmi: None,
+                    native_ref: None,
+                    pmi: None,
                 };
-                ctx.reserve_collection_vec(&mut parameters, 1, "collect SLDPRT projected parameters")?;
+                ctx.reserve_collection_vec(
+                    &mut parameters,
+                    1,
+                    "collect SLDPRT projected parameters",
+                )?;
                 parameters.push(parameter);
             }
         }
@@ -102,36 +148,80 @@ pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHi
     populate_parameter_dependencies(ctx, &mut parameters, &feature_names, &global_owners)?;
     order_parameters_by_dependencies(ctx, &mut parameters)?;
     evaluate_parameter_expressions(ctx, &mut parameters, &feature_names, &global_owners)?;
-    for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
+    for parameter in parameters
+        .iter_mut()
+        .filter(|parameter| parameter.value.is_none())
+    {
         parameter.value = text_parameter_literal(ctx, &parameter.name, &parameter.expression)?;
     }
     Ok(parameters)
 }
 
-fn text_parameter_literal(ctx: &DecodeContext<'_>, name: &str, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
+fn text_parameter_literal(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    expression: &str,
+) -> Result<Option<ParameterValue>, CodecError> {
     match bare_text_parameter_literal(ctx, expression)? {
         Some(value) => Ok(Some(value)),
         None => formatted_text_dimension_literal(ctx, name, expression),
     }
 }
 
-fn bare_text_parameter_literal(ctx: &DecodeContext<'_>, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
-    ctx.charge_work(expression.len() as u64, "parse SLDPRT text parameter literal")?;
+fn bare_text_parameter_literal(
+    ctx: &DecodeContext<'_>,
+    expression: &str,
+) -> Result<Option<ParameterValue>, CodecError> {
+    ctx.charge_work(
+        expression.len() as u64,
+        "parse SLDPRT text parameter literal",
+    )?;
     let expression = expression.trim();
-    if expression.is_empty() || expression.chars().any(|character| {
-        matches!(character, '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ',')
-    }) { return Ok(None); }
-    let Some(identifiers) = expression_identifier_tokens(ctx, expression)? else { return Ok(None); };
-    if identifiers.iter().any(definite_parameter_reference) { return Ok(None); }
-    Ok(Some(ParameterValue::String(crate::text_admission::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT text parameter literal")?)))
+    if expression.is_empty()
+        || expression.chars().any(|character| {
+            matches!(
+                character,
+                '+' | '-' | '*' | '/' | '^' | '=' | '<' | '>' | '(' | ')' | ','
+            )
+        })
+    {
+        return Ok(None);
+    }
+    let Some(identifiers) = expression_identifier_tokens(ctx, expression)? else {
+        return Ok(None);
+    };
+    if identifiers.iter().any(definite_parameter_reference) {
+        return Ok(None);
+    }
+    Ok(Some(ParameterValue::String(
+        crate::text_admission::format_retained(
+            ctx,
+            format_args!("{expression}"),
+            "retain SLDPRT text parameter literal",
+        )?,
+    )))
 }
 
-fn formatted_text_dimension_literal(ctx: &DecodeContext<'_>, name: &str, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
+fn formatted_text_dimension_literal(
+    ctx: &DecodeContext<'_>,
+    name: &str,
+    expression: &str,
+) -> Result<Option<ParameterValue>, CodecError> {
     ctx.charge_work(name.len() as u64, "parse SLDPRT formatted parameter name")?;
-    ctx.charge_work(expression.len() as u64, "parse SLDPRT formatted parameter literal")?;
-    formatted_text_dimension_value(name, expression).map(|value| crate::text_admission::format_retained(ctx, 
-        format_args!("{value}"), "retain SLDPRT formatted parameter literal",
-    ).map(ParameterValue::String)).transpose()
+    ctx.charge_work(
+        expression.len() as u64,
+        "parse SLDPRT formatted parameter literal",
+    )?;
+    formatted_text_dimension_value(name, expression)
+        .map(|value| {
+            crate::text_admission::format_retained(
+                ctx,
+                format_args!("{value}"),
+                "retain SLDPRT formatted parameter literal",
+            )
+            .map(ParameterValue::String)
+        })
+        .transpose()
 }
 
 fn formatted_text_dimension_value<'a>(name: &str, expression: &'a str) -> Option<&'a str> {
@@ -191,29 +281,61 @@ pub(crate) fn is_global_parameter_owner(feature: &cadmpeg_ir::features::Feature)
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
 ///
 /// Retained native histories keep their source expressions.
-pub(super) fn apply_evaluated_parameters(ctx: &DecodeContext<'_>, histories: &mut [FeatureHistory]) -> Result<(), CodecError> {
+pub(super) fn apply_evaluated_parameters(
+    ctx: &DecodeContext<'_>,
+    histories: &mut [FeatureHistory],
+) -> Result<(), CodecError> {
     let evaluated = project_parameters(ctx, histories)?;
-    for feature in histories.iter_mut().flat_map(|history| &mut history.features) {
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
         let owner = neutral_feature_id_charged(ctx, &feature.id)?;
         let mut replacements = Vec::new();
         for (name, expression) in &feature.parameters {
             ctx.charge_work(1, "scan SLDPRT evaluated parameter replacements")?;
-            if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() { continue; }
-            ctx.charge_work(evaluated.len() as u64, "find SLDPRT evaluated parameter replacement")?;
-            let value = evaluated.iter().rev().find(|parameter| {
-                parameter.value.is_some() && parameter.owner.as_ref() == Some(&owner) && parameter.name == name.as_str()
-            }).and_then(|parameter| parameter.value.as_ref());
-            let Some(value) = value else { continue; };
+            if parse_native_parameter_literal(feature, name.as_str(), expression).is_some() {
+                continue;
+            }
+            ctx.charge_work(
+                evaluated.len() as u64,
+                "find SLDPRT evaluated parameter replacement",
+            )?;
+            let value = evaluated
+                .iter()
+                .rev()
+                .find(|parameter| {
+                    parameter.value.is_some()
+                        && parameter.owner.as_ref() == Some(&owner)
+                        && parameter.name == name.as_str()
+                })
+                .and_then(|parameter| parameter.value.as_ref());
+            let Some(value) = value else {
+                continue;
+            };
             let value = match value {
-                ParameterValue::String(value) => crate::text_admission::format_retained(ctx, format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
+                ParameterValue::String(value) => crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{value}"),
+                    "retain SLDPRT evaluated parameter text",
+                )?,
                 _ => format_parameter_value(value),
             };
-            let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(ctx, name.as_str())?)
-                .ok_or_else(|| CodecError::malformed("blank SLDPRT evaluated parameter name"))?;
-            ctx.reserve_collection_vec(&mut replacements, 1, "collect SLDPRT evaluated parameter replacements")?;
+            let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(
+                ctx,
+                name.as_str(),
+            )?)
+            .ok_or_else(|| CodecError::malformed("blank SLDPRT evaluated parameter name"))?;
+            ctx.reserve_collection_vec(
+                &mut replacements,
+                1,
+                "collect SLDPRT evaluated parameter replacements",
+            )?;
             replacements.push((name, value));
         }
-        for (name, value) in replacements { feature.parameters.insert(name, value); }
+        for (name, value) in replacements {
+            feature.parameters.insert(name, value);
+        }
     }
     Ok(())
 }
@@ -319,38 +441,67 @@ pub(crate) fn format_native_scalar(
 }
 
 fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<ParameterId, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(id.as_str().len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(id.as_str().len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT parameter reference")?;
-    ParameterId::mint(crate::text_admission::format_retained(ctx, format_args!("{id}"), "retain SLDPRT parameter reference")?)
-        .map_err(CodecError::malformed)
+    ParameterId::mint(crate::text_admission::format_retained(
+        ctx,
+        format_args!("{id}"),
+        "retain SLDPRT parameter reference",
+    )?)
+    .map_err(CodecError::malformed)
 }
 
-fn copy_parameter_value(ctx: &DecodeContext<'_>, value: &ParameterValue) -> Result<ParameterValue, CodecError> {
+fn copy_parameter_value(
+    ctx: &DecodeContext<'_>,
+    value: &ParameterValue,
+) -> Result<ParameterValue, CodecError> {
     match value {
         ParameterValue::String(value) => {
-            let work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
-                .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter value text", u64::MAX - 1, u64::MAX))?;
+            let work = cadmpeg_core::decode::u64_from_index(value.len())
+                .checked_mul(4)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "retain SLDPRT parameter value text",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
             ctx.charge_work(work, "retain SLDPRT parameter value text")?;
-            Ok(ParameterValue::String(crate::text_admission::format_retained(ctx, 
-                format_args!("{value}"), "retain SLDPRT parameter value text",
-            )?))
-        },
+            Ok(ParameterValue::String(
+                crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{value}"),
+                    "retain SLDPRT parameter value text",
+                )?,
+            ))
+        }
         _ => Ok(value.clone()),
     }
 }
 
 fn project_parameter_dependencies(
-    ctx: &DecodeContext<'_>, parameter: &DesignParameter, aliases: ParameterAliasView<'_>,
+    ctx: &DecodeContext<'_>,
+    parameter: &DesignParameter,
+    aliases: ParameterAliasView<'_>,
 ) -> Result<cadmpeg_ir::features::DistinctMembers<ParameterId>, CodecError> {
     const OPERATION: &str = "collect SLDPRT parameter dependencies";
     let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
-    let Some(tokens) = expression_identifier_tokens(ctx, &parameter.expression)? else { return Ok(dependencies); };
+    let Some(tokens) = expression_identifier_tokens(ctx, &parameter.expression)? else {
+        return Ok(dependencies);
+    };
     for token in tokens.iter().filter(|token| !token.is_syntax()) {
         ctx.charge_work(1, OPERATION)?;
-        let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else { continue; };
+        let Some(dependency) = aliases.get(token.value()).and_then(Option::as_ref) else {
+            continue;
+        };
         ctx.charge_work(dependencies.as_slice().len() as u64, OPERATION)?;
-        if dependency == &parameter.id || dependencies.contains(dependency) { continue; }
+        if dependency == &parameter.id || dependencies.contains(dependency) {
+            continue;
+        }
         ctx.charge_work(dependencies.as_slice().len() as u64, OPERATION)?;
         dependencies.try_insert_charged(copy_parameter_id(ctx, dependency)?, ctx, OPERATION)?;
     }
@@ -358,18 +509,26 @@ fn project_parameter_dependencies(
 }
 
 fn populate_parameter_dependencies(
-    ctx: &DecodeContext<'_>, parameters: &mut [DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &mut [DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> Result<(), CodecError> {
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     for parameter in parameters.iter_mut() {
-        parameter.dependencies = project_parameter_dependencies(ctx, parameter,
-            aliases.for_owner(parameter.owner.as_ref()))?;
+        parameter.dependencies = project_parameter_dependencies(
+            ctx,
+            parameter,
+            aliases.for_owner(parameter.owner.as_ref()),
+        )?;
     }
     Ok(())
 }
 
-fn order_parameters_by_dependencies(ctx: &DecodeContext<'_>, parameters: &mut [DesignParameter]) -> Result<(), CodecError> {
+fn order_parameters_by_dependencies(
+    ctx: &DecodeContext<'_>,
+    parameters: &mut [DesignParameter],
+) -> Result<(), CodecError> {
     const OPERATION: &str = "order SLDPRT parameter dependencies";
     let mut owner_order = Vec::new();
     let mut seen_owners = HashSet::new();
@@ -379,14 +538,18 @@ fn order_parameters_by_dependencies(ctx: &DecodeContext<'_>, parameters: &mut [D
         let owner = parameter.owner.as_ref();
         if !seen_owners.contains(&owner) {
             ctx.charge_collection_items(1, OPERATION)?;
-            seen_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            seen_owners
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             seen_owners.insert(owner);
             ctx.reserve_collection_vec(&mut owner_order, 1, OPERATION)?;
             owner_order.push(owner);
         }
         if !parameter_owners.contains_key(&parameter.id) {
             ctx.charge_collection_items(1, OPERATION)?;
-            parameter_owners.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            parameter_owners
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         parameter_owners.insert(&parameter.id, owner);
     }
@@ -406,9 +569,13 @@ fn order_parameters_by_dependencies(ctx: &DecodeContext<'_>, parameters: &mut [D
             let mut next = None;
             for (position, index) in remaining.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
-                ctx.charge_work(parameters[*index].dependencies.as_slice().len() as u64, OPERATION)?;
+                ctx.charge_work(
+                    parameters[*index].dependencies.as_slice().len() as u64,
+                    OPERATION,
+                )?;
                 if parameters[*index].dependencies.iter().all(|dependency| {
-                    parameter_owners.get(dependency)
+                    parameter_owners
+                        .get(dependency)
                         .is_none_or(|dependency_owner| dependency_owner != &owner)
                         || ordered_ids.contains(dependency)
                 }) {
@@ -416,27 +583,38 @@ fn order_parameters_by_dependencies(ctx: &DecodeContext<'_>, parameters: &mut [D
                     break;
                 }
             }
-            let Some(position) = next else { ordered.clear(); break; };
+            let Some(position) = next else {
+                ordered.clear();
+                break;
+            };
             ctx.charge_work(remaining.len() as u64, OPERATION)?;
             let index = remaining.remove(position);
             let id = &parameters[index].id;
             if !ordered_ids.contains(id) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                ordered_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ordered_ids
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ordered_ids.insert(id);
             }
             ctx.reserve_collection_vec(&mut ordered, 1, OPERATION)?;
             ordered.push(index);
         }
         for (ordinal, index) in ordered.into_iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit(
-                "index SLDPRT ordered parameter ordinal", u64::from(u32::MAX), ordinal as u64,
-            ))?;
+            let ordinal = u32::try_from(ordinal).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "index SLDPRT ordered parameter ordinal",
+                    u64::from(u32::MAX),
+                    ordinal as u64,
+                )
+            })?;
             ctx.reserve_collection_vec(&mut updates, 1, OPERATION)?;
             updates.push((index, ordinal));
         }
     }
-    for (index, ordinal) in updates { parameters[index].ordinal = ordinal; }
+    for (index, ordinal) in updates {
+        parameters[index].ordinal = ordinal;
+    }
     Ok(())
 }
 
@@ -447,21 +625,37 @@ fn parameter_aliases(
     global_owners: &HashSet<FeatureId>,
     expression_owner: Option<&FeatureId>,
 ) -> HashMap<String, Option<ParameterId>> {
-    ParameterAliases::new(&cadmpeg_test_support::service_decode_context(), parameters, feature_names, global_owners).unwrap().materialize(expression_owner)
+    ParameterAliases::new(
+        &cadmpeg_test_support::service_decode_context(),
+        parameters,
+        feature_names,
+        global_owners,
+    )
+    .unwrap()
+    .materialize(expression_owner)
 }
 
 fn insert_parameter_alias(
-    ctx: &DecodeContext<'_>, aliases: &mut HashMap<String, Option<ParameterId>>,
-    alias: String, parameter: &ParameterId,
+    ctx: &DecodeContext<'_>,
+    aliases: &mut HashMap<String, Option<ParameterId>>,
+    alias: String,
+    parameter: &ParameterId,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT parameter aliases";
     ctx.charge_work(1, OPERATION)?;
     if let Some(candidate) = aliases.get_mut(&alias) {
-        if candidate.as_ref().is_some_and(|existing| existing != parameter) { *candidate = None; }
+        if candidate
+            .as_ref()
+            .is_some_and(|existing| existing != parameter)
+        {
+            *candidate = None;
+        }
     } else {
         let parameter = copy_parameter_id(ctx, parameter)?;
         ctx.charge_collection_items(1, OPERATION)?;
-        aliases.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        aliases
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         aliases.insert(alias, Some(parameter));
     }
     Ok(())
@@ -476,29 +670,66 @@ struct ParameterAliases {
 
 impl ParameterAliases {
     pub(super) fn new(
-        ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-        feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+        ctx: &DecodeContext<'_>,
+        parameters: &[DesignParameter],
+        feature_names: &HashMap<FeatureId, String>,
+        global_owners: &HashSet<FeatureId>,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "retain SLDPRT parameter alias";
-        let copy = |value: &str| crate::text_admission::format_retained(ctx, format_args!("{value}"), OPERATION);
+        let copy = |value: &str| {
+            crate::text_admission::format_retained(ctx, format_args!("{value}"), OPERATION)
+        };
         let mut aliases = Self {
-            global: HashMap::new(), exact: HashMap::new(), document_local: HashMap::new(), feature_local: HashMap::new(),
+            global: HashMap::new(),
+            exact: HashMap::new(),
+            document_local: HashMap::new(),
+            feature_local: HashMap::new(),
         };
         for parameter in parameters {
             ctx.charge_work(1, "scan SLDPRT parameter aliases")?;
-            insert_parameter_alias(ctx, &mut aliases.exact, copy(parameter.id.as_str())?, &parameter.id)?;
-            let unqualified = [Some(parameter.name.as_str()), parameter.properties.get("EquationId")
-                .filter(|equation_id| !equation_id.contains('@')).map(String::as_str)];
-            if let Some(owner_name) = parameter.owner.as_ref().and_then(|owner| feature_names.get(owner)) {
-                let qualified = crate::text_admission::format_retained(ctx, format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
+            insert_parameter_alias(
+                ctx,
+                &mut aliases.exact,
+                copy(parameter.id.as_str())?,
+                &parameter.id,
+            )?;
+            let unqualified = [
+                Some(parameter.name.as_str()),
+                parameter
+                    .properties
+                    .get("EquationId")
+                    .filter(|equation_id| !equation_id.contains('@'))
+                    .map(String::as_str),
+            ];
+            if let Some(owner_name) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
+                let qualified = crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}@{owner_name}", parameter.name),
+                    OPERATION,
+                )?;
                 insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 if let Some(equation_id) = parameter.properties.get("EquationId") {
-                    let qualified = if equation_id.contains('@') { copy(equation_id)? }
-                        else { crate::text_admission::format_retained(ctx, format_args!("{equation_id}@{owner_name}"), OPERATION)? };
+                    let qualified = if equation_id.contains('@') {
+                        copy(equation_id)?
+                    } else {
+                        crate::text_admission::format_retained(
+                            ctx,
+                            format_args!("{equation_id}@{owner_name}"),
+                            OPERATION,
+                        )?
+                    };
                     insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 }
             }
-            if parameter.owner.as_ref().is_some_and(|owner| global_owners.contains(owner)) {
+            if parameter
+                .owner
+                .as_ref()
+                .is_some_and(|owner| global_owners.contains(owner))
+            {
                 for alias in unqualified.into_iter().flatten() {
                     insert_parameter_alias(ctx, &mut aliases.global, copy(alias)?, &parameter.id)?;
                 }
@@ -507,13 +738,21 @@ impl ParameterAliases {
                 if !aliases.feature_local.contains_key(owner) {
                     let id = copy_projected_feature_id(ctx, owner)?;
                     ctx.charge_collection_items(1, "index SLDPRT local parameter alias owners")?;
-                    aliases.feature_local.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                        "index SLDPRT local parameter alias owners", u64::MAX - 1, u64::MAX,
-                    ))?;
+                    aliases.feature_local.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "index SLDPRT local parameter alias owners",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                     aliases.feature_local.insert(id, HashMap::new());
                 }
-                aliases.feature_local.get_mut(owner).ok_or_else(|| CodecError::malformed("missing SLDPRT local parameter alias owner"))?
-            } else { &mut aliases.document_local };
+                aliases.feature_local.get_mut(owner).ok_or_else(|| {
+                    CodecError::malformed("missing SLDPRT local parameter alias owner")
+                })?
+            } else {
+                &mut aliases.document_local
+            };
             for alias in unqualified.into_iter().flatten() {
                 insert_parameter_alias(ctx, local, copy(alias)?, &parameter.id)?;
             }
@@ -567,31 +806,48 @@ impl ParameterAliasView<'_> {
 }
 
 fn evaluate_parameter_expressions(
-    ctx: &DecodeContext<'_>, parameters: &mut [DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &mut [DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> Result<(), CodecError> {
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut values = HashMap::new();
     for parameter in parameters.iter() {
-        if let Some(value) = &parameter.value { insert_parameter_value(ctx, &mut values, &parameter.id, value)?; }
+        if let Some(value) = &parameter.value {
+            insert_parameter_value(ctx, &mut values, &parameter.id, value)?;
+        }
     }
     loop {
         let mut changed = false;
-        for parameter in parameters.iter_mut().filter(|parameter| parameter.value.is_none()) {
+        for parameter in parameters
+            .iter_mut()
+            .filter(|parameter| parameter.value.is_none())
+        {
             ctx.charge_work(1, "evaluate SLDPRT parameter expressions")?;
             let aliases = aliases.for_owner(parameter.owner.as_ref());
-            let Some(value) = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values).parse()? else { continue; };
+            let Some(value) =
+                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, &values)
+                    .parse()?
+            else {
+                continue;
+            };
             insert_parameter_value(ctx, &mut values, &parameter.id, &value)?;
             parameter.value = Some(value);
             changed = true;
         }
-        if !changed { break; }
+        if !changed {
+            break;
+        }
     }
     Ok(())
 }
 
 fn insert_parameter_value(
-    ctx: &DecodeContext<'_>, values: &mut HashMap<ParameterId, ParameterValue>, id: &ParameterId, value: &ParameterValue,
+    ctx: &DecodeContext<'_>,
+    values: &mut HashMap<ParameterId, ParameterValue>,
+    id: &ParameterId,
+    value: &ParameterValue,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "index SLDPRT parameter values";
     ctx.charge_work(1, OPERATION)?;
@@ -599,15 +855,19 @@ fn insert_parameter_value(
     let value = copy_parameter_value(ctx, value)?;
     if !values.contains_key(&id) {
         ctx.charge_collection_items(1, OPERATION)?;
-        values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        values
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     values.insert(id, value);
     Ok(())
 }
 
 pub(crate) fn parameters_with_unresolved_references(
-    ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> Result<usize, CodecError> {
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut count = 0;
@@ -616,22 +876,34 @@ pub(crate) fn parameters_with_unresolved_references(
         let aliases = aliases.for_owner(parameter.owner.as_ref());
         let unresolved = match expression_identifier_tokens(ctx, &parameter.expression)? {
             None => true,
-            Some(parsed) => parsed.iter().filter(|identifier| !identifier.is_syntax())
+            Some(parsed) => parsed
+                .iter()
+                .filter(|identifier| !identifier.is_syntax())
                 .filter(|identifier| definite_parameter_reference(identifier))
-                .any(|identifier| aliases.get(identifier.value()).and_then(Option::as_ref)
-                    .is_none_or(|dependency| dependency == &parameter.id)),
+                .any(|identifier| {
+                    aliases
+                        .get(identifier.value())
+                        .and_then(Option::as_ref)
+                        .is_none_or(|dependency| dependency == &parameter.id)
+                }),
         };
-        if unresolved { count += 1; }
+        if unresolved {
+            count += 1;
+        }
     }
     Ok(count)
 }
 
 pub(crate) fn parameters_with_unevaluable_expressions(
-    ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() { return Ok(0); }
+    if parameters.is_empty() {
+        return Ok(0);
+    }
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, false)?;
     let mut count = 0;
@@ -640,62 +912,108 @@ pub(crate) fn parameters_with_unevaluable_expressions(
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT parameter evaluation")?;
             let own = values.remove_entry(&parameter.id);
-            let evaluated = match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()? {
-                Some(value) => Some(value),
-                None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
-            };
+            let evaluated =
+                match ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
+                    .parse()?
+                {
+                    Some(value) => Some(value),
+                    None => text_parameter_literal(ctx, &parameter.name, &parameter.expression)?,
+                };
             if let Some((id, value)) = own {
-                values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("restore SLDPRT parameter evaluation value", u64::MAX - 1, u64::MAX))?;
+                values.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "restore SLDPRT parameter evaluation value",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
                 values.insert(id, value);
             }
-            if evaluated.is_none() { count += 1; break; }
+            if evaluated.is_none() {
+                count += 1;
+                break;
+            }
         }
     }
     Ok(count)
 }
 
 pub(crate) fn parameters_with_incoherent_dependencies(
-    ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> Result<usize, CodecError> {
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut count = 0;
     for parameter in parameters {
-        if parameter.dependencies != project_parameter_dependencies(ctx, parameter, aliases.for_owner(parameter.owner.as_ref()))? { count += 1; }
+        if parameter.dependencies
+            != project_parameter_dependencies(
+                ctx,
+                parameter,
+                aliases.for_owner(parameter.owner.as_ref()),
+            )?
+        {
+            count += 1;
+        }
     }
     Ok(count)
 }
 
 pub(crate) fn parameters_with_incoherent_evaluated_values(
-    ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-    feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
+    ctx: &DecodeContext<'_>,
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
-    if parameters.is_empty() { return Ok(0); }
+    if parameters.is_empty() {
+        return Ok(0);
+    }
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, true)?;
     let mut count = 0;
-    for parameter in parameters.iter().filter(|parameter| !parameter.dependencies.is_empty()) {
+    for parameter in parameters
+        .iter()
+        .filter(|parameter| !parameter.dependencies.is_empty())
+    {
         let aliases = aliases.for_owner(parameter.owner.as_ref());
         for values in &mut states {
             ctx.charge_work(1, "check SLDPRT evaluated parameter coherence")?;
             let own = values.remove_entry(&parameter.id);
-            let evaluated = ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values).parse()?;
-            let incoherent = own.as_ref().zip(evaluated.as_ref())
-                .is_some_and(|((_, actual), evaluated)| !equivalent_parameter_values(actual, evaluated));
+            let evaluated =
+                ParameterExpressionParser::new(ctx, &parameter.expression, aliases, values)
+                    .parse()?;
+            let incoherent =
+                own.as_ref()
+                    .zip(evaluated.as_ref())
+                    .is_some_and(|((_, actual), evaluated)| {
+                        !equivalent_parameter_values(actual, evaluated)
+                    });
             if let Some((id, value)) = own {
-                values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("restore SLDPRT parameter coherence value", u64::MAX - 1, u64::MAX))?;
+                values.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "restore SLDPRT parameter coherence value",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
                 values.insert(id, value);
             }
-            if incoherent { count += 1; break; }
+            if incoherent {
+                count += 1;
+                break;
+            }
         }
     }
     Ok(count)
 }
 
 fn parameter_value_states(
-    ctx: &DecodeContext<'_>, parameters: &[DesignParameter],
-    configurations: &[cadmpeg_ir::features::DesignConfiguration], include_global: bool,
+    ctx: &DecodeContext<'_>,
+    parameters: &[DesignParameter],
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    include_global: bool,
 ) -> Result<Vec<HashMap<ParameterId, ParameterValue>>, CodecError> {
     let make_state = |configuration: Option<&cadmpeg_ir::features::DesignConfiguration>| -> Result<_, CodecError> {
         let mut values = HashMap::new();
@@ -756,18 +1074,30 @@ pub(super) fn definite_parameter_reference(identifier: &ExpressionIdentifier<'_,
 #[cfg(test)]
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
     let ctx = cadmpeg_test_support::service_decode_context();
-    expression_identifier_tokens(&ctx, expression).unwrap().unwrap_or_default().into_iter()
-        .filter(|token| !token.is_syntax()).map(|token| token.value().to_owned()).collect::<Vec<_>>().into_iter()
+    expression_identifier_tokens(&ctx, expression)
+        .unwrap()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|token| !token.is_syntax())
+        .map(|token| token.value().to_owned())
+        .collect::<Vec<_>>()
+        .into_iter()
 }
 
 enum ParameterTokenText<'a, 'ctx> {
     Borrowed(&'a str),
-    Owned { value: String, _reservation: ScopedReservation<'ctx> },
+    Owned {
+        value: String,
+        _reservation: ScopedReservation<'ctx>,
+    },
 }
 
 impl ParameterTokenText<'_, '_> {
     fn as_str(&self) -> &str {
-        match self { Self::Borrowed(value) => value, Self::Owned { value, .. } => value }
+        match self {
+            Self::Borrowed(value) => value,
+            Self::Owned { value, .. } => value,
+        }
     }
 }
 
@@ -781,19 +1111,53 @@ pub(super) struct ExpressionIdentifier<'a, 'ctx> {
 
 impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
     /// The token spanning `start..end`, which must be a quoted run around a nonempty name.
-    fn quoted(ctx: &'ctx DecodeContext<'_>, expression: &'a str, start: usize, end: usize) -> Result<Option<Self>, CodecError> {
-        let Some(raw) = expression.get(start..end) else { return Ok(None); };
-        let Some(following) = expression.get(end..) else { return Ok(None); };
-        let Some(inner) = raw.strip_prefix('"').and_then(|inner| inner.strip_suffix('"')).filter(|inner| !inner.is_empty()) else { return Ok(None); };
+    fn quoted(
+        ctx: &'ctx DecodeContext<'_>,
+        expression: &'a str,
+        start: usize,
+        end: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(raw) = expression.get(start..end) else {
+            return Ok(None);
+        };
+        let Some(following) = expression.get(end..) else {
+            return Ok(None);
+        };
+        let Some(inner) = raw
+            .strip_prefix('"')
+            .and_then(|inner| inner.strip_suffix('"'))
+            .filter(|inner| !inner.is_empty())
+        else {
+            return Ok(None);
+        };
         ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
         let value = if inner.contains("\"\"") {
-            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(ctx, inner.len(), "unescape SLDPRT parameter identifier")?;
+            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(
+                ctx,
+                inner.len(),
+                "unescape SLDPRT parameter identifier",
+            )?;
             let mut segments = inner.split("\"\"");
-            if let Some(first) = segments.next() { value.push_str(first); }
-            for segment in segments { value.push('"'); value.push_str(segment); }
-            ParameterTokenText::Owned { value, _reservation: reservation }
-        } else { ParameterTokenText::Borrowed(inner) };
-        Ok(Some(Self { raw, following, value, quoted: true }))
+            if let Some(first) = segments.next() {
+                value.push_str(first);
+            }
+            for segment in segments {
+                value.push('"');
+                value.push_str(segment);
+            }
+            ParameterTokenText::Owned {
+                value,
+                _reservation: reservation,
+            }
+        } else {
+            ParameterTokenText::Borrowed(inner)
+        };
+        Ok(Some(Self {
+            raw,
+            following,
+            value,
+            quoted: true,
+        }))
     }
 
     /// The unquoted token spanning `start..end`.
@@ -853,7 +1217,8 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
 }
 
 pub(super) fn expression_identifier_tokens<'a, 'ctx>(
-    ctx: &'ctx DecodeContext<'_>, expression: &'a str,
+    ctx: &'ctx DecodeContext<'_>,
+    expression: &'a str,
 ) -> Result<Option<Vec<ExpressionIdentifier<'a, 'ctx>>>, CodecError> {
     ctx.charge_work(expression.len() as u64, "scan SLDPRT parameter identifiers")?;
     let mut identifiers = Vec::new();
@@ -876,8 +1241,13 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
                 }
             }
             if closed {
-                if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, at, cursor)? {
-                    ctx.reserve_collection_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
+                if let Some(identifier) = ExpressionIdentifier::quoted(ctx, expression, at, cursor)?
+                {
+                    ctx.reserve_collection_vec(
+                        &mut identifiers,
+                        1,
+                        "collect SLDPRT parameter identifiers",
+                    )?;
                     identifiers.push(identifier);
                 }
                 at = cursor;
@@ -894,7 +1264,11 @@ pub(super) fn expression_identifier_tokens<'a, 'ctx>(
                 })
                 .unwrap_or(rest.len());
             if let Some(identifier) = ExpressionIdentifier::plain(expression, at, at + end) {
-                ctx.reserve_collection_vec(&mut identifiers, 1, "collect SLDPRT parameter identifiers")?;
+                ctx.reserve_collection_vec(
+                    &mut identifiers,
+                    1,
+                    "collect SLDPRT parameter identifiers",
+                )?;
                 identifiers.push(identifier);
             }
             at += end;

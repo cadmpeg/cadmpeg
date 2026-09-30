@@ -58,7 +58,8 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         false,
-    )).unwrap());
+    ))
+    .unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -73,7 +74,8 @@ fn profile_consumers_require_a_regeneration_profile() {
         &FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
         &sketch,
         true,
-    )).unwrap());
+    ))
+    .unwrap());
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -109,8 +111,11 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
         features: vec![sketch, extrusion],
     };
 
-    let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
-    let sketch_id = neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), "sketch").unwrap();
+    let projected =
+        project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let sketch_id =
+        neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), "sketch")
+            .unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {
@@ -139,8 +144,11 @@ fn a_regeneration_edge_the_model_refuses_is_reported_as_one_loss() {
         configurations: Vec::new(),
         features: vec![child, feature("sldprt:history:feature#0:1", None, 1)],
     };
-    let projection = project_feature_model(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
-    let (model, losses) = projection.into_model(&cadmpeg_test_support::service_decode_context()).unwrap();
+    let projection =
+        project_feature_model(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
+    let (model, losses) = projection
+        .into_model(&cadmpeg_test_support::service_decode_context())
+        .unwrap();
     let child_id = model.features[0].id.clone();
     assert!(model.feature_regeneration_parent(&child_id).is_none());
     assert_eq!(losses.len(), 1);
@@ -173,9 +181,8 @@ fn projected_tree_child_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"tree", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"tree", &arena, &policy).unwrap();
     let error = project_feature_model(&ctx, &[history]).err().unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
@@ -195,9 +202,8 @@ fn projected_feature_text_refuses_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"feature", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"feature", &arena, &policy).unwrap();
     let error = project_feature_model(&ctx, &[history]).err().unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
@@ -215,9 +221,8 @@ fn projected_source_index_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"source", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"source", &arena, &policy).unwrap();
     let error = project_feature_model(&ctx, &[history]).err().unwrap();
     assert!(matches!(
         error,
@@ -240,9 +245,9 @@ fn projected_dependencies_refuse_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"dependencies", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"dependencies", &arena, &policy)
+            .unwrap();
     let error = project_feature_dependencies(&ctx, &consumer, &source)
         .err()
         .unwrap();

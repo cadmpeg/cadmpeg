@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource admission for native validation copies.
 
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use crate::records::charged_clone::CloneCharged;
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation};
 use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -24,7 +24,9 @@ pub(super) fn collect_index_set<'a>(
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     for key in items {
-        let work = cadmpeg_core::decode::u64_from_index(key.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+        let work = cadmpeg_core::decode::u64_from_index(key.len())
+            .checked_mul(2)
+            .and_then(|work| work.checked_add(1))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(work, operation)?;
         result.insert(key);
@@ -48,7 +50,9 @@ pub(super) fn collect_index_map<'a, V>(
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     for (key, value) in items {
-        let work = cadmpeg_core::decode::u64_from_index(key.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+        let work = cadmpeg_core::decode::u64_from_index(key.len())
+            .checked_mul(2)
+            .and_then(|work| work.checked_add(1))
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(work, operation)?;
         result.insert(key, value);
@@ -64,7 +68,10 @@ struct FormattedByteCount<'ctx, 'arena> {
 
 impl fmt::Write for FormattedByteCount<'_, '_> {
     fn write_str(&mut self, text: &str) -> fmt::Result {
-        if let Err(error) = self.ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "format SLDPRT native validation error") {
+        if let Err(error) = self.ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(text.len()),
+            "format SLDPRT native validation error",
+        ) {
             self.failure = Some(error);
             return Err(fmt::Error);
         }
@@ -77,15 +84,30 @@ pub(super) fn invalid_owner(
     ctx: &DecodeContext<'_>,
     message: fmt::Arguments<'_>,
 ) -> Result<NativeConvertError, NativeConvertError> {
-    let mut count = FormattedByteCount { ctx, bytes: 0, failure: None };
+    let mut count = FormattedByteCount {
+        ctx,
+        bytes: 0,
+        failure: None,
+    };
     if fmt::write(&mut count, message).is_err() {
-        return Err(count.failure.unwrap_or_else(|| {
-            ctx.refuse_codec_limit("format SLDPRT native validation error", u64::MAX - 1, u64::MAX)
-        }).into());
+        return Err(count
+            .failure
+            .unwrap_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "format SLDPRT native validation error",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })
+            .into());
     }
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.bytes), "format SLDPRT native validation error")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count.bytes),
+        "format SLDPRT native validation error",
+    )?;
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(ctx, 
+    crate::text_admission::reserve_retained_string(
+        ctx,
         &mut text,
         count.bytes,
         "format SLDPRT native validation error",
@@ -106,7 +128,10 @@ struct SerializedByteCount<'ctx, 'arena> {
 
 impl std::io::Write for SerializedByteCount<'_, '_> {
     fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        if let Err(refusal) = self.ctx.charge_work(cadmpeg_core::decode::u64_from_index(buffer.len()), self.operation) {
+        if let Err(refusal) = self.ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(buffer.len()),
+            self.operation,
+        ) {
             self.refusal = Some(refusal);
             return Err(std::io::Error::other("native copy work limit exceeded"));
         }
@@ -139,7 +164,8 @@ fn count_records(
         if records.next().is_none() {
             return Ok(count);
         }
-        count = count.checked_add(1)
+        count = count
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
 }

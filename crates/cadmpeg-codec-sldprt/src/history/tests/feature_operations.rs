@@ -437,17 +437,22 @@ fn decode_does_not_globalize_configuration_local_combine_selection() {
 
     let path_arena = cadmpeg_core::decode::DecodeArena::new();
     let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("component path test context");
+        &[],
+        &path_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("component path test context");
 
     let resolved_selection = combine_payload(true);
     assert_eq!(
         (12..resolved_selection.len())
             .filter(
-                |offset| crate::resolved_features::terminations::compact_body_path_at(&path_ctx,
+                |offset| crate::resolved_features::terminations::compact_body_path_at(
+                    &path_ctx,
                     &resolved_selection,
                     *offset
-                ).expect("component path resource admission")
+                )
+                .expect("component path resource admission")
                 .is_some()
             )
             .count(),

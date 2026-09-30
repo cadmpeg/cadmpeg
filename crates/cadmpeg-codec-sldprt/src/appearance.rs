@@ -66,11 +66,17 @@ pub(crate) fn definitions(
             if token != VISUAL_PROPERTIES_CLASS {
                 continue;
             }
-            if let Some(definition) = definition_at(
-                ctx, section, offset + VISUAL_PROPERTIES_CLASS.len(), offset,
-            )? {
+            if let Some(definition) =
+                definition_at(ctx, section, offset + VISUAL_PROPERTIES_CLASS.len(), offset)?
+            {
                 ctx.charge_collection_items(1, "collect SLDPRT appearance definitions")?;
-                definitions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT appearance definitions", u64::MAX - 1, u64::MAX))?;
+                definitions.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "collect SLDPRT appearance definitions",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
                 definitions.push(definition);
             }
         }
@@ -96,7 +102,11 @@ fn definition_at(
         return Ok(None);
     };
     let start = name_header + 4;
-    let Some(raw_name) = count.checked_mul(2).and_then(|length| start.checked_add(length)).and_then(|end| bytes.get(start..end)) else {
+    let Some(raw_name) = count
+        .checked_mul(2)
+        .and_then(|length| start.checked_add(length))
+        .and_then(|end| bytes.get(start..end))
+    else {
         return Ok(None);
     };
     let mut units = [0_u16; 255];
@@ -115,17 +125,35 @@ fn definition_at(
         decoded[decoded_count] = scalar;
         decoded_count += 1;
     }
-    let Some(first) = decoded[..decoded_count].iter().position(|scalar| !scalar.is_whitespace()) else {
+    let Some(first) = decoded[..decoded_count]
+        .iter()
+        .position(|scalar| !scalar.is_whitespace())
+    else {
         return Ok(None);
     };
-    let Some(last) = decoded[..decoded_count].iter().rposition(|scalar| !scalar.is_whitespace()) else {
+    let Some(last) = decoded[..decoded_count]
+        .iter()
+        .rposition(|scalar| !scalar.is_whitespace())
+    else {
         return Ok(None);
     };
     let trimmed = &decoded[first..=last];
-    let trimmed_len = trimmed.iter().try_fold(0usize, |size, scalar| size.checked_add(scalar.len_utf8())).ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_retained(u64::try_from(trimmed_len).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX))?, "retain SLDPRT appearance name")?;
+    let trimmed_len = trimmed
+        .iter()
+        .try_fold(0usize, |size, scalar| size.checked_add(scalar.len_utf8()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX)
+        })?;
+    ctx.charge_retained(
+        u64::try_from(trimmed_len).map_err(|_| {
+            ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX)
+        })?,
+        "retain SLDPRT appearance name",
+    )?;
     let mut name = String::new();
-    name.try_reserve(trimmed_len).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX))?;
+    name.try_reserve(trimmed_len).map_err(|_| {
+        ctx.refuse_codec_limit("retain SLDPRT appearance name", u64::MAX - 1, u64::MAX)
+    })?;
     for scalar in trimmed {
         name.push(*scalar);
     }
@@ -142,20 +170,36 @@ fn clone_stream_name(
     ctx: &DecodeContext<'_>,
     name: &StreamName,
 ) -> Result<StreamName, cadmpeg_core::CodecError> {
-    ctx.charge_retained(u64::try_from(name.as_str().len()).map_err(|_| ctx.refuse_codec_limit("copy SLDPRT appearance stream name", u64::MAX - 1, u64::MAX))?, "copy SLDPRT appearance stream name")?;
+    ctx.charge_retained(
+        u64::try_from(name.as_str().len()).map_err(|_| {
+            ctx.refuse_codec_limit("copy SLDPRT appearance stream name", u64::MAX - 1, u64::MAX)
+        })?,
+        "copy SLDPRT appearance stream name",
+    )?;
     let mut copy = String::new();
-    copy.try_reserve(name.as_str().len()).map_err(|_| ctx.refuse_codec_limit("copy SLDPRT appearance stream name", u64::MAX - 1, u64::MAX))?;
+    copy.try_reserve(name.as_str().len()).map_err(|_| {
+        ctx.refuse_codec_limit("copy SLDPRT appearance stream name", u64::MAX - 1, u64::MAX)
+    })?;
     copy.push_str(name.as_str());
-    StreamName::try_from(copy).map_err(|_| cadmpeg_core::CodecError::Malformed("SLDPRT appearance stream name is empty".into()))
+    StreamName::try_from(copy).map_err(|_| {
+        cadmpeg_core::CodecError::Malformed("SLDPRT appearance stream name is empty".into())
+    })
 }
 
 fn copy_definition(
     ctx: &DecodeContext<'_>,
     definition: &AppearanceDefinition,
 ) -> Result<AppearanceDefinition, cadmpeg_core::CodecError> {
-    ctx.charge_retained(u64::try_from(definition.name.len()).map_err(|_| ctx.refuse_codec_limit("copy SLDPRT appearance name", u64::MAX - 1, u64::MAX))?, "copy SLDPRT appearance name")?;
+    ctx.charge_retained(
+        u64::try_from(definition.name.len()).map_err(|_| {
+            ctx.refuse_codec_limit("copy SLDPRT appearance name", u64::MAX - 1, u64::MAX)
+        })?,
+        "copy SLDPRT appearance name",
+    )?;
     let mut name = String::new();
-    name.try_reserve(definition.name.len()).map_err(|_| ctx.refuse_codec_limit("copy SLDPRT appearance name", u64::MAX - 1, u64::MAX))?;
+    name.try_reserve(definition.name.len()).map_err(|_| {
+        ctx.refuse_codec_limit("copy SLDPRT appearance name", u64::MAX - 1, u64::MAX)
+    })?;
     name.push_str(&definition.name);
     Ok(AppearanceDefinition {
         name,
@@ -180,11 +224,13 @@ fn inline_definitions(
             continue;
         }
         let offset = start + relative;
-        if let Some(definition) = definition_at(
-            ctx, section, offset + inline_visual::PACKED_COLOR, offset,
-        )? {
+        if let Some(definition) =
+            definition_at(ctx, section, offset + inline_visual::PACKED_COLOR, offset)?
+        {
             ctx.charge_collection_items(1, "collect inline SLDPRT appearances")?;
-            definitions.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect inline SLDPRT appearances", u64::MAX - 1, u64::MAX))?;
+            definitions.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect inline SLDPRT appearances", u64::MAX - 1, u64::MAX)
+            })?;
             definitions.push(definition);
         }
     }
@@ -218,7 +264,9 @@ fn display_assignments(
                 continue;
             };
             ctx.charge_collection_items(1, "collect SLDPRT display assignments")?;
-            assignments.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display assignments", u64::MAX - 1, u64::MAX))?;
+            assignments.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect SLDPRT display assignments", u64::MAX - 1, u64::MAX)
+            })?;
             assignments.push(DisplayAppearanceAssignment {
                 target: DisplayAppearanceTarget::Face(table_index),
                 definition,
@@ -229,7 +277,8 @@ fn display_assignments(
         if class.name != "uoBodyPropInfo_c" {
             continue;
         }
-        let definitions = inline_definitions(ctx, section, class.content.start(), class.content.end())?;
+        let definitions =
+            inline_definitions(ctx, section, class.content.start(), class.content.end())?;
         if definitions.len() != 1 {
             continue;
         }
@@ -242,7 +291,13 @@ fn display_assignments(
         for (table_index, face) in faces.iter().enumerate() {
             if previous_body_end <= face.table.start() && face.table.end() <= class.class_offset {
                 ctx.charge_collection_items(1, "collect SLDPRT body appearance faces")?;
-                face_indexes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT body appearance faces", u64::MAX - 1, u64::MAX))?;
+                face_indexes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "collect SLDPRT body appearance faces",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
                 face_indexes.push(table_index);
             }
         }
@@ -251,7 +306,9 @@ fn display_assignments(
                 continue;
             };
             ctx.charge_collection_items(1, "collect SLDPRT display assignments")?;
-            assignments.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display assignments", u64::MAX - 1, u64::MAX))?;
+            assignments.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect SLDPRT display assignments", u64::MAX - 1, u64::MAX)
+            })?;
             assignments.push(DisplayAppearanceAssignment {
                 target: DisplayAppearanceTarget::Body(face_indexes),
                 definition,
@@ -323,7 +380,9 @@ pub(crate) fn feature_assignments(
             };
             let source_name = clone_stream_name(ctx, section.source_stream())?;
             ctx.charge_collection_items(1, "collect SLDPRT feature appearances")?;
-            assignments.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT feature appearances", u64::MAX - 1, u64::MAX))?;
+            assignments.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect SLDPRT feature appearances", u64::MAX - 1, u64::MAX)
+            })?;
             assignments.push(FeatureAppearanceAssignment {
                 feature_source_id,
                 feature_timestamp,
@@ -363,7 +422,9 @@ pub(crate) fn resolve_display_appearances(
     for assignment in feature_assignments(ctx, scan)? {
         if !feature_by_source.contains_key(&assignment.feature_source_id) {
             ctx.charge_collection_items(1, "index SLDPRT feature appearances")?;
-            feature_by_source.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature appearances", u64::MAX - 1, u64::MAX))?;
+            feature_by_source.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT feature appearances", u64::MAX - 1, u64::MAX)
+            })?;
         }
         feature_by_source
             .entry(assignment.feature_source_id)
@@ -386,7 +447,13 @@ pub(crate) fn resolve_display_appearances(
             }
             let faces = faces_by_source.entry(source_id).or_default();
             ctx.charge_collection_items(1, "collect SLDPRT appearance source faces")?;
-            faces.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT appearance source faces", u64::MAX - 1, u64::MAX))?;
+            faces.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "collect SLDPRT appearance source faces",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
             faces.push(table_index);
         }
     }
@@ -399,9 +466,25 @@ pub(crate) fn resolve_display_appearances(
         }
         matched_feature_sources.insert(source_id);
         const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
-        ctx.charge_retained(u64::try_from(FEATURE_APPEARANCE_NAME.len()).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT feature appearance name", u64::MAX - 1, u64::MAX))?, "retain SLDPRT feature appearance name")?;
+        ctx.charge_retained(
+            u64::try_from(FEATURE_APPEARANCE_NAME.len()).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "retain SLDPRT feature appearance name",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+            "retain SLDPRT feature appearance name",
+        )?;
         let mut name = String::new();
-        name.try_reserve(FEATURE_APPEARANCE_NAME.len()).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT feature appearance name", u64::MAX - 1, u64::MAX))?;
+        name.try_reserve(FEATURE_APPEARANCE_NAME.len())
+            .map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "retain SLDPRT feature appearance name",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
         name.push_str(FEATURE_APPEARANCE_NAME);
         let definition = AppearanceDefinition {
             name,

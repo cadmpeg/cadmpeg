@@ -208,9 +208,19 @@ struct ChargingJsonWriter<'a, 'b> {
 
 impl Write for ChargingJsonWriter<'_, '_> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let work = u64::try_from(bytes.len()).ok().and_then(|length| length.checked_mul(4))
-            .ok_or_else(|| self.ctx.refuse_codec_limit("serialize native record work size", u64::MAX - 1, u64::MAX));
-        if let Err(error) = work.and_then(|work| self.ctx.charge_work(work, "serialize native record")) {
+        let work = u64::try_from(bytes.len())
+            .ok()
+            .and_then(|length| length.checked_mul(4))
+            .ok_or_else(|| {
+                self.ctx.refuse_codec_limit(
+                    "serialize native record work size",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            });
+        if let Err(error) =
+            work.and_then(|work| self.ctx.charge_work(work, "serialize native record"))
+        {
             self.refusal = Some(error);
             return Err(std::io::Error::other("native record resource limit"));
         }
@@ -372,12 +382,17 @@ impl NativeRecord {
     /// one-container replay rather than a recursion-limited parse.
     pub(crate) fn from_typed<T: Serialize>(record: &T) -> Result<Self, NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
+        )?;
         Self::from_typed_with_sink(&ctx, record, None)
     }
 
     fn from_typed_with_sink<T: Serialize>(
-        ctx: &DecodeContext<'_>, record: &T,
+        ctx: &DecodeContext<'_>,
+        record: &T,
         sink: Option<&dyn canon::ByteSink>,
     ) -> Result<Self, NativeConvertError> {
         let serialized = record.serialize(canon::CanonValue::for_record_with_sink(ctx, sink));
@@ -509,25 +524,46 @@ impl NativeRecord {
             Ok(())
         }
 
-        fn charge_map_work(ctx: &DecodeContext<'_>, values: &Map<String, Value>) -> Result<(), cadmpeg_core::CodecError> {
-            let levels = if values.len() > 1 { values.len().ilog2() + 1 } else { 1 };
+        fn charge_map_work(
+            ctx: &DecodeContext<'_>,
+            values: &Map<String, Value>,
+        ) -> Result<(), cadmpeg_core::CodecError> {
+            let levels = if values.len() > 1 {
+                values.len().ilog2() + 1
+            } else {
+                1
+            };
             for key in values.keys() {
-                let work = u64::try_from(key.len()).ok().and_then(|length| length.checked_add(1))
+                let work = u64::try_from(key.len())
+                    .ok()
+                    .and_then(|length| length.checked_add(1))
                     .and_then(|length| length.checked_mul(u64::from(levels)))
-                    .ok_or_else(|| ctx.refuse_codec_limit("copy native record object", u64::MAX - 1, u64::MAX))?;
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("copy native record object", u64::MAX - 1, u64::MAX)
+                    })?;
                 ctx.charge_work(work, "copy native record object")?;
             }
             Ok(())
         }
 
-        fn charge_text_work(ctx: &DecodeContext<'_>, text: &str) -> Result<(), cadmpeg_core::CodecError> {
-            let work = u64::try_from(text.len()).ok().and_then(|length| length.checked_mul(12))
+        fn charge_text_work(
+            ctx: &DecodeContext<'_>,
+            text: &str,
+        ) -> Result<(), cadmpeg_core::CodecError> {
+            let work = u64::try_from(text.len())
+                .ok()
+                .and_then(|length| length.checked_mul(12))
                 .and_then(|work| work.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit("inspect native record text", u64::MAX - 1, u64::MAX))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("inspect native record text", u64::MAX - 1, u64::MAX)
+                })?;
             ctx.charge_work(work, "inspect native record text")
         }
 
-        fn copy_admitted_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
+        fn copy_admitted_text(
+            ctx: &DecodeContext<'_>,
+            text: &str,
+        ) -> Result<String, cadmpeg_core::CodecError> {
             let mut copy = String::new();
             copy.try_reserve_exact(text.len()).map_err(|_| {
                 ctx.refuse_codec_limit("load typed native record", u64::MAX - 1, u64::MAX)
@@ -536,7 +572,10 @@ impl NativeRecord {
             Ok(copy)
         }
 
-        fn copy_admitted_value(ctx: &DecodeContext<'_>, value: &Value) -> Result<Value, cadmpeg_core::CodecError> {
+        fn copy_admitted_value(
+            ctx: &DecodeContext<'_>,
+            value: &Value,
+        ) -> Result<Value, cadmpeg_core::CodecError> {
             let _depth = ctx.enter_nested("load native record value")?;
             Ok(match value {
                 Value::Null => Value::Null,
@@ -546,15 +585,24 @@ impl NativeRecord {
                 Value::Array(values) => {
                     let mut copied = Vec::new();
                     copied.try_reserve_exact(values.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("load native record array elements", u64::MAX - 1, u64::MAX)
+                        ctx.refuse_codec_limit(
+                            "load native record array elements",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
                     })?;
-                    for value in values { copied.push(copy_admitted_value(ctx, value)?); }
+                    for value in values {
+                        copied.push(copy_admitted_value(ctx, value)?);
+                    }
                     Value::Array(copied)
                 }
                 Value::Object(values) => {
                     let mut copied = Map::new();
                     for (key, value) in values {
-                        copied.insert(copy_admitted_text(ctx, key)?, copy_admitted_value(ctx, value)?);
+                        copied.insert(
+                            copy_admitted_text(ctx, key)?,
+                            copy_admitted_value(ctx, value)?,
+                        );
                     }
                     Value::Object(copied)
                 }
@@ -591,16 +639,26 @@ impl NativeRecord {
         TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         let mut record = Map::new();
         for (key, value) in &self.fields {
-            record.insert(copy_admitted_text(ctx, key)?, copy_admitted_value(ctx, value)?);
+            record.insert(
+                copy_admitted_text(ctx, key)?,
+                copy_admitted_value(ctx, value)?,
+            );
         }
-        record.insert(copy_admitted_text(ctx, "id")?, Value::String(copy_admitted_text(ctx, self.id.as_str())?));
+        record.insert(
+            copy_admitted_text(ctx, "id")?,
+            Value::String(copy_admitted_text(ctx, self.id.as_str())?),
+        );
         match serde_json::from_value(Value::Object(record)) {
             Ok(value) => Ok(value),
             Err(source) => {
                 charge_text_work(ctx, self.id.as_str())?;
-                let id = ctx.format_retained(format_args!("{}", self.id.as_str()), "retain native record error identity")?;
+                let id = ctx.format_retained(
+                    format_args!("{}", self.id.as_str()),
+                    "retain native record error identity",
+                )?;
                 Err(NativeConvertError::ReadRecord {
-                    id: crate::ids::Identity::new(id)?, source,
+                    id: crate::ids::Identity::new(id)?,
+                    source,
                 })
             }
         }
@@ -672,7 +730,9 @@ where
             .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
         converted.try_reserve(1).map_err(|_| {
             E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-                "store native record", u64::MAX - 1, u64::MAX,
+                "store native record",
+                u64::MAX - 1,
+                u64::MAX,
             )))
         })?;
         let writer = RefCell::new(ChargingJsonWriter {
@@ -685,7 +745,10 @@ where
         let value = match result {
             Ok(record) => record,
             Err(error) => {
-                let source = writer.borrow_mut().refusal.take()
+                let source = writer
+                    .borrow_mut()
+                    .refusal
+                    .take()
                     .map_or(error, NativeConvertError::Resource);
                 return Err(E::from(NativeConvertError::WriteRecord {
                     ordinal,
@@ -712,20 +775,33 @@ where
     let operation = "sort native records";
     let count = u64::try_from(converted.len()).map_err(|_| {
         E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation, u64::MAX - 1, u64::MAX,
+            operation,
+            u64::MAX - 1,
+            u64::MAX,
         )))
     })?;
     ctx.charge_work(count, operation)
         .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    let longest_identity = converted.iter().map(|record| record.id().len()).max().unwrap_or(0);
-    let work = u64::try_from(longest_identity).ok()
+    let longest_identity = converted
+        .iter()
+        .map(|record| record.id().len())
+        .max()
+        .unwrap_or(0);
+    let work = u64::try_from(longest_identity)
+        .ok()
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_mul(count))
-        .and_then(|amount| amount.checked_mul(u64::from(converted.len().checked_ilog2().unwrap_or(0)) + 1))
+        .and_then(|amount| {
+            amount.checked_mul(u64::from(converted.len().checked_ilog2().unwrap_or(0)) + 1)
+        })
         .and_then(|amount| amount.checked_mul(32))
-        .ok_or_else(|| E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation, u64::MAX - 1, u64::MAX,
-        ))))?;
+        .ok_or_else(|| {
+            E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+                operation,
+                u64::MAX - 1,
+                u64::MAX,
+            )))
+        })?;
     ctx.charge_work(work, operation)
         .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
     ctx.charge_collection_items(count, operation)
@@ -733,12 +809,17 @@ where
     let mut order = Vec::new();
     order.try_reserve_exact(converted.len()).map_err(|_| {
         E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
-            operation, u64::MAX - 1, u64::MAX,
+            operation,
+            u64::MAX - 1,
+            u64::MAX,
         )))
     })?;
     order.extend(0..converted.len());
     order.sort_unstable_by(|left, right| {
-        converted[*left].id().cmp(converted[*right].id()).then_with(|| left.cmp(right))
+        converted[*left]
+            .id()
+            .cmp(converted[*right].id())
+            .then_with(|| left.cmp(right))
     });
     for start in 0..order.len() {
         let mut cursor = start;
@@ -856,10 +937,20 @@ impl NativeNamespace {
                 Ok(value) => value,
                 Err(source) if source.resource_limit().is_some() => return Err(source),
                 Err(source) => {
-                    ctx.charge_work(u64::try_from(arena.len()).map_err(|_| {
-                        ctx.refuse_codec_limit("retain native arena error name", u64::MAX - 1, u64::MAX)
-                    })?, "retain native arena error name")?;
-                    let arena = ctx.format_retained(format_args!("{arena}"), "retain native arena error name")?;
+                    ctx.charge_work(
+                        u64::try_from(arena.len()).map_err(|_| {
+                            ctx.refuse_codec_limit(
+                                "retain native arena error name",
+                                u64::MAX - 1,
+                                u64::MAX,
+                            )
+                        })?,
+                        "retain native arena error name",
+                    )?;
+                    let arena = ctx.format_retained(
+                        format_args!("{arena}"),
+                        "retain native arena error name",
+                    )?;
                     return Err(NativeConvertError::Arena {
                         arena,
                         source: Box::new(source),
@@ -868,7 +959,9 @@ impl NativeNamespace {
             };
             typed.try_reserve(1).map_err(|_| {
                 NativeConvertError::Resource(ctx.refuse_codec_limit(
-                    "load typed native record", u64::MAX - 1, u64::MAX,
+                    "load typed native record",
+                    u64::MAX - 1,
+                    u64::MAX,
                 ))
             })?;
             typed.push(value);

@@ -110,21 +110,22 @@ fn agreed_dimension_records<'a>(
 
     let mut representatives = Vec::new();
     for mut group in groups.into_values() {
-            group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
-            let Some(&canonical) = group.first() else {
-                continue;
-            };
-            if canonical.item_count == 1
-                && group.iter().all(|record| {
-                    record.item_count == 1 && equivalent_dimensions(canonical, record)
-                }) {
-                ctx.reserve_collection_vec(
-                    &mut representatives,
-                    1,
-                    "collect SLDPRT PMI agreed dimensions",
-                )?;
-                representatives.push(canonical);
-            }
+        group.sort_unstable_by(|left, right| left.id.cmp(&right.id));
+        let Some(&canonical) = group.first() else {
+            continue;
+        };
+        if canonical.item_count == 1
+            && group
+                .iter()
+                .all(|record| record.item_count == 1 && equivalent_dimensions(canonical, record))
+        {
+            ctx.reserve_collection_vec(
+                &mut representatives,
+                1,
+                "collect SLDPRT PMI agreed dimensions",
+            )?;
+            representatives.push(canonical);
+        }
     }
     representatives.sort_unstable_by(|left, right| left.id.cmp(&right.id));
     Ok(representatives)
@@ -521,20 +522,22 @@ pub(crate) fn apply_to_parameters(
                         ctx,
                         &record.guid,
                         "retain SLDPRT PMI parameter identity key",
-                    )?).map_err(
-                        |error| {
-                            cadmpeg_core::CodecError::malformed(format_args!(
-                                "SLDPRT PMI record guid is not identity key text: {error}"
-                            ))
-                        },
-                    )?,
+                    )?)
+                    .map_err(|error| {
+                        cadmpeg_core::CodecError::malformed(format_args!(
+                            "SLDPRT PMI record guid is not identity key text: {error}"
+                        ))
+                    })?,
                 ),
             ),
-            owner: Some(cadmpeg_ir::features::FeatureId::mint(copy_pmi_text(
-                ctx,
-                owner.id.as_str(),
-                "retain SLDPRT PMI parameter owner ID",
-            )?).map_err(cadmpeg_core::CodecError::malformed)?),
+            owner: Some(
+                cadmpeg_ir::features::FeatureId::mint(copy_pmi_text(
+                    ctx,
+                    owner.id.as_str(),
+                    "retain SLDPRT PMI parameter owner ID",
+                )?)
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+            ),
             ordinal,
             name: copy_pmi_text(ctx, name, "retain SLDPRT PMI parameter name")?,
             expression,
@@ -602,7 +605,12 @@ pub(crate) fn dimensions(
             &mut seen,
         )?;
     }
-    ctx.stable_sort_by(&mut records, |left, right| left.id.cmp(&right.id), |record| record.id.as_str().len(), "sort SLDPRT PMI records")?;
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.id.cmp(&right.id),
+        |record| record.id.as_str().len(),
+        "sort SLDPRT PMI records",
+    )?;
     Ok(records)
 }
 
@@ -629,7 +637,12 @@ pub(crate) fn parse_payload(
         &mut records,
         &mut seen,
     )?;
-    ctx.stable_sort_by(&mut records, |left, right| left.id.cmp(&right.id), |record| record.id.as_str().len(), "sort SLDPRT PMI records")?;
+    ctx.stable_sort_by(
+        &mut records,
+        |left, right| left.id.cmp(&right.id),
+        |record| record.id.as_str().len(),
+        "sort SLDPRT PMI records",
+    )?;
     Ok(records)
 }
 
@@ -645,8 +658,11 @@ fn collect_dimensions(
 ) -> Result<(), CodecError> {
     ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
-        let (mut normalized, _reservation) =
-            crate::text_admission::reserve_scoped_string(ctx, guid.len(), "normalize SLDPRT PMI candidate GUID")?;
+        let (mut normalized, _reservation) = crate::text_admission::reserve_scoped_string(
+            ctx,
+            guid.len(),
+            "normalize SLDPRT PMI candidate GUID",
+        )?;
         normalized.push_str(guid);
         normalized.make_ascii_lowercase();
         if seen.contains(&normalized) {
@@ -670,7 +686,11 @@ fn collect_dimensions(
             }
             Ok(None) => {}
             Err(PmiParseError::Malformed(message)) => {
-                let decimal_len = if offset == 0 { 1 } else { offset.ilog10() as usize + 1 };
+                let decimal_len = if offset == 0 {
+                    1
+                } else {
+                    offset.ilog10() as usize + 1
+                };
                 let capacity = "PMISemanticDataDB map at offset ".len()
                     + decimal_len
                     + " (guid ".len()
@@ -678,12 +698,25 @@ fn collect_dimensions(
                     + ") ".len()
                     + message.len();
                 let mut text = String::new();
-                crate::text_admission::reserve_retained_string(ctx, &mut text, capacity, "retain SLDPRT PMI malformed note")?;
+                crate::text_admission::reserve_retained_string(
+                    ctx,
+                    &mut text,
+                    capacity,
+                    "retain SLDPRT PMI malformed note",
+                )?;
                 std::fmt::Write::write_fmt(
                     &mut text,
-                    format_args!("PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"),
+                    format_args!(
+                        "PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"
+                    ),
                 )
-                .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT PMI malformed note", u64::MAX - 1, u64::MAX))?;
+                .map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "retain SLDPRT PMI malformed note",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
                 ctx.reserve_collection_vec(losses, 1, "collect SLDPRT PMI malformed notes")?;
                 losses.push(SldprtLossCode::PmiSemanticRecordMalformed.note(text));
             }
@@ -691,8 +724,9 @@ fn collect_dimensions(
         }
         ctx.charge_retained(normalized.len() as u64, "retain SLDPRT PMI candidate GUID")?;
         ctx.charge_collection_items(1, "index SLDPRT PMI candidate GUID")?;
-        seen.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("index SLDPRT PMI candidate GUID", u64::MAX - 1, u64::MAX))?;
+        seen.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT PMI candidate GUID", u64::MAX - 1, u64::MAX)
+        })?;
         seen.insert(normalized);
     }
     Ok(())
@@ -721,8 +755,13 @@ impl From<CodecError> for PmiParseError {
     }
 }
 
-fn copy_pmi_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
+fn copy_pmi_text(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
+        .checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
@@ -802,7 +841,8 @@ fn extract_dimension(
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
     let mut id = String::new();
-    crate::text_admission::reserve_retained_string(ctx, 
+    crate::text_admission::reserve_retained_string(
+        ctx,
         &mut id,
         "sldprt:pmi:dimension#".len() + guid.len(),
         "retain SLDPRT PMI dimension ID",
@@ -814,7 +854,10 @@ fn extract_dimension(
             kind: ValueKind::String(text),
             data_offset,
             ..
-        }) => Some((copy_pmi_text(ctx, text, "retain SLDPRT PMI display text")?, *data_offset as u64)),
+        }) => Some((
+            copy_pmi_text(ctx, text, "retain SLDPRT PMI display text")?,
+            *data_offset as u64,
+        )),
         _ => None,
     };
     Ok(Some(PmiDimension {
@@ -936,10 +979,12 @@ fn parse_value<'a>(
             Some(len) => parse_array(ctx, bytes, cursor, usize::from(len), depth, start)?,
             None => None,
         },
-        Marker::Array32 => match take_u32(bytes, cursor).and_then(|len| usize::try_from(len).ok()) {
-            Some(len) => parse_array(ctx, bytes, cursor, len, depth, start)?,
-            None => None,
-        },
+        Marker::Array32 => {
+            match take_u32(bytes, cursor).and_then(|len| usize::try_from(len).ok()) {
+                Some(len) => parse_array(ctx, bytes, cursor, len, depth, start)?,
+                None => None,
+            }
+        }
         Marker::Map16 => match take_u16(bytes, cursor) {
             Some(len) => parse_map(ctx, bytes, cursor, usize::from(len), depth, start)?,
             None => None,

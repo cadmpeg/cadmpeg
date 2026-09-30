@@ -1,8 +1,8 @@
 //! Helix polyline fitting and the linear solvers it uses.
 
-use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two, Point3, Vector3};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::math::{power_of_two_bound, scale_power_of_two, Point3, Vector3};
 
 // Mesh coordinates are an approximation of the analytic helix. This fixed
 // relative bound is the decoder's promotion policy, not a value inferred from
@@ -18,12 +18,11 @@ pub(super) fn fit_helix_polyline(
     if points.len() < 6 {
         return Ok(None);
     }
-    let point_count = u64::try_from(points.len()).map_err(|_| {
-        ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX)
-    })?;
-    let work = point_count.checked_mul(4).ok_or_else(|| {
-        ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX)
-    })?;
+    let point_count = u64::try_from(points.len())
+        .map_err(|_| ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX))?;
+    let work = point_count
+        .checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("fit SLDPRT helix work", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "fit SLDPRT helix work")?;
     let revolutions = revolutions.get();
     let mut parameters = ctx.alloc_filled(points.len(), 0.0, "fit SLDPRT helix parameters")?;
@@ -36,75 +35,77 @@ pub(super) fn fit_helix_polyline(
         parameters[index + 1] = parameters[index] + delta.norm();
     }
     Ok((|| {
-    let total = *parameters.last()?;
-    if !total.is_finite() || total <= 0.0 {
-        return None;
-    }
-    let angle = std::f64::consts::TAU * revolutions * if clockwise { -1.0 } else { 1.0 };
-    let mut normal = [[0.0; 4]; 4];
-    let mut rhs = [[0.0; 3]; 4];
-    for (point, distance) in points.iter().zip(parameters) {
-        let t = distance / total;
-        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
-        for i in 0..4 {
-            for j in 0..4 {
-                normal[i][j] += row[i] * row[j];
+        let total = *parameters.last()?;
+        if !total.is_finite() || total <= 0.0 {
+            return None;
+        }
+        let angle = std::f64::consts::TAU * revolutions * if clockwise { -1.0 } else { 1.0 };
+        let mut normal = [[0.0; 4]; 4];
+        let mut rhs = [[0.0; 3]; 4];
+        for (point, distance) in points.iter().zip(parameters) {
+            let t = distance / total;
+            let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+            for i in 0..4 {
+                for j in 0..4 {
+                    normal[i][j] += row[i] * row[j];
+                }
+                rhs[i][0] += row[i] * point.x;
+                rhs[i][1] += row[i] * point.y;
+                rhs[i][2] += row[i] * point.z;
             }
-            rhs[i][0] += row[i] * point.x;
-            rhs[i][1] += row[i] * point.y;
-            rhs[i][2] += row[i] * point.z;
         }
-    }
-    let x = solve_four(normal, rhs)?;
-    let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
-    let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
-    let mut axis = cosine.cross(sine);
-    let axis_length = axis.norm();
-    if !axis_length.is_finite() || axis_length <= 0.0 {
-        return None;
-    }
-    axis = Vector3::new(
-        axis.x / axis_length,
-        axis.y / axis_length,
-        axis.z / axis_length,
-    );
-    let radial_cosine = subtract_axis(cosine, axis);
-    let radial_sine = subtract_axis(sine, axis);
-    let radius_estimate = (radial_cosine.norm() + radial_sine.norm()) * 0.5;
-    if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
-        return None;
-    }
-    let mut max_error = 0.0f64;
-    for (point, distance) in
-        points.iter().zip(
-            std::iter::once(0.0).chain(points.windows(2).scan(0.0, |sum, pair| {
-                let delta = Vector3::new(
-                    pair[1].x - pair[0].x,
-                    pair[1].y - pair[0].y,
-                    pair[1].z - pair[0].z,
-                );
-                *sum += delta.norm();
-                Some(*sum)
-            })),
-        )
-    {
-        let t = distance / total;
-        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
-        for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
-            let fitted = (0..4).map(|i| row[i] * x[i][coordinate]).sum::<f64>();
-            max_error = max_error.max((fitted - actual).abs());
+        let x = solve_four(normal, rhs)?;
+        let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
+        let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
+        let mut axis = cosine.cross(sine);
+        let axis_length = axis.norm();
+        if !axis_length.is_finite() || axis_length <= 0.0 {
+            return None;
         }
-    }
-    if max_error > radius_estimate * HELIX_MAX_RELATIVE_RESIDUAL {
-        return None;
-    }
-    let (origin, radius) = fit_circle_on_axis(points, axis)?;
-    let displacement = Vector3::new(
-        points.last()?.x - points[0].x,
-        points.last()?.y - points[0].y,
-        points.last()?.z - points[0].z,
-    );
-    Some((origin, axis, radius, displacement.dot(axis)))
+        axis = Vector3::new(
+            axis.x / axis_length,
+            axis.y / axis_length,
+            axis.z / axis_length,
+        );
+        let radial_cosine = subtract_axis(cosine, axis);
+        let radial_sine = subtract_axis(sine, axis);
+        let radius_estimate = (radial_cosine.norm() + radial_sine.norm()) * 0.5;
+        if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
+            return None;
+        }
+        let mut max_error = 0.0f64;
+        for (point, distance) in
+            points
+                .iter()
+                .zip(
+                    std::iter::once(0.0).chain(points.windows(2).scan(0.0, |sum, pair| {
+                        let delta = Vector3::new(
+                            pair[1].x - pair[0].x,
+                            pair[1].y - pair[0].y,
+                            pair[1].z - pair[0].z,
+                        );
+                        *sum += delta.norm();
+                        Some(*sum)
+                    })),
+                )
+        {
+            let t = distance / total;
+            let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+            for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
+                let fitted = (0..4).map(|i| row[i] * x[i][coordinate]).sum::<f64>();
+                max_error = max_error.max((fitted - actual).abs());
+            }
+        }
+        if max_error > radius_estimate * HELIX_MAX_RELATIVE_RESIDUAL {
+            return None;
+        }
+        let (origin, radius) = fit_circle_on_axis(points, axis)?;
+        let displacement = Vector3::new(
+            points.last()?.x - points[0].x,
+            points.last()?.y - points[0].y,
+            points.last()?.z - points[0].z,
+        );
+        Some((origin, axis, radius, displacement.dot(axis)))
     })())
 }
 
@@ -317,8 +318,11 @@ mod tests {
     fn helix_fit_preserves_small_model_units() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         const RELATIVE_ERROR: f64 = 1e-10;
         for scale in [1e-8, 1.0, 1e8] {
             let points = (0..=16)
@@ -333,7 +337,9 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let (origin, axis, radius, rise) =
-                super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false).unwrap().unwrap();
+                super::fit_helix_polyline(&ctx, &points, revolutions(1.0), false)
+                    .unwrap()
+                    .unwrap();
             assert!(origin.x.abs() / scale <= RELATIVE_ERROR);
             assert!(origin.y.abs() / scale <= RELATIVE_ERROR);
             assert!((axis.z - 1.0).abs() <= RELATIVE_ERROR);
@@ -346,8 +352,11 @@ mod tests {
     fn helix_polyline_fit_recovers_axis_radius_and_rise() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let points = (0..=64)
             .map(|index| {
                 let t = f64::from(index) / 64.0;
@@ -360,7 +369,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (origin, axis, radius, rise) =
-            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false).unwrap().unwrap();
+            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false)
+                .unwrap()
+                .unwrap();
         assert!((origin.x - 10.0).abs() < 1.0e-9);
         assert!((origin.y - 20.0).abs() < 1.0e-9);
         assert!((origin.z - 30.0).abs() < 1.0e-9);
@@ -375,8 +386,11 @@ mod tests {
     fn helix_fit_does_not_snap_axis_to_mesh_residual() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let axis_x: f64 = 4.0e-5;
         let axis_y = -(1.0 - axis_x * axis_x).sqrt();
         let points = (0..=64)
@@ -395,7 +409,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
         let (_, axis, radius, _) =
-            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false).unwrap().unwrap();
+            super::fit_helix_polyline(&ctx, &points, revolutions(0.25), false)
+                .unwrap()
+                .unwrap();
         assert!(axis.x > 3.0e-5 && axis.x < 5.0e-5, "{axis:?}");
         assert!(axis.y < -0.999_999_99, "{axis:?}");
         assert!(axis.z.abs() < 1.0e-6, "{axis:?}");

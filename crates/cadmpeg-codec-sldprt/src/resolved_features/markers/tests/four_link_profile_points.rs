@@ -139,7 +139,13 @@ fn current_four_link_profile_point_decodes_and_drives_reverse_incidence() {
     ];
     let marker_refs = markers.iter().collect::<Vec<_>>();
     assert_eq!(
-        current_reverse_incidence_endpoint_offsets(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &marker_refs).unwrap(),
+        current_reverse_incidence_endpoint_offsets(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &marker_refs
+        )
+        .unwrap(),
         Some([first as u64, second as u64])
     );
 

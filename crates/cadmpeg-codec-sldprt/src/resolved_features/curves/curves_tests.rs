@@ -10,10 +10,9 @@ use super::{
     closed_marker_profiles_allowing_shared_endpoints, compact_bounded_curve_tangent,
     compact_legacy_rectangle_line_endpoints, compact_line_chain_addresses,
     compact_line_region_addresses, complete_ordered_compact_line_profile,
-    current_linked_semicircle_record,
-    legacy_extended_rectangle_diagonal_endpoint, ordered_compact_line_profile,
-    ordered_rectangle_corners, resolve_two_center_semicircle_profile, tangent_bounded_curve,
-    unique_dimensioned_rectangle_markers,
+    current_linked_semicircle_record, legacy_extended_rectangle_diagonal_endpoint,
+    ordered_compact_line_profile, ordered_rectangle_corners, resolve_two_center_semicircle_profile,
+    tangent_bounded_curve, unique_dimensioned_rectangle_markers,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -86,7 +85,8 @@ fn indexed_rectangle_from_line_cycle(
     markers: &[&SketchInputEntity],
 ) -> Option<[Point2; 4]> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
     super::indexed_rectangle_from_line_cycle(&ctx, payload, markers).unwrap()
 }
 
@@ -220,13 +220,15 @@ fn compact_chain_payload() -> Vec<u8> {
 
 fn region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
     compact_line_region_addresses(&ctx, payload).unwrap()
 }
 
 fn chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(payload, &arena, &DecodePolicy::service()).unwrap();
     compact_line_chain_addresses(&ctx, payload).unwrap()
 }
 
@@ -304,7 +306,9 @@ fn shared_endpoint_block_cycles_remain_profile_chains() {
 
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(super::closed_marker_profiles(&ctx, &entities).unwrap().is_empty());
+    assert!(super::closed_marker_profiles(&ctx, &entities)
+        .unwrap()
+        .is_empty());
     let profiles = closed_marker_profiles_allowing_shared_endpoints(&ctx, &entities).unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].len(), 4);
@@ -374,29 +378,17 @@ fn closed_profile_refuses_work_limit() {
 #[test]
 fn compact_line_region_is_an_ordered_one_based_curve_roster() {
     let mut payload = compact_region_payload();
-    assert_eq!(
-        region_addresses(&payload),
-        Some(vec![2, 1, 4, 3])
-    );
+    assert_eq!(region_addresses(&payload), Some(vec![2, 1, 4, 3]));
     payload[22] = 1;
-    assert_eq!(
-        region_addresses(&payload),
-        None
-    );
+    assert_eq!(region_addresses(&payload), None);
 }
 
 #[test]
 fn compact_line_chain_is_an_ordered_one_based_vertex_roster() {
     let mut payload = compact_chain_payload();
-    assert_eq!(
-        chain_addresses(&payload),
-        Some(vec![3, 2, 1, 4])
-    );
+    assert_eq!(chain_addresses(&payload), Some(vec![3, 2, 1, 4]));
     payload[24] = 4;
-    assert_eq!(
-        chain_addresses(&payload),
-        None
-    );
+    assert_eq!(chain_addresses(&payload), None);
 }
 
 #[test]
@@ -1295,8 +1287,9 @@ fn linked_semicircle_refuses_collection_limit() {
     policy.limits.max_collection_items = 1;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
-        .unwrap_err();
+    let error =
+        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+            .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT semicircle records"));
@@ -1310,8 +1303,9 @@ fn linked_semicircle_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let error = resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
-        .unwrap_err();
+    let error =
+        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9)
+            .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "copy SLDPRT semicircle point identity"));
@@ -1323,7 +1317,8 @@ fn linked_semicircle_records_close_a_two_center_profile() {
     let markers = records.iter().collect::<Vec<_>>();
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
     resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut entities, 1.0e-9).unwrap();
 
     assert_eq!(
@@ -1836,30 +1831,50 @@ fn linked_semicircle_refuses_work_at_minimum_admission() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
         let mut output = entities.clone();
-        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut output, EPS_SEMICIRCLE_TEST)?;
+        resolve_two_center_semicircle_profile(
+            &ctx,
+            &payload,
+            &markers,
+            &mut output,
+            EPS_SEMICIRCLE_TEST,
+        )?;
         Ok::<_, CodecError>(output)
     };
     let mut policy = DecodePolicy::service();
     let expected = run(&policy).unwrap();
     assert_ne!(expected, entities);
     let admitted = |policy: &DecodePolicy| match run(policy) {
-        Ok(actual) => { assert_eq!(actual, expected); true }
-        Err(CodecError::ResourceLimit(limit)) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+        Ok(actual) => {
+            assert_eq!(actual, expected);
+            true
+        }
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
+        }
         Err(error) => panic!("unexpected linked semicircle error: {error}"),
     };
     let mut lower = 0;
     let mut upper = 1_u64;
     loop {
         policy.limits.max_work_units = upper;
-        if admitted(&policy) { break; }
+        if admitted(&policy) {
+            break;
+        }
         upper = upper.checked_mul(2).unwrap();
     }
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         policy.limits.max_work_units = middle;
-        if admitted(&policy) { upper = middle; } else { lower = middle + 1; }
+        if admitted(&policy) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
     }
     assert!(upper > 0);
-    policy.limits.max_work_units = upper; assert!(admitted(&policy));
-    policy.limits.max_work_units = upper - 1; assert!(!admitted(&policy));
+    policy.limits.max_work_units = upper;
+    assert!(admitted(&policy));
+    policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&policy));
 }

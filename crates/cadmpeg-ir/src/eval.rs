@@ -39,8 +39,8 @@ use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
-use cadmpeg_core::decode::{u64_from_index, ResourceLimit, WorkBudget};
 use cadmpeg_core::decode::work_scratch::WorkScratch;
+use cadmpeg_core::decode::{u64_from_index, ResourceLimit, WorkBudget};
 
 mod depth;
 mod model_surface_point;
@@ -273,23 +273,47 @@ pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64
         let vc = u64_from_index(surface.v_count());
         // Each original knot and both endpoints need at most one support's
         // insertions. Span storage has at most the expanded control count.
-        let eu = uc.checked_add(u.checked_mul(u64_from_index(surface.u_knots().len()).checked_add(2)?)?)?;
-        let ev = vc.checked_add(v.checked_mul(u64_from_index(surface.v_knots().len()).checked_add(2)?)?)?;
+        let eu = uc
+            .checked_add(u.checked_mul(u64_from_index(surface.u_knots().len()).checked_add(2)?)?)?;
+        let ev = vc
+            .checked_add(v.checked_mul(u64_from_index(surface.v_knots().len()).checked_add(2)?)?)?;
         let cells = eu.checked_mul(ev)?;
-        let cell_bytes = u64_from_index(std::mem::size_of::<[f64; 4]>()).checked_mul(8)?
-            .checked_add(u64_from_index(std::mem::size_of::<crate::geometry::nurbs::bezier::HomogeneousBezierSpan>()).checked_mul(4)?)?
-            .checked_add(u64_from_index(std::mem::size_of::<RationalBezierSurfacePatch<'static>>()).checked_mul(2)?)?;
+        let cell_bytes = u64_from_index(std::mem::size_of::<[f64; 4]>())
+            .checked_mul(8)?
+            .checked_add(
+                u64_from_index(std::mem::size_of::<
+                    crate::geometry::nurbs::bezier::HomogeneousBezierSpan,
+                >())
+                .checked_mul(4)?,
+            )?
+            .checked_add(
+                u64_from_index(std::mem::size_of::<RationalBezierSurfacePatch<'static>>())
+                    .checked_mul(2)?,
+            )?;
         // The split's line lists, control copies and polygons use at most
         // sixteen control-sized lanes per tensor-product support.
-        let bytes = cells.checked_mul(cell_bytes)?
-            .checked_add(u.checked_mul(v)?.checked_mul(16)?.checked_mul(u64_from_index(std::mem::size_of::<[f64; 4]>()))?)?
-            .checked_add(u.checked_add(v)?.checked_mul(3)?.checked_mul(u64_from_index(std::mem::size_of::<f64>()))?)?;
-        let work = eu.checked_mul(eu)?.checked_mul(vc)?
+        let bytes = cells
+            .checked_mul(cell_bytes)?
+            .checked_add(
+                u.checked_mul(v)?
+                    .checked_mul(16)?
+                    .checked_mul(u64_from_index(std::mem::size_of::<[f64; 4]>()))?,
+            )?
+            .checked_add(
+                u.checked_add(v)?
+                    .checked_mul(3)?
+                    .checked_mul(u64_from_index(std::mem::size_of::<f64>()))?,
+            )?;
+        let work = eu
+            .checked_mul(eu)?
+            .checked_mul(vc)?
             .checked_add(ev.checked_mul(ev)?.checked_mul(uc)?.checked_mul(u)?)?
             .checked_mul(256)?;
         Some((bytes, work))
     };
-    bound().ok_or_else(|| scratch::allocation_failed(surface.u_count(), "IR surface patch workspace bound"))
+    bound().ok_or_else(|| {
+        scratch::allocation_failed(surface.u_count(), "IR surface patch workspace bound")
+    })
 }
 
 fn rational_surface_patches_with_budget<'session>(
@@ -406,9 +430,16 @@ fn rational_surface_patches_with_budget<'session>(
             if !budget.charge_by(patch_control_count) {
                 return Ok(None);
             }
-            let control_bytes = patch_control_count.checked_mul(std::mem::size_of::<[f64; 4]>())
-                .ok_or_else(|| scratch::allocation_failed(patch_control_count, "IR surface patch control bytes"))?;
-            let control_scratch = budget.reserve_scratch(u64_from_index(control_bytes), "IR surface patch controls")?;
+            let control_bytes = patch_control_count
+                .checked_mul(std::mem::size_of::<[f64; 4]>())
+                .ok_or_else(|| {
+                    scratch::allocation_failed(
+                        patch_control_count,
+                        "IR surface patch control bytes",
+                    )
+                })?;
+            let control_scratch = budget
+                .reserve_scratch(u64_from_index(control_bytes), "IR surface patch controls")?;
             let mut controls = Vec::new();
             scratch::reserve_exact(
                 &mut controls,
@@ -716,7 +747,10 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
 
 /// Bound a surface segment with scratch charged to the work slice's session.
 pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
-    surface: &NurbsSurface, parameters: [Point2; 2], chord: [Point3; 2], budget: &WorkBudget<'_>,
+    surface: &NurbsSurface,
+    parameters: [Point2; 2],
+    chord: [Point3; 2],
+    budget: &WorkBudget<'_>,
 ) -> Result<Option<f64>, ResourceLimit> {
     let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
     let _workspace = budget.reserve_scratch(bytes, "IR surface segment workspace")?;
@@ -1171,7 +1205,9 @@ fn complete_nurbs_surface_starts<'session>(
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
     if fit_tolerance.is_some() && best_distance <= distance_tolerance {
-        return Ok((!best_upper_parameters.is_empty()).then_some((best_upper_parameters, upper_scratch)));
+        return Ok(
+            (!best_upper_parameters.is_empty()).then_some((best_upper_parameters, upper_scratch))
+        );
     }
     let mut queue_scratch = budget.reserve_scratch(0, "IR surface patch queue")?;
     let mut queue = BinaryHeap::new();
@@ -1183,7 +1219,9 @@ fn complete_nurbs_surface_starts<'session>(
             return Ok(None);
         };
         if queue.len() == queue.capacity() {
-            queue_scratch.grow(u64_from_index(std::mem::size_of::<SurfacePatchQueueEntry<'_>>()))?;
+            queue_scratch.grow(u64_from_index(std::mem::size_of::<
+                SurfacePatchQueueEntry<'_>,
+            >()))?;
         }
         queue
             .try_reserve_exact(1)
@@ -1226,8 +1264,12 @@ fn complete_nurbs_surface_starts<'session>(
             return Ok(None);
         };
         if fit_tolerance.is_some() && center_distance <= distance_tolerance {
-            let reservation = budget.reserve_scratch(u64_from_index(std::mem::size_of::<FinitePoint2>()), "IR surface parameter start")?;
-            return scratch::filled(1, upper_parameters, "IR surface parameter start").map(|starts| Some((starts, reservation)));
+            let reservation = budget.reserve_scratch(
+                u64_from_index(std::mem::size_of::<FinitePoint2>()),
+                "IR surface parameter start",
+            )?;
+            return scratch::filled(1, upper_parameters, "IR surface parameter start")
+                .map(|starts| Some((starts, reservation)));
         }
         let upper_tolerance = 128.0
             * f64::EPSILON
@@ -1255,7 +1297,8 @@ fn complete_nurbs_surface_starts<'session>(
             || indivisible
         {
             if terminal.len() == terminal.capacity() {
-                terminal_scratch.grow(u64_from_index(std::mem::size_of::<(FinitePoint2, f64)>()))?;
+                terminal_scratch
+                    .grow(u64_from_index(std::mem::size_of::<(FinitePoint2, f64)>()))?;
             }
             scratch::reserve_exact(&mut terminal, 1, "IR surface terminal parameters")?;
             terminal.push((upper_parameters, lower_bound));
@@ -1304,7 +1347,9 @@ fn complete_nurbs_surface_starts<'session>(
                 return Ok(None);
             };
             if queue.len() == queue.capacity() {
-                queue_scratch.grow(u64_from_index(std::mem::size_of::<SurfacePatchQueueEntry<'_>>()))?;
+                queue_scratch.grow(u64_from_index(std::mem::size_of::<
+                    SurfacePatchQueueEntry<'_>,
+                >()))?;
             }
             queue
                 .try_reserve_exact(1)
@@ -1322,9 +1367,11 @@ fn complete_nurbs_surface_starts<'session>(
     let Some(start_count) = terminal.len().checked_add(best_upper_parameters.len()) else {
         return Ok(None);
     };
-    let start_bytes = start_count.checked_mul(std::mem::size_of::<FinitePoint2>())
+    let start_bytes = start_count
+        .checked_mul(std::mem::size_of::<FinitePoint2>())
         .ok_or_else(|| scratch::allocation_failed(start_count, "IR surface start bytes"))?;
-    let _start_scratch = budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
+    let _start_scratch =
+        budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
     let mut starts = Vec::new();
     scratch::reserve_exact(&mut starts, start_count, "IR surface parameter starts")?;
     starts.extend(terminal.into_iter().filter_map(|(parameters, lower)| {
@@ -1401,7 +1448,8 @@ fn solve_nurbs_surface_parameter(
             }
         }
     }
-    let Some((starts, _start_scratch)) = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
+    let Some((starts, _start_scratch)) =
+        complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
     else {
         return Ok(None);
     };
@@ -3279,17 +3327,30 @@ pub fn nurbs_surface_isocurve_scratch_bytes(
     fixed_axis: SurfaceParameterAxis,
 ) -> Result<usize, ResourceLimit> {
     let (degree, count, knots) = match fixed_axis {
-        SurfaceParameterAxis::U => (surface.u_degree(), surface.v_count(), surface.v_knots().len()),
-        SurfaceParameterAxis::V => (surface.v_degree(), surface.u_count(), surface.u_knots().len()),
+        SurfaceParameterAxis::U => (
+            surface.u_degree(),
+            surface.v_count(),
+            surface.v_knots().len(),
+        ),
+        SurfaceParameterAxis::V => (
+            surface.v_degree(),
+            surface.u_count(),
+            surface.u_knots().len(),
+        ),
     };
-    let bytes = usize::try_from(degree).ok().and_then(|degree| degree.checked_add(1))
+    let bytes = usize::try_from(degree)
+        .ok()
+        .and_then(|degree| degree.checked_add(1))
         .and_then(|basis| basis.checked_add(knots))
         .and_then(|lanes| lanes.checked_mul(std::mem::size_of::<f64>()))
         .and_then(|bytes| {
             let per_pole = std::mem::size_of::<Homogeneous>()
                 .checked_add(std::mem::size_of::<FinitePoint3>())?
                 .checked_add(std::mem::size_of::<f64>())?
-                .checked_add(std::mem::size_of::<crate::geometry::nurbs::WeightedPole3<FinitePoint3>>().checked_mul(2)?)?;
+                .checked_add(
+                    std::mem::size_of::<crate::geometry::nurbs::WeightedPole3<FinitePoint3>>()
+                        .checked_mul(2)?,
+                )?;
             bytes.checked_add(count.checked_mul(per_pole)?)
         });
     bytes.ok_or_else(|| scratch::allocation_failed(count, "IR isocurve workspace bound"))

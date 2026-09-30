@@ -1784,7 +1784,9 @@ pub(crate) fn swobjects_metadata_identity_local_sha256(ir: &CadIr) -> Result<Str
 fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     validate_feature_graph(&ctx, &history.features)?;
     let mut out = String::from("<Keywords");
@@ -1869,7 +1871,9 @@ pub(crate) fn validate_feature_graph(
         ctx.charge_work(1, "validate SLDPRT feature graph")?;
         if let Some(id) = feature.source_id {
             ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
-            by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX))?;
+            by_id.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX)
+            })?;
             by_id.insert(id, feature);
         }
     }
@@ -1884,7 +1888,9 @@ pub(crate) fn validate_feature_graph(
     let mut by_record = HashMap::new();
     for feature in features {
         ctx.charge_collection_items(1, "index SLDPRT feature graph")?;
-        by_record.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX))?;
+        by_record.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("index SLDPRT feature graph", u64::MAX - 1, u64::MAX)
+        })?;
         by_record.insert(feature.id.as_str(), feature);
     }
     if by_record.len() != features.len() {
@@ -1896,7 +1902,9 @@ pub(crate) fn validate_feature_graph(
         while let Some(id) = parent {
             ctx.charge_work(1, "walk SLDPRT feature graph")?;
             ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
-            seen.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX))?;
+            seen.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX)
+            })?;
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature parent cycle".into()));
             }
@@ -1910,7 +1918,9 @@ pub(crate) fn validate_feature_graph(
         while let Some(id) = parent {
             ctx.charge_work(1, "walk SLDPRT feature graph")?;
             ctx.charge_collection_items(1, "index SLDPRT feature graph parents")?;
-            seen.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX))?;
+            seen.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("index SLDPRT feature graph parents", u64::MAX - 1, u64::MAX)
+            })?;
             if !seen.insert(id) {
                 return Err(CodecError::Malformed("feature tree cycle".into()));
             }
@@ -3879,10 +3889,13 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_degree_from_stored_descriptor() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let surface = NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(9, vec![0.0; 20], false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0; 4], false),
@@ -3920,10 +3933,13 @@ mod nurbs_write_tests {
 
     #[test]
     fn writes_surface_shape_from_stored_counts() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let surface = NurbsSurface::from_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
                 2,

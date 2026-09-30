@@ -85,13 +85,16 @@ pub fn pmi(data: &[u8]) -> Result<(), cadmpeg_core::CodecError> {
         if data.get(start..end).is_none() {
             continue;
         }
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(data.len()), "patch SLDPRT PMI fuzz payload")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(data.len()),
+            "patch SLDPRT PMI fuzz payload",
+        )?;
         let _patched_reservation =
             ctx.reserve_scoped(data.len() as u64, "patch SLDPRT PMI fuzz payload")?;
         let mut patched = Vec::new();
-        patched
-            .try_reserve_exact(data.len())
-            .map_err(|_| ctx.refuse_codec_limit("patch SLDPRT PMI fuzz payload", u64::MAX - 1, u64::MAX))?;
+        patched.try_reserve_exact(data.len()).map_err(|_| {
+            ctx.refuse_codec_limit("patch SLDPRT PMI fuzz payload", u64::MAX - 1, u64::MAX)
+        })?;
         patched.extend_from_slice(data);
         let edited = f64::from_bits(record.value.get().to_bits() ^ 1);
         patched[start..end].copy_from_slice(&edited.to_be_bytes());
@@ -116,17 +119,23 @@ mod tests {
 
     #[test]
     fn parasolid_fuzz_wrapper_returns_declared_expansion_refusal() {
-        let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(b"x").expect("compressed frame fixture");
         let member = encoder.finish().expect("finish compressed frame fixture");
         let mut payload = vec![
-            0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2,
-            0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+            0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89,
+            0xef, 0x99,
         ];
         payload.extend_from_slice(&(512_u32 * 1024 * 1024 + 1).to_le_bytes());
-        payload.extend_from_slice(&u32::try_from(member.len()).expect("small compressed fixture").to_le_bytes());
+        payload.extend_from_slice(
+            &u32::try_from(member.len())
+                .expect("small compressed fixture")
+                .to_le_bytes(),
+        );
         payload.extend_from_slice(&member);
-        let error = super::parasolid(&payload).expect_err("declared expansion exceeds service policy");
+        let error =
+            super::parasolid(&payload).expect_err("declared expansion exceeds service policy");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes

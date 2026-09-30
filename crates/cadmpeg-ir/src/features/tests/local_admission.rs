@@ -59,9 +59,8 @@ fn tree_children_charged_insert_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"children", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"children", &arena, &policy).unwrap();
     let mut children = TreeChildren::default();
     let error = children
         .try_insert_charged(feature_id("child"), &ctx, "collect tree children")
@@ -428,10 +427,18 @@ fn selection_operand_parts_move_retained_storage() {
     let tools_text = String::from("tools-native");
     let target_pointer = target_text.as_ptr();
     let tools_pointer = tools_text.as_ptr();
-    let operands = CombineOperands::new(BodySelection::Native(target_text), BodySelection::Native(tools_text)).unwrap();
+    let operands = CombineOperands::new(
+        BodySelection::Native(target_text),
+        BodySelection::Native(tools_text),
+    )
+    .unwrap();
     let (target, tools) = operands.into_parts();
-    let BodySelection::Native(target) = target else { panic!("native target"); };
-    let BodySelection::Native(tools) = tools else { panic!("native tools"); };
+    let BodySelection::Native(target) = target else {
+        panic!("native target");
+    };
+    let BodySelection::Native(tools) = tools else {
+        panic!("native tools");
+    };
     assert_eq!(target.as_ptr(), target_pointer);
     assert_eq!(tools.as_ptr(), tools_pointer);
 
@@ -439,10 +446,18 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_text = String::from("replacements-native");
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
-    let operands = crate::features::ReplaceFaceOperands::new(crate::features::FaceSelection::Native(targets_text), crate::features::FaceSelection::Native(replacements_text)).unwrap();
+    let operands = crate::features::ReplaceFaceOperands::new(
+        crate::features::FaceSelection::Native(targets_text),
+        crate::features::FaceSelection::Native(replacements_text),
+    )
+    .unwrap();
     let (targets, replacements) = operands.into_parts();
-    let crate::features::FaceSelection::Native(targets) = targets else { panic!("native targets"); };
-    let crate::features::FaceSelection::Native(replacements) = replacements else { panic!("native replacements"); };
+    let crate::features::FaceSelection::Native(targets) = targets else {
+        panic!("native targets");
+    };
+    let crate::features::FaceSelection::Native(replacements) = replacements else {
+        panic!("native replacements");
+    };
     assert_eq!(targets.as_ptr(), targets_pointer);
     assert_eq!(replacements.as_ptr(), replacements_pointer);
 }

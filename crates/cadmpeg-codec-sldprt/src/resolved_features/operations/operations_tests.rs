@@ -82,27 +82,33 @@ fn split_line_limit_error(
 fn split_line_enrichment_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = split_line_limit_error(|policy| policy.limits.max_collection_items = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT split-line objects"));
+            && limit.operation == "collect SLDPRT split-line objects")
+    );
 }
 
 #[test]
 fn split_line_enrichment_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = split_line_limit_error(|policy| policy.limits.max_retained_bytes = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT split-line observation ID"));
+            && limit.operation == "retain SLDPRT split-line observation ID")
+    );
 }
 
 #[test]
 fn split_line_enrichment_refuses_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
     let error = split_line_limit_error(|policy| policy.limits.max_work_units = 0);
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
-            && limit.operation == "scan SLDPRT split-line objects"));
+            && limit.operation == "scan SLDPRT split-line objects")
+    );
 }
 
 #[test]
@@ -250,8 +256,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
         name: "moPLineProject_c".into(),
     });
     let mut ambiguous = vec![history.clone()];
-    enrich_history_split_lines(&ctx, &mut ambiguous, &[ambiguous_lane])
-        .expect("enrich split line");
+    enrich_history_split_lines(&ctx, &mut ambiguous, &[ambiguous_lane]).expect("enrich split line");
     assert!(!ambiguous[0].features[0]
         .properties
         .contains_key(SPLIT_LINE_MODE_PROPERTY));
@@ -261,8 +266,7 @@ fn split_line_projection_mode_requires_one_owned_project_class() {
     duplicate_sketch.source_id = FeatureSource::from_value(20);
     history.features.insert(2, duplicate_sketch);
     let mut ambiguous_tool = vec![history];
-    enrich_history_split_lines(&ctx, &mut ambiguous_tool, &[lane])
-        .expect("enrich split line");
+    enrich_history_split_lines(&ctx, &mut ambiguous_tool, &[lane]).expect("enrich split line");
     assert_eq!(
         ambiguous_tool[0].features[0]
             .properties

@@ -1,29 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::geometry::{CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry, PlacedCurve, SolvedCurveGeometry};
-use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
 use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+use crate::geometry::{
+    CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, CurveGeometry,
+    PlacedCurve, SolvedCurveGeometry,
+};
 use crate::ids::{CurveId, ProceduralCurveId, UnknownId};
 use crate::math::Point3;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
 fn curves() -> Vec<CurveGeometry> {
-    let unknown = SolvedCurveGeometry::Unknown { record: Some(UnknownId::mint("test:model:unknown#curve").unwrap()) };
-    let basis = PlacedCurve::try_new(Box::new(unknown), crate::transform::Transform::identity()).unwrap();
-    let placed = SolvedCurveGeometry::Transformed(PlacedCurve::try_new(Box::new(SolvedCurveGeometry::Transformed(basis)), crate::transform::Transform::identity()).unwrap());
+    let unknown = SolvedCurveGeometry::Unknown {
+        record: Some(UnknownId::mint("test:model:unknown#curve").unwrap()),
+    };
+    let basis =
+        PlacedCurve::try_new(Box::new(unknown), crate::transform::Transform::identity()).unwrap();
+    let placed = SolvedCurveGeometry::Transformed(
+        PlacedCurve::try_new(
+            Box::new(SolvedCurveGeometry::Transformed(basis)),
+            crate::transform::Transform::identity(),
+        )
+        .unwrap(),
+    );
     let mut result = vec![
-        CurveGeometry::Procedural { construction: ProceduralCurveId::mint("test:model:procedural-curve#copy").unwrap(), cache: Some(placed) },
-        CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments: CompositeCurveSegments::try_from(vec![
-            CompositeCurveSegment { curve: CurveId::mint("test:model:curve#first").unwrap(), same_sense: true, transition: CompositeCurveTransition::Continuous },
-            CompositeCurveSegment { curve: CurveId::mint("test:model:curve#second").unwrap(), same_sense: false, transition: CompositeCurveTransition::Discontinuous },
-        ]).unwrap(), self_intersect: Some(false) }),
-        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(NurbsCurve::from_lanes(1, vec![0., 0., 1., 1.], vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)], Some(vec![1., 2.]), false).unwrap())),
+        CurveGeometry::Procedural {
+            construction: ProceduralCurveId::mint("test:model:procedural-curve#copy").unwrap(),
+            cache: Some(placed),
+        },
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: CompositeCurveSegments::try_from(vec![
+                CompositeCurveSegment {
+                    curve: CurveId::mint("test:model:curve#first").unwrap(),
+                    same_sense: true,
+                    transition: CompositeCurveTransition::Continuous,
+                },
+                CompositeCurveSegment {
+                    curve: CurveId::mint("test:model:curve#second").unwrap(),
+                    same_sense: false,
+                    transition: CompositeCurveTransition::Discontinuous,
+                },
+            ])
+            .unwrap(),
+            self_intersect: Some(false),
+        }),
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0., 0., 1., 1.],
+                vec![Point3::new(0., 0., 0.), Point3::new(1., 0., 0.)],
+                Some(vec![1., 2.]),
+                false,
+            )
+            .unwrap(),
+        )),
     ];
     for samples in [
-        PolylineSamples::Unparameterized { points: vec![Point3::new(0., 0., 0.), Point3::new(1., 2., 3.)].try_into().unwrap() },
-        PolylineSamples::Parameterized { vertices: vec![PolylineVertex { parameter: 2., point: Point3::new(0., 0., 0.) }, PolylineVertex { parameter: 1., point: Point3::new(1., 2., 3.) }].try_into().unwrap() },
+        PolylineSamples::Unparameterized {
+            points: vec![Point3::new(0., 0., 0.), Point3::new(1., 2., 3.)]
+                .try_into()
+                .unwrap(),
+        },
+        PolylineSamples::Parameterized {
+            vertices: vec![
+                PolylineVertex {
+                    parameter: 2.,
+                    point: Point3::new(0., 0., 0.),
+                },
+                PolylineVertex {
+                    parameter: 1.,
+                    point: Point3::new(1., 2., 3.),
+                },
+            ]
+            .try_into()
+            .unwrap(),
+        },
     ] {
-        result.push(CurveGeometry::Solved(SolvedCurveGeometry::Polyline(PolylineCurve::new(samples, 0.125).unwrap())));
+        result.push(CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(samples, 0.125).unwrap(),
+        )));
     }
     result
 }
@@ -54,7 +109,9 @@ fn assert_copy_limit(dimension: ResourceDimension) {
     let mut policy = DecodePolicy::service();
     loop {
         set_limit(&mut policy, dimension, upper);
-        if copy_curves(&policy).is_ok() { break; }
+        if copy_curves(&policy).is_ok() {
+            break;
+        }
         upper *= 2;
         assert!(upper <= 65536);
     }
@@ -62,20 +119,34 @@ fn assert_copy_limit(dimension: ResourceDimension) {
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         set_limit(&mut policy, dimension, middle);
-        if copy_curves(&policy).is_ok() { upper = middle; } else { lower = middle + 1; }
+        if copy_curves(&policy).is_ok() {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
     }
     assert!(upper > 0);
     set_limit(&mut policy, dimension, upper);
     copy_curves(&policy).unwrap();
     set_limit(&mut policy, dimension, upper - 1);
-    assert!(matches!(copy_curves(&policy), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(
+        matches!(copy_curves(&policy), Err(cadmpeg_core::CodecError::ResourceLimit(limit)) if limit.dimension == dimension)
+    );
 }
 
 #[test]
-fn charged_curve_copy_refuses_collection_limit() { assert_copy_limit(ResourceDimension::CollectionItems); }
+fn charged_curve_copy_refuses_collection_limit() {
+    assert_copy_limit(ResourceDimension::CollectionItems);
+}
 #[test]
-fn charged_curve_copy_refuses_retained_limit() { assert_copy_limit(ResourceDimension::RetainedBytes); }
+fn charged_curve_copy_refuses_retained_limit() {
+    assert_copy_limit(ResourceDimension::RetainedBytes);
+}
 #[test]
-fn charged_curve_copy_refuses_nesting_limit() { assert_copy_limit(ResourceDimension::RecursionDepth); }
+fn charged_curve_copy_refuses_nesting_limit() {
+    assert_copy_limit(ResourceDimension::RecursionDepth);
+}
 #[test]
-fn charged_curve_copy_refuses_work_limit() { assert_copy_limit(ResourceDimension::WorkUnits); }
+fn charged_curve_copy_refuses_work_limit() {
+    assert_copy_limit(ResourceDimension::WorkUnits);
+}

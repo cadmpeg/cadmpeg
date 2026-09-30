@@ -8,8 +8,7 @@ use super::super::{
 use super::{
     bounded_profile_axis_endpoints, common_generated_surface_axis,
     compact_line_reference_directions, enrich_history_revolution_inputs,
-    profile_roster_construction_axis,
-    profile_roster_origin_axis_endpoints,
+    profile_roster_construction_axis, profile_roster_origin_axis_endpoints,
     profile_roster_principal_axis_endpoints,
     revolution_line_reference_inputs as typed_revolution_line_reference_inputs,
     temporary_axis_reference as typed_temporary_axis_reference,
@@ -49,10 +48,15 @@ fn enrich_history_revolution_inputs_test(
     lanes: &[FeatureInputLane],
 ) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let bytes = lanes
+        .first()
+        .map_or(&[][..], |lane| lane.native_payload.as_slice());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("revolution test input fits service policy");
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("revolution test input fits service policy");
     enrich_history_revolution_inputs(&ctx, histories, lanes)
         .expect("revolution test enrichment succeeds");
 }
@@ -201,10 +205,9 @@ fn profile_roster_construction_axis_test(
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload, &arena, &policy,
-    )
-    .expect("profile roster input fits root policy");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("profile roster input fits root policy");
     profile_roster_construction_axis(&ctx, lane, profile_native, sketch, surfaces)
         .expect("profile roster scan fits service policy")
 }
@@ -226,7 +229,11 @@ fn revolution_profile_roster_refuses_collection_limit() {
         generated_surface_identities: Vec::new(),
         references: Vec::new(),
         sketch_entities: vec![SketchInputEntity::new(
-            "marker", "lane", 1, 0, SketchInputKind::Point,
+            "marker",
+            "lane",
+            1,
+            0,
+            SketchInputKind::Point,
         )],
     };
     let sketch = Sketch {
@@ -246,10 +253,9 @@ fn revolution_profile_roster_refuses_collection_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload, &arena, &policy,
-    )
-    .expect("empty payload fits root policy");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("empty payload fits root policy");
     let error = profile_roster_construction_axis(&ctx, &lane, "profile-native", &sketch, &[])
         .expect_err("one roster marker requires a collection slot");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -285,7 +291,11 @@ fn revolution_line_reference_scan_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("line reference input fits root policy");
     let error = typed_revolution_line_reference_inputs(
-        &ctx, &payload, 32, payload.len(), &HashSet::from([42]),
+        &ctx,
+        &payload,
+        32,
+        payload.len(),
+        &HashSet::from([42]),
     )
     .expect_err("one line reference candidate requires a collection slot");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -300,7 +310,11 @@ fn revolution_line_reference_scan_refuses_work_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("line reference input fits root policy");
     let error = typed_revolution_line_reference_inputs(
-        &ctx, &payload, 32, payload.len(), &HashSet::from([42]),
+        &ctx,
+        &payload,
+        32,
+        payload.len(),
+        &HashSet::from([42]),
     )
     .expect_err("one line reference scan requires work");
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -798,10 +812,16 @@ fn indexed_profile_construction_line_places_a_revolution_axis() {
     );
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &lane.native_payload, &lane.sketch_entities[3], &markers,).unwrap()
-            .into_iter()
-            .map(crate::records::SketchInputEntity::id)
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &lane.native_payload,
+            &lane.sketch_entities[3],
+            &markers,
+        )
+        .unwrap()
+        .into_iter()
+        .map(crate::records::SketchInputEntity::id)
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
 
@@ -1285,10 +1305,9 @@ fn omitted_origin_and_principal_axes_use_unique_maximum_incidence_support_lines(
     let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload, &arena, &policy,
-    )
-    .expect("profile axis input fits root policy");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("profile axis input fits root policy");
 
     assert_eq!(
         profile_roster_origin_axis_endpoints(&ctx, &lane, "profile-native", &markers)

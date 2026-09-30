@@ -165,20 +165,44 @@ impl SolvedSurfaceGeometry {
             Self::Sphere(value) => Ok(Self::Sphere(*value)),
             Self::Torus(value) => Ok(Self::Torus(*value)),
             Self::Nurbs(value) => {
-                let count = value.u_knots().as_slice().len().checked_add(value.v_knots().as_slice().len())
+                let count = value
+                    .u_knots()
+                    .as_slice()
+                    .len()
+                    .checked_add(value.v_knots().as_slice().len())
                     .and_then(|count| count.checked_add(value.u_count()))
-                    .and_then(|count| value.u_count().checked_mul(value.v_count()).and_then(|poles| count.checked_add(poles)))
+                    .and_then(|count| {
+                        value
+                            .u_count()
+                            .checked_mul(value.v_count())
+                            .and_then(|poles| count.checked_add(poles))
+                    })
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-                let work = count.checked_mul(32)
+                let work = count
+                    .checked_mul(32)
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.u_knots().as_slice().len()), operation)?;
-                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.v_knots().as_slice().len()), operation)?;
-                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.u_count()), operation)?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(value.u_knots().as_slice().len()),
+                    operation,
+                )?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(value.v_knots().as_slice().len()),
+                    operation,
+                )?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(value.u_count()),
+                    operation,
+                )?;
                 for _ in 0..value.u_count() {
-                    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.v_count()), operation)?;
+                    ctx.charge_collection_items(
+                        cadmpeg_core::decode::u64_from_index(value.v_count()),
+                        operation,
+                    )?;
                 }
-                let copied = value.try_clone().map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                let copied = value
+                    .try_clone()
+                    .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
                 Ok(Self::Nurbs(copied))
             }
             Self::Polygonal(value) => Ok(Self::Polygonal(value.try_clone_charged(ctx, operation)?)),
@@ -186,14 +210,19 @@ impl SolvedSurfaceGeometry {
                 let _depth = ctx.enter_nested(operation)?;
                 let basis = value.basis().try_clone_charged(ctx, operation)?;
                 ctx.charge_collection_items(1, operation)?;
-                Ok(Self::Transformed(PlacedSurface::try_new(Box::new(basis), *value.transform())
-                    .map_err(cadmpeg_core::CodecError::malformed)?))
+                Ok(Self::Transformed(
+                    PlacedSurface::try_new(Box::new(basis), *value.transform())
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
+                ))
             }
             Self::Unknown { record } => {
-                let record = record.as_ref().map(|id| {
-                    UnknownId::mint(copy_geometry_identity(ctx, id.as_str(), operation)?)
-                        .map_err(cadmpeg_core::CodecError::malformed)
-                }).transpose()?;
+                let record = record
+                    .as_ref()
+                    .map(|id| {
+                        UnknownId::mint(copy_geometry_identity(ctx, id.as_str(), operation)?)
+                            .map_err(cadmpeg_core::CodecError::malformed)
+                    })
+                    .transpose()?;
                 Ok(Self::Unknown { record })
             }
         }
@@ -327,11 +356,24 @@ impl SurfaceGeometry {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         match self {
             Self::Solved(geometry) => Ok(Self::Solved(geometry.try_clone_charged(ctx, operation)?)),
-            Self::Procedural { construction, cache } => {
-                let id = ProceduralSurfaceId::mint(copy_geometry_identity(ctx, construction.as_str(), operation)?)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-                let cache = cache.as_ref().map(|geometry| geometry.try_clone_charged(ctx, operation)).transpose()?;
-                Ok(Self::Procedural { construction: id, cache })
+            Self::Procedural {
+                construction,
+                cache,
+            } => {
+                let id = ProceduralSurfaceId::mint(copy_geometry_identity(
+                    ctx,
+                    construction.as_str(),
+                    operation,
+                )?)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+                let cache = cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_charged(ctx, operation))
+                    .transpose()?;
+                Ok(Self::Procedural {
+                    construction: id,
+                    cache,
+                })
             }
         }
     }
@@ -393,8 +435,16 @@ impl Surface {
         let id = SurfaceId::mint(copy_geometry_identity(ctx, self.id.as_str(), operation)?)
             .map_err(cadmpeg_core::CodecError::malformed)?;
         let geometry = self.geometry.try_clone_charged(ctx, operation)?;
-        let source_object = self.source_object.as_ref().map(|source| source.try_clone_charged(ctx, operation)).transpose()?;
-        Ok(Self { id, geometry, source_object })
+        let source_object = self
+            .source_object
+            .as_ref()
+            .map(|source| source.try_clone_charged(ctx, operation))
+            .transpose()?;
+        Ok(Self {
+            id,
+            geometry,
+            source_object,
+        })
     }
 }
 
@@ -403,7 +453,10 @@ fn copy_geometry_identity(
     id: &str,
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let work = id.len().checked_mul(4).and_then(|len| len.checked_add(1))
+    let work = id
+        .len()
+        .checked_mul(4)
+        .and_then(|len| len.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
     ctx.format_retained(format_args!("{id}"), operation)
@@ -469,36 +522,74 @@ impl SolvedCurveGeometry {
             Self::Parabola(value) => Ok(Self::Parabola(*value)),
             Self::Hyperbola(value) => Ok(Self::Hyperbola(*value)),
             Self::Degenerate(value) => Ok(Self::Degenerate(*value)),
-            Self::Composite { segments, self_intersect } => {
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(segments.len()), operation)?;
+            Self::Composite {
+                segments,
+                self_intersect,
+            } => {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(segments.len()),
+                    operation,
+                )?;
                 let mut copied = Vec::new();
                 ctx.reserve_collection_vec(&mut copied, segments.len(), operation)?;
                 for segment in segments {
-                    let curve = CurveId::mint(copy_geometry_identity(ctx, segment.curve.as_str(), operation)?)
-                        .map_err(cadmpeg_core::CodecError::malformed)?;
-                    copied.push(CompositeCurveSegment { curve, same_sense: segment.same_sense, transition: segment.transition });
+                    let curve = CurveId::mint(copy_geometry_identity(
+                        ctx,
+                        segment.curve.as_str(),
+                        operation,
+                    )?)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                    copied.push(CompositeCurveSegment {
+                        curve,
+                        same_sense: segment.same_sense,
+                        transition: segment.transition,
+                    });
                 }
-                Ok(Self::Composite { segments: CompositeCurveSegments(copied), self_intersect: *self_intersect })
+                Ok(Self::Composite {
+                    segments: CompositeCurveSegments(copied),
+                    self_intersect: *self_intersect,
+                })
             }
             Self::Nurbs(value) => {
-                let work = value.knots().as_slice().len().checked_add(value.pole_count())
+                let work = value
+                    .knots()
+                    .as_slice()
+                    .len()
+                    .checked_add(value.pole_count())
                     .and_then(|count| count.checked_mul(32))
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.knots().as_slice().len()), operation)?;
-                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.pole_count()), operation)?;
-                Ok(Self::Nurbs(value.try_clone().map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?))
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(value.knots().as_slice().len()),
+                    operation,
+                )?;
+                ctx.charge_collection_items(
+                    cadmpeg_core::decode::u64_from_index(value.pole_count()),
+                    operation,
+                )?;
+                Ok(Self::Nurbs(value.try_clone().map_err(|_| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?))
             }
             Self::Polyline(value) => Ok(Self::Polyline(value.try_clone_charged(ctx, operation)?)),
             Self::Transformed(value) => {
                 let _depth = ctx.enter_nested(operation)?;
                 let basis = value.basis().try_clone_charged(ctx, operation)?;
                 ctx.charge_collection_items(1, operation)?;
-                Ok(Self::Transformed(PlacedCurve { basis: Box::new(basis), transform: value.transform, depth: value.depth }))
+                Ok(Self::Transformed(PlacedCurve {
+                    basis: Box::new(basis),
+                    transform: value.transform,
+                    depth: value.depth,
+                }))
             }
             Self::Unknown { record } => {
-                let record = record.as_ref().map(|id| UnknownId::mint(copy_geometry_identity(ctx, id.as_str(), operation)?)
-                    .map_err(cadmpeg_core::CodecError::malformed)).transpose()?;
+                let record = record
+                    .as_ref()
+                    .map(|id| {
+                        UnknownId::mint(copy_geometry_identity(ctx, id.as_str(), operation)?)
+                            .map_err(cadmpeg_core::CodecError::malformed)
+                    })
+                    .transpose()?;
                 Ok(Self::Unknown { record })
             }
         }
@@ -634,11 +725,24 @@ impl CurveGeometry {
     ) -> Result<Self, cadmpeg_core::CodecError> {
         match self {
             Self::Solved(geometry) => Ok(Self::Solved(geometry.try_clone_charged(ctx, operation)?)),
-            Self::Procedural { construction, cache } => {
-                let construction = ProceduralCurveId::mint(copy_geometry_identity(ctx, construction.as_str(), operation)?)
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-                let cache = cache.as_ref().map(|geometry| geometry.try_clone_charged(ctx, operation)).transpose()?;
-                Ok(Self::Procedural { construction, cache })
+            Self::Procedural {
+                construction,
+                cache,
+            } => {
+                let construction = ProceduralCurveId::mint(copy_geometry_identity(
+                    ctx,
+                    construction.as_str(),
+                    operation,
+                )?)
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+                let cache = cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_charged(ctx, operation))
+                    .transpose()?;
+                Ok(Self::Procedural {
+                    construction,
+                    cache,
+                })
             }
         }
     }

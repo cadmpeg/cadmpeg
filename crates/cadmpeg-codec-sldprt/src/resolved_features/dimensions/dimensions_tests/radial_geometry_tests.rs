@@ -57,11 +57,13 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         SketchInputKind::ConstrainedPoint,
         Some([0.1, 0.203]),
     ));
-    assert!(dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(),
+    assert!(dimensioned_arc_native_geometry(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_lane.sketch_entities[0],
         3.0
-    ).unwrap()
+    )
+    .unwrap()
     .is_none());
 }
 
@@ -125,9 +127,13 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         sketch_entities: vec![center.clone(), start, end],
     };
 
-    let Some(DimensionedCurveNative::Arc(arc)) =
-        dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane), &center, 3.0).unwrap()
-    else {
+    let Some(DimensionedCurveNative::Arc(arc)) = dimensioned_arc_native_geometry(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&lane),
+        &center,
+        3.0,
+    )
+    .unwrap() else {
         panic!("two endpoints should define a bounded arc");
     };
     assert_eq!(arc.center, [0.0, 0.0]);
@@ -141,11 +147,13 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         sketch_entities: vec![center, lane.sketch_entities[1].clone(), invalid_end],
         ..lane
     };
-    assert!(dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(),
+    assert!(dimensioned_arc_native_geometry(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&invalid_lane),
         &invalid_lane.sketch_entities[0],
         3.0
-    ).unwrap()
+    )
+    .unwrap()
     .is_none());
 }
 
@@ -184,7 +192,8 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
 
     let ctx = cadmpeg_test_support::service_decode_context();
     let pairs = terminal_repeated_radial_circle_pairs(&ctx, roster.len(), &roster, 0.0025)
-        .unwrap().expect("terminal one-based address and repeated radius");
+        .unwrap()
+        .expect("terminal one-based address and repeated radius");
     assert_eq!(pairs.len(), 4);
     assert_eq!(
         pairs
@@ -198,8 +207,16 @@ fn terminal_radial_address_resolves_every_consecutive_equal_radius_pair() {
             (Some(13), Some(12)),
         ]
     );
-    assert!(terminal_repeated_radial_circle_pairs(&ctx, roster.len() - 1, &roster, 0.0025).unwrap().is_none());
-    assert!(terminal_repeated_radial_circle_pairs(&ctx, roster.len(), &roster, 0.003).unwrap().is_none());
+    assert!(
+        terminal_repeated_radial_circle_pairs(&ctx, roster.len() - 1, &roster, 0.0025)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        terminal_repeated_radial_circle_pairs(&ctx, roster.len(), &roster, 0.003)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]

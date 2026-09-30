@@ -17,8 +17,11 @@ use crate::SldprtCodec;
 fn semantic_writer_rejects_compact_edge_selection_edits() {
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
     let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &reference_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -55,10 +58,12 @@ fn semantic_writer_rejects_compact_edge_selection_edits() {
                 0x00, 0x81, 0x03, 0x01, 0x2c, 0, 0, 0, 0x63, 0x18, 0x58, 0x69,
             ]);
             lane.native_payload.extend(7u32.to_le_bytes());
-            let components = crate::resolved_features::selections::compact_edge_component_path_at(&reference_ctx, 
+            let components = crate::resolved_features::selections::compact_edge_component_path_at(
+                &reference_ctx,
                 &lane.native_payload,
                 marker,
-            ).unwrap()
+            )
+            .unwrap()
             .unwrap();
             lane.edge_selections
                 .push(crate::records::FeatureInputEdgeSelection {

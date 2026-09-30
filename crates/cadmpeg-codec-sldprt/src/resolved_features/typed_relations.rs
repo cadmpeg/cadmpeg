@@ -2,13 +2,14 @@
 
 use super::curves::compact_bounded_curve_tangent;
 use super::endpoints::{
-    collect_endpoint_markers, copy_endpoint_markers, sort_endpoint_markers,
-    compact_indexed_curve_endpoint_indices, compact_indexed_curve_record_end,
-    compact_legacy_code_one_line_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
+    collect_endpoint_markers, compact_indexed_curve_endpoint_indices,
+    compact_indexed_curve_record_end, compact_legacy_code_one_line_endpoint_indices,
+    copy_endpoint_markers, extended_compact_indexed_curve_endpoint_indices,
     extended_direct_object_line_endpoint_ids, extended_shifted_construction_line_endpoint_indices,
     legacy_marker104_arc_center, legacy_terminal_profile_endpoint_offset,
-    marker_profile_curve_role, roster_curve_endpoint_markers, wide_indexed_curve_endpoint_indices,
-    wide_indexed_curve_record_is_complete, CompactIndexedCurveRecordEnd,
+    marker_profile_curve_role, roster_curve_endpoint_markers, sort_endpoint_markers,
+    wide_indexed_curve_endpoint_indices, wide_indexed_curve_record_is_complete,
+    CompactIndexedCurveRecordEnd,
 };
 use super::markers::{
     compact_legacy_142_profile_curve_endpoints, finite_coordinate_pair, inline_arc_coordinates,
@@ -16,23 +17,24 @@ use super::markers::{
     sketch_marker_prefix_at,
 };
 use super::relation_loci::{
-    canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands, linked_single_arc_entity,
-    linked_single_ellipse_entity, linked_single_entities, marker_point_locus,
-    point_line_distance_value, profile_locus_point_charged, relation_operand_loci, same_dimension_angle,
-    same_dimension_length,
+    canonical_profile_loci, find_profile_entity, line_line_distance, linked_midpoint_operands,
+    linked_single_arc_entity, linked_single_ellipse_entity, linked_single_entities,
+    marker_point_locus, point_line_distance_value, profile_locus_point_charged,
+    relation_operand_loci, same_dimension_angle, same_dimension_length,
 };
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
 use super::transforms::{
-    sort_marker_entity_ids, MarkerEntityFilter, locus_entity, locus_key, marker_entities, ProfileAxis,
+    locus_entity, locus_key, marker_entities, sort_marker_entity_ids, MarkerEntityFilter,
+    ProfileAxis,
 };
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
-use cadmpeg_core::CodecError;
 use cadmpeg_core::nonblank_literal;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
@@ -242,57 +244,105 @@ pub(super) fn typed_marker_relation_definition(
     )
 }
 
-
 fn unique_entity_from_link_intersection(
-    ctx: &DecodeContext<'_>, marker: &SketchInputEntity, sketch: &SketchId, sketch_entities: &[SketchEntity],
-    markers_by_id: &HashMap<&str, &SketchInputEntity>, loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    ctx: &DecodeContext<'_>,
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<SketchEntityId>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT marker entity intersection";
     charge_relation_marker_links(ctx, marker, markers_by_id, OPERATION)?;
-    let mut links = marker.links().iter().filter(|link| !relation_link_identifies_owner(marker, link));
-    let Some(first) = links.next() else { return Ok(None); };
-    let mut candidates = marker_entities(ctx, &first.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
+    let mut links = marker
+        .links()
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(marker, link));
+    let Some(first) = links.next() else {
+        return Ok(None);
+    };
+    let mut candidates = marker_entities(
+        ctx,
+        &first.entity_ref,
+        markers_by_id,
+        loci_by_marker,
+        MarkerEntityFilter::All,
+    )?;
     let mut count = 0;
     for index in 0..candidates.len() {
         let entity = &candidates[index];
         charge_typed_endpoint_work(ctx, entity.as_str().len(), 8, OPERATION)?;
-        if entity.as_str().contains("sketch-entity#relation-point:") || !entity_is_in_sketch(ctx, entity, sketch, sketch_entities, OPERATION)? { continue; }
+        if entity.as_str().contains("sketch-entity#relation-point:")
+            || !entity_is_in_sketch(ctx, entity, sketch, sketch_entities, OPERATION)?
+        {
+            continue;
+        }
         let mut matches = true;
         for link in links.clone() {
-            let linked = marker_entities(ctx, &link.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
-            if !marker_entity_ids_contain(ctx, &linked, entity, OPERATION)? { matches = false; break; }
+            let linked = marker_entities(
+                ctx,
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
+            if !marker_entity_ids_contain(ctx, &linked, entity, OPERATION)? {
+                matches = false;
+                break;
+            }
         }
-        if matches { ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), OPERATION)?; candidates.swap(count, index); count += 1; }
+        if matches {
+            ctx.charge_work(
+                u64_from_index(std::mem::size_of::<SketchEntityId>()),
+                OPERATION,
+            )?;
+            candidates.swap(count, index);
+            count += 1;
+        }
     }
     candidates.truncate(count);
     sort_marker_entity_ids(ctx, &mut candidates, OPERATION)?;
-    Ok(if candidates.len() == 1 { candidates.into_iter().next() } else { None })
+    Ok(if candidates.len() == 1 {
+        candidates.into_iter().next()
+    } else {
+        None
+    })
 }
 
 fn marker_entity_ids_contain(
-    ctx: &DecodeContext<'_>, identities: &[SketchEntityId], identity: &SketchEntityId, operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    identities: &[SketchEntityId],
+    identity: &SketchEntityId,
+    operation: &'static str,
 ) -> Result<bool, CodecError> {
     for candidate in identities {
         charge_typed_endpoint_work(ctx, candidate.as_str().len(), 8, operation)?;
         charge_typed_endpoint_work(ctx, identity.as_str().len(), 8, operation)?;
-        if candidate == identity { return Ok(true); }
+        if candidate == identity {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
 
 fn entity_is_in_sketch(
-    ctx: &DecodeContext<'_>, identity: &SketchEntityId, sketch: &SketchId, entities: &[SketchEntity], operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    identity: &SketchEntityId,
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+    operation: &'static str,
 ) -> Result<bool, CodecError> {
     for entity in entities {
         charge_typed_endpoint_work(ctx, entity.id().as_str().len(), 8, operation)?;
         charge_typed_endpoint_work(ctx, identity.as_str().len(), 8, operation)?;
         charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 8, operation)?;
         charge_typed_endpoint_work(ctx, sketch.as_str().len(), 8, operation)?;
-        if entity.id() == identity && entity.sketch == *sketch { return Ok(true); }
+        if entity.id() == identity && entity.sketch == *sketch {
+            return Ok(true);
+        }
     }
     Ok(false)
 }
-
 
 pub(super) fn typed_marker_relation_definition_in_sketch(
     ctx: &DecodeContext<'_>,
@@ -304,7 +354,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
 ) -> Result<Option<SketchConstraintDefinitionInput>, CodecError> {
     macro_rules! marker_resolved_or_none {
         ($candidate:expr) => {
-            match $candidate { Some(value) => value, None => return Ok(None) }
+            match $candidate {
+                Some(value) => value,
+                None => return Ok(None),
+            }
         };
     }
     use crate::records::SketchRelationKind::HorizontalPoints;
@@ -320,51 +373,105 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         const OPERATION: &str = "retain SLDPRT native marker relation";
         let mut entities = Vec::new();
         for link in marker.links() {
-            ctx.charge_work(u64_from_index(link.entity_ref.len()).checked_add(u64_from_index(marker.id().len()))
-                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(16))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-            if relation_link_identifies_owner(marker, link) { continue; }
-            let additions = marker_entities(ctx, &link.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
-            ctx.charge_work(u64_from_index(additions.len()).checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            ctx.charge_work(
+                u64_from_index(link.entity_ref.len())
+                    .checked_add(u64_from_index(marker.id().len()))
+                    .and_then(|bytes| bytes.checked_mul(4))
+                    .and_then(|work| work.checked_add(16))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
+            if relation_link_identifies_owner(marker, link) {
+                continue;
+            }
+            let additions = marker_entities(
+                ctx,
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
+            ctx.charge_work(
+                u64_from_index(additions.len())
+                    .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
             ctx.reserve_collection_vec(&mut entities, additions.len(), OPERATION)?;
             entities.extend(additions);
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
         let owners = relation_owner_markers(ctx, marker, markers_by_id)?;
         for owner in &owners {
-            let additions = marker_entities(ctx, owner.id(), markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
-            ctx.charge_work(u64_from_index(additions.len()).checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            let additions = marker_entities(
+                ctx,
+                owner.id(),
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
+            ctx.charge_work(
+                u64_from_index(additions.len())
+                    .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
             ctx.reserve_collection_vec(&mut entities, additions.len(), OPERATION)?;
             entities.extend(additions);
         }
         sort_marker_entity_ids(ctx, &mut entities, OPERATION)?;
         let mut operands = Vec::new();
         for link in marker.links() {
-            ctx.charge_work(u64_from_index(link.entity_ref.len()).checked_mul(4).and_then(|work| work.checked_add(64))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            ctx.charge_work(
+                u64_from_index(link.entity_ref.len())
+                    .checked_mul(4)
+                    .and_then(|work| work.checked_add(64))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
             ctx.reserve_collection_vec(&mut operands, 1, OPERATION)?;
             operands.push(SketchNativeOperand {
-                native_kind: nonblank_literal!("sldprt:marker-local-id"), field: None,
+                native_kind: nonblank_literal!("sldprt:marker-local-id"),
+                field: None,
                 object_index: Some(u32::from(link.local_id)),
-                native_ref: Some(crate::text_admission::format_retained(ctx, format_args!("{}", link.entity_ref), OPERATION)?),
+                native_ref: Some(crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}", link.entity_ref),
+                    OPERATION,
+                )?),
             });
         }
         for owner in owners {
-            ctx.charge_work(u64_from_index(owner.id().len()).checked_mul(4).and_then(|work| work.checked_add(64))
-                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            ctx.charge_work(
+                u64_from_index(owner.id().len())
+                    .checked_mul(4)
+                    .and_then(|work| work.checked_add(64))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
             ctx.reserve_collection_vec(&mut operands, 1, OPERATION)?;
             operands.push(SketchNativeOperand {
-                native_kind: nonblank_literal!("sldprt:marker-constraint-owner"), field: None,
+                native_kind: nonblank_literal!("sldprt:marker-constraint-owner"),
+                field: None,
                 object_index: owner.object_index().or(owner.local_id()),
-                native_ref: Some(crate::text_admission::format_retained(ctx, format_args!("{}", owner.id()), OPERATION)?),
+                native_ref: Some(crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}", owner.id()),
+                    OPERATION,
+                )?),
             });
         }
         Ok(SketchConstraintDefinitionInput::Native {
-            native_kind: nonblank_literal!("sldprt:marker-relation:{}", marker.kind().native_code()),
-            native_state: None, native_flags: None, native_properties: std::collections::BTreeMap::new(),
-            entities, parameter: None, operands,
+            native_kind: nonblank_literal!(
+                "sldprt:marker-relation:{}",
+                marker.kind().native_code()
+            ),
+            native_state: None,
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
+            entities,
+            parameter: None,
+            operands,
         })
     };
     let Some(kind) = kind else {
@@ -374,7 +481,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     if let MarkerRelationGroup::SingleEntity(single) = group {
         if single == SingleEntityRelation::Fixed {
             if let Some(entity) = unique_entity_from_link_intersection(
-                ctx, marker,
+                ctx,
+                marker,
                 sketch,
                 sketch_entities,
                 markers_by_id,
@@ -392,51 +500,116 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             charge_relation_marker_links(ctx, marker, markers_by_id, POINT_OPERATION)?;
             let mut point_links = Vec::new();
             for link in marker.links() {
-                if link.entity_ref == marker.id() || matches!(markers_by_id.get(link.entity_ref.as_str()).map(|linked| linked.kind()), Some(SketchInputKind::Relation(_))) { continue; }
+                if link.entity_ref == marker.id()
+                    || matches!(
+                        markers_by_id
+                            .get(link.entity_ref.as_str())
+                            .map(|linked| linked.kind()),
+                        Some(SketchInputKind::Relation(_))
+                    )
+                {
+                    continue;
+                }
                 ctx.reserve_collection_vec(&mut point_links, 1, POINT_OPERATION)?;
                 point_links.push(link);
             }
             if let [first_link, second_link] = point_links.as_slice() {
-                let point_locus = |link: &SketchInputLink| -> Result<Option<SketchLocus>, CodecError> {
-                    const OPERATION: &str = "resolve SLDPRT forward axis point identity";
-                    charge_relation_marker_links(ctx, marker, markers_by_id, OPERATION)?;
-                    let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else { return Ok(None); };
-                    if !matches!(linked.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { return Ok(None); }
-                    let mut selected = None;
-                    for entity in sketch_entities {
-                        charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
-                        if entity.sketch != *sketch || entity.native_ref.as_deref() != Some(link.entity_ref.as_str())
-                            || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }) { continue; }
-                        if selected.is_some() { return Ok(None); }
-                        selected = Some(entity.id());
-                    }
-                    if let Some(identity) = selected {
-                        return super::transforms::SketchLocusRole::Entity.copy_locus(ctx, identity, OPERATION).map(Some);
-                    }
-                    let Some(locus) = marker_point_locus(ctx, &link.entity_ref, markers_by_id, loci_by_marker)? else { return Ok(None); };
-                    for entity in sketch_entities {
-                        charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, entity.id().as_str().len(), 4, OPERATION)?;
-                        charge_typed_endpoint_work(ctx, locus_entity(&locus).as_str().len(), 4, OPERATION)?;
-                        if entity.sketch == *sketch && entity.id() == locus_entity(&locus) { return Ok(Some(locus)); }
-                    }
-                    Ok(None)
-                };
+                let point_locus =
+                    |link: &SketchInputLink| -> Result<Option<SketchLocus>, CodecError> {
+                        const OPERATION: &str = "resolve SLDPRT forward axis point identity";
+                        charge_relation_marker_links(ctx, marker, markers_by_id, OPERATION)?;
+                        let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+                            return Ok(None);
+                        };
+                        if !matches!(
+                            linked.kind(),
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        ) {
+                            return Ok(None);
+                        }
+                        let mut selected = None;
+                        for entity in sketch_entities {
+                            charge_typed_endpoint_work(
+                                ctx,
+                                entity.sketch.as_str().len(),
+                                4,
+                                OPERATION,
+                            )?;
+                            charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
+                            charge_typed_endpoint_work(
+                                ctx,
+                                entity.native_ref.as_deref().map_or(0, str::len),
+                                4,
+                                OPERATION,
+                            )?;
+                            charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
+                            if entity.sketch != *sketch
+                                || entity.native_ref.as_deref() != Some(link.entity_ref.as_str())
+                                || !matches!(
+                                    entity.geometry.definition(),
+                                    SketchGeometryDefinition::Point { .. }
+                                )
+                            {
+                                continue;
+                            }
+                            if selected.is_some() {
+                                return Ok(None);
+                            }
+                            selected = Some(entity.id());
+                        }
+                        if let Some(identity) = selected {
+                            return super::transforms::SketchLocusRole::Entity
+                                .copy_locus(ctx, identity, OPERATION)
+                                .map(Some);
+                        }
+                        let Some(locus) = marker_point_locus(
+                            ctx,
+                            &link.entity_ref,
+                            markers_by_id,
+                            loci_by_marker,
+                        )?
+                        else {
+                            return Ok(None);
+                        };
+                        for entity in sketch_entities {
+                            charge_typed_endpoint_work(
+                                ctx,
+                                entity.sketch.as_str().len(),
+                                4,
+                                OPERATION,
+                            )?;
+                            charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
+                            charge_typed_endpoint_work(
+                                ctx,
+                                entity.id().as_str().len(),
+                                4,
+                                OPERATION,
+                            )?;
+                            charge_typed_endpoint_work(
+                                ctx,
+                                locus_entity(&locus).as_str().len(),
+                                4,
+                                OPERATION,
+                            )?;
+                            if entity.sketch == *sketch && entity.id() == locus_entity(&locus) {
+                                return Ok(Some(locus));
+                            }
+                        }
+                        Ok(None)
+                    };
                 if let (Some(first), Some(second)) =
                     (point_locus(first_link)?, point_locus(second_link)?)
                 {
                     if first != second {
                         return Ok(Some(SketchConstraintDefinitionInput::SameCoordinate {
-                            relation: marker_resolved_or_none!(cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                                first,
-                                second,
-                                same_coordinate,
-                            )
-                            .ok()),
+                            relation: marker_resolved_or_none!(
+                                cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                    first,
+                                    second,
+                                    same_coordinate,
+                                )
+                                .ok()
+                            ),
                         }));
                     }
                 }
@@ -447,7 +620,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         MarkerRelationGroup::SingleEntity(single) => {
             let axes = single.axes();
             if let Some((same_coordinate, _)) = axes {
-                if let Some([first, second]) = axis_relation_point_loci(ctx, 
+                if let Some([first, second]) = axis_relation_point_loci(
+                    ctx,
                     marker,
                     sketch,
                     sketch_entities,
@@ -455,12 +629,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     loci_by_marker,
                 )? {
                     return Ok(Some(SketchConstraintDefinitionInput::SameCoordinate {
-                        relation: marker_resolved_or_none!(cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                            first,
-                            second,
-                            same_coordinate,
-                        )
-                        .ok()),
+                        relation: marker_resolved_or_none!(
+                            cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                first,
+                                second,
+                                same_coordinate,
+                            )
+                            .ok()
+                        ),
                     }));
                 }
             }
@@ -469,7 +645,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 charge_relation_marker_links(ctx, marker, markers_by_id, POINT_OPERATION)?;
                 let mut point_links = Vec::new();
                 for link in marker.links() {
-                    if relation_link_identifies_owner(marker, link) { continue; }
+                    if relation_link_identifies_owner(marker, link) {
+                        continue;
+                    }
                     ctx.reserve_collection_vec(&mut point_links, 1, POINT_OPERATION)?;
                     point_links.push(link);
                 }
@@ -488,47 +666,104 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         {
                             if let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) {
                                 return Ok(Some(SketchConstraintDefinitionInput::SameCoordinate {
-                                    relation: marker_resolved_or_none!(cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                                        first,
-                                        second,
-                                        same_coordinate,
-                                    )
-                                    .ok()),
+                                    relation: marker_resolved_or_none!(
+                                        cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
+                                            first,
+                                            second,
+                                            same_coordinate,
+                                        )
+                                        .ok()
+                                    ),
                                 }));
                             }
                         }
                     }
                 }
             }
-            let inferred_entities = marker_entities(ctx, marker.id(), markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
+            let inferred_entities = marker_entities(
+                ctx,
+                marker.id(),
+                markers_by_id,
+                loci_by_marker,
+                MarkerEntityFilter::All,
+            )?;
             const ENTITY_OPERATION: &str = "resolve SLDPRT exact marker entities";
             charge_relation_marker_links(ctx, marker, markers_by_id, ENTITY_OPERATION)?;
             let mut exact_entities = Vec::new();
             for link in marker.links() {
-                if relation_link_identifies_owner(marker, link) { continue; }
-                let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else { continue; };
-                if single == SingleEntityRelation::Fixed && matches!(linked.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc) {
-                    let additions = marker_entities(ctx, &link.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
-                    ctx.reserve_collection_vec(&mut exact_entities, additions.len(), ENTITY_OPERATION)?;
-                    ctx.charge_work(u64_from_index(additions.len()).checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
-                        .ok_or_else(|| ctx.refuse_codec_limit(ENTITY_OPERATION, u64::MAX - 1, u64::MAX))?, ENTITY_OPERATION)?;
+                if relation_link_identifies_owner(marker, link) {
+                    continue;
+                }
+                let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+                    continue;
+                };
+                if single == SingleEntityRelation::Fixed
+                    && matches!(
+                        linked.kind(),
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+                {
+                    let additions = marker_entities(
+                        ctx,
+                        &link.entity_ref,
+                        markers_by_id,
+                        loci_by_marker,
+                        MarkerEntityFilter::All,
+                    )?;
+                    ctx.reserve_collection_vec(
+                        &mut exact_entities,
+                        additions.len(),
+                        ENTITY_OPERATION,
+                    )?;
+                    ctx.charge_work(
+                        u64_from_index(additions.len())
+                            .checked_mul(u64_from_index(std::mem::size_of::<SketchEntityId>()))
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(ENTITY_OPERATION, u64::MAX - 1, u64::MAX)
+                            })?,
+                        ENTITY_OPERATION,
+                    )?;
                     exact_entities.extend(additions);
                     continue;
                 }
-                if !matches!(linked.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc) { continue; }
+                if !matches!(
+                    linked.kind(),
+                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                ) {
+                    continue;
+                }
                 let mut selected = None;
                 let mut ambiguous = false;
                 for entity in sketch_entities {
-                    charge_typed_endpoint_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 8, ENTITY_OPERATION)?;
+                    charge_typed_endpoint_work(
+                        ctx,
+                        entity.native_ref.as_deref().map_or(0, str::len),
+                        8,
+                        ENTITY_OPERATION,
+                    )?;
                     charge_typed_endpoint_work(ctx, link.entity_ref.len(), 8, ENTITY_OPERATION)?;
-                    if entity.native_ref.as_deref() != Some(link.entity_ref.as_str()) { continue; }
-                    if selected.is_some() { ambiguous = true; break; }
+                    if entity.native_ref.as_deref() != Some(link.entity_ref.as_str()) {
+                        continue;
+                    }
+                    if selected.is_some() {
+                        ambiguous = true;
+                        break;
+                    }
                     selected = Some(entity.id());
                 }
-                if ambiguous { continue; }
+                if ambiguous {
+                    continue;
+                }
                 if let Some(identity) = selected {
                     ctx.reserve_collection_vec(&mut exact_entities, 1, ENTITY_OPERATION)?;
-                    exact_entities.push(super::transforms::copy_sketch_entity_identity(ctx, identity, ENTITY_OPERATION)?);
+                    exact_entities.push(super::transforms::copy_sketch_entity_identity(
+                        ctx,
+                        identity,
+                        ENTITY_OPERATION,
+                    )?);
                 }
             }
             sort_marker_entity_ids(ctx, &mut exact_entities, ENTITY_OPERATION)?;
@@ -545,7 +780,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 relation_owner_curve_entities(ctx, marker, markers_by_id, loci_by_marker)?;
             for identity in &direct_entities {
                 charge_typed_endpoint_work(ctx, identity.as_str().len(), 8, ENTITY_OPERATION)?;
-                for owner in &owner_entities { charge_typed_endpoint_work(ctx, owner.as_str().len(), 8, ENTITY_OPERATION)?; }
+                for owner in &owner_entities {
+                    charge_typed_endpoint_work(ctx, owner.as_str().len(), 8, ENTITY_OPERATION)?;
+                }
             }
             let entities = if point_owner_pair && axes.is_some() {
                 Vec::new()
@@ -571,14 +808,25 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 }
                 single.definition(marker_resolved_or_none!(entities.into_iter().next()))
             } else if let Some((same_coordinate, profile_axis)) = axes {
-                let loci = match relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)? {
+                let loci = match relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)?
+                {
                     Some(loci) => Some(loci),
-                    None => unique_axis_aligned_linked_loci(ctx, marker, sketch, sketch_entities, markers_by_id, loci_by_marker, profile_axis)?,
+                    None => unique_axis_aligned_linked_loci(
+                        ctx,
+                        marker,
+                        sketch,
+                        sketch_entities,
+                        markers_by_id,
+                        loci_by_marker,
+                        profile_axis,
+                    )?,
                 };
                 let Some(loci) = loci else {
                     return Ok(Some(native()?));
                 };
-                let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else { return Ok(Some(native()?)); };
+                let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else {
+                    return Ok(Some(native()?));
+                };
                 match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                     first,
                     second,
@@ -592,7 +840,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
         }
         MarkerRelationGroup::ArcQuarter(quarter) => {
-            let Some(entity) = linked_single_arc_entity(ctx, marker, markers_by_id, loci_by_marker)?
+            let Some(entity) =
+                linked_single_arc_entity(ctx, marker, markers_by_id, loci_by_marker)?
             else {
                 return Ok(Some(native()?));
             };
@@ -625,11 +874,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
         }
         MarkerRelationGroup::EllipseQuarter(quarter) => {
             let Some(entity) = linked_single_ellipse_entity(
-                ctx, marker,
+                ctx,
+                marker,
                 markers_by_id,
                 loci_by_marker,
                 sketch_entities,
-            )? else {
+            )?
+            else {
                 return Ok(Some(native()?));
             };
             let angle = quarter.angle();
@@ -662,67 +913,164 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             charge_relation_marker_links(ctx, marker, markers_by_id, BINARY_OPERATION)?;
             let mut forward_entities = Vec::new();
             for link in marker.links() {
-                if relation_link_identifies_owner(marker, link) { continue; }
-                for entity in marker_entities(ctx, &link.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)? {
+                if relation_link_identifies_owner(marker, link) {
+                    continue;
+                }
+                for entity in marker_entities(
+                    ctx,
+                    &link.entity_ref,
+                    markers_by_id,
+                    loci_by_marker,
+                    MarkerEntityFilter::All,
+                )? {
                     charge_typed_endpoint_work(ctx, entity.as_str().len(), 8, BINARY_OPERATION)?;
-                    if entity.as_str().contains("sketch-entity#relation-point:") { continue; }
+                    if entity.as_str().contains("sketch-entity#relation-point:") {
+                        continue;
+                    }
                     ctx.reserve_collection_vec(&mut forward_entities, 1, BINARY_OPERATION)?;
-                    ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), BINARY_OPERATION)?;
+                    ctx.charge_work(
+                        u64_from_index(std::mem::size_of::<SketchEntityId>()),
+                        BINARY_OPERATION,
+                    )?;
                     forward_entities.push(entity);
                 }
             }
             let geometry_pair = if owner_entities.is_empty() && !sketch_entities.is_empty() {
-                let mut links = marker.links().iter().filter(|link| !relation_link_identifies_owner(marker, link));
-                if let (Some(first_link), Some(second_link), None) = (links.next(), links.next(), links.next()) {
-                    let resolve = |link: &SketchInputLink| -> Result<Vec<SketchEntityId>, CodecError> {
-                        let mut candidates = marker_entities(ctx, &link.entity_ref, markers_by_id, loci_by_marker, MarkerEntityFilter::All)?;
-                        let mut count = 0;
-                        for index in 0..candidates.len() {
-                            if !entity_is_in_sketch(ctx, &candidates[index], sketch, sketch_entities, BINARY_OPERATION)? { continue; }
-                            ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), BINARY_OPERATION)?;
-                            candidates.swap(count, index); count += 1;
-                        }
-                        candidates.truncate(count);
-                        Ok(candidates)
-                    };
+                let mut links = marker
+                    .links()
+                    .iter()
+                    .filter(|link| !relation_link_identifies_owner(marker, link));
+                if let (Some(first_link), Some(second_link), None) =
+                    (links.next(), links.next(), links.next())
+                {
+                    let resolve =
+                        |link: &SketchInputLink| -> Result<Vec<SketchEntityId>, CodecError> {
+                            let mut candidates = marker_entities(
+                                ctx,
+                                &link.entity_ref,
+                                markers_by_id,
+                                loci_by_marker,
+                                MarkerEntityFilter::All,
+                            )?;
+                            let mut count = 0;
+                            for index in 0..candidates.len() {
+                                if !entity_is_in_sketch(
+                                    ctx,
+                                    &candidates[index],
+                                    sketch,
+                                    sketch_entities,
+                                    BINARY_OPERATION,
+                                )? {
+                                    continue;
+                                }
+                                ctx.charge_work(
+                                    u64_from_index(std::mem::size_of::<SketchEntityId>()),
+                                    BINARY_OPERATION,
+                                )?;
+                                candidates.swap(count, index);
+                                count += 1;
+                            }
+                            candidates.truncate(count);
+                            Ok(candidates)
+                        };
                     let candidates = [resolve(first_link)?, resolve(second_link)?];
                     let mut selected: Option<(&SketchEntityId, &SketchEntityId)> = None;
                     let mut ambiguous = false;
                     for first in &candidates[0] {
                         for second in &candidates[1] {
-                            charge_typed_endpoint_work(ctx, first.as_str().len(), 8, BINARY_OPERATION)?;
-                            charge_typed_endpoint_work(ctx, second.as_str().len(), 8, BINARY_OPERATION)?;
-                            if first == second { continue; }
-                            let Some(first_entity) = find_profile_entity(ctx, sketch_entities, first, BINARY_OPERATION)? else { continue; };
-                            let Some(second_entity) = find_profile_entity(ctx, sketch_entities, second, BINARY_OPERATION)? else { continue; };
+                            charge_typed_endpoint_work(
+                                ctx,
+                                first.as_str().len(),
+                                8,
+                                BINARY_OPERATION,
+                            )?;
+                            charge_typed_endpoint_work(
+                                ctx,
+                                second.as_str().len(),
+                                8,
+                                BINARY_OPERATION,
+                            )?;
+                            if first == second {
+                                continue;
+                            }
+                            let Some(first_entity) =
+                                find_profile_entity(ctx, sketch_entities, first, BINARY_OPERATION)?
+                            else {
+                                continue;
+                            };
+                            let Some(second_entity) = find_profile_entity(
+                                ctx,
+                                sketch_entities,
+                                second,
+                                BINARY_OPERATION,
+                            )?
+                            else {
+                                continue;
+                            };
                             ctx.charge_work(512, BINARY_OPERATION)?;
-                            if !binary.matches_evaluated_geometry(first_entity, second_entity) { continue; }
+                            if !binary.matches_evaluated_geometry(first_entity, second_entity) {
+                                continue;
+                            }
                             if let Some((selected_first, selected_second)) = selected {
-                                charge_typed_endpoint_work(ctx, selected_first.as_str().len(), 8, BINARY_OPERATION)?;
-                                charge_typed_endpoint_work(ctx, selected_second.as_str().len(), 8, BINARY_OPERATION)?;
-                                if selected_first != first || selected_second != second { ambiguous = true; }
+                                charge_typed_endpoint_work(
+                                    ctx,
+                                    selected_first.as_str().len(),
+                                    8,
+                                    BINARY_OPERATION,
+                                )?;
+                                charge_typed_endpoint_work(
+                                    ctx,
+                                    selected_second.as_str().len(),
+                                    8,
+                                    BINARY_OPERATION,
+                                )?;
+                                if selected_first != first || selected_second != second {
+                                    ambiguous = true;
+                                }
                             }
                             selected = Some((first, second));
                         }
                     }
-                    if ambiguous { None } else if let Some((first, second)) = selected {
-                        Some((super::transforms::copy_sketch_entity_identity(ctx, first, BINARY_OPERATION)?, super::transforms::copy_sketch_entity_identity(ctx, second, BINARY_OPERATION)?))
-                    } else { None }
-                } else { None }
-            } else { None };
+                    if ambiguous {
+                        None
+                    } else if let Some((first, second)) = selected {
+                        Some((
+                            super::transforms::copy_sketch_entity_identity(
+                                ctx,
+                                first,
+                                BINARY_OPERATION,
+                            )?,
+                            super::transforms::copy_sketch_entity_identity(
+                                ctx,
+                                second,
+                                BINARY_OPERATION,
+                            )?,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
             let mut all_owned = true;
             if owner_entities.len() == 2 {
                 for entity in &forward_entities {
-                    if !marker_entity_ids_contain(ctx, &owner_entities, entity, BINARY_OPERATION)? { all_owned = false; break; }
+                    if !marker_entity_ids_contain(ctx, &owner_entities, entity, BINARY_OPERATION)? {
+                        all_owned = false;
+                        break;
+                    }
                 }
             }
-            let entities = if owner_entities.len() == 2 && all_owned
-            {
+            let entities = if owner_entities.len() == 2 && all_owned {
                 owner_entities
             } else if let Some((first, second)) = geometry_pair {
                 vec![first, second]
             } else {
-                let Some(entities) = linked_single_entities(ctx, marker, markers_by_id, loci_by_marker)?
+                let Some(entities) =
+                    linked_single_entities(ctx, marker, markers_by_id, loci_by_marker)?
                 else {
                     return Ok(Some(native()?));
                 };
@@ -745,11 +1093,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Ok(Some(native()?));
                 };
             }
-            let [first, second] = marker_resolved_or_none!(<[SketchEntityId; 2]>::try_from(entities).ok());
+            let [first, second] =
+                marker_resolved_or_none!(<[SketchEntityId; 2]>::try_from(entities).ok());
             binary.definition(first, second)
         }
         MarkerRelationGroup::Coincidence => {
-            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)? else {
+            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)?
+            else {
                 return Ok(Some(native()?));
             };
             if loci.len() < 2 {
@@ -757,7 +1107,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
             if !sketch_entities.is_empty() {
                 for locus in &loci {
-                    if profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT coincidence locus")?.is_none() {
+                    if profile_locus_point_charged(
+                        ctx,
+                        locus,
+                        sketch_entities,
+                        "resolve SLDPRT coincidence locus",
+                    )?
+                    .is_none()
+                    {
                         return Ok(Some(native()?));
                     }
                 }
@@ -765,10 +1122,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             SketchConstraintDefinitionInput::CoincidentLoci { loci }
         }
         MarkerRelationGroup::AxisPoints => {
-            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)? else {
+            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)?
+            else {
                 return Ok(Some(native()?));
             };
-            let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else { return Ok(Some(native()?)); };
+            let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else {
+                return Ok(Some(native()?));
+            };
             match cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 first,
                 second,
@@ -778,22 +1138,24 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     SketchCoordinateAxis::U
                 },
             ) {
-                    Ok(relation) => SketchConstraintDefinitionInput::SameCoordinate { relation },
-                    Err(_) => native()?,
-                }
+                Ok(relation) => SketchConstraintDefinitionInput::SameCoordinate { relation },
+                Err(_) => native()?,
+            }
         }
         MarkerRelationGroup::AtIntersection => {
             if sketch_entities.is_empty() {
                 return Ok(Some(native()?));
             }
-            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)? else {
+            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)?
+            else {
                 return Ok(Some(native()?));
             };
             const OPERATION: &str = "resolve SLDPRT marker intersection operands";
             let mut point = None;
             let mut entities = Vec::new();
             for locus in loci {
-                let Some(entity) = find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?
+                let Some(entity) =
+                    find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?
                 else {
                     return Ok(Some(native()?));
                 };
@@ -805,11 +1167,16 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             | SketchGeometryDefinition::Native { .. }
                     )
                 {
-                    ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), OPERATION)?;
+                    ctx.charge_work(
+                        u64_from_index(std::mem::size_of::<SketchEntityId>()),
+                        OPERATION,
+                    )?;
                     ctx.reserve_collection_vec(&mut entities, 1, OPERATION)?;
                     let identity = match locus {
-                        SketchLocus::Entity(identity) | SketchLocus::Start(identity)
-                        | SketchLocus::End(identity) | SketchLocus::Center(identity) => identity,
+                        SketchLocus::Entity(identity)
+                        | SketchLocus::Start(identity)
+                        | SketchLocus::End(identity)
+                        | SketchLocus::Center(identity) => identity,
                     };
                     entities.push(identity);
                 } else if point.replace(locus).is_some() {
@@ -824,11 +1191,14 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(position) = profile_locus_point_charged(ctx, &point, sketch_entities, OPERATION)? else {
+            let Some(position) =
+                profile_locus_point_charged(ctx, &point, sketch_entities, OPERATION)?
+            else {
                 return Ok(Some(native()?));
             };
             for identity in [first, second] {
-                let Some(entity) = find_profile_entity(ctx, sketch_entities, identity, OPERATION)? else {
+                let Some(entity) = find_profile_entity(ctx, sketch_entities, identity, OPERATION)?
+                else {
                     return Ok(Some(native()?));
                 };
                 ctx.charge_work(256, OPERATION)?;
@@ -836,21 +1206,28 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Ok(Some(native()?));
                 }
             }
-            let [first, second] = marker_resolved_or_none!(<[SketchEntityId; 2]>::try_from(entities).ok());
-            SketchConstraintDefinitionInput::AtIntersection { point, first, second }
+            let [first, second] =
+                marker_resolved_or_none!(<[SketchEntityId; 2]>::try_from(entities).ok());
+            SketchConstraintDefinitionInput::AtIntersection {
+                point,
+                first,
+                second,
+            }
         }
         MarkerRelationGroup::Symmetric => {
             if sketch_entities.is_empty() {
                 return Ok(Some(native()?));
             }
-            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)? else {
+            let Some(loci) = relation_operand_loci(ctx, marker, markers_by_id, loci_by_marker)?
+            else {
                 return Ok(Some(native()?));
             };
             const OPERATION: &str = "resolve SLDPRT symmetric marker operands";
             let mut axis = None;
             let mut points = Vec::new();
             for locus in loci {
-                let entity = find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?;
+                let entity =
+                    find_profile_entity(ctx, sketch_entities, locus_entity(&locus), OPERATION)?;
                 if matches!(locus, SketchLocus::Entity(_))
                     && entity.is_some_and(|entity| {
                         matches!(
@@ -859,13 +1236,22 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         )
                     })
                 {
-                    if axis.replace(match locus {
-                        SketchLocus::Entity(entity) | SketchLocus::Start(entity) | SketchLocus::End(entity) | SketchLocus::Center(entity) => entity,
-                    }).is_some() {
+                    if axis
+                        .replace(match locus {
+                            SketchLocus::Entity(entity)
+                            | SketchLocus::Start(entity)
+                            | SketchLocus::End(entity)
+                            | SketchLocus::Center(entity) => entity,
+                        })
+                        .is_some()
+                    {
                         return Ok(Some(native()?));
                     }
                 } else {
-                    ctx.charge_work(u64_from_index(std::mem::size_of::<SketchLocus>()), OPERATION)?;
+                    ctx.charge_work(
+                        u64_from_index(std::mem::size_of::<SketchLocus>()),
+                        OPERATION,
+                    )?;
                     ctx.reserve_collection_vec(&mut points, 1, OPERATION)?;
                     points.push(locus);
                 }
@@ -878,21 +1264,31 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if first == second {
                 return Ok(Some(native()?));
             }
-            let Some(first_point) = profile_locus_point_charged(ctx, first, sketch_entities, OPERATION)? else {
+            let Some(first_point) =
+                profile_locus_point_charged(ctx, first, sketch_entities, OPERATION)?
+            else {
                 return Ok(Some(native()?));
             };
-            let Some(second_point) = profile_locus_point_charged(ctx, second, sketch_entities, OPERATION)? else {
+            let Some(second_point) =
+                profile_locus_point_charged(ctx, second, sketch_entities, OPERATION)?
+            else {
                 return Ok(Some(native()?));
             };
-            let Some(axis_entity) = find_profile_entity(ctx, sketch_entities, &axis, OPERATION)? else {
+            let Some(axis_entity) = find_profile_entity(ctx, sketch_entities, &axis, OPERATION)?
+            else {
                 return Ok(Some(native()?));
             };
             ctx.charge_work(256, OPERATION)?;
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Ok(Some(native()?));
             }
-            let [first, second] = marker_resolved_or_none!(<[SketchLocus; 2]>::try_from(points).ok());
-            SketchConstraintDefinitionInput::Symmetric { first, second, axis }
+            let [first, second] =
+                marker_resolved_or_none!(<[SketchLocus; 2]>::try_from(points).ok());
+            SketchConstraintDefinitionInput::Symmetric {
+                first,
+                second,
+                axis,
+            }
         }
         MarkerRelationGroup::Midpoint => {
             let Some((point, entity)) =
@@ -901,7 +1297,13 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 return Ok(Some(native()?));
             };
             if !sketch_entities.is_empty() {
-                let Some(point_position) = profile_locus_point_charged(ctx, &point, sketch_entities, "resolve SLDPRT profile locus")? else {
+                let Some(point_position) = profile_locus_point_charged(
+                    ctx,
+                    &point,
+                    sketch_entities,
+                    "resolve SLDPRT profile locus",
+                )?
+                else {
                     return Ok(Some(native()?));
                 };
                 let Some(midpoint) = sketch_entities
@@ -1338,27 +1740,45 @@ fn tangent_geometry(first: &SketchEntity, second: &SketchEntity) -> bool {
 }
 
 pub(super) fn unique_axis_aligned_linked_loci(
-    ctx: &DecodeContext<'_>, marker: &SketchInputEntity, sketch: &SketchId,
-    sketch_entities: &[SketchEntity], markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>, axis: ProfileAxis,
+    ctx: &DecodeContext<'_>,
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    axis: ProfileAxis,
 ) -> Result<Option<Vec<SketchLocus>>, CodecError> {
     const OPERATION: &str = "select SLDPRT linked axis loci";
     ctx.charge_work(u64_from_index(markers_by_id.len()), OPERATION)?;
     let key_bytes = markers_by_id.keys().try_fold(0u64, |bytes, key| {
-        bytes.checked_add(u64_from_index(key.len())).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+        bytes
+            .checked_add(u64_from_index(key.len()))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
     })?;
     let mut links = [None, None];
     let mut count = 0;
     for link in marker.links() {
-        ctx.charge_work(key_bytes.checked_add(u64_from_index(link.entity_ref.len())).and_then(|bytes| bytes.checked_add(u64_from_index(marker.id().len())))
-            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(16))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        if !relation_link_is_geometric_operand(marker, link, markers_by_id) { continue; }
-        if count == links.len() { return Ok(None); }
+        ctx.charge_work(
+            key_bytes
+                .checked_add(u64_from_index(link.entity_ref.len()))
+                .and_then(|bytes| bytes.checked_add(u64_from_index(marker.id().len())))
+                .and_then(|bytes| bytes.checked_mul(4))
+                .and_then(|work| work.checked_add(16))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
+        if !relation_link_is_geometric_operand(marker, link, markers_by_id) {
+            continue;
+        }
+        if count == links.len() {
+            return Ok(None);
+        }
         links[count] = Some(link);
         count += 1;
     }
-    let [Some(first_link), Some(second_link)] = links else { return Ok(None); };
+    let [Some(first_link), Some(second_link)] = links else {
+        return Ok(None);
+    };
     let first = marker_point_locus(ctx, &first_link.entity_ref, markers_by_id, loci_by_marker)?;
     let second = marker_point_locus(ctx, &second_link.entity_ref, markers_by_id, loci_by_marker)?;
     let (known, known_is_first) = match (first, second) {
@@ -1366,21 +1786,46 @@ pub(super) fn unique_axis_aligned_linked_loci(
         (None, Some(known)) => (known, false),
         _ => return Ok(None),
     };
-    let Some(known_point) = profile_locus_point_charged(ctx, &known, sketch_entities, OPERATION)? else { return Ok(None); };
+    let Some(known_point) = profile_locus_point_charged(ctx, &known, sketch_entities, OPERATION)?
+    else {
+        return Ok(None);
+    };
     let mut selected: Option<SketchLocus> = None;
     for (candidate_point, candidate) in canonical_profile_loci(ctx, sketch, sketch_entities)? {
-        let selected_id = selected.as_ref().map_or("", |locus| locus_entity(locus).as_str());
-        let bytes = u64_from_index(locus_entity(&candidate).as_str().len()).checked_add(u64_from_index(locus_entity(&known).as_str().len()))
-            .and_then(|bytes| bytes.checked_add(u64_from_index(selected_id.len()))).and_then(|bytes| bytes.checked_mul(4))
-            .and_then(|work| work.checked_add(128)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let selected_id = selected
+            .as_ref()
+            .map_or("", |locus| locus_entity(locus).as_str());
+        let bytes = u64_from_index(locus_entity(&candidate).as_str().len())
+            .checked_add(u64_from_index(locus_entity(&known).as_str().len()))
+            .and_then(|bytes| bytes.checked_add(u64_from_index(selected_id.len())))
+            .and_then(|bytes| bytes.checked_mul(4))
+            .and_then(|work| work.checked_add(128))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(bytes, OPERATION)?;
-        let aligned = if axis == ProfileAxis::U { same_dimension_length(candidate_point.v, known_point.v) } else { same_dimension_length(candidate_point.u, known_point.u) };
-        if candidate == known || !aligned { continue; }
-        if selected.as_ref().is_some_and(|selected| selected != &candidate) { return Ok(None); }
+        let aligned = if axis == ProfileAxis::U {
+            same_dimension_length(candidate_point.v, known_point.v)
+        } else {
+            same_dimension_length(candidate_point.u, known_point.u)
+        };
+        if candidate == known || !aligned {
+            continue;
+        }
+        if selected
+            .as_ref()
+            .is_some_and(|selected| selected != &candidate)
+        {
+            return Ok(None);
+        }
         selected = Some(candidate);
     }
-    let Some(candidate) = selected else { return Ok(None); };
-    Ok(Some(if known_is_first { vec![known, candidate] } else { vec![candidate, known] }))
+    let Some(candidate) = selected else {
+        return Ok(None);
+    };
+    Ok(Some(if known_is_first {
+        vec![known, candidate]
+    } else {
+        vec![candidate, known]
+    }))
 }
 
 struct AxisRelationPointCollection<'a> {
@@ -1394,12 +1839,26 @@ impl<'a> AxisRelationPointCollection<'a> {
     fn append(&mut self, ctx: &DecodeContext<'_>, locus: SketchLocus) -> Result<(), CodecError> {
         const OPERATION: &str = "collect SLDPRT axis relation point loci";
         let bytes = u64_from_index(locus_entity(&locus).as_str().len());
-        ctx.charge_work(self.locus_bytes.checked_add(bytes).and_then(|bytes| bytes.checked_mul(4))
-            .and_then(|work| work.checked_add(u64_from_index(self.loci.len()).checked_add(1)?
-                .checked_mul(u64_from_index(std::mem::size_of::<SketchLocus>()))?))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        if self.loci.contains(&locus) { return Ok(()); }
-        let next_bytes = self.locus_bytes.checked_add(bytes)
+        ctx.charge_work(
+            self.locus_bytes
+                .checked_add(bytes)
+                .and_then(|bytes| bytes.checked_mul(4))
+                .and_then(|work| {
+                    work.checked_add(
+                        u64_from_index(self.loci.len())
+                            .checked_add(1)?
+                            .checked_mul(u64_from_index(std::mem::size_of::<SketchLocus>()))?,
+                    )
+                })
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
+        if self.loci.contains(&locus) {
+            return Ok(());
+        }
+        let next_bytes = self
+            .locus_bytes
+            .checked_add(bytes)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.reserve_collection_vec(&mut self.loci, 1, OPERATION)?;
         self.loci.push(locus);
@@ -1409,38 +1868,93 @@ impl<'a> AxisRelationPointCollection<'a> {
 }
 
 fn axis_relation_point_loci(
-    ctx: &DecodeContext<'_>, relation: &SketchInputEntity, sketch: &SketchId,
-    sketch_entities: &[SketchEntity], markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    ctx: &DecodeContext<'_>,
+    relation: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<[SketchLocus; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT nested axis relation points";
     charge_relation_marker_links(ctx, relation, markers_by_id, OPERATION)?;
     if !relation.links().iter().any(|link| {
-        !relation_link_identifies_owner(relation, link) && matches!(markers_by_id.get(link.entity_ref.as_str()).map(|marker| marker.kind()), Some(SketchInputKind::Relation(_)))
-    }) { return Ok(None); }
-    let mut collection = AxisRelationPointCollection { visited: HashSet::new(), visited_bytes: 0, loci: Vec::new(), locus_bytes: 0 };
-    collect_axis_relation_point_loci(ctx, relation, sketch, sketch_entities, markers_by_id, loci_by_marker, &mut collection, false)?;
+        !relation_link_identifies_owner(relation, link)
+            && matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|marker| marker.kind()),
+                Some(SketchInputKind::Relation(_))
+            )
+    }) {
+        return Ok(None);
+    }
+    let mut collection = AxisRelationPointCollection {
+        visited: HashSet::new(),
+        visited_bytes: 0,
+        loci: Vec::new(),
+        locus_bytes: 0,
+    };
+    collect_axis_relation_point_loci(
+        ctx,
+        relation,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        &mut collection,
+        false,
+    )?;
     sort_axis_relation_point_loci(ctx, &mut collection.loci)?;
-    if collection.loci.len() == 2 { return Ok(collection.loci.try_into().ok()); }
-    if collection.loci.len() > 2 { return Ok(None); }
+    if collection.loci.len() == 2 {
+        return Ok(collection.loci.try_into().ok());
+    }
+    if collection.loci.len() > 2 {
+        return Ok(None);
+    }
     collection.loci.clear();
     collection.locus_bytes = 0;
     collection.visited.clear();
     collection.visited_bytes = 0;
-    collect_axis_relation_point_loci(ctx, relation, sketch, sketch_entities, markers_by_id, loci_by_marker, &mut collection, true)?;
+    collect_axis_relation_point_loci(
+        ctx,
+        relation,
+        sketch,
+        sketch_entities,
+        markers_by_id,
+        loci_by_marker,
+        &mut collection,
+        true,
+    )?;
     sort_axis_relation_point_loci(ctx, &mut collection.loci)?;
     Ok(collection.loci.try_into().ok())
 }
 
-fn sort_axis_relation_point_loci(ctx: &DecodeContext<'_>, loci: &mut Vec<SketchLocus>) -> Result<(), CodecError> {
+fn sort_axis_relation_point_loci(
+    ctx: &DecodeContext<'_>,
+    loci: &mut Vec<SketchLocus>,
+) -> Result<(), CodecError> {
     const OPERATION: &str = "sort SLDPRT axis relation point loci";
     let count = u64_from_index(loci.len());
     ctx.charge_work(count, OPERATION)?;
-    let max_bytes = loci.iter().map(|locus| locus_entity(locus).as_str().len()).max().unwrap_or(0);
+    let max_bytes = loci
+        .iter()
+        .map(|locus| locus_entity(locus).as_str().len())
+        .max()
+        .unwrap_or(0);
     let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(count.checked_mul(levels).and_then(|work| work.checked_mul(64))
-        .and_then(|work| u64_from_index(max_bytes).checked_mul(2).and_then(|bytes| bytes.checked_add(1)).and_then(|bytes| work.checked_mul(bytes)))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    ctx.charge_work(
+        count
+            .checked_mul(levels)
+            .and_then(|work| work.checked_mul(64))
+            .and_then(|work| {
+                u64_from_index(max_bytes)
+                    .checked_mul(2)
+                    .and_then(|bytes| bytes.checked_add(1))
+                    .and_then(|bytes| work.checked_mul(bytes))
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
     loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     loci.dedup();
     Ok(())
@@ -1450,38 +1964,96 @@ fn sort_axis_relation_point_loci(ctx: &DecodeContext<'_>, loci: &mut Vec<SketchL
 // because each lookup has a distinct ownership boundary.
 #[allow(clippy::too_many_arguments)]
 fn collect_axis_relation_point_loci<'a>(
-    ctx: &DecodeContext<'_>, relation: &'a SketchInputEntity, sketch: &SketchId,
-    sketch_entities: &[SketchEntity], markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>, collection: &mut AxisRelationPointCollection<'a>,
+    ctx: &DecodeContext<'_>,
+    relation: &'a SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    collection: &mut AxisRelationPointCollection<'a>,
     include_reverse_owners: bool,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "traverse SLDPRT axis relation point loci";
     let _nesting = ctx.enter_nested(OPERATION)?;
     let bytes = u64_from_index(relation.id().len());
-    ctx.charge_work(collection.visited_bytes.checked_add(bytes).and_then(|bytes| bytes.checked_mul(4))
-        .and_then(|work| work.checked_add(u64_from_index(collection.visited.len()).checked_add(1)?
-            .checked_mul(u64_from_index(std::mem::size_of::<&str>()))?))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-    if collection.visited.contains(relation.id()) { return Ok(()); }
-    let next_bytes = collection.visited_bytes.checked_add(bytes)
+    ctx.charge_work(
+        collection
+            .visited_bytes
+            .checked_add(bytes)
+            .and_then(|bytes| bytes.checked_mul(4))
+            .and_then(|work| {
+                work.checked_add(
+                    u64_from_index(collection.visited.len())
+                        .checked_add(1)?
+                        .checked_mul(u64_from_index(std::mem::size_of::<&str>()))?,
+                )
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
+    if collection.visited.contains(relation.id()) {
+        return Ok(());
+    }
+    let next_bytes = collection
+        .visited_bytes
+        .checked_add(bytes)
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_collection_items(1, OPERATION)?;
-    collection.visited.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    collection
+        .visited
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     collection.visited.insert(relation.id());
     collection.visited_bytes = next_bytes;
     charge_relation_marker_links(ctx, relation, markers_by_id, OPERATION)?;
-    for link in relation.links().iter().filter(|link| !relation_link_identifies_owner(relation, link)) {
-        let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else { continue; };
+    for link in relation
+        .links()
+        .iter()
+        .filter(|link| !relation_link_identifies_owner(relation, link))
+    {
+        let Some(linked) = markers_by_id.get(link.entity_ref.as_str()) else {
+            continue;
+        };
         match linked.kind() {
-            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => append_axis_relation_point_locus(ctx, linked.id(), sketch, sketch_entities, markers_by_id, loci_by_marker, collection)?,
-            SketchInputKind::Relation(_) => collect_axis_relation_point_loci(ctx, linked, sketch, sketch_entities, markers_by_id, loci_by_marker, collection, include_reverse_owners)?,
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                append_axis_relation_point_locus(
+                    ctx,
+                    linked.id(),
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    collection,
+                )?
+            }
+            SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
+                ctx,
+                linked,
+                sketch,
+                sketch_entities,
+                markers_by_id,
+                loci_by_marker,
+                collection,
+                include_reverse_owners,
+            )?,
             _ => {}
         }
     }
     if include_reverse_owners {
         for owner in relation_owner_markers(ctx, relation, markers_by_id)? {
-            if matches!(owner.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) {
-                append_axis_relation_point_locus(ctx, owner.id(), sketch, sketch_entities, markers_by_id, loci_by_marker, collection)?;
+            if matches!(
+                owner.kind(),
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                append_axis_relation_point_locus(
+                    ctx,
+                    owner.id(),
+                    sketch,
+                    sketch_entities,
+                    markers_by_id,
+                    loci_by_marker,
+                    collection,
+                )?;
             }
         }
     }
@@ -1489,60 +2061,115 @@ fn collect_axis_relation_point_loci<'a>(
 }
 
 fn append_axis_relation_point_locus(
-    ctx: &DecodeContext<'_>, marker_id: &str, sketch: &SketchId,
-    sketch_entities: &[SketchEntity], markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>, collection: &mut AxisRelationPointCollection<'_>,
+    ctx: &DecodeContext<'_>,
+    marker_id: &str,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    collection: &mut AxisRelationPointCollection<'_>,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "resolve SLDPRT axis relation point identity";
-    if let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? { return collection.append(ctx, locus); }
+    if let Some(locus) = marker_point_locus(ctx, marker_id, markers_by_id, loci_by_marker)? {
+        return collection.append(ctx, locus);
+    }
     let mut selected = None;
     for entity in sketch_entities {
         charge_typed_endpoint_work(ctx, entity.sketch.as_str().len(), 4, OPERATION)?;
         charge_typed_endpoint_work(ctx, sketch.as_str().len(), 4, OPERATION)?;
-        charge_typed_endpoint_work(ctx, entity.native_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
+        charge_typed_endpoint_work(
+            ctx,
+            entity.native_ref.as_deref().map_or(0, str::len),
+            4,
+            OPERATION,
+        )?;
         charge_typed_endpoint_work(ctx, marker_id.len(), 4, OPERATION)?;
-        if entity.sketch != *sketch || entity.native_ref.as_deref() != Some(marker_id)
-            || !matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }) { continue; }
-        if selected.is_some() { return Ok(()); }
+        if entity.sketch != *sketch
+            || entity.native_ref.as_deref() != Some(marker_id)
+            || !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+            )
+        {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(());
+        }
         selected = Some(entity.id());
     }
     if let Some(identity) = selected {
-        let locus = super::transforms::SketchLocusRole::Entity.copy_locus(ctx, identity, OPERATION)?;
+        let locus =
+            super::transforms::SketchLocusRole::Entity.copy_locus(ctx, identity, OPERATION)?;
         collection.append(ctx, locus)?;
     }
     Ok(())
 }
 
 fn charge_relation_marker_links(
-    ctx: &DecodeContext<'_>, relation: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>, operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_work(u64_from_index(markers_by_id.len()), operation)?;
-    let key_bytes = markers_by_id.keys().try_fold(0u64, |bytes, key| bytes.checked_add(u64_from_index(key.len())))
+    let key_bytes = markers_by_id
+        .keys()
+        .try_fold(0u64, |bytes, key| {
+            bytes.checked_add(u64_from_index(key.len()))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     for link in relation.links() {
-        ctx.charge_work(key_bytes.checked_add(u64_from_index(link.entity_ref.len()))
-            .and_then(|bytes| bytes.checked_add(u64_from_index(relation.id().len())))
-            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(64))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+        ctx.charge_work(
+            key_bytes
+                .checked_add(u64_from_index(link.entity_ref.len()))
+                .and_then(|bytes| bytes.checked_add(u64_from_index(relation.id().len())))
+                .and_then(|bytes| bytes.checked_mul(4))
+                .and_then(|work| work.checked_add(64))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            operation,
+        )?;
     }
     Ok(())
 }
 
 pub(super) fn relation_owner_markers<'a>(
-    ctx: &DecodeContext<'_>, relation: &SketchInputEntity,
+    ctx: &DecodeContext<'_>,
+    relation: &SketchInputEntity,
     markers_by_id: &'a HashMap<&str, &SketchInputEntity>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "collect SLDPRT reverse relation owners";
     let mut owners = Vec::new();
     for marker in markers_by_id.values().copied() {
-        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
-        charge_typed_endpoint_work(ctx, relation.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
-        if marker.feature_ref != relation.feature_ref || !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::LineOrCircle | SketchInputKind::Arc | SketchInputKind::ConstrainedPoint) { continue; }
+        charge_typed_endpoint_work(
+            ctx,
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            4,
+            OPERATION,
+        )?;
+        charge_typed_endpoint_work(
+            ctx,
+            relation.feature_ref.as_deref().map_or(0, str::len),
+            4,
+            OPERATION,
+        )?;
+        if marker.feature_ref != relation.feature_ref
+            || !matches!(
+                marker.kind(),
+                SketchInputKind::Point
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
+                    | SketchInputKind::ConstrainedPoint
+            )
+        {
+            continue;
+        }
         for link in marker.links() {
             charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
             charge_typed_endpoint_work(ctx, relation.id().len(), 4, OPERATION)?;
-            if link.entity_ref != relation.id() { continue; }
+            if link.entity_ref != relation.id() {
+                continue;
+            }
             ctx.reserve_collection_vec(&mut owners, 1, OPERATION)?;
             owners.push(marker);
             break;
@@ -1550,18 +2177,28 @@ pub(super) fn relation_owner_markers<'a>(
     }
     let count = u64_from_index(owners.len());
     let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-    ctx.charge_work(count.checked_mul(levels).and_then(|work| work.checked_mul(64))
-        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    ctx.charge_work(
+        count
+            .checked_mul(levels)
+            .and_then(|work| work.checked_mul(64))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+        OPERATION,
+    )?;
     owners.sort_unstable_by_key(|marker| marker.offset());
     Ok(owners)
 }
 
-
 pub(crate) fn marker_owns_constraint(
-    ctx: &DecodeContext<'_>, marker: &SketchInputEntity,
+    ctx: &DecodeContext<'_>,
+    marker: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
 ) -> Result<bool, CodecError> {
-    charge_relation_marker_links(ctx, marker, markers_by_id, "resolve SLDPRT marker constraint ownership")?;
+    charge_relation_marker_links(
+        ctx,
+        marker,
+        markers_by_id,
+        "resolve SLDPRT marker constraint ownership",
+    )?;
     let mut axis_point_links = marker
         .links()
         .iter()
@@ -1623,7 +2260,8 @@ pub(super) fn relation_link_is_geometric_operand(
 }
 
 fn typed_axis_relation_is_inactive(
-    ctx: &DecodeContext<'_>, definition: &SketchConstraintDefinitionInput,
+    ctx: &DecodeContext<'_>,
+    definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<bool>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT axis relation activity";
@@ -1631,15 +2269,34 @@ fn typed_axis_relation_is_inactive(
     Ok(match definition {
         SketchConstraintDefinitionInput::Horizontal { entity: id }
         | SketchConstraintDefinitionInput::Vertical { entity: id } => {
-            let Some(entity) = find_profile_entity(ctx, sketch_entities, id, OPERATION)? else { return Ok(None); };
-            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else { return Ok(Some(true)); };
-            Some(if matches!(definition, SketchConstraintDefinitionInput::Horizontal { .. }) {
-                !same_dimension_length(start.v, end.v)
-            } else { !same_dimension_length(start.u, end.u) })
+            let Some(entity) = find_profile_entity(ctx, sketch_entities, id, OPERATION)? else {
+                return Ok(None);
+            };
+            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else {
+                return Ok(Some(true));
+            };
+            Some(
+                if matches!(
+                    definition,
+                    SketchConstraintDefinitionInput::Horizontal { .. }
+                ) {
+                    !same_dimension_length(start.v, end.v)
+                } else {
+                    !same_dimension_length(start.u, end.u)
+                },
+            )
         }
         SketchConstraintDefinitionInput::SameCoordinate { relation } => {
-            let Some(first) = profile_locus_point_charged(ctx, relation.first(), sketch_entities, OPERATION)? else { return Ok(None); };
-            let Some(second) = profile_locus_point_charged(ctx, relation.second(), sketch_entities, OPERATION)? else { return Ok(None); };
+            let Some(first) =
+                profile_locus_point_charged(ctx, relation.first(), sketch_entities, OPERATION)?
+            else {
+                return Ok(None);
+            };
+            let Some(second) =
+                profile_locus_point_charged(ctx, relation.second(), sketch_entities, OPERATION)?
+            else {
+                return Ok(None);
+            };
             Some(match relation.axis() {
                 SketchCoordinateAxis::V => !same_dimension_length(first.v, second.v),
                 SketchCoordinateAxis::U => !same_dimension_length(first.u, second.u),
@@ -1669,8 +2326,12 @@ fn typed_binary_relation_is_inactive(
         return Ok(None);
     };
     const OPERATION: &str = "resolve SLDPRT binary relation activity";
-    let Some(first) = find_profile_entity(ctx, sketch_entities, first, OPERATION)? else { return Ok(None); };
-    let Some(second) = find_profile_entity(ctx, sketch_entities, second, OPERATION)? else { return Ok(None); };
+    let Some(first) = find_profile_entity(ctx, sketch_entities, first, OPERATION)? else {
+        return Ok(None);
+    };
+    let Some(second) = find_profile_entity(ctx, sketch_entities, second, OPERATION)? else {
+        return Ok(None);
+    };
     ctx.charge_work(256, OPERATION)?;
     Ok(Some(!binary_relation_matches_evaluated_geometry(
         kind, first, second,
@@ -1695,18 +2356,31 @@ pub(super) fn marker_relation_is_inactive(
     if let Some(inactive) = typed_axis_relation_is_inactive(ctx, definition, sketch_entities)? {
         return Ok(inactive);
     }
-    if let Some(inactive) = typed_binary_relation_is_inactive(ctx, kind, definition, sketch_entities)? {
+    if let Some(inactive) =
+        typed_binary_relation_is_inactive(ctx, kind, definition, sketch_entities)?
+    {
         return Ok(inactive);
     }
     if let SketchConstraintDefinitionInput::CoincidentLoci { loci } = definition {
         let mut first = None;
         let mut inactive = false;
         for locus in loci {
-            let Some(point) = profile_locus_point_charged(ctx, locus, sketch_entities, "resolve SLDPRT coincidence activity")? else { return Ok(false); };
+            let Some(point) = profile_locus_point_charged(
+                ctx,
+                locus,
+                sketch_entities,
+                "resolve SLDPRT coincidence activity",
+            )?
+            else {
+                return Ok(false);
+            };
             if let Some(first) = first {
                 let first: Point2 = first;
-                inactive |= !same_dimension_length(point.u, first.u) || !same_dimension_length(point.v, first.v);
-            } else { first = Some(point); }
+                inactive |= !same_dimension_length(point.u, first.u)
+                    || !same_dimension_length(point.v, first.v);
+            } else {
+                first = Some(point);
+            }
         }
         return Ok(inactive);
     }
@@ -1721,11 +2395,21 @@ pub(super) fn marker_relation_is_inactive(
         for operand in operands {
             let first_bytes = operands[0].native_ref.as_deref().map_or(0, str::len);
             let bytes = operand.native_ref.as_deref().map_or(0, str::len);
-            let work = u64_from_index(first_bytes).checked_add(u64_from_index(bytes))
+            let work = u64_from_index(first_bytes)
+                .checked_add(u64_from_index(bytes))
                 .and_then(|bytes| bytes.checked_add(1))
-                .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT repeated relation operands", u64::MAX - 1, u64::MAX))?;
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "compare SLDPRT repeated relation operands",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
             ctx.charge_work(work, "compare SLDPRT repeated relation operands")?;
-            if operand.native_ref != operands[0].native_ref { repeated_single_operand = false; break; }
+            if operand.native_ref != operands[0].native_ref {
+                repeated_single_operand = false;
+                break;
+            }
         }
     }
     if repeated_single_operand
@@ -1749,14 +2433,35 @@ pub(super) fn marker_relation_is_inactive(
     }
     let mut resolved = Vec::new();
     for id in entities {
-        if let Some(entity) = find_profile_entity(ctx, sketch_entities, id, "resolve SLDPRT native relation activity")? {
-            ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT native relation activity")?;
+        if let Some(entity) = find_profile_entity(
+            ctx,
+            sketch_entities,
+            id,
+            "resolve SLDPRT native relation activity",
+        )? {
+            ctx.reserve_collection_vec(
+                &mut resolved,
+                1,
+                "collect SLDPRT native relation activity",
+            )?;
             resolved.push(entity.geometry.definition());
         }
     }
-    if resolved.len() != entities.len() { return Ok(false); }
-    ctx.charge_work(u64_from_index(resolved.len()).checked_add(64)
-        .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT native relation activity", u64::MAX - 1, u64::MAX))?, "compare SLDPRT native relation activity")?;
+    if resolved.len() != entities.len() {
+        return Ok(false);
+    }
+    ctx.charge_work(
+        u64_from_index(resolved.len())
+            .checked_add(64)
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "compare SLDPRT native relation activity",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?,
+        "compare SLDPRT native relation activity",
+    )?;
     Ok(match kind {
         ArcAngle90 | ArcAngle180 | ArcAngle270 => {
             !matches!(resolved.as_slice(), [SketchGeometryDefinition::Arc { .. }])
@@ -1796,16 +2501,32 @@ pub(super) fn marker_relation_is_inactive(
 }
 
 fn relation_owner_curve_entities(
-    ctx: &DecodeContext<'_>, relation: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>, loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    ctx: &DecodeContext<'_>,
+    relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Vec<SketchEntityId>, CodecError> {
     const OPERATION: &str = "collect SLDPRT reverse curve owner entities";
     let mut entities = Vec::new();
     for owner in relation_owner_markers(ctx, relation, markers_by_id)? {
         ctx.charge_work(8, OPERATION)?;
-        if !matches!(owner.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc) { continue; }
-        for entity in marker_entities(ctx, owner.id(), markers_by_id, loci_by_marker, MarkerEntityFilter::All)? {
-            ctx.charge_work(u64_from_index(std::mem::size_of::<SketchEntityId>()), OPERATION)?;
+        if !matches!(
+            owner.kind(),
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+        ) {
+            continue;
+        }
+        for entity in marker_entities(
+            ctx,
+            owner.id(),
+            markers_by_id,
+            loci_by_marker,
+            MarkerEntityFilter::All,
+        )? {
+            ctx.charge_work(
+                u64_from_index(std::mem::size_of::<SketchEntityId>()),
+                OPERATION,
+            )?;
             ctx.reserve_collection_vec(&mut entities, 1, OPERATION)?;
             entities.push(entity);
         }
@@ -1814,20 +2535,39 @@ fn relation_owner_curve_entities(
     Ok(entities)
 }
 
-
-fn charge_typed_endpoint_work(ctx: &DecodeContext<'_>, len: usize, factor: u64, operation: &'static str) -> Result<(), CodecError> {
-    let work = u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(factor))
+fn charge_typed_endpoint_work(
+    ctx: &DecodeContext<'_>,
+    len: usize,
+    factor: u64,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let work = u64_from_index(len)
+        .checked_add(1)
+        .and_then(|work| work.checked_mul(factor))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
 }
 
 fn charge_typed_endpoint_roster(
-    ctx: &DecodeContext<'_>, owner: &SketchInputEntity, markers: &[&SketchInputEntity], operation: &'static str,
+    ctx: &DecodeContext<'_>,
+    owner: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
+    operation: &'static str,
 ) -> Result<(), CodecError> {
     ctx.charge_work(512, operation)?;
     for marker in markers {
-        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, operation)?;
-        charge_typed_endpoint_work(ctx, owner.feature_ref.as_deref().map_or(0, str::len), 8, operation)?;
+        charge_typed_endpoint_work(
+            ctx,
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            8,
+            operation,
+        )?;
+        charge_typed_endpoint_work(
+            ctx,
+            owner.feature_ref.as_deref().map_or(0, str::len),
+            8,
+            operation,
+        )?;
         charge_typed_endpoint_work(ctx, marker.id().len(), 8, operation)?;
         charge_typed_endpoint_work(ctx, owner.id().len(), 8, operation)?;
     }
@@ -1835,20 +2575,41 @@ fn charge_typed_endpoint_roster(
 }
 
 pub(super) fn line_endpoint_markers<'a>(
-    ctx: &DecodeContext<'_>, line: &SketchInputEntity,
+    ctx: &DecodeContext<'_>,
+    line: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT linked line endpoints";
     for link in line.links() {
         charge_typed_endpoint_work(ctx, link.entity_ref.len(), 8, OPERATION)?;
         if let Some(marker) = markers_by_id.get(link.entity_ref.as_str()) {
-            charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
-            charge_typed_endpoint_work(ctx, line.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+            charge_typed_endpoint_work(
+                ctx,
+                marker.feature_ref.as_deref().map_or(0, str::len),
+                8,
+                OPERATION,
+            )?;
+            charge_typed_endpoint_work(
+                ctx,
+                line.feature_ref.as_deref().map_or(0, str::len),
+                8,
+                OPERATION,
+            )?;
         }
     }
     for marker in markers_by_id.values() {
-        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
-        charge_typed_endpoint_work(ctx, line.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+        charge_typed_endpoint_work(
+            ctx,
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            8,
+            OPERATION,
+        )?;
+        charge_typed_endpoint_work(
+            ctx,
+            line.feature_ref.as_deref().map_or(0, str::len),
+            8,
+            OPERATION,
+        )?;
         charge_typed_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
         for link in marker.links() {
             charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
@@ -1875,18 +2636,23 @@ pub(super) fn line_endpoint_markers<'a>(
         });
     let mut endpoints = Vec::new();
     for endpoint in candidates {
-        if endpoints.len() == endpoints.capacity() { charge_typed_endpoint_work(ctx, endpoints.len(), 4, OPERATION)?; }
+        if endpoints.len() == endpoints.capacity() {
+            charge_typed_endpoint_work(ctx, endpoints.len(), 4, OPERATION)?;
+        }
         ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
         endpoints.push(endpoint);
     }
     sort_endpoint_markers(ctx, &mut endpoints, OPERATION)?;
-    for endpoint in &endpoints { charge_typed_endpoint_work(ctx, endpoint.id().len(), 4, OPERATION)?; }
+    for endpoint in &endpoints {
+        charge_typed_endpoint_work(ctx, endpoint.id().len(), 4, OPERATION)?;
+    }
     endpoints.dedup_by_key(|endpoint| endpoint.id());
     Ok(endpoints)
 }
 
 pub(super) fn marker_curve_endpoint_markers<'a>(
-    ctx: &DecodeContext<'_>, payload: &[u8],
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
@@ -1906,23 +2672,22 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     });
     if let Some((offset, indices)) = shifted {
         let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
-            let mut owned = collect_endpoint_markers(ctx, markers.iter().copied(), curve, |_| true, OPERATION)?;
+            let mut owned =
+                collect_endpoint_markers(ctx, markers.iter().copied(), curve, |_| true, OPERATION)?;
             sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
-            let selected = indices
-                .into_iter()
-                .filter_map(|index| {
-                    let index = usize::try_from(index).ok()?.checked_sub(1)?;
-                    owned.get(index).copied().filter(|marker| {
-                        marker.coordinates_m.is_some()
-                            && matches!(
-                                marker.kind(),
-                                SketchInputKind::Point
-                                    | SketchInputKind::ConstrainedPoint
-                                    | SketchInputKind::LineOrCircle
-                                    | SketchInputKind::Arc
-                            )
-                    })
-                });
+            let selected = indices.into_iter().filter_map(|index| {
+                let index = usize::try_from(index).ok()?.checked_sub(1)?;
+                owned.get(index).copied().filter(|marker| {
+                    marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind(),
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        )
+                })
+            });
             let mut endpoints = Vec::new();
             for endpoint in selected {
                 ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
@@ -1930,7 +2695,8 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             }
             endpoints
         } else {
-            super::endpoints::coordinate_roster_curve_endpoint_markers_at(ctx,
+            super::endpoints::coordinate_roster_curve_endpoint_markers_at(
+                ctx,
                 payload,
                 curve,
                 markers,
@@ -1955,10 +2721,14 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    if let Some(endpoints) = one_based_point_roster_line_endpoint_markers(ctx, payload, curve, markers)? {
+    if let Some(endpoints) =
+        one_based_point_roster_line_endpoint_markers(ctx, payload, curve, markers)?
+    {
         return copy_endpoint_markers(ctx, &endpoints);
     }
-    if let Some(endpoints) = legacy_point_roster_line_endpoint_markers(ctx, payload, curve, markers)? {
+    if let Some(endpoints) =
+        legacy_point_roster_line_endpoint_markers(ctx, payload, curve, markers)?
+    {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     let endpoints = roster_curve_endpoint_markers(ctx, payload, curve, markers)?;
@@ -1991,7 +2761,9 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     }
     if let Some(pair) = coordinate_profile_line_endpoints(payload, curve, markers_by_id) {
         copy_endpoint_markers(ctx, &pair)
-    } else { Ok(endpoints) }
+    } else {
+        Ok(endpoints)
+    }
 }
 
 fn coordinate_profile_line_endpoints<'a>(
@@ -2108,36 +2880,38 @@ fn extended_wide_selected_axis_endpoints<'a>(
     const OPERATION: &str = "resolve SLDPRT extended wide selected axis endpoints";
     charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let encoded = (|| {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind() != SketchInputKind::LineOrCircle
-        || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-            != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(2)
-        || payload.get(offset + 23..offset + 31)
-            != Some(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00])
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
-        || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
-        || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
-        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 80..offset + 84) != Some(&[0x00, 0x00, 0x02, 0x00])
-        || payload.get(offset + 84..offset + 88) != Some(&[0; 4])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
-    {
-        return None;
-    }
-    let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
-    let encoded = [endpoint(64)?, endpoint(66)?];
-    if encoded[0] == encoded[1] || encoded.contains(&u32::from(u16::MAX)) {
-        return None;
-    }
+        let offset = usize::try_from(curve.offset()).ok()?;
+        if curve.kind() != SketchInputKind::LineOrCircle
+            || payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+                != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+            || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+            || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+            || marker_native_code(payload, offset) != Some(2)
+            || payload.get(offset + 23..offset + 31)
+                != Some(&[0x04, 0x00, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00])
+            || payload.get(offset + 31..offset + 39)
+                != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+            || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
+            || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+            || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+            || payload.get(offset + 68..offset + 72) != Some(&[0; 4])
+            || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+            || payload.get(offset + 80..offset + 84) != Some(&[0x00, 0x00, 0x02, 0x00])
+            || payload.get(offset + 84..offset + 88) != Some(&[0; 4])
+            || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+        {
+            return None;
+        }
+        let endpoint = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
+        let encoded = [endpoint(64)?, endpoint(66)?];
+        if encoded[0] == encoded[1] || encoded.contains(&u32::from(u16::MAX)) {
+            return None;
+        }
         Some(encoded)
     })();
-    let Some(encoded) = encoded else { return Ok(None); };
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
     let resolve_object = |index| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
@@ -2161,68 +2935,93 @@ fn extended_wide_selected_axis_endpoints<'a>(
     let [Some(first_index), Some(second_index)] = indices else {
         return Ok(None);
     };
-    let mut points = collect_endpoint_markers(ctx, markers.iter().copied(), curve,
-        |marker| marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint), OPERATION)?;
+    let mut points = collect_endpoint_markers(
+        ctx,
+        markers.iter().copied(),
+        curve,
+        |marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind(),
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        },
+        OPERATION,
+    )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     Ok((|| {
-    let endpoints = [*points.get(first_index)?, *points.get(second_index)?];
-    (endpoints[0].id() != endpoints[1].id()
-        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-        .then_some(endpoints)
+        let endpoints = [*points.get(first_index)?, *points.get(second_index)?];
+        (endpoints[0].id() != endpoints[1].id()
+            && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+            .then_some(endpoints)
     })())
 }
 
 pub(super) fn legacy_marker104_arc_endpoints<'a>(
-    ctx: &DecodeContext<'_>, payload: &[u8],
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
 ) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT legacy marker104 arc endpoints";
     ctx.charge_work(512, OPERATION)?;
     let endpoint_ids = (|| {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind() != SketchInputKind::Arc
-        || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(2)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || compact_indexed_curve_record_end(payload, offset)
-            != Some(CompactIndexedCurveRecordEnd::Marker104)
-    {
-        return None;
-    }
-    let endpoint_id = |relative| {
-        let id = View::u16_le_at(payload, offset + relative)?;
-        (!matches!(id, 0 | u16::MAX)).then_some(u32::from(id))
-    };
-    let endpoint_ids = [endpoint_id(56)?, endpoint_id(58)?];
-    if endpoint_ids[0] == endpoint_ids[1] {
-        return None;
-    }
-    Some(endpoint_ids)
+        let offset = usize::try_from(curve.offset()).ok()?;
+        if curve.kind() != SketchInputKind::Arc
+            || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+                != Some(LEGACY_SKETCH_MARKER)
+            || marker_native_code(payload, offset) != Some(2)
+            || payload.get(offset + 23..offset + 27) != Some(&[0x05, 0x00, 0x01, 0x00])
+            || marker_profile_curve_role(payload, offset) != Some(1)
+            || compact_indexed_curve_record_end(payload, offset)
+                != Some(CompactIndexedCurveRecordEnd::Marker104)
+        {
+            return None;
+        }
+        let endpoint_id = |relative| {
+            let id = View::u16_le_at(payload, offset + relative)?;
+            (!matches!(id, 0 | u16::MAX)).then_some(u32::from(id))
+        };
+        let endpoint_ids = [endpoint_id(56)?, endpoint_id(58)?];
+        if endpoint_ids[0] == endpoint_ids[1] {
+            return None;
+        }
+        Some(endpoint_ids)
     })();
-    let Some(endpoint_ids) = endpoint_ids else { return Ok(None); };
+    let Some(endpoint_ids) = endpoint_ids else {
+        return Ok(None);
+    };
     for marker in markers {
-        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
-        charge_typed_endpoint_work(ctx, curve.feature_ref.as_deref().map_or(0, str::len), 4, OPERATION)?;
+        charge_typed_endpoint_work(
+            ctx,
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            4,
+            OPERATION,
+        )?;
+        charge_typed_endpoint_work(
+            ctx,
+            curve.feature_ref.as_deref().map_or(0, str::len),
+            4,
+            OPERATION,
+        )?;
         ctx.charge_work(128, OPERATION)?;
     }
     Ok((|| {
-    let resolve = |id| {
-        let mut candidates = markers.iter().copied().filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.object_index() == Some(id)
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        });
-        let candidate = candidates.next()?;
-        candidates.next().is_none().then_some(candidate)
-    };
-    let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
-    (endpoints[0].coordinates_m != endpoints[1].coordinates_m).then_some(endpoints)
+        let resolve = |id| {
+            let mut candidates = markers.iter().copied().filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && marker.object_index() == Some(id)
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind(),
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            });
+            let candidate = candidates.next()?;
+            candidates.next().is_none().then_some(candidate)
+        };
+        let endpoints = [resolve(endpoint_ids[0])?, resolve(endpoint_ids[1])?];
+        (endpoints[0].coordinates_m != endpoints[1].coordinates_m).then_some(endpoints)
     })())
 }
 
@@ -2235,44 +3034,57 @@ fn one_based_point_roster_line_endpoint_markers<'a>(
     const OPERATION: &str = "resolve SLDPRT one based point roster line endpoint markers";
     charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let indices = (|| {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(1)
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
-        || payload.get(offset + 40..offset + 48) != Some(&[0; 8])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
-    {
-        return None;
-    }
-    let endpoint_index =
-        |relative| usize::from(View::u16_le_at(payload, offset + relative)?).checked_sub(1);
-    let indices = [endpoint_index(56)?, endpoint_index(58)?];
-    if indices[0] == indices[1] {
-        return None;
-    }
-    if markers.iter().any(|marker| {
-        marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
-    }) {
-        return None;
-    }
+        let offset = usize::try_from(curve.offset()).ok()?;
+        if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+            || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+            || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+            || marker_native_code(payload, offset) != Some(1)
+            || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+            || marker_profile_curve_role(payload, offset) != Some(1)
+            || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+            || payload.get(offset + 31..offset + 39)
+                != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+            || payload.get(offset + 40..offset + 48) != Some(&[0; 8])
+            || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+            || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+            || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+            || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+        {
+            return None;
+        }
+        let endpoint_index =
+            |relative| usize::from(View::u16_le_at(payload, offset + relative)?).checked_sub(1);
+        let indices = [endpoint_index(56)?, endpoint_index(58)?];
+        if indices[0] == indices[1] {
+            return None;
+        }
+        if markers.iter().any(|marker| {
+            marker.feature_ref == curve.feature_ref && marker.kind() == SketchInputKind::Arc
+        }) {
+            return None;
+        }
         Some(indices)
     })();
-    let Some(indices) = indices else { return Ok(None); };
-    let mut points = collect_endpoint_markers(ctx, markers.iter().copied(), curve,
-        |marker| marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint), OPERATION)?;
+    let Some(indices) = indices else {
+        return Ok(None);
+    };
+    let mut points = collect_endpoint_markers(
+        ctx,
+        markers.iter().copied(),
+        curve,
+        |marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind(),
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        },
+        OPERATION,
+    )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     Ok((|| {
-    let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-    (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
+        let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
+        (endpoints[0].id() != endpoints[1].id()).then_some(endpoints)
     })())
 }
 
@@ -2285,48 +3097,62 @@ fn legacy_point_roster_line_endpoint_markers<'a>(
     const OPERATION: &str = "resolve SLDPRT legacy point roster line endpoint markers";
     charge_typed_endpoint_roster(ctx, curve, markers, OPERATION)?;
     let indices = (|| {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    if curve.kind() != SketchInputKind::LineOrCircle
-        || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
-        || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
-        || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || marker_native_code(payload, offset) != Some(0)
-        || !marker_is_geometry_locus(payload, offset)
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
-        || payload.get(offset + 31..offset + 39)
-            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
-        || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
-        || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
-        || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
-        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
-        || payload.get(offset + 72..offset + 76) != Some(&[0; 4])
-        || payload
-            .get(offset + 76..offset + 80)
-            .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
-        || payload
-            .get(offset + 80..offset + 84)
-            .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
-        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
-    {
-        return None;
-    }
-    let index = |relative| Some(usize::from(View::u16_le_at(payload, offset + relative)?));
-    let indices = [index(56)?, index(58)?];
-    if indices[0] == indices[1] || indices.contains(&usize::from(u16::MAX)) {
-        return None;
-    }
+        let offset = usize::try_from(curve.offset()).ok()?;
+        if curve.kind() != SketchInputKind::LineOrCircle
+            || payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
+                != Some(LEGACY_SKETCH_MARKER)
+            || payload.get(offset + 5..offset + 13) != Some(&[0xff; 8])
+            || payload.get(offset + 13..offset + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+            || marker_native_code(payload, offset) != Some(0)
+            || !marker_is_geometry_locus(payload, offset)
+            || marker_profile_curve_role(payload, offset) != Some(1)
+            || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+            || payload.get(offset + 31..offset + 39)
+                != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x05, 0x00])
+            || payload.get(offset + 39..offset + 48) != Some(&[0; 9])
+            || payload.get(offset + 48..offset + 56) != Some(&1.0f64.to_le_bytes())
+            || payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+            || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+            || payload.get(offset + 72..offset + 76) != Some(&[0; 4])
+            || payload
+                .get(offset + 76..offset + 80)
+                .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
+            || payload
+                .get(offset + 80..offset + 84)
+                .is_none_or(|identity| identity == [0; 4] || identity == [0xff; 4])
+            || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+        {
+            return None;
+        }
+        let index = |relative| Some(usize::from(View::u16_le_at(payload, offset + relative)?));
+        let indices = [index(56)?, index(58)?];
+        if indices[0] == indices[1] || indices.contains(&usize::from(u16::MAX)) {
+            return None;
+        }
         Some(indices)
     })();
-    let Some(indices) = indices else { return Ok(None); };
-    let mut points = collect_endpoint_markers(ctx, markers.iter().copied(), curve,
-        |marker| marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint), OPERATION)?;
+    let Some(indices) = indices else {
+        return Ok(None);
+    };
+    let mut points = collect_endpoint_markers(
+        ctx,
+        markers.iter().copied(),
+        curve,
+        |marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind(),
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        },
+        OPERATION,
+    )?;
     sort_endpoint_markers(ctx, &mut points, OPERATION)?;
     Ok((|| {
-    let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
-    (endpoints[0].id() != endpoints[1].id()
-        && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
-        .then_some(endpoints)
+        let endpoints = [*points.get(indices[0])?, *points.get(indices[1])?];
+        (endpoints[0].id() != endpoints[1].id()
+            && endpoints[0].coordinates_m != endpoints[1].coordinates_m)
+            .then_some(endpoints)
     })())
 }
 
@@ -2510,23 +3336,30 @@ fn coordinate_centered_line_endpoints<'a>(
     const OPERATION: &str = "resolve SLDPRT coordinate centered line endpoints";
     charge_typed_endpoint_roster(ctx, line, markers, OPERATION)?;
     let center = (|| {
-    let offset = usize::try_from(line.offset()).ok()?;
-    let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?.get();
+        let offset = usize::try_from(line.offset()).ok()?;
+        let [center_u, center_v] = coordinate_centered_line_center(payload, offset)?.get();
         Some([center_u, center_v])
     })();
-    let Some([center_u, center_v]) = center else { return Ok(None); };
-    let mut coordinates = collect_endpoint_markers(ctx, markers.iter().copied(), line,
-        |marker| marker.offset() > line.offset() && marker.coordinates_m.is_some(), OPERATION)?;
+    let Some([center_u, center_v]) = center else {
+        return Ok(None);
+    };
+    let mut coordinates = collect_endpoint_markers(
+        ctx,
+        markers.iter().copied(),
+        line,
+        |marker| marker.offset() > line.offset() && marker.coordinates_m.is_some(),
+        OPERATION,
+    )?;
     sort_endpoint_markers(ctx, &mut coordinates, OPERATION)?;
     Ok((|| {
-    let [first, second, ..] = coordinates.as_slice() else {
-        return None;
-    };
-    let [first_u, first_v] = first.coordinates_m?.get();
-    let [second_u, second_v] = second.coordinates_m?.get();
-    let centered = same_dimension_length((first_u + second_u) * 0.5, center_u)
-        && same_dimension_length((first_v + second_v) * 0.5, center_v);
-    (centered && (first_u != second_u || first_v != second_v)).then_some([*first, *second])
+        let [first, second, ..] = coordinates.as_slice() else {
+            return None;
+        };
+        let [first_u, first_v] = first.coordinates_m?.get();
+        let [second_u, second_v] = second.coordinates_m?.get();
+        let centered = same_dimension_length((first_u + second_u) * 0.5, center_u)
+            && same_dimension_length((first_v + second_v) * 0.5, center_v);
+        (centered && (first_u != second_u || first_v != second_v)).then_some([*first, *second])
     })())
 }
 

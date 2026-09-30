@@ -49,12 +49,20 @@ pub fn canonical_json_sha256_with_charge<T: Serialize + ?Sized, E: From<DigestEr
     charge: impl FnMut(u64) -> Result<(), E>,
 ) -> Result<String, E> {
     let mut hasher = Sha256::new();
-    let mut writer = std::io::BufWriter::new(ChargingDigestWriter { hasher: &mut hasher, charge, error: None });
+    let mut writer = std::io::BufWriter::new(ChargingDigestWriter {
+        hasher: &mut hasher,
+        charge,
+        error: None,
+    });
     let serialized = write_canonical_json(&mut writer, value);
-    if let Some(error) = writer.get_mut().error.take() { return Err(error); }
+    if let Some(error) = writer.get_mut().error.take() {
+        return Err(error);
+    }
     serialized.map_err(|error| E::from(DigestError::from(error)))?;
     if let Err(error) = writer.flush() {
-        if let Some(charged) = writer.get_mut().error.take() { return Err(charged); }
+        if let Some(charged) = writer.get_mut().error.take() {
+            return Err(charged);
+        }
         return Err(E::from(DigestError::Write(error)));
     }
     drop(writer);

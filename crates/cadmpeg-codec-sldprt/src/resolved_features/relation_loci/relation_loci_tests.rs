@@ -105,10 +105,24 @@ fn line_entity(id: &str, sketch: &SketchId, start: Point2, end: Point2) -> Sketc
 fn point_operand_requires_one_profile_locus() {
     let entity = SketchEntityId::mint("synthetic:test:id#entity").unwrap();
     let locus = SketchLocus::Start(entity.clone());
-    assert_eq!(unique_locus(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&locus)).unwrap(), Some(locus));
-    assert_eq!(unique_locus(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(), None);
     assert_eq!(
-        unique_locus(&cadmpeg_test_support::service_decode_context(), &[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]).unwrap(),
+        unique_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&locus)
+        )
+        .unwrap(),
+        Some(locus)
+    );
+    assert_eq!(
+        unique_locus(&cadmpeg_test_support::service_decode_context(), &[]).unwrap(),
+        None
+    );
+    assert_eq!(
+        unique_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            &[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
+        )
+        .unwrap(),
         None
     );
 }
@@ -150,7 +164,14 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     let entities = vec![center, circle.clone()];
 
     assert_eq!(
-        marker_center_dimensioned_entity(&cadmpeg_test_support::service_decode_context(), "center-marker", &sketch, &entities, &parameter).unwrap(),
+        marker_center_dimensioned_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "center-marker",
+            &sketch,
+            &entities,
+            &parameter
+        )
+        .unwrap(),
         Some(circle.id().clone())
     );
 
@@ -166,7 +187,14 @@ fn explicit_point_center_binds_one_matching_dimensioned_curve() {
     .with_endpoint_refs(circle.endpoint_refs.clone());
     ambiguous.push(duplicate);
     assert_eq!(
-        marker_center_dimensioned_entity(&cadmpeg_test_support::service_decode_context(), "center-marker", &sketch, &ambiguous, &parameter).unwrap(),
+        marker_center_dimensioned_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "center-marker",
+            &sketch,
+            &ambiguous,
+            &parameter
+        )
+        .unwrap(),
         None
     );
 }
@@ -251,14 +279,16 @@ fn circle_dimension_ignores_marker_resolved_to_line() {
     };
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[line, circle.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(
             cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Diameter {
                 entity: circle.id().clone(),
@@ -334,14 +364,16 @@ fn dynamic_point_line_relation_uses_curve_marker_ordinal() {
     ]);
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
     let parameter = length_parameter(1.0);
-    let definition = typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+    let definition = typed_relation_definition(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
         &[point.clone(), first_line.clone(), second_line.clone()],
         &markers_by_id,
         &loci_by_marker,
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(
         definition,
@@ -392,7 +424,8 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
     let parameter = length_parameter(14.0);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -404,7 +437,8 @@ fn dynamic_point_line_relation_uses_unique_geometry_after_solver_alias() {
             ],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(intended_line.id().clone()),
@@ -435,14 +469,16 @@ fn dynamic_point_line_relation_uses_unique_complete_roster_line() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(1.0)),
             &sketch,
             &[point.clone(), line.clone()],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
@@ -481,14 +517,16 @@ fn dynamic_point_line_relation_with_ambiguous_geometry_stays_native() {
         FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x812e).unwrap());
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(14.0)),
             &sketch,
             &[point, first_line, second_line],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -503,14 +541,16 @@ fn solver_point_relation_requires_materialized_positions() {
     let parameter = length_parameter(7.0);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -576,14 +616,16 @@ fn point_line_relation_prefers_materialized_point_over_ambiguous_fallback() {
     let parameter = length_parameter(1.0);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[point.clone(), unrelated_point, line.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
@@ -641,28 +683,32 @@ fn dynamic_line_relation_requires_exact_curve_dimension() {
     let entities = [first_line.clone(), second_line.clone()];
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_line.id().clone(), second_line.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(9.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -702,14 +748,16 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
     let parameter = length_parameter(1.202_017_165);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first.clone(), second.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
@@ -719,14 +767,16 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
 
     let rejected_parameter = length_parameter(1.202_017_195);
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&rejected_parameter),
             &sketch,
             &[first.clone(), second.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -737,16 +787,20 @@ fn dynamic_point_relation_accepts_model_coordinate_quantization() {
         ),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(!relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &[first.clone(), second.clone()],
-    ).unwrap());
-    assert!(relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    )
+    .unwrap());
+    assert!(relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&rejected_parameter),
         &definition,
         &[first, second],
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -846,14 +900,16 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [2, 3]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(140.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: first_locus.clone(),
             second: second_locus.clone(),
@@ -866,14 +922,16 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         [2, 3],
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             Some(&length_parameter(140.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: first_locus.clone(),
             second: second_locus.clone(),
@@ -886,14 +944,16 @@ fn dynamic_point_distance_disambiguates_marker_scoped_points_by_distance() {
         [2, 3],
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(0.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: first_locus,
             second: second_locus,
@@ -921,14 +981,16 @@ fn dynamic_point_distance_uses_unique_complete_roster() {
     let parameter = length_parameter(30.0);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
@@ -959,14 +1021,16 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         [7, 9],
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap()),
             second: SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap()),
@@ -987,14 +1051,16 @@ fn dynamic_axis_distance_uses_unique_complete_roster() {
         [7, 9],
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &vertical,
             Some(&length_parameter(5.0)),
             &sketch,
             &vertical_entities,
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::VerticalDistance {
             first: SketchLocus::Entity(
                 SketchEntityId::mint("synthetic:test:id#vertical-first").unwrap()
@@ -1025,14 +1091,16 @@ fn dynamic_point_distance_with_ambiguous_complete_roster_stays_native() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [7, 9]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1074,7 +1142,8 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
     let parameter = length_parameter(10.0);
 
     assert_eq!(
-        typed_relation_definition_with_profile_axis(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition_with_profile_axis(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -1082,7 +1151,8 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
             &markers_by_id,
             &HashMap::new(),
             Some(ProfileAxis::U),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(second.id().clone()),
@@ -1146,14 +1216,16 @@ fn dynamic_point_distance_uses_a_unique_arc_center_carrier() {
     let parameter = length_parameter(52.0);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[point.clone(), arc.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Center(arc.id().clone()),
@@ -1239,14 +1311,16 @@ fn dynamic_point_distance_rejects_ambiguous_arc_centers() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 4]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(52.0)),
             &sketch,
             &[point, first_arc, second_arc],
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1303,14 +1377,16 @@ fn dynamic_point_line_relation_disambiguates_marker_scoped_lines_by_distance() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointLineDistance, [0, 1]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[point.clone(), first_line, alternate_line.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(alternate_line.id().clone()),
@@ -1403,28 +1479,32 @@ fn dynamic_line_distance_disambiguates_two_marker_scoped_line_sets() {
     ];
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first_alternate.id().clone(), second_line.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         })
     );
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(3.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1453,14 +1533,16 @@ fn dynamic_line_distance_uses_unique_complete_roster() {
     let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first.clone(), second.clone(), unrelated],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities: vec![first.id().clone(), second.id().clone()],
             parameter: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
@@ -1492,14 +1574,16 @@ fn dynamic_line_distance_with_ambiguous_complete_roster_stays_native() {
     let relation = dynamic_relation(FeatureInputRelationFamily::LineLineDistance, [1, 11]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first, second, alternate],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1523,14 +1607,16 @@ fn dynamic_line_distance_does_not_bypass_explicit_operands() {
     relation.operands[0].entity_ref = Some("explicit-line".into());
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[first.clone(), second.clone()],
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 

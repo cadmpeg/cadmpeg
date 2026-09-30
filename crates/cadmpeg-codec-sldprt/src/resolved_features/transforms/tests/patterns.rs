@@ -48,8 +48,11 @@ fn declared_line_reference_directions(
 ) -> Vec<Vector3> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("line reference test input fits service policy");
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("line reference test input fits service policy");
     typed_declared_line_reference_directions(&ctx, payload, class_offset, object_end)
         .expect("line reference test scan succeeds")
         .into_iter()
@@ -65,11 +68,20 @@ fn compact_line_reference_direction(
 ) -> Option<Vector3> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("line reference test input fits service policy");
-    typed_compact_line_reference_direction(&ctx, payload, object_start, object_end, excluded_handles)
-        .expect("line reference test scan succeeds")
-        .map(|direction| *direction.as_raw())
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("line reference test input fits service policy");
+    typed_compact_line_reference_direction(
+        &ctx,
+        payload,
+        object_start,
+        object_end,
+        excluded_handles,
+    )
+    .expect("line reference test scan succeeds")
+    .map(|direction| *direction.as_raw())
 }
 
 fn bind_pattern_inputs_test(
@@ -78,9 +90,13 @@ fn bind_pattern_inputs_test(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let bytes = lanes
+        .first()
+        .map_or(&[][..], |lane| lane.native_payload.as_slice());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     bind_pattern_inputs(&ctx, features, histories, lanes)
 }
@@ -982,7 +998,13 @@ fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
             scale: None,
             allow_multi_profile_faces: None,
         }));
-    bind_sweep_adjacent_profiles(&cadmpeg_test_support::service_decode_context(), &mut features, &[sweep_history], std::slice::from_ref(&lane)).unwrap();
+    bind_sweep_adjacent_profiles(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut features,
+        &[sweep_history],
+        std::slice::from_ref(&lane),
+    )
+    .unwrap();
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep {
             shape,
@@ -1097,8 +1119,11 @@ fn compact_line_reference_scalar_counts_follow_their_trailers() {
 fn e1_line_distance_indices_address_coordinate_point_pairs() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1227,7 +1252,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
         constraint.definition.kind(),
@@ -1241,7 +1267,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     let solver_lines = entities
         .iter()
@@ -1270,7 +1297,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
     assert!(constraints.iter().all(|constraint| matches!(
         constraint.definition.kind(),
@@ -1284,7 +1312,8 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         &entities,
         &parameters,
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(constraints.len(), 2);
 }
 
@@ -1292,8 +1321,11 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
 fn roster_point_line_distance_materializes_one_solver_line() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1416,7 +1448,8 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:2"))
@@ -1436,7 +1469,8 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
@@ -1460,8 +1494,11 @@ fn roster_point_line_distance_materializes_one_solver_line() {
 fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguous() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -1607,12 +1644,14 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: Some("scalar".into()),
     };
     let transforms =
-        crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(&ctx,
+        crate::resolved_features::relation_loci::marker_transform_candidates_by_feature(
+            &ctx,
             std::slice::from_ref(&feature),
             std::slice::from_ref(&sketch),
             &entities,
             std::slice::from_ref(&lane),
-        ).expect("transform resource admission");
+        )
+        .expect("transform resource admission");
     assert!(transforms["feature-native"].len() > 1);
     project_relation_solved_line_geometry(
         &ctx,
@@ -1621,7 +1660,8 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         std::slice::from_ref(&feature),
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let solver_line = entities
         .iter()
         .find(|entity| entity.geometry_ref.as_deref() == Some("feature-native:solver-line:1"))
@@ -1639,7 +1679,8 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         &entities,
         std::slice::from_ref(&parameter),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let [constraint] = constraints.as_slice() else {
         panic!("one point-line constraint");
     };
@@ -1655,8 +1696,11 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
 fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        b"relation test",
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -1785,7 +1829,8 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     project_relation_solved_point_geometry(
         &ctx,
         &mut entities,
@@ -1793,7 +1838,8 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         std::slice::from_ref(&feature),
         &parameters,
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     let solved = entities
         .iter()
@@ -1817,21 +1863,25 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let loci = profile_loci_by_marker(&ctx,
+    let loci = profile_loci_by_marker(
+        &ctx,
         std::slice::from_ref(&feature),
         &[],
         &entities,
         std::slice::from_ref(&lane),
-    ).expect("transform resource admission");
+    )
+    .expect("transform resource admission");
     for (index, relation) in relations.iter().enumerate() {
-        let definition = typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        let definition = typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             relation,
             Some(&parameters[index]),
             &sketch,
             &entities,
             &markers,
             &loci,
-        ).unwrap();
+        )
+        .unwrap();
         let second = match definition {
             Some(
                 SketchConstraintDefinitionInput::DistanceLoci { second, .. }

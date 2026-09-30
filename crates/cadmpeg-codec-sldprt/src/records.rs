@@ -1072,9 +1072,12 @@ mod scalar_operands_wire {
 
     impl serde::Serialize for EntityIndices<'_> {
         fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-            serializer.collect_seq(self.0.iter()
-                .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
-                .map(|operand| operand.entity_index))
+            serializer.collect_seq(
+                self.0
+                    .iter()
+                    .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
+                    .map(|operand| operand.entity_index),
+            )
         }
     }
 
@@ -1083,7 +1086,10 @@ mod scalar_operands_wire {
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
-        if operands.iter().any(|operand| operand.kind == FeatureInputOperandKind::D6) {
+        if operands
+            .iter()
+            .any(|operand| operand.kind == FeatureInputOperandKind::D6)
+        {
             map.serialize_entry("entity_indices", &EntityIndices(operands))?;
         }
         if !operands.is_empty() {

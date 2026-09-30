@@ -43,9 +43,9 @@ struct RetainedMessage<'ctx, 'arena> {
 
 impl fmt::Write for RetainedMessage<'_, '_> {
     fn write_str(&mut self, fragment: &str) -> fmt::Result {
-        if let Err(error) = self
-            .ctx
-            .reserve_retained_string(&mut self.text, fragment.len(), self.operation)
+        if let Err(error) =
+            self.ctx
+                .reserve_retained_string(&mut self.text, fragment.len(), self.operation)
         {
             self.failure = Some(error);
             return Err(fmt::Error);
@@ -257,7 +257,8 @@ impl<'a> DecodeContext<'a> {
         let reservation = self.reserve_scoped(bytes as u64, operation)?;
         let mut text = String::new();
         text.try_reserve_exact(bytes).map_err(|_| {
-            self.budget.scoped_allocation_failed(bytes as u64, operation)
+            self.budget
+                .scoped_allocation_failed(bytes as u64, operation)
         })?;
         Ok((text, reservation))
     }
@@ -345,8 +346,11 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         self.charge_collection_items(additional as u64, operation)?;
         values.try_reserve(additional).map_err(|_| {
-            self.budget
-                .collection_allocation_failed(additional as u64, additional as u64, operation)
+            self.budget.collection_allocation_failed(
+                additional as u64,
+                additional as u64,
+                operation,
+            )
         })
     }
 
@@ -358,7 +362,8 @@ impl<'a> DecodeContext<'a> {
         operation: &'static str,
     ) -> Result<(), CodecError> {
         values.try_reserve(additional).map_err(|_| {
-            self.budget.collection_allocation_failed(0, additional as u64, operation)
+            self.budget
+                .collection_allocation_failed(0, additional as u64, operation)
         })
     }
 
@@ -419,12 +424,18 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), CodecError> {
         let count = super::u64_from_index(values.len());
         self.charge_work(count, operation)?;
-        let bytes = values.iter().try_fold(0u64, |bytes, value| bytes.checked_add(super::u64_from_index(key_bytes(value))))
+        let bytes = values
+            .iter()
+            .try_fold(0u64, |bytes, value| {
+                bytes.checked_add(super::u64_from_index(key_bytes(value)))
+            })
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
-        let work = count.checked_mul(super::u64_from_index(std::mem::size_of::<T>()))
+        let work = count
+            .checked_mul(super::u64_from_index(std::mem::size_of::<T>()))
             .and_then(|storage| storage.checked_add(bytes.checked_mul(2)?))
-            .and_then(|work| work.checked_mul(levels)).and_then(|work| work.checked_mul(8))
+            .and_then(|work| work.checked_mul(levels))
+            .and_then(|work| work.checked_mul(8))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         self.charge_work(work, operation)?;
         // Small runs use adjacent swaps, so their stable order needs no scratch.
@@ -438,20 +449,29 @@ impl<'a> DecodeContext<'a> {
             }
             return Ok(());
         }
-        let scratch_bytes = count.checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
+        let scratch_bytes = count
+            .checked_mul(super::u64_from_index(std::mem::size_of::<usize>()))
             .and_then(|bytes| bytes.checked_mul(2))
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let _scratch = self.reserve_scoped(scratch_bytes, operation)?;
         let mut order = Vec::new();
-        order.try_reserve_exact(values.len())
-            .map_err(|_| self.budget.scoped_allocation_failed(scratch_bytes, operation))?;
+        order.try_reserve_exact(values.len()).map_err(|_| {
+            self.budget
+                .scoped_allocation_failed(scratch_bytes, operation)
+        })?;
         order.extend(0..values.len());
         let mut destinations = Vec::new();
-        destinations.try_reserve_exact(values.len())
-            .map_err(|_| self.budget.scoped_allocation_failed(scratch_bytes, operation))?;
+        destinations.try_reserve_exact(values.len()).map_err(|_| {
+            self.budget
+                .scoped_allocation_failed(scratch_bytes, operation)
+        })?;
         destinations.resize(values.len(), 0usize);
-        order.sort_unstable_by(|&left, &right| compare(&values[left], &values[right]).then_with(|| left.cmp(&right)));
-        for (destination, source) in order.into_iter().enumerate() { destinations[source] = destination; }
+        order.sort_unstable_by(|&left, &right| {
+            compare(&values[left], &values[right]).then_with(|| left.cmp(&right))
+        });
+        for (destination, source) in order.into_iter().enumerate() {
+            destinations[source] = destination;
+        }
         for index in 0..values.len() {
             while destinations[index] != index {
                 let destination = destinations[index];

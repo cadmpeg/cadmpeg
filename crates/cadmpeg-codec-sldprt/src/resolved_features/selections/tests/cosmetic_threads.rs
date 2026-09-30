@@ -17,8 +17,11 @@ use std::collections::{BTreeMap, HashSet};
 fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
     let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &reference_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let body_offset = 30;
     let marker = body_offset + 94;
     let mut payload = vec![0; marker - 12];
@@ -28,7 +31,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     let actual_marker = selection_vector_tail(&mut payload, &[3]);
     assert_eq!(actual_marker, marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -42,7 +47,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     compact[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(selection_vector_tail(&mut compact, &[5]), compact_marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &compact, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &compact, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, compact_marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -57,7 +64,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     selected[body_offset + 8] = 0x40;
     assert_eq!(selection_vector_tail(&mut selected, &[7]), selected_marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &selected, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &selected, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, selected_marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -71,7 +80,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     extended[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(selection_vector_tail(&mut extended, &[9]), extended_marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &extended, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &extended, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, extended_marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -88,7 +99,8 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
         compact_legacy_marker
     );
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &compact_legacy, body_offset).unwrap()
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &compact_legacy, body_offset)
+            .unwrap()
             .expect("required invariant");
     assert_eq!(actual_marker, compact_legacy_marker);
     assert_eq!(
@@ -103,7 +115,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     legacy[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(selection_vector_tail(&mut legacy, &[11]), legacy_marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &legacy, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &legacy, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, legacy_marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -117,7 +131,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
     extended[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
     assert_eq!(selection_vector_tail(&mut extended, &[12]), extended_marker);
     let (actual_marker, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &extended, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &extended, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(actual_marker, extended_marker);
     assert_eq!(
         components.last().expect("required invariant").local_id,
@@ -132,7 +148,8 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
         payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         assert_eq!(selection_vector_tail(&mut payload, &[local_id]), marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset).unwrap()
+            cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset)
+                .unwrap()
                 .expect("required invariant");
         assert_eq!(actual_marker, marker);
         assert_eq!(
@@ -168,7 +185,9 @@ fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
         }
     }
     let (_, components) =
-        cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset).unwrap().expect("required invariant");
+        cosmetic_thread_cylinder_reference_at(&reference_ctx, &payload, body_offset)
+            .unwrap()
+            .expect("required invariant");
     assert_eq!(
         components
             .iter()
@@ -247,8 +266,11 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
 fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
     let references_arena = cadmpeg_core::decode::DecodeArena::new();
     let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &references_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let body_offset = 220;
     let marker = body_offset + 94;
     let mut payload = vec![0; marker - 12];
@@ -325,8 +347,15 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
         cosmetic_thread_diameter_child_tail(&references_ctx, &feature, &lane).unwrap(),
         Some(158..400)
     );
-    let references =
-        cosmetic_thread_cylinder_references(&references_ctx, &feature, &lane, 20, 100, &HashSet::from([0x802f])).unwrap();
+    let references = cosmetic_thread_cylinder_references(
+        &references_ctx,
+        &feature,
+        &lane,
+        20,
+        100,
+        &HashSet::from([0x802f]),
+    )
+    .unwrap();
     assert_eq!(
         references
             .iter()
@@ -348,13 +377,15 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
 
         operands: Vec::new(),
     });
-    assert!(cosmetic_thread_cylinder_references(&references_ctx, 
+    assert!(cosmetic_thread_cylinder_references(
+        &references_ctx,
         &feature,
         &lane,
         20,
         100,
         &HashSet::from([0x802f]),
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
 
@@ -362,8 +393,11 @@ fn cosmetic_thread_cylinder_reference_follows_its_owned_diameter_child() {
 fn cosmetic_thread_reads_a_direct_component_edge_reference() {
     let references_arena = cadmpeg_core::decode::DecodeArena::new();
     let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &references_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let class_name = "moCompEdge_c";
     let class_offset = 40;
     let body_offset = class_offset + 6 + class_name.len();
@@ -411,7 +445,9 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -428,8 +464,11 @@ fn cosmetic_thread_reads_a_direct_component_edge_reference() {
 fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
     let references_arena = cadmpeg_core::decode::DecodeArena::new();
     let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &references_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let component_edge_name = "moCompEdge_c";
     let edge_ref_name = "moEdgeRef_c";
     let component_edge_offset = 40;
@@ -498,7 +537,9 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -515,8 +556,11 @@ fn cosmetic_thread_reads_component_edge_reference_through_edge_ref_child() {
 fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_child() {
     let references_arena = cadmpeg_core::decode::DecodeArena::new();
     let (references_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &references_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &references_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let component_token_offset = 40;
     let component_body = component_token_offset + 2;
     let edge_ref_token_offset = component_body + 70;
@@ -563,7 +607,9 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
         sketch_entities: Vec::new(),
     };
 
-    let references = cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len()).unwrap();
+    let references =
+        cosmetic_thread_component_references(&references_ctx, &lane, 0, lane.native_payload.len())
+            .unwrap();
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].0, marker);
     assert_eq!(
@@ -575,4 +621,3 @@ fn cosmetic_thread_reads_repeated_component_edge_reference_through_edge_ref_chil
         [Some(3), Some(4), Some(4), Some(4)]
     );
 }
-

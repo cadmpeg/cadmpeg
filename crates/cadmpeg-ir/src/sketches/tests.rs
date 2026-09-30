@@ -150,7 +150,9 @@ fn polygon_constraints_round_trip_and_require_distinct_members() {
         native_ref: None,
     });
     ir.finalize();
-    assert!(validate_neutral(&ir, Vec::new()).expect("resource allocation did not fail").is_ok());
+    assert!(validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .is_ok());
     let round_trip = CadIr::from_json(&serde_json::to_string(&ir).unwrap()).unwrap();
     assert_eq!(
         round_trip.model.sketch_constraints,
@@ -1475,7 +1477,12 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
 #[test]
 fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
 
     let usage = SketchEntityUse {
@@ -1510,11 +1517,13 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
     let before_filter = profiles.clone();
     let mut calls = 0;
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        profiles.retain_uses(&resource_ctx, |_| {
-            calls += 1;
-            assert_ne!(calls, 2, "filter interruption");
-            false
-        }).unwrap();
+        profiles
+            .retain_uses(&resource_ctx, |_| {
+                calls += 1;
+                assert_ne!(calls, 2, "filter interruption");
+                false
+            })
+            .unwrap();
     }))
     .is_err());
     assert_eq!(profiles, before_filter);

@@ -22,9 +22,9 @@ fn collect_index<K: Eq + Hash, V>(
         ctx.charge_work(1, operation)?;
         if !index.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
-            index.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?;
+            index
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         index.insert(key, value);
     }
@@ -36,7 +36,8 @@ fn copy_retained_string(
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
@@ -187,16 +188,15 @@ pub(crate) fn bind_revolution_operations(
     let history_features = collect_index(
         ctx,
         histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature)),
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature)),
         "index SLDPRT revolution history",
     )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) =
-                definition
+            let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) = definition
             else {
                 break 'feature_edit;
             };
@@ -241,16 +241,15 @@ pub(crate) fn bind_sweep_operations(
     let history_features = collect_index(
         ctx,
         histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature)),
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature)),
         "index SLDPRT sweep history",
     )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
-                definition
+            let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) = definition
             else {
                 break 'feature_edit;
             };
@@ -261,7 +260,8 @@ pub(crate) fn bind_sweep_operations(
                 ) {
                     break 'sweep_mode;
                 }
-                let Some(history) = native_ref.and_then(|native| history_features.get(native).copied())
+                let Some(history) =
+                    native_ref.and_then(|native| history_features.get(native).copied())
                 else {
                     break 'sweep_mode;
                 };
@@ -396,16 +396,15 @@ pub(crate) fn bind_extrusion_operations(
     let history_by_id = collect_index(
         ctx,
         histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature)),
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature)),
         "index SLDPRT extrusion history",
     )?;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         feature.evaluation.edit(|definition, _| 'feature_edit: {
-            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
-                definition
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
             else {
                 break 'feature_edit;
             };
@@ -461,16 +460,16 @@ pub(crate) fn inherit_configuration_operations(
     let history_by_id = collect_index(
         ctx,
         histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature)),
+            .iter()
+            .flat_map(|history| &history.features)
+            .map(|feature| (feature.id.as_str(), feature)),
         "index SLDPRT configuration history",
     )?;
     let base_definitions = collect_index(
         ctx,
         base_features
-        .iter()
-        .map(|feature| (&feature.id, feature.evaluation.definition())),
+            .iter()
+            .map(|feature| (&feature.id, feature.evaluation.definition())),
         "index SLDPRT base definitions",
     )?;
     for feature in features {
@@ -533,9 +532,8 @@ fn operation_carrier_present(
 ) -> bool {
     let source_id = feature.source_value();
     let mut source_matches = lane.names.iter().filter(|name| {
-        source_id.is_some_and(|source_id| {
-            name.object_id.and_then(ObjectId::value) == Some(source_id)
-        })
+        source_id
+            .is_some_and(|source_id| name.object_id.and_then(ObjectId::value) == Some(source_id))
     });
     let name = if let Some(first) = source_matches.next() {
         if source_matches.next().is_some() {
@@ -611,9 +609,17 @@ pub(crate) fn enrich_history_split_lines(
             } else {
                 ctx.charge_collection_items(1, "index SLDPRT split-line observations")?;
                 observations.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT split-line observations", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT split-line observations",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
-                let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line observation ID")?;
+                let key = copy_retained_string(
+                    ctx,
+                    &feature.id,
+                    "retain SLDPRT split-line observation ID",
+                )?;
                 observations.insert(key, (project_classes == 1, project_classes != 1));
             }
         }
@@ -626,7 +632,11 @@ pub(crate) fn enrich_history_split_lines(
             }
             ctx.charge_work(
                 u64::try_from(history.features.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("resolve SLDPRT split-line source", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "resolve SLDPRT split-line source",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?,
                 "resolve SLDPRT split-line source",
             )?;
@@ -641,7 +651,8 @@ pub(crate) fn enrich_history_split_lines(
                 tools.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("index SLDPRT split-line tools", u64::MAX - 1, u64::MAX)
                 })?;
-                let key = copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
+                let key =
+                    copy_retained_string(ctx, &feature.id, "retain SLDPRT split-line tool key")?;
                 tools.insert(key, value);
             }
         }

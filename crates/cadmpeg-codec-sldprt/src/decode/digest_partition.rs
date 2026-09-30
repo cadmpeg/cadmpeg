@@ -19,21 +19,21 @@ impl<T> DigestPartition<T> {
         mut keep: impl FnMut(&T) -> bool,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let work = source.len().checked_mul(3).ok_or_else(|| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        let work = source
+            .len()
+            .checked_mul(3)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(
-            u64::try_from(work).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?,
+            u64::try_from(work)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
             operation,
         )?;
         let mut kept_count = 0usize;
         for item in source {
             if keep(item) {
-                kept_count = kept_count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-                })?;
+                kept_count = kept_count
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             }
         }
         let excluded_count = source.len() - kept_count;
@@ -73,11 +73,14 @@ impl<T> DigestPartition<T> {
     }
 
     pub(super) fn restore(mut self, kept: Vec<T>) -> Result<Vec<T>, CodecError> {
-        let total = kept.len().checked_add(self.excluded.len()).ok_or_else(|| {
-            CodecError::malformed("invalid SLDPRT digest partition size")
-        })?;
+        let total = kept
+            .len()
+            .checked_add(self.excluded.len())
+            .ok_or_else(|| CodecError::malformed("invalid SLDPRT digest partition size"))?;
         if total != self.original_len || kept.len() != self.kept_positions.len() {
-            return Err(CodecError::malformed("invalid SLDPRT digest partition shape"));
+            return Err(CodecError::malformed(
+                "invalid SLDPRT digest partition shape",
+            ));
         }
         let mut kept = kept.into_iter();
         let mut excluded = self.excluded.into_iter();
@@ -89,9 +92,8 @@ impl<T> DigestPartition<T> {
             } else {
                 excluded.next()
             };
-            let item = item.ok_or_else(|| {
-                CodecError::malformed("invalid SLDPRT digest partition order")
-            })?;
+            let item =
+                item.ok_or_else(|| CodecError::malformed("invalid SLDPRT digest partition order"))?;
             self.original.push(item);
         }
         Ok(self.original)

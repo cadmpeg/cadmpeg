@@ -735,13 +735,14 @@ mod tests {
     fn charged_layer_copy_preserves_declarations_and_refuses_retained_limit() {
         use crate::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-        let primary = DialectMatch::admitted(crate::dialect_id!("sldprt:unknown"))
-            .with_declared(std::collections::BTreeMap::from([(
+        let primary = DialectMatch::admitted(crate::dialect_id!("sldprt:unknown")).with_declared(
+            std::collections::BTreeMap::from([(
                 crate::nonblank_literal!("sw_version"),
                 "12000".to_string(),
-            )]));
-        let extra = DialectMatch::residual(crate::dialect_id!("parasolid:unknown"))
-            .with_instance("body-1");
+            )]),
+        );
+        let extra =
+            DialectMatch::residual(crate::dialect_id!("parasolid:unknown")).with_instance("body-1");
         let layers = DialectLayers::of(primary).with(extra).unwrap();
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();

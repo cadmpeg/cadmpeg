@@ -397,45 +397,41 @@ pub(super) fn principal_plane_in_history(
         }
     }
 
-    let mut triplets = history_features
-        .windows(4)
-        .filter_map(|records| {
-            let [front, top, right, successor] = records else {
-                return None;
-            };
-            let triplet = [front, top, right];
-            if !triplet.into_iter().all(|record| {
-                record.xml_tag.eq_ignore_ascii_case("Feature")
-                    && record.parameters.is_empty()
-                    && !record.kind.is_empty()
-                    && match record.input_class.as_deref() {
-                        Some(class) => {
-                            native_object_class(class) == NativeClassKind::ReferencePlane
-                        }
-                        None => record.properties.is_empty(),
-                    }
-                    && record.source_id.is_none()
-                    && record.tree_parent.is_none()
-            }) || front.kind != top.kind
-                || front.kind != right.kind
-                || top.ordinal != front.ordinal + 1
-                || right.ordinal != top.ordinal + 1
-                || !successor.xml_tag.eq_ignore_ascii_case("Feature")
-                || !successor.parameters.is_empty()
-                || !successor.properties.is_empty()
-                || successor.kind.is_empty()
-                || successor.input_class.as_deref().is_some_and(|class| {
-                    native_object_class(class) != NativeClassKind::OriginProfileFeature
-                })
-                || successor.source_id.is_some()
-                || successor.tree_parent.is_some()
-                || successor.ordinal != right.ordinal + 1
-                || successor.kind == front.kind
-            {
-                return None;
-            }
-            Some([front, top, right])
-        });
+    let mut triplets = history_features.windows(4).filter_map(|records| {
+        let [front, top, right, successor] = records else {
+            return None;
+        };
+        let triplet = [front, top, right];
+        if !triplet.into_iter().all(|record| {
+            record.xml_tag.eq_ignore_ascii_case("Feature")
+                && record.parameters.is_empty()
+                && !record.kind.is_empty()
+                && match record.input_class.as_deref() {
+                    Some(class) => native_object_class(class) == NativeClassKind::ReferencePlane,
+                    None => record.properties.is_empty(),
+                }
+                && record.source_id.is_none()
+                && record.tree_parent.is_none()
+        }) || front.kind != top.kind
+            || front.kind != right.kind
+            || top.ordinal != front.ordinal + 1
+            || right.ordinal != top.ordinal + 1
+            || !successor.xml_tag.eq_ignore_ascii_case("Feature")
+            || !successor.parameters.is_empty()
+            || !successor.properties.is_empty()
+            || successor.kind.is_empty()
+            || successor.input_class.as_deref().is_some_and(|class| {
+                native_object_class(class) != NativeClassKind::OriginProfileFeature
+            })
+            || successor.source_id.is_some()
+            || successor.tree_parent.is_some()
+            || successor.ordinal != right.ordinal + 1
+            || successor.kind == front.kind
+        {
+            return None;
+        }
+        Some([front, top, right])
+    });
     let [front, top, right] = triplets.next()?;
     if triplets.next().is_some() {
         return None;
@@ -469,9 +465,15 @@ pub(crate) fn matches_alnum_ascii(value: &str, expected: &[u8]) -> bool {
 }
 
 pub(super) fn loft_op(kind: &str) -> Option<BooleanOp> {
-    if ["bossloft", "boundaryboss"].iter().any(|name| kind.eq_ignore_ascii_case(name)) {
+    if ["bossloft", "boundaryboss"]
+        .iter()
+        .any(|name| kind.eq_ignore_ascii_case(name))
+    {
         Some(BooleanOp::Join)
-    } else if ["cutloft", "boundarycut"].iter().any(|name| kind.eq_ignore_ascii_case(name)) {
+    } else if ["cutloft", "boundarycut"]
+        .iter()
+        .any(|name| kind.eq_ignore_ascii_case(name))
+    {
         Some(BooleanOp::Cut)
     } else {
         None

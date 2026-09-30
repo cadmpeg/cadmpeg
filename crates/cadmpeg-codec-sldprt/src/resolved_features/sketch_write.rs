@@ -958,7 +958,9 @@ fn edit_stream(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let stream = crate::parasolid::extract_streams_with_offsets(payload, &ctx)?
         .get(stream_ordinal)

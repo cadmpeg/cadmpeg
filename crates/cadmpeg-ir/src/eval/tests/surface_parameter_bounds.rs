@@ -16,11 +16,15 @@ fn rational_patch_rejects_out_of_domain_endpoint_instead_of_moving_it() {
         u_degree: 1,
         v_degree: 1,
         controls: [[0.0, 0.0, 0.0, 1.0]; 4].to_vec(),
-        _scratch: cadmpeg_core::decode::WorkBudget::new(0).reserve_scratch(0, "test patch controls").unwrap(),
+        _scratch: cadmpeg_core::decode::WorkBudget::new(0)
+            .reserve_scratch(0, "test patch controls")
+            .unwrap(),
     };
     let start = FinitePoint2::new(Point2::new(-0.5, 0.0)).unwrap();
     let end = FinitePoint2::new(Point2::new(0.5, 1.0)).unwrap();
-    assert!(rational_patch_parameter_segment(&patch, start, end).expect("resource allocation did not fail").is_none());
+    assert!(rational_patch_parameter_segment(&patch, start, end)
+        .expect("resource allocation did not fail")
+        .is_none());
 }
 
 #[test]
@@ -38,7 +42,8 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
         .unwrap();
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
-    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord).expect("resource allocation did not fail")
+    let bound = nurbs_surface_parameter_segment_chord_bound(&surface, parameters, chord)
+        .expect("resource allocation did not fail")
         .expect("rational Bézier residual bound");
 
     assert!(bound >= 1.0 / 3.0);
@@ -47,7 +52,8 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
         &surface,
         [parameters[1], parameters[0]],
         [chord[1], chord[0]],
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .expect("reversed rational Bézier residual bound");
     assert!((reverse_bound - bound).abs() < 1.0e-12);
     for index in 0..=100 {

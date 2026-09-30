@@ -30,7 +30,8 @@ fn scene_objects_carry_history_source_identity() {
     class(&mut payload, "moPointLight_c", &[21]);
     class(&mut payload, "moSpotLight_c", &[20]);
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
 
     assert_eq!(
         scene_classes(&ctx, &payload).unwrap(),
@@ -61,7 +62,8 @@ fn anonymous_scene_object_counts_do_not_create_source_bindings() {
     }
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service()).unwrap();
     assert!(scene_classes(&ctx, &payload).unwrap().is_empty());
 }
 

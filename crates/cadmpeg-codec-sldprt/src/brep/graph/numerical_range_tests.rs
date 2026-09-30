@@ -26,22 +26,29 @@ fn bilinear(domain: [f64; 2], scale: f64) -> NurbsSurface {
 fn numerical_0922_wide_domain_keeps_distinct_roots() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let r = unique_inverse_parameter(
         &ctx,
         vec![(-5e307, 0.), (5e307, 0.)],
         INVERSE_FIT_TOLERANCE,
         [-1e308, 1e308],
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(r, InverseResolution::Ambiguous));
 }
 #[test]
 fn numerical_0922_small_domain_keeps_fit_samples() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("test context");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("test context");
     let mut s = bilinear([0., 1.], 1.);
     s.edit_control_points(|p| {
         p.z = p.x * p.y;
@@ -57,7 +64,9 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
             false,
         )
         .unwrap();
-        let samples = nurbs_curve_sample_parameters(&ctx, &c, [0., d]).unwrap().unwrap();
+        let samples = nurbs_curve_sample_parameters(&ctx, &c, [0., d])
+            .unwrap()
+            .unwrap();
         let (uv, error) = nurbs_degree_one_cache_lanes(&ctx, &s, &c, [0., d])
             .expect("resource allocation did not fail")
             .unwrap();
@@ -145,8 +154,11 @@ fn sphere_fixture(center: Point3, axis: Vector3, reference: Vector3) -> Brep {
 fn derive_sphere(out: &mut Brep) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     derive_spherical_pcurves(
         &ctx,
         out,
@@ -224,8 +236,11 @@ fn numerical_0922b_large_sphere_equator() {
 fn numerical_0922b_wide_curve_inverse() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     for d in [[0., 1.], [-1e308, 1e308], [1e308, 1.1e308]] {
         let curve = NurbsCurve::from_lanes(
             1,

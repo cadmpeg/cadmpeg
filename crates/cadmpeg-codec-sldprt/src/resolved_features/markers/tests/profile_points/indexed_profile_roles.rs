@@ -114,8 +114,11 @@ fn geometry_locus_role_excludes_display_handles() {
 fn coordinate_marker_links_are_sentinel_terminated_reference_cells() {
     let link_arena = cadmpeg_core::decode::DecodeArena::new();
     let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &link_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let mut payload = vec![0; 118];
     payload[5..13].fill(0xff);
     payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
@@ -142,5 +145,8 @@ fn coordinate_marker_links_are_sentinel_terminated_reference_cells() {
         Some((vec![7, 11], 0xbc87))
     );
     payload[98] ^= 1;
-    assert_eq!(coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(), None);
+    assert_eq!(
+        coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
+        None
+    );
 }

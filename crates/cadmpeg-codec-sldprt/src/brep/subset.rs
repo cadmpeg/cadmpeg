@@ -14,7 +14,11 @@ const TAG: u8 = 0x85;
 const PAYLOAD_LEN: usize = 2 + 8 * 8;
 const POINT_TOLERANCE_MM: f64 = 1.0e-7;
 
-fn point_at(ctx: &DecodeContext<'_>, curve: &CurveGeometry, parameter: f64) -> Result<Option<Point3>, CodecError> {
+fn point_at(
+    ctx: &DecodeContext<'_>,
+    curve: &CurveGeometry,
+    parameter: f64,
+) -> Result<Option<Point3>, CodecError> {
     Ok(match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
@@ -68,7 +72,7 @@ fn point_at(ctx: &DecodeContext<'_>, curve: &CurveGeometry, parameter: f64) -> R
                 return Ok(None);
             }
             super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
-            .map(cadmpeg_ir::features::FinitePoint3::get)
+                .map(cadmpeg_ir::features::FinitePoint3::get)
         }
         _ => None,
     })
@@ -145,10 +149,20 @@ pub(super) fn scan(
         if !close(start, evaluated_start) || !close(end, evaluated_end) {
             continue;
         }
-        let copied_geometry = if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = geometry {
-            let lane_count = curve.knots().len().checked_add(curve.pole_count()).ok_or_else(|| {
-                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
-            })?;
+        let copied_geometry = if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
+            geometry
+        {
+            let lane_count = curve
+                .knots()
+                .len()
+                .checked_add(curve.pole_count())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "copy Parasolid subset curve lanes",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
             let lane_count = u64::try_from(lane_count).map_err(|_| {
                 ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
             })?;
@@ -157,9 +171,15 @@ pub(super) fn scan(
             })?;
             ctx.charge_work(work, "copy Parasolid subset curve lanes")?;
             ctx.charge_collection_items(lane_count, "copy Parasolid subset curve lanes")?;
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.try_clone().map_err(|_| {
-                ctx.refuse_codec_limit("copy Parasolid subset curve lanes", u64::MAX - 1, u64::MAX)
-            })?))
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.try_clone().map_err(
+                |_| {
+                    ctx.refuse_codec_limit(
+                        "copy Parasolid subset curve lanes",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                },
+            )?))
         } else {
             geometry.clone()
         };
@@ -213,19 +233,24 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test carrier fits service policy");
-        carriers.insert(&ctx, super::super::Carrier::Curve(CurveCarrier {
-            attr: 10,
-            offset: 100,
-            end: 120,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-                cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    Point3::new(0.0, 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                )
-                .expect("valid line fixture"),
-            )),
-            parameter_range: None,
-        })).expect("test carrier fits service policy");
+        carriers
+            .insert(
+                &ctx,
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                        cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                            Point3::new(0.0, 0.0, 0.0),
+                            Vector3::new(0.0, 1.0, 0.0),
+                        )
+                        .expect("valid line fixture"),
+                    )),
+                    parameter_range: None,
+                }),
+            )
+            .expect("test carrier fits service policy");
         carriers
     }
 
@@ -242,13 +267,18 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("test carrier fits service policy");
-        carriers.insert(&ctx, super::super::Carrier::Curve(CurveCarrier {
-            attr: 10,
-            offset: 100,
-            end: 120,
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            parameter_range: None,
-        })).expect("test carrier fits service policy");
+        carriers
+            .insert(
+                &ctx,
+                super::super::Carrier::Curve(CurveCarrier {
+                    attr: 10,
+                    offset: 100,
+                    end: 120,
+                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+                    parameter_range: None,
+                }),
+            )
+            .expect("test carrier fits service policy");
         carriers
     }
 
@@ -259,8 +289,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = cap;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error =
-            scan(&ctx, &bytes, &carriers).expect_err("subset collection exceeds its limit");
+        let error = scan(&ctx, &bytes, &carriers).expect_err("subset collection exceeds its limit");
         assert!(
             matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -272,9 +301,7 @@ mod tests {
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
         assert_eq!(
-            scan(&ctx, &bytes, &carriers)
-                .expect("service scan")
-                .len(),
+            scan(&ctx, &bytes, &carriers).expect("service scan").len(),
             1
         );
     }
@@ -315,8 +342,10 @@ mod tests {
         policy.limits.max_materialized_bytes = 15;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let error = scan(&ctx, &bytes, &carriers).unwrap_err();
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == ResourceDimension::MaterializedBytes));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
         policy.limits.max_materialized_bytes = 16;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
@@ -325,10 +354,13 @@ mod tests {
 
     #[test]
     fn decodes_bounds_that_evaluate_on_the_source_curve() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let decoded = scan(&ctx, &wrapper(0.005, false), &carriers()).expect("subset scan");
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].attr, 20);
@@ -346,10 +378,13 @@ mod tests {
 
     #[test]
     fn decodes_optional_ff_header() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         assert_eq!(
             scan(&ctx, &wrapper(0.005, true), &carriers())
                 .expect("subset scan")
@@ -360,10 +395,13 @@ mod tests {
 
     #[test]
     fn rejects_bounds_that_do_not_evaluate_on_the_source_curve() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = wrapper(0.005, false);
         bytes[21 + 3 * 8..21 + 4 * 8].copy_from_slice(&0.001f64.to_be_bytes());
         assert!(scan(&ctx, &bytes, &carriers())
@@ -405,12 +443,21 @@ mod tests {
                 .unwrap(),
             ));
             assert_eq!(
-                point_at(&cadmpeg_test_support::service_decode_context(), &curve, 0.75 * d).expect("evaluation fits resource limits"),
+                point_at(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &curve,
+                    0.75 * d
+                )
+                .expect("evaluation fits resource limits"),
                 Some(Point3::new(0.75, 0., 0.))
             );
-            assert!(point_at(&cadmpeg_test_support::service_decode_context(), &curve, 2. * d)
-                .expect("evaluation fits resource limits")
-                .is_none());
+            assert!(point_at(
+                &cadmpeg_test_support::service_decode_context(),
+                &curve,
+                2. * d
+            )
+            .expect("evaluation fits resource limits")
+            .is_none());
         }
     }
 }

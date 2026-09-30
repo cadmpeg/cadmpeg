@@ -92,17 +92,17 @@ fn extend_group<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, key_operation)?;
-        groups.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX)
-        })?;
+        groups
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX))?;
     }
     let count = u64::try_from(values.len())
         .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_collection_items(count, value_operation)?;
     let group = groups.entry(key).or_default();
-    group.try_reserve(values.len()).map_err(|_| {
-        ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX)
-    })?;
+    group
+        .try_reserve(values.len())
+        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
     group.extend(values);
     Ok(())
 }
@@ -117,15 +117,15 @@ fn push_group<K: Eq + Hash, V>(
 ) -> Result<(), CodecError> {
     if !groups.contains_key(&key) {
         ctx.charge_collection_items(1, key_operation)?;
-        groups.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX)
-        })?;
+        groups
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(key_operation, u64::MAX - 1, u64::MAX))?;
     }
     ctx.charge_collection_items(1, value_operation)?;
     let group = groups.entry(key).or_default();
-    group.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX)
-    })?;
+    group
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(value_operation, u64::MAX - 1, u64::MAX))?;
     group.push(value);
     Ok(())
 }
@@ -205,7 +205,14 @@ fn chart_records(
         let Some((attr, candidates)) = chart_candidates(ctx, bytes, body)? else {
             continue;
         };
-        extend_group(ctx, &mut out, attr, candidates, "collect Parasolid intersection charts", "collect Parasolid intersection chart candidates")?;
+        extend_group(
+            ctx,
+            &mut out,
+            attr,
+            candidates,
+            "collect Parasolid intersection charts",
+            "collect Parasolid intersection chart candidates",
+        )?;
     }
     Ok(out)
 }
@@ -267,14 +274,15 @@ fn chart_candidates(
         if !(1..count - 1).all(|index| finite_point(bytes, block + index * stride).is_some()) {
             continue;
         }
-                    ctx.charge_collection_items(
-                (count - 2) as u64,
-                "decode Parasolid chart interior points",
-            )?;
+        ctx.charge_collection_items((count - 2) as u64, "decode Parasolid chart interior points")?;
 
         let mut interior_points = Vec::new();
         interior_points.try_reserve(count - 2).map_err(|_| {
-            ctx.refuse_codec_limit("decode Parasolid chart interior points", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "decode Parasolid chart interior points",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
         for index in 1..count - 1 {
             if let Some(point) = finite_point(bytes, block + index * stride) {
@@ -284,10 +292,14 @@ fn chart_candidates(
         if !extended && first == last && interior_points.iter().all(|point| *point == first) {
             continue;
         }
-                    ctx.charge_collection_items(1, "collect Parasolid chart stride candidates")?;
+        ctx.charge_collection_items(1, "collect Parasolid chart stride candidates")?;
 
         candidates.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("collect Parasolid chart stride candidates", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "collect Parasolid chart stride candidates",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
         candidates.push(Chart {
             endpoints: [first, last],
@@ -329,7 +341,14 @@ fn term_at(
             continue;
         }
         if let Some(point) = finite_point(bytes, body + 6 + label_len) {
-            push_group(ctx, out, attr, point, "collect Parasolid terminator groups", "collect Parasolid terminator points")?;
+            push_group(
+                ctx,
+                out,
+                attr,
+                point,
+                "collect Parasolid terminator groups",
+                "collect Parasolid terminator points",
+            )?;
         }
     }
     Ok(())
@@ -392,7 +411,7 @@ fn uv_at(
     {
         return Ok(None);
     }
-            ctx.charge_collection_items(count as u64, "decode Parasolid support UV values")?;
+    ctx.charge_collection_items(count as u64, "decode Parasolid support UV values")?;
 
     let mut values = Vec::new();
     values.try_reserve(count).map_err(|_| {
@@ -417,14 +436,28 @@ fn uv_records(
     let mut out: HashMap<u16, Vec<UvRecord>> = HashMap::new();
     for body in record_bodies(bytes, 0xcc) {
         if let Some((attr, shape)) = uv_at(ctx, bytes, body)? {
-            push_group(ctx, &mut out, attr, shape, "collect Parasolid support UV groups", "collect Parasolid support UV records")?;
+            push_group(
+                ctx,
+                &mut out,
+                attr,
+                shape,
+                "collect Parasolid support UV groups",
+                "collect Parasolid support UV records",
+            )?;
         }
     }
     for label in find_iter(bytes, b"values") {
         let tail = label + b"values".len();
         if bytes.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             if let Some((attr, shape)) = uv_at(ctx, bytes, tail + INLINE_UV_TAIL.len())? {
-                push_group(ctx, &mut out, attr, shape, "collect Parasolid support UV groups", "collect Parasolid support UV records")?;
+                push_group(
+                    ctx,
+                    &mut out,
+                    attr,
+                    shape,
+                    "collect Parasolid support UV groups",
+                    "collect Parasolid support UV records",
+                )?;
             }
         }
     }
@@ -459,7 +492,11 @@ fn solved_curve(
     charge_items(ctx, point_count, "construct intersection chart parameters")?;
     let mut parameters = Vec::new();
     parameters.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit("construct intersection chart parameters", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "construct intersection chart parameters",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     parameters.push(parameter);
     let mut previous = chart.endpoints[0];
@@ -475,7 +512,11 @@ fn solved_curve(
     charge_items(ctx, point_count, "construct intersection chart points")?;
     let mut points = Vec::new();
     points.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit("construct intersection chart points", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "construct intersection chart points",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     points.push(start);
     points.extend(chart.interior_points.iter().copied());
@@ -505,11 +546,17 @@ fn solved_curve(
     charge_items(ctx, point_count, "construct intersection curve controls")?;
     let mut controls = Vec::new();
     controls.try_reserve(point_count).map_err(|_| {
-        ctx.refuse_codec_limit("construct intersection curve controls", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "construct intersection curve controls",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
-    controls.extend(points.iter().map(|p| {
-        Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)
-    }));
+    controls.extend(
+        points
+            .iter()
+            .map(|p| Point3::new(p[0] * LEN_TO_MM, p[1] * LEN_TO_MM, p[2] * LEN_TO_MM)),
+    );
     charge_items(ctx, point_count, "admit intersection curve poles")?;
     let nurbs = match NurbsCurve::from_lanes(1, knots, controls, None, false) {
         Ok(nurbs) => nurbs,
@@ -554,11 +601,18 @@ fn solved_support_uv(
         let mut controls = [Vec::new(), Vec::new()];
         for (support, control_points) in controls.iter_mut().enumerate() {
             control_points.try_reserve(parameters.len()).map_err(|_| {
-                ctx.refuse_codec_limit("construct intersection support UV controls", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "construct intersection support UV controls",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
-            control_points.extend(record.values.chunks_exact(4).map(|row| {
-                Point2::new(row[support * 2], row[support * 2 + 1])
-            }));
+            control_points.extend(
+                record
+                    .values
+                    .chunks_exact(4)
+                    .map(|row| Point2::new(row[support * 2], row[support * 2 + 1])),
+            );
             if reversed {
                 control_points.reverse();
             }
@@ -681,7 +735,8 @@ pub(super) fn scan_intersection_carriers(
         }
         for record in chart_refusal.take_records() {
             let note = crate::loss::spline_lane_refusal(
-                ctx, format_args!("intersection chart for attr {attr}: {record}"),
+                ctx,
+                format_args!("intersection chart for attr {attr}: {record}"),
             )?;
             ctx.reserve_collection_vec(lane_refusals, 1, "collect intersection chart losses")?;
             lane_refusals.push(note);
@@ -702,7 +757,11 @@ pub(super) fn scan_intersection_carriers(
         if !out.contains_key(&attr) {
             ctx.charge_collection_items(1, "collect Parasolid intersection carriers")?;
             out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("collect Parasolid intersection carriers", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "collect Parasolid intersection carriers",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
         }
         out.entry(attr).or_insert(IntersectionCarrier {
@@ -730,8 +789,11 @@ mod tests {
     fn numerical_ranges_short_chart_chord_preserves_parameter_increment() {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let endpoints = [[0., 0., 0.], [1e-200, 0., 0.]];
         let chart = super::Chart {
             endpoints,
@@ -1040,8 +1102,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 5;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let Err(error) = super::solved_support_uv(&ctx, &parameters, false, Some(&records))
-        else {
+        let Err(error) = super::solved_support_uv(&ctx, &parameters, false, Some(&records)) else {
             panic!("six controls exceed five items");
         };
         assert!(matches!(error,
@@ -1079,19 +1140,20 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).expect("root");
-        assert!(
-            scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
-                .expect("service scan")
-                .contains_key(&9)
-        );
+        assert!(scan_intersection_carriers(&ctx, &bytes, &mut Vec::new())
+            .expect("service scan")
+            .contains_key(&9));
     }
 
     #[test]
     fn marker_three_uv_has_two_values_per_chart_point() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let points = (0..9)
             .map(|index| [f64::from(index) * 0.01, 0.0, 0.0])
             .collect::<Vec<_>>();
@@ -1121,10 +1183,13 @@ mod tests {
 
     #[test]
     fn width_two_uv_is_legal_without_a_paired_support_cache() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut record = vec![0, 0xcc];
         record.extend_from_slice(&6_u32.to_be_bytes());
         record.extend_from_slice(&7_u16.to_be_bytes());
@@ -1148,10 +1213,13 @@ mod tests {
 
     #[test]
     fn consistent_composite_yields_polyline() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let carriers = scan_intersection_carriers(&ctx, &stream(), &mut Vec::new())
             .expect("intersection scan");
         let carrier = carriers.get(&9).expect("composite decoded");
@@ -1183,10 +1251,13 @@ mod tests {
 
     #[test]
     fn intersection_data_entity_uses_the_same_composite_payload() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = intersection_data(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
@@ -1206,10 +1277,13 @@ mod tests {
 
     #[test]
     fn negative_chart_scale_reverses_curve_and_uv_caches_atomically() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         let mut chart = chart(4, &POINTS);
         chart[16..24].copy_from_slice(&(-1.0f64).to_be_bytes());
@@ -1242,10 +1316,13 @@ mod tests {
 
     #[test]
     fn seam_row_uv_count_is_accepted() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
@@ -1259,10 +1336,13 @@ mod tests {
 
     #[test]
     fn exact_terminator_replaces_an_approximate_chart_endpoint() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let end = [0.011, 0.01, 0.0];
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
@@ -1287,10 +1367,13 @@ mod tests {
 
     #[test]
     fn missing_chart_sentinels_reject_the_chart() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         let mut bad = chart(4, &POINTS);
         let at = bad.len() - POINTS.len() * 24 - 16;
@@ -1306,10 +1389,13 @@ mod tests {
 
     #[test]
     fn ring_composite_with_one_char_label_and_no_uv_record_decodes() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let ring = [
             [0.0, 0.0, 0.0],
             [0.01, 0.0, 0.0],
@@ -1342,10 +1428,13 @@ mod tests {
 
     #[test]
     fn mismatched_optional_uv_count_does_not_reject_the_curve() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = composite(9, [2, 3, 4, 5, 6, 7]);
         bytes.extend(chart(4, &POINTS));
         bytes.extend(term(5, POINTS[0]));
@@ -1359,10 +1448,13 @@ mod tests {
 
     #[test]
     fn extended_chart_stride_is_selected_by_witnesses() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let chart_bytes = extended_chart(4, &POINTS, [0.5, 0.0, 0.0]);
         let (_, candidates) = chart_candidates(&ctx, &chart_bytes, 2)
             .expect("chart parse")
@@ -1398,10 +1490,13 @@ mod tests {
 
     #[test]
     fn ambiguous_chart_stride_does_not_select_first_candidate() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let end = POINTS[2];
         let mut chart_bytes = extended_chart(4, &[POINTS[0], end], [0.5, 0.0, 0.0]);
         let bare_endpoint = 2 + 6 + 52 + 24;

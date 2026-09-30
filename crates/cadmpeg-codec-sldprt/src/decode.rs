@@ -15,8 +15,8 @@
 //! metadata-only IR and blocking loss notes. [`DecodeOptions::container_only`]
 //! requests the metadata-only path.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
 use std::hash::Hash;
 
@@ -39,8 +39,8 @@ mod digest_partition;
 use crate::container::configuration_index;
 use crate::container::contains_ascii_case_insensitive;
 
-use crate::brep::graph::{decode_bodies, Brep};
 use crate::brep::feature_source::FeatureSourceId;
+use crate::brep::graph::{decode_bodies, Brep};
 use crate::container::{self, ActiveParasolidSite, ContainerScan};
 use crate::parasolid::StreamHeader;
 use crate::records::ObjectId;
@@ -174,9 +174,10 @@ fn push_report_loss(
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "append SLDPRT decode loss";
     ctx.charge_collection_items(1, OPERATION)?;
-    report.losses.try_reserve(1).map_err(|_| {
-        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-    })?;
+    report
+        .losses
+        .try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     report.losses.push(loss);
     Ok(())
 }
@@ -374,9 +375,10 @@ fn count_keys<K: Ord>(
                 entry.insert(1);
             }
             Entry::Occupied(mut entry) => {
-                let next = entry.get().checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-                })?;
+                let next = entry
+                    .get()
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
                 *entry.get_mut() = next;
             }
         }
@@ -430,9 +432,9 @@ fn charged_vec<T>(
     for value in values {
         ctx.charge_work(1, operation)?;
         ctx.charge_collection_items(1, operation)?;
-        result.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        result
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         result.push(value);
     }
     Ok(result)
@@ -459,9 +461,8 @@ fn insert_charged_set<'a, T: Eq + Hash + ?Sized>(
     ctx.charge_work(1, operation)?;
     if !set.contains(value) {
         ctx.charge_collection_items(1, operation)?;
-        set.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        set.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         set.insert(value);
     }
     Ok(())
@@ -477,9 +478,8 @@ fn charged_hash_map<K: Eq + Hash, V>(
         ctx.charge_work(1, operation)?;
         if !map.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
-            map.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?;
+            map.try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         map.insert(key, value);
     }
@@ -499,9 +499,8 @@ fn has_incoherent_refs<T: Eq + Hash>(
             return Ok(true);
         }
         ctx.charge_collection_items(1, operation)?;
-        seen.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        seen.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         seen.insert(reference);
     }
     Ok(false)
@@ -579,7 +578,9 @@ fn append_design_losses(
             &ir.model.configurations,
             &native.feature_input_lanes,
         )?
-    } else { 0 };
+    } else {
+        0
+    };
     if unresolved_configuration_parameter_lanes > 0 {
         push_report_loss(ctx, report, SldprtLossCode::ConfigLaneIdentityUnresolved.note(format!(
                 "{unresolved_configuration_parameter_lanes} configuration-scoped feature-input lane(s) have duplicate or unresolved configuration identity."
@@ -587,7 +588,10 @@ fn append_design_losses(
     }
     let configuration_source_counts = count_keys(
         ctx,
-        ir.model.configurations.iter().filter_map(|configuration| configuration.source_index),
+        ir.model
+            .configurations
+            .iter()
+            .filter_map(|configuration| configuration.source_index),
         "count SLDPRT configuration source indices",
     )?;
     let ambiguous_configuration_sources = configuration_source_counts
@@ -608,12 +612,17 @@ fn append_design_losses(
         .count();
     let configuration_ordinal_counts = count_keys(
         ctx,
-        ir.model.configurations.iter().map(|configuration| configuration.ordinal),
+        ir.model
+            .configurations
+            .iter()
+            .map(|configuration| configuration.ordinal),
         "count SLDPRT configuration ordinals",
     )?;
     let configuration_name_counts = count_keys(
         ctx,
-        ir.model.configurations.iter()
+        ir.model
+            .configurations
+            .iter()
             .filter_map(|configuration| configuration.name.as_deref())
             .filter(|name| !name.is_empty()),
         "count SLDPRT configuration names",
@@ -751,33 +760,47 @@ fn append_design_losses(
             continue;
         };
         const OPERATION: &str = "index SLDPRT feature names";
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()), OPERATION)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
+            OPERATION,
+        )?;
         if !feature_names.contains_key(&feature.id) {
             ctx.charge_collection_items(1, OPERATION)?;
-            feature_names.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            feature_names
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), OPERATION)?)
-            .map_err(CodecError::malformed)?;
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
+            ctx,
+            feature.id.as_str(),
+            OPERATION,
+        )?)
+        .map_err(CodecError::malformed)?;
         let name = copy_retained_string(ctx, name, OPERATION)?;
         feature_names.insert(id, name);
     }
     let mut global_parameter_owners = HashSet::new();
     for feature in &ir.model.features {
         const OPERATION: &str = "index SLDPRT global parameter owners";
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()), OPERATION)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
+            OPERATION,
+        )?;
         if !crate::history::parameters::is_global_parameter_owner(feature)
             || global_parameter_owners.contains(&feature.id)
         {
             continue;
         }
         ctx.charge_collection_items(1, OPERATION)?;
-        global_parameter_owners.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), OPERATION)?)
-            .map_err(CodecError::malformed)?;
+        global_parameter_owners
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
+            ctx,
+            feature.id.as_str(),
+            OPERATION,
+        )?)
+        .map_err(CodecError::malformed)?;
         global_parameter_owners.insert(id);
     }
     let incomplete_parameters = ir
@@ -809,12 +832,17 @@ fn append_design_losses(
         )?;
     let feature_ordinals = charged_map(
         ctx,
-        ir.model.features.iter().map(|feature| (&feature.id, feature.ordinal)),
+        ir.model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature.ordinal)),
         "index SLDPRT feature ordinals",
     )?;
     let parameter_positions = charged_map(
         ctx,
-        ir.model.parameters.iter()
+        ir.model
+            .parameters
+            .iter()
             .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal))),
         "index SLDPRT parameter positions",
     )?;
@@ -878,13 +906,19 @@ fn append_design_losses(
         .count();
     let parameter_name_counts = count_keys(
         ctx,
-        ir.model.parameters.iter().filter(|parameter| !parameter.name.is_empty())
+        ir.model
+            .parameters
+            .iter()
+            .filter(|parameter| !parameter.name.is_empty())
             .map(|parameter| (&parameter.owner, parameter.name.as_str())),
         "count SLDPRT parameter names",
     )?;
     let parameter_ordinal_counts = count_keys(
         ctx,
-        ir.model.parameters.iter().map(|parameter| (&parameter.owner, parameter.ordinal)),
+        ir.model
+            .parameters
+            .iter()
+            .map(|parameter| (&parameter.owner, parameter.ordinal)),
         "count SLDPRT parameter ordinals",
     )?;
     let duplicate_parameter_names = parameter_name_counts
@@ -907,7 +941,12 @@ fn append_design_losses(
     }
 
     let mut bound_pmi = std::collections::HashSet::new();
-    for pmi in ir.model.parameters.iter().filter_map(|parameter| parameter.pmi.as_ref()) {
+    for pmi in ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| parameter.pmi.as_ref())
+    {
         let id = pmi.native_ref.as_str();
         if !bound_pmi.contains(id) {
             ctx.charge_collection_items(1, "index SLDPRT bound PMI IDs")?;
@@ -918,7 +957,9 @@ fn append_design_losses(
         }
     }
     let unbound_pmi_dimensions = match native.as_ref() {
-        Some(native) => crate::pmi::unbound_dimension_count(ctx, &native.pmi_dimensions, &bound_pmi)?,
+        Some(native) => {
+            crate::pmi::unbound_dimension_count(ctx, &native.pmi_dimensions, &bound_pmi)?
+        }
         None => 0,
     };
     let native_pmi_subtypes = ir
@@ -981,12 +1022,15 @@ fn append_design_losses(
     } else {
         charged_vec(
             ctx,
-            ir.model.features.iter().map(|feature| EvaluatedFeatureState {
-                feature,
-                dependencies: &feature.dependencies,
-                outputs: feature.evaluation.outputs(),
-                definition: feature.evaluation.definition(),
-            }),
+            ir.model
+                .features
+                .iter()
+                .map(|feature| EvaluatedFeatureState {
+                    feature,
+                    dependencies: &feature.dependencies,
+                    outputs: feature.evaluation.outputs(),
+                    definition: feature.evaluation.definition(),
+                }),
             "collect SLDPRT feature states",
         )?
     };
@@ -1024,12 +1068,18 @@ fn append_design_losses(
     }
     let parameter_owners = charged_map(
         ctx,
-        ir.model.parameters.iter().map(|parameter| (&parameter.id, &parameter.owner)),
+        ir.model
+            .parameters
+            .iter()
+            .map(|parameter| (&parameter.id, &parameter.owner)),
         "index SLDPRT parameter owners",
     )?;
     let features_by_id = charged_map(
         ctx,
-        ir.model.features.iter().map(|feature| (&feature.id, feature)),
+        ir.model
+            .features
+            .iter()
+            .map(|feature| (&feature.id, feature)),
         "index SLDPRT features by ID",
     )?;
     let incoherent_feature_content = ir
@@ -1916,26 +1966,35 @@ fn unbound_feature_input_operation_objects(
     use crate::classification::{classify, native_object_class};
     use crate::records::FeatureInputClassRole;
 
-    let features = native.feature_histories.iter().flat_map(|history| &history.features);
+    let features = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features);
     let source_counts = count_keys(
         ctx,
-        features.clone().filter_map(|feature| feature.source_value()),
+        features
+            .clone()
+            .filter_map(|feature| feature.source_value()),
         "count SLDPRT feature-input sources",
     )?;
     let binding_counts = count_keys(
         ctx,
-        features.clone().filter_map(|feature| {
-            feature.source_value().zip(feature.input_class.as_deref())
-        }),
+        features
+            .clone()
+            .filter_map(|feature| feature.source_value().zip(feature.input_class.as_deref())),
         "count SLDPRT feature-input bindings",
     )?;
     let named_binding_counts = count_keys(
         ctx,
         native.feature_input_lanes.iter().flat_map(|lane| {
             features.clone().filter_map(move |feature| {
-                feature.input_class.as_deref().zip(
-                    crate::resolved_features::scalars::feature_object_name(feature, lane),
-                ).map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
+                feature
+                    .input_class
+                    .as_deref()
+                    .zip(crate::resolved_features::scalars::feature_object_name(
+                        feature, lane,
+                    ))
+                    .map(|(class, name)| (lane.id.as_str(), name.id.as_str(), class))
             })
         }),
         "count SLDPRT named feature-input bindings",
@@ -1989,40 +2048,45 @@ fn unprojected_sketch_relation_records(
 ) -> Result<usize, CodecError> {
     let sketch_feature_refs = charged_set(
         ctx,
-        ir.model.features.iter().filter(|feature| {
-            matches!(
-                feature.evaluation.definition(),
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Sketch { .. }
-                        | cadmpeg_ir::features::FeatureOperation::SpatialSketch { .. }
+        ir.model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    feature.evaluation.definition(),
+                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                        cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                            | cadmpeg_ir::features::FeatureOperation::SpatialSketch { .. }
+                    )
                 )
-            )
-        })
-        .filter_map(|feature| feature.native_ref.as_deref()),
+            })
+            .filter_map(|feature| feature.native_ref.as_deref()),
         "index SLDPRT sketch feature references",
     )?;
     let projected = charged_set(
         ctx,
-        ir.model.sketch_constraints.iter()
-        .filter_map(|constraint| constraint.native_ref.as_deref())
-        .chain(
-            ir.model
-                .sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_constraints
-                .iter()
-                .filter_map(|constraint| constraint.native_ref.as_deref()),
-        ),
+        ir.model
+            .sketch_constraints
+            .iter()
+            .filter_map(|constraint| constraint.native_ref.as_deref())
+            .chain(
+                ir.model
+                    .sketch_entities
+                    .iter()
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ir.model
+                    .spatial_sketch_entities
+                    .iter()
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ir.model
+                    .spatial_sketch_constraints
+                    .iter()
+                    .filter_map(|constraint| constraint.native_ref.as_deref()),
+            ),
         "index SLDPRT projected sketch relations",
     )?;
     let owned_instances = crate::resolved_features::relation_geometry::owned_relation_parameters(
@@ -2034,43 +2098,53 @@ fn unprojected_sketch_relation_records(
 
     let mut total = 0;
     for lane in &native.feature_input_lanes {
-            let markers_by_id = charged_hash_map(
-                ctx,
-                lane.sketch_entities.iter().map(|marker| (marker.id(), marker)),
-                "index SLDPRT sketch relation markers",
-            )?;
-            let instances = lane
-                .relation_instances
+        let markers_by_id = charged_hash_map(
+            ctx,
+            lane.sketch_entities
                 .iter()
-                .filter(|relation| {
-                    sketch_feature_refs.contains(relation.feature_ref.as_str())
-                        && owned_instances.contains_key(&relation.id)
-                        && !projected.contains(relation.id.as_str())
-                })
-                .count();
-            let bindings = lane
-                .relation_bindings
-                .iter()
-                .filter(|binding| {
-                    binding
-                        .feature_ref
-                        .as_deref()
-                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
-                        && !lane.relation_instances.iter().any(|relation| {
-                            relation.class_ref == binding.class_ref
-                                && relation.scalar_refs().contains(&binding.scalar_ref)
-                        })
-                })
-                .count();
-            let mut markers = 0;
-            for marker in &lane.sketch_entities {
-                if marker.feature_ref.as_deref().is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
-                    && crate::resolved_features::typed_relations::marker_owns_constraint(ctx, marker, &markers_by_id)?
-                    && !projected.contains(marker.id()) {
-                    markers += 1;
-                }
+                .map(|marker| (marker.id(), marker)),
+            "index SLDPRT sketch relation markers",
+        )?;
+        let instances = lane
+            .relation_instances
+            .iter()
+            .filter(|relation| {
+                sketch_feature_refs.contains(relation.feature_ref.as_str())
+                    && owned_instances.contains_key(&relation.id)
+                    && !projected.contains(relation.id.as_str())
+            })
+            .count();
+        let bindings = lane
+            .relation_bindings
+            .iter()
+            .filter(|binding| {
+                binding
+                    .feature_ref
+                    .as_deref()
+                    .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                    && !lane.relation_instances.iter().any(|relation| {
+                        relation.class_ref == binding.class_ref
+                            && relation.scalar_refs().contains(&binding.scalar_ref)
+                    })
+            })
+            .count();
+        let mut markers = 0;
+        for marker in &lane.sketch_entities {
+            if marker
+                .feature_ref
+                .as_deref()
+                .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                && crate::resolved_features::typed_relations::marker_owns_constraint(
+                    ctx,
+                    marker,
+                    &markers_by_id,
+                )?
+                && !projected.contains(marker.id())
+            {
+                markers += 1;
             }
-            total += instances + bindings + markers;
+        }
+        total += instances + bindings + markers;
     }
     Ok(total)
 }
@@ -2084,7 +2158,9 @@ fn multiply_projected_sketch_relation_records(
     for lane in &native.feature_input_lanes {
         let markers_by_id = charged_hash_map(
             ctx,
-            lane.sketch_entities.iter().map(|marker| (marker.id(), marker)),
+            lane.sketch_entities
+                .iter()
+                .map(|marker| (marker.id(), marker)),
             "index SLDPRT sketch relation markers",
         )?;
         for relation in &lane.relation_instances {
@@ -2097,7 +2173,8 @@ fn multiply_projected_sketch_relation_records(
         }
         for marker in &lane.sketch_entities {
             if crate::resolved_features::typed_relations::marker_owns_constraint(
-                ctx, marker,
+                ctx,
+                marker,
                 &markers_by_id,
             )? {
                 insert_charged_set(
@@ -2111,30 +2188,29 @@ fn multiply_projected_sketch_relation_records(
     }
     let projection_counts = count_keys(
         ctx,
-        ir
-        .model
-        .sketch_constraints
-        .iter()
-        .filter_map(|constraint| constraint.native_ref.as_deref())
-        .chain(
-            ir.model
-                .sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_entities
-                .iter()
-                .filter_map(|entity| entity.native_ref.as_deref()),
-        )
-        .chain(
-            ir.model
-                .spatial_sketch_constraints
-                .iter()
-                .filter_map(|constraint| constraint.native_ref.as_deref()),
-        )
-        .filter(|native_ref| native_relation_ids.contains(native_ref)),
+        ir.model
+            .sketch_constraints
+            .iter()
+            .filter_map(|constraint| constraint.native_ref.as_deref())
+            .chain(
+                ir.model
+                    .sketch_entities
+                    .iter()
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ir.model
+                    .spatial_sketch_entities
+                    .iter()
+                    .filter_map(|entity| entity.native_ref.as_deref()),
+            )
+            .chain(
+                ir.model
+                    .spatial_sketch_constraints
+                    .iter()
+                    .filter_map(|constraint| constraint.native_ref.as_deref()),
+            )
+            .filter(|native_ref| native_relation_ids.contains(native_ref)),
         "count SLDPRT relation projections",
     )?;
     Ok(projection_counts
@@ -2148,7 +2224,8 @@ fn copy_retained_string(
     value: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
@@ -2164,39 +2241,40 @@ fn conflicting_display_reference(
     candidates: &BTreeSet<FeatureSourceId>,
 ) -> Result<String, CodecError> {
     const OPERATION: &str = "retain SLDPRT conflicting display reference";
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidates.len()), OPERATION)?;
-    let index_digits = usize::try_from(table_index.checked_ilog10().unwrap_or(0)).map_err(|_| {
-        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-    })? + 1;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(candidates.len()),
+        OPERATION,
+    )?;
+    let index_digits = usize::try_from(table_index.checked_ilog10().unwrap_or(0))
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+        + 1;
     let mut bytes = stream.len();
     for part in ["::DisplayFace[".len(), index_digits, "] (".len(), 1] {
-        bytes = bytes.checked_add(part).ok_or_else(|| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        bytes = bytes
+            .checked_add(part)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     for (position, source) in candidates.iter().enumerate() {
-        let digits = usize::try_from(source.value().ilog10()).map_err(|_| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })? + 1;
-        bytes = bytes.checked_add(digits + usize::from(position > 0) * 2).ok_or_else(|| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        let digits = usize::try_from(source.value().ilog10())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+            + 1;
+        bytes = bytes
+            .checked_add(digits + usize::from(position > 0) * 2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     let mut message = String::new();
     crate::text_admission::reserve_retained_string(ctx, &mut message, bytes, OPERATION)?;
     message.push_str(stream);
     message.push_str("::DisplayFace[");
-    write!(&mut message, "{table_index}").map_err(|_| {
-        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-    })?;
+    write!(&mut message, "{table_index}")
+        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     message.push_str("] (");
     for (position, source) in candidates.iter().enumerate() {
         if position > 0 {
             message.push_str(", ");
         }
-        write!(&mut message, "{}", source.value()).map_err(|_| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        write!(&mut message, "{}", source.value())
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     message.push(')');
     Ok(message)
@@ -2209,8 +2287,11 @@ fn appearance_assignment_loss_message(
     conflicts: &[String],
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "retain SLDPRT appearance assignment loss";
-    let scan_work = [assigned.len(), matched.len(), conflicts.len()].into_iter()
-        .try_fold(0u64, |work, count| work.checked_add(cadmpeg_core::decode::u64_from_index(count)))
+    let scan_work = [assigned.len(), matched.len(), conflicts.len()]
+        .into_iter()
+        .try_fold(0u64, |work, count| {
+            work.checked_add(cadmpeg_core::decode::u64_from_index(count))
+        })
         .and_then(|work| work.checked_mul(4))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(scan_work, OPERATION)?;
@@ -2224,9 +2305,9 @@ fn appearance_assignment_loss_message(
     }
     let mut bytes = PREFIX.len();
     let add = |bytes: &mut usize, part: usize| -> Result<(), CodecError> {
-        *bytes = bytes.checked_add(part).ok_or_else(|| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        *bytes = bytes
+            .checked_add(part)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         Ok(())
     };
     add(&mut bytes, 1)?;
@@ -2234,9 +2315,9 @@ fn appearance_assignment_loss_message(
         add(&mut bytes, MISSING_PREFIX.len())?;
         add(&mut bytes, MISSING_SUFFIX.len())?;
         for (position, source) in assigned.difference(matched).enumerate() {
-            let digits = usize::try_from(source.value().ilog10()).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })? + 1;
+            let digits = usize::try_from(source.value().ilog10())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+                + 1;
             add(&mut bytes, digits)?;
             if position > 0 {
                 add(&mut bytes, ", ".len())?;
@@ -2264,9 +2345,8 @@ fn appearance_assignment_loss_message(
             if position > 0 {
                 message.push_str(", ");
             }
-            write!(&mut message, "{}", source.value()).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            write!(&mut message, "{}", source.value())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         message.push_str(MISSING_SUFFIX);
     }
@@ -2311,13 +2391,26 @@ fn active_body_streams<'a>(
             });
         }
     }
-    ctx.stable_sort_by(&mut streams, |left, right| {
-        let key = |stream: &ActiveParasolidSite<'_>| (
-            !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
-            !contains_ascii_case_insensitive(&stream.header.description, "partition"),
-        );
-        key(left).cmp(&key(right))
-    }, |stream| stream.source_stream().as_str().len().max(stream.header.description.len()), "sort SLDPRT active body streams")?;
+    ctx.stable_sort_by(
+        &mut streams,
+        |left, right| {
+            let key = |stream: &ActiveParasolidSite<'_>| {
+                (
+                    !contains_ascii_case_insensitive(stream.source_stream().as_str(), "partition"),
+                    !contains_ascii_case_insensitive(&stream.header.description, "partition"),
+                )
+            };
+            key(left).cmp(&key(right))
+        },
+        |stream| {
+            stream
+                .source_stream()
+                .as_str()
+                .len()
+                .max(stream.header.description.len())
+        },
+        "sort SLDPRT active body streams",
+    )?;
     Ok(streams)
 }
 
@@ -2392,7 +2485,10 @@ fn try_decode_brep(
         let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
             decoded.stats.source_entity_records == 0
                 && sites[site].iter().any(|index| {
-                    contains_ascii_case_insensitive(&streams[*index].header.description, "partition")
+                    contains_ascii_case_insensitive(
+                        &streams[*index].header.description,
+                        "partition",
+                    )
                 })
                 && sites[site].iter().any(|index| {
                     contains_ascii_case_insensitive(&streams[*index].header.description, "deltas")
@@ -2449,10 +2545,7 @@ fn try_decode_brep(
             1,
             "collect SLDPRT configuration bodies",
         )?;
-        configuration_bodies.push((
-            index,
-            copy_body_ids(ctx, &decoded.bodies)?,
-        ));
+        configuration_bodies.push((index, copy_body_ids(ctx, &decoded.bodies)?));
     }
     for (site, first, mut alternate) in decoded_sites {
         alternate.qualify_ids(ctx, &site)?;
@@ -2463,10 +2556,7 @@ fn try_decode_brep(
                 1,
                 "collect SLDPRT configuration bodies",
             )?;
-            configuration_bodies.push((
-                index,
-                copy_body_ids(ctx, &alternate.bodies)?,
-            ));
+            configuration_bodies.push((index, copy_body_ids(ctx, &alternate.bodies)?));
         }
         // Keep only the selected source's bridge sequence namespace. Alternate
         // configuration sites are qualified into the model but do not own the
@@ -2556,7 +2646,11 @@ fn append_brep_arena<T>(
     Ok(())
 }
 
-fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
+fn merge_brep(
+    ctx: &DecodeContext<'_>,
+    target: &mut Brep,
+    mut source: Brep,
+) -> Result<(), CodecError> {
     // Sequence links are source-local and belong only to the selected SWIFT
     // source. Alternate configuration sequences must not enter its namespace.
     target.annotations.append(source.annotations)?;
@@ -2570,7 +2664,11 @@ fn merge_brep(ctx: &DecodeContext<'_>, target: &mut Brep, mut source: Brep) -> R
     append_brep_arena(ctx, &mut target.vertices, &mut source.vertices)?;
     append_brep_arena(ctx, &mut target.points, &mut source.points)?;
     append_brep_arena(ctx, &mut target.surfaces, &mut source.surfaces)?;
-    append_brep_arena(ctx, &mut target.procedural_surfaces, &mut source.procedural_surfaces)?;
+    append_brep_arena(
+        ctx,
+        &mut target.procedural_surfaces,
+        &mut source.procedural_surfaces,
+    )?;
     append_brep_arena(ctx, &mut target.curves, &mut source.curves)?;
     append_brep_arena(ctx, &mut target.pcurves, &mut source.pcurves)?;
     append_brep_arena(ctx, &mut target.unknowns, &mut source.unknowns)?;
@@ -2617,7 +2715,11 @@ fn ensure_display_appearance(
         "displaylist_visual_properties",
         Exactness::ByteExact,
     )?;
-    ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT display appearance")?;
+    ctx.reserve_collection_vec(
+        &mut ir.model.appearances,
+        1,
+        "admit SLDPRT display appearance",
+    )?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
         name: Some(copy_retained_string(
@@ -2817,7 +2919,12 @@ fn build_geometry_ir(
         &histories,
         &sketch_lanes,
     )?;
-    crate::history::bind::bind_unique_sketch_feature(ctx, &mut ir.model.features, &sketches, &histories)?;
+    crate::history::bind::bind_unique_sketch_feature(
+        ctx,
+        &mut ir.model.features,
+        &sketches,
+        &histories,
+    )?;
     crate::resolved_features::component_paths::project_dissected_sketches(
         ctx,
         &mut ir.model.features,
@@ -2839,7 +2946,7 @@ fn build_geometry_ir(
         &lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-            ctx,
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -3038,7 +3145,8 @@ fn build_geometry_ir(
         &histories,
         &all_lanes,
     )?;
-    crate::resolved_features::holes::project_hole_position_sketches(ctx,
+    crate::resolved_features::holes::project_hole_position_sketches(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
@@ -3125,14 +3233,13 @@ fn build_geometry_ir(
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     assign_configuration_bodies(ctx, &mut ir, configuration_bodies)?;
-    let configuration_losses =
-        crate::history::configuration::project_configuration_sketch_states(
-            ctx,
-            &mut ir,
-            &histories,
-            &all_lanes,
-            &mut annotations,
-        )?;
+    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
+        ctx,
+        &mut ir,
+        &histories,
+        &all_lanes,
+        &mut annotations,
+    )?;
     ctx.reserve_collection_vec(
         &mut pmi_losses,
         configuration_losses.len(),
@@ -3212,10 +3319,16 @@ fn build_geometry_ir(
         let mut qualified_site = String::new();
         if let Some(site) = site {
             const OPERATION: &str = "retain SLDPRT colour site qualifier";
-            let bytes = site.len().checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
-            crate::text_admission::reserve_retained_string(ctx, &mut qualified_site, bytes, OPERATION)?;
+            let bytes = site
+                .len()
+                .checked_add(1)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            crate::text_admission::reserve_retained_string(
+                ctx,
+                &mut qualified_site,
+                bytes,
+                OPERATION,
+            )?;
             qualified_site.push('@');
             qualified_site.push_str(site);
         }
@@ -3246,7 +3359,11 @@ fn build_geometry_ir(
             .iter()
             .any(|appearance| appearance.id == id)
         {
-            ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT face appearance")?;
+            ctx.reserve_collection_vec(
+                &mut ir.model.appearances,
+                1,
+                "admit SLDPRT face appearance",
+            )?;
             ir.model.appearances.push(Appearance {
                 id: id.clone(),
                 name: None,
@@ -3311,7 +3428,11 @@ fn build_geometry_ir(
             "moVisualProperties_c",
             Exactness::ByteExact,
         )?;
-        ctx.reserve_collection_vec(&mut ir.model.appearances, 1, "admit SLDPRT material appearance")?;
+        ctx.reserve_collection_vec(
+            &mut ir.model.appearances,
+            1,
+            "admit SLDPRT material appearance",
+        )?;
         ir.model.appearances.push(Appearance {
             id,
             name: Some(definition.name),
@@ -3344,7 +3465,8 @@ fn build_geometry_ir(
         for (table_index, face) in display_faces.iter().enumerate() {
             let candidates = charged_btree_set(
                 ctx,
-                face.surface_references.iter()
+                face.surface_references
+                    .iter()
                     .map(crate::tessellation::PersistentSurfaceReference::feature_source_id),
                 "index SLDPRT display surface sources",
             )?;
@@ -3432,7 +3554,8 @@ fn build_geometry_ir(
                         )
                     })?;
                 let mut source_entity_id = String::new();
-                crate::text_admission::reserve_retained_string(ctx, 
+                crate::text_admission::reserve_retained_string(
+                    ctx,
                     &mut source_entity_id,
                     source_id_len,
                     "retain SLDPRT DisplayFace source identity",
@@ -3474,7 +3597,9 @@ fn build_geometry_ir(
                 1,
                 "admit SLDPRT display tessellation",
             )?;
-            ir.model.tessellations.push(mesh.into_tessellation(id).map_err(|error| {
+            ir.model
+                .tessellations
+                .push(mesh.into_tessellation(id).map_err(|error| {
                     CodecError::malformed(format_args!("invalid display tessellation: {error}"))
                 })?);
         }
@@ -3495,7 +3620,11 @@ fn build_geometry_ir(
         unknowns.push(UnknownRecord::retained(
             display_id,
             0,
-            crate::byte_admission::copy_retained(ctx, display.payload(), "retain SLDPRT display section")?,
+            crate::byte_admission::copy_retained(
+                ctx,
+                display.payload(),
+                "retain SLDPRT display section",
+            )?,
             display_links,
         ));
     }
@@ -3514,10 +3643,8 @@ fn build_geometry_ir(
         &face_identities,
         &persistent_face_bindings,
     )?;
-    let remaining_assignments = crate::tessellation::assign_unique_surface_owners(
-        ctx,
-        &mut ir.model,
-    )?;
+    let remaining_assignments =
+        crate::tessellation::assign_unique_surface_owners(ctx, &mut ir.model)?;
     ctx.reserve_precharged_vec(
         &mut assigned_tessellations,
         remaining_assignments.len(),
@@ -3526,8 +3653,20 @@ fn build_geometry_ir(
     assigned_tessellations.extend(remaining_assignments);
     let mut annotation_builder = AnnotationBuilder::resume(annotations);
     for id in assigned_tessellations {
-        crate::annotations::builder_field(ctx, &mut annotation_builder, id.as_str(), "body", Exactness::Derived)?;
-        crate::annotations::builder_field(ctx, &mut annotation_builder, id.as_str(), "faces", Exactness::Derived)?;
+        crate::annotations::builder_field(
+            ctx,
+            &mut annotation_builder,
+            id.as_str(),
+            "body",
+            Exactness::Derived,
+        )?;
+        crate::annotations::builder_field(
+            ctx,
+            &mut annotation_builder,
+            id.as_str(),
+            "faces",
+            Exactness::Derived,
+        )?;
     }
     let mut annotations = annotation_builder.build();
     for source_block in &mut scan.blocks {
@@ -3644,10 +3783,18 @@ fn assign_native_configuration_indices(
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
     const OPERATION: &str = "assign SLDPRT native configuration indices";
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.configurations.len()), OPERATION)?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(ir.model.configurations.len()),
+        OPERATION,
+    )?;
     for configuration in &ir.model.configurations {
-        let Some(native_ref) = configuration.native_ref.as_deref() else { continue; };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(native.feature_histories.len()), OPERATION)?;
+        let Some(native_ref) = configuration.native_ref.as_deref() else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(native.feature_histories.len()),
+            OPERATION,
+        )?;
         for history in &mut native.feature_histories {
             let mut found = false;
             for record in &mut history.configurations {
@@ -3662,7 +3809,9 @@ fn assign_native_configuration_indices(
                     break;
                 }
             }
-            if found { break; }
+            if found {
+                break;
+            }
         }
     }
     Ok(())
@@ -3831,7 +3980,10 @@ fn add_solidworks_xml_metadata(
             ),
         ] {
             if let Some(value) = value {
-                attributes.insert(key, copy_retained_string(ctx, value, "retain SLDPRT XML metadata")?);
+                attributes.insert(
+                    key,
+                    copy_retained_string(ctx, value, "retain SLDPRT XML metadata")?,
+                );
             }
         }
         if let Some(value) = active_configuration_name {
@@ -4211,7 +4363,7 @@ fn build_metadata_ir(
         &lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-            ctx,
+        ctx,
         &mut ir.model.features,
         &histories,
         &lanes,
@@ -4280,7 +4432,8 @@ fn build_metadata_ir(
         &histories,
         &lanes,
     )?;
-    crate::resolved_features::holes::project_hole_position_sketches(ctx,
+    crate::resolved_features::holes::project_hole_position_sketches(
+        ctx,
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
@@ -4372,14 +4525,13 @@ fn build_metadata_ir(
     )?;
     sync_active_configuration_resolutions(ctx, &mut ir)?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
-    let configuration_losses =
-        crate::history::configuration::project_configuration_sketch_states(
-            ctx,
-            &mut ir,
-            &histories,
-            &lanes,
-            &mut annotations,
-        )?;
+    let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
+        ctx,
+        &mut ir,
+        &histories,
+        &lanes,
+        &mut annotations,
+    )?;
     ctx.reserve_collection_vec(
         &mut pmi_losses,
         configuration_losses.len(),
@@ -4434,14 +4586,12 @@ fn project_design_history(
         pmi_dimensions,
     } = input;
     let mut semantic_projection = crate::records::charged_clone::clone_histories_charged(
-        ctx, histories, "clone SLDPRT semantic histories",
+        ctx,
+        histories,
+        "clone SLDPRT semantic histories",
     )?;
     let scene_feature_classes = crate::tessellation::scene_feature_classes(ctx, scan)?;
-    crate::history::enrich_scene_classes(
-        ctx,
-        &mut semantic_projection,
-        &scene_feature_classes,
-    )?;
+    crate::history::enrich_scene_classes(ctx, &mut semantic_projection, &scene_feature_classes)?;
     crate::history::configuration::enrich_history_semantic(
         ctx,
         &mut semantic_projection,
@@ -4451,8 +4601,11 @@ fn project_design_history(
     )?;
     ir.model.semantic_annotations =
         crate::history::project::project_semantic_notes(ctx, &semantic_projection)?;
-    crate::history::project::project_feature_model(ctx, &semantic_projection)?
-        .install(ctx, &mut ir.model, losses)?;
+    crate::history::project::project_feature_model(ctx, &semantic_projection)?.install(
+        ctx,
+        &mut ir.model,
+        losses,
+    )?;
     crate::resolved_features::bindings::bind_pattern_inputs(
         ctx,
         &mut ir.model.features,
@@ -4468,7 +4621,9 @@ fn project_design_history(
     ir.model.configurations =
         crate::history::project::project_configurations_charged(ctx, &semantic_projection)?;
     let mut parameter_projection = crate::records::charged_clone::clone_histories_charged(
-        ctx, histories, "clone SLDPRT parameter histories",
+        ctx,
+        histories,
+        "clone SLDPRT parameter histories",
     )?;
     crate::resolved_features::direct_edits::enrich_history_move_face_translations(
         ctx,
@@ -4487,7 +4642,8 @@ fn project_design_history(
             lanes,
         )?;
     crate::pmi::enrich_history_parameters(ctx, &mut parameter_projection, pmi_dimensions)?;
-    ir.model.parameters = crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
+    ir.model.parameters =
+        crate::history::parameters::project_parameters(ctx, &parameter_projection)?;
     crate::history::configuration::project_configuration_design_states(
         ctx,
         ir,
@@ -4526,9 +4682,11 @@ fn parameter_identity_lanes<'a>(
     ctx: &DecodeContext<'_>,
     lanes: &'a [crate::records::FeatureInputLane],
 ) -> Result<Vec<&'a crate::records::FeatureInputLane>, CodecError> {
-    let eligible = || lanes.iter().filter(|lane| {
-        !crate::resolved_features::assembly::is_supplemental_config_lane(lane)
-    });
+    let eligible = || {
+        lanes
+            .iter()
+            .filter(|lane| !crate::resolved_features::assembly::is_supplemental_config_lane(lane))
+    };
     let has_global = eligible().any(|lane| lane.configuration.is_none());
     let single_scoped = !has_global && eligible().count() == 1;
     let mut selected = Vec::new();
@@ -4641,7 +4799,10 @@ fn mark_active_configuration(ir: &mut CadIr) {
     }
 }
 
-fn snapshot_active_configuration(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+fn snapshot_active_configuration(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4691,17 +4852,44 @@ fn snapshot_active_configuration(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Res
         parameter_values.insert(id, value);
     }
     const FEATURE_SNAPSHOT: &str = "retain SLDPRT configuration feature snapshot";
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.features.len()), FEATURE_SNAPSHOT)?;
-    let key_bytes = ir.model.features.iter().try_fold(0u64, |bytes, feature| bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len())))
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
+        FEATURE_SNAPSHOT,
+    )?;
+    let key_bytes = ir
+        .model
+        .features
+        .iter()
+        .try_fold(0u64, |bytes, feature| {
+            bytes.checked_add(cadmpeg_core::decode::u64_from_index(
+                feature.id.as_str().len(),
+            ))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?;
     let mut feature_states = BTreeMap::new();
     for feature in &ir.model.features {
-        ctx.charge_work(key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()))
-            .and_then(|bytes| bytes.checked_mul(8)).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(ir.model.features.len()).checked_mul(64)?))
-            .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?, FEATURE_SNAPSHOT)?;
+        ctx.charge_work(
+            key_bytes
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    feature.id.as_str().len(),
+                ))
+                .and_then(|bytes| bytes.checked_mul(8))
+                .and_then(|work| {
+                    work.checked_add(
+                        cadmpeg_core::decode::u64_from_index(ir.model.features.len())
+                            .checked_mul(64)?,
+                    )
+                })
+                .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?,
+            FEATURE_SNAPSHOT,
+        )?;
         ctx.charge_collection_items(1, FEATURE_SNAPSHOT)?;
-        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), FEATURE_SNAPSHOT)?)
-            .map_err(CodecError::malformed)?;
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(
+            ctx,
+            feature.id.as_str(),
+            FEATURE_SNAPSHOT,
+        )?)
+        .map_err(CodecError::malformed)?;
         let state = feature.configuration_state_charged(ctx, FEATURE_SNAPSHOT)?;
         feature_states.insert(id, state);
     }
@@ -4725,7 +4913,10 @@ fn snapshot_active_configuration(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Res
     Ok(())
 }
 
-fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), cadmpeg_core::CodecError> {
+fn sync_active_configuration_resolutions(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
     let mut active = ir
         .model
         .configurations
@@ -4741,7 +4932,10 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
     }
     let (features, configurations) = (&ir.model.features, &mut ir.model.configurations);
     let configuration = &mut configurations[configuration_index];
-    for feature in features.iter().filter(|feature| feature.suppressed != Some(true)) {
+    for feature in features
+        .iter()
+        .filter(|feature| feature.suppressed != Some(true))
+    {
         ctx.charge_work(1, "scan SLDPRT active configuration holes")?;
         let cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::Hole {
@@ -4821,9 +5015,11 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
                     cadmpeg_ir::features::holes::HoleConstruction::Form { .. },
                     cadmpeg_ir::features::holes::HoleConstruction::Form { .. }
                 )
-            )
-        {
-            Some(configuration_copies::construction(ctx, resolved_construction)?)
+            ) {
+            Some(configuration_copies::construction(
+                ctx,
+                resolved_construction,
+            )?)
         } else {
             None
         };
@@ -4905,7 +5101,8 @@ fn sync_active_configuration_resolutions(ctx: &DecodeContext<'_>, ir: &mut CadIr
                     | cadmpeg_ir::features::FaceSelection::Native(_)
             )
         {
-            *face = resolved_face.try_clone_charged(ctx, "copy SLDPRT resolved cosmetic thread face")?;
+            *face = resolved_face
+                .try_clone_charged(ctx, "copy SLDPRT resolved cosmetic thread face")?;
         }
     }
     for feature in features {
@@ -5020,20 +5217,19 @@ fn assign_configuration_bodies(
                 "merge SLDPRT configuration bodies",
             )?;
             if !merged.contains(&body) {
-                ctx.reserve_precharged_vec(
-                    merged,
-                    1,
-                    "merge SLDPRT configuration bodies",
-                )?;
+                ctx.reserve_precharged_vec(merged, 1, "merge SLDPRT configuration bodies")?;
                 merged.push(body);
             }
         }
     }
 
     let mut source_counts = BTreeMap::<u32, usize>::new();
-    for source_index in ir.model.configurations.iter().filter_map(|configuration| {
-        configuration.source_index
-    }) {
+    for source_index in ir
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.source_index)
+    {
         ctx.charge_work(1, "count SLDPRT configuration sources")?;
         match source_counts.entry(source_index) {
             Entry::Occupied(mut entry) => *entry.get_mut() += 1,
@@ -5048,12 +5244,10 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
-            configuration.bodies = Some(
-                cadmpeg_ir::features::DistinctMembers::try_from_charged(
-                    partition_map.remove(&source_index).unwrap_or_default(),
-                    ctx,
-                )?,
-            );
+            configuration.bodies = Some(cadmpeg_ir::features::DistinctMembers::try_from_charged(
+                partition_map.remove(&source_index).unwrap_or_default(),
+                ctx,
+            )?);
         }
     }
     if let Some((active_index, position)) = bind_active_configuration_partition(ir) {
@@ -5066,7 +5260,11 @@ fn assign_configuration_bodies(
     for (source_index, bodies) in partition_map {
         ctx.charge_work(
             u64::try_from(ir.model.configurations.len()).map_err(|_| {
-                ctx.refuse_codec_limit("order SLDPRT partition configurations", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "order SLDPRT partition configurations",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?,
             "order SLDPRT partition configurations",
         )?;
@@ -5095,9 +5293,9 @@ fn assign_configuration_bodies(
                 name: format!("Config-{source_index}").into(),
                 material: None,
                 properties: std::collections::BTreeMap::new(),
-                bodies: Some(
-                    cadmpeg_ir::features::DistinctMembers::try_from_charged(bodies, ctx)?,
-                ),
+                bodies: Some(cadmpeg_ir::features::DistinctMembers::try_from_charged(
+                    bodies, ctx,
+                )?),
                 parameter_values: std::collections::BTreeMap::new(),
                 parameter_overrides: BTreeMap::new(),
                 feature_states: std::collections::BTreeMap::new(),
@@ -5180,7 +5378,8 @@ fn stamp_configuration_baseline(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Resu
 /// geometry through libm). `sldprt_native_sketch_sha256` has no suffix: it
 /// digests lane fields that are strings, integers, or verbatim `f64` bit
 /// patterns from the payload.
-fn stamp_sketch_baseline(ctx: &DecodeContext<'_>, 
+fn stamp_sketch_baseline(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     lanes: &[crate::records::FeatureInputLane],
 ) -> Result<(), CodecError> {
@@ -5320,7 +5519,10 @@ pub(crate) fn brep_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// `appearances` and `appearance_bindings` — are copied. Body display fields
 /// move into a charged vector and back, so `ir` is bit-identical afterwards and both entry
 /// points produce the same digest for the same document.
-fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<String, CodecError> {
+fn brep_local_sha256_in_place(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+) -> Result<String, CodecError> {
     use std::mem::take;
 
     let comparisons = ir
@@ -5330,7 +5532,9 @@ fn brep_local_sha256_in_place(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result
         .checked_mul(ir.model.appearances.len())
         .and_then(|pairs| pairs.checked_add(ir.model.appearance_bindings.len()))
         .and_then(|count| count.checked_add(ir.model.appearances.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(
         u64::try_from(comparisons).map_err(|_| {
             ctx.refuse_codec_limit("filter SLDPRT digest appearances", u64::MAX - 1, u64::MAX)
@@ -5419,8 +5623,8 @@ mod digest_tests {
     use super::brep_local_sha256_in_place;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId, FaceId};
     use cadmpeg_ir::topology::{Body, BodyKind};
     use std::collections::BTreeMap;
@@ -5480,11 +5684,8 @@ mod digest_tests {
     #[test]
     fn digest_restores_body_display_fields() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            b"digest",
-            &arena,
-            &DecodePolicy::service(),
-        ).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"digest", &arena, &DecodePolicy::service()).unwrap();
         let mut ir = named_body_document();
         let original = ir.model.bodies[0].clone();
         brep_local_sha256_in_place(&ctx, &mut ir).unwrap();
@@ -5532,12 +5733,15 @@ mod digest_tests {
     #[test]
     fn digest_restores_appearance_order() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            b"digest", &arena, &DecodePolicy::service(),
-        ).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"digest", &arena, &DecodePolicy::service()).unwrap();
         let mut ir = CadIr::empty();
-        ir.model.appearances.push(appearance("synthetic:test:id#body-appearance"));
-        ir.model.appearances.push(appearance("synthetic:test:id#face-appearance"));
+        ir.model
+            .appearances
+            .push(appearance("synthetic:test:id#body-appearance"));
+        ir.model
+            .appearances
+            .push(appearance("synthetic:test:id#face-appearance"));
         ir.model.appearance_bindings.push(binding(
             "synthetic:test:id#body-binding",
             AppearanceTarget::Body(BodyId::mint("synthetic:test:id#digest-body").unwrap()),
@@ -5581,10 +5785,11 @@ fn brep_partition_sha256(
         .appearance_bindings
         .retain(|binding| matches!(binding.target, AppearanceTarget::Face(_)));
     let bindings = &normalized.model.appearance_bindings;
-    normalized
-        .model
-        .appearances
-        .retain(|appearance| bindings.iter().any(|binding| binding.appearance == appearance.id));
+    normalized.model.appearances.retain(|appearance| {
+        bindings
+            .iter()
+            .any(|binding| binding.appearance == appearance.id)
+    });
     Ok((
         cadmpeg_ir::hash::canonical_json_sha256(&normalized)?,
         normalized.model,
@@ -5698,7 +5903,8 @@ fn append_swift_pmi_losses(
     if unsupported.is_empty() {
         return Ok(());
     }
-    let scan_work = cadmpeg_core::decode::u64_from_index(unsupported.len()).checked_mul(2)
+    let scan_work = cadmpeg_core::decode::u64_from_index(unsupported.len())
+        .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(scan_work, OPERATION)?;
     let count = unsupported.values().try_fold(0usize, |sum, value| {
@@ -5710,31 +5916,34 @@ fn append_swift_pmi_losses(
         let digits = if *class_count == 0 {
             1
         } else {
-            usize::try_from(class_count.ilog10()).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })? + 1
+            usize::try_from(class_count.ilog10())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?
+                + 1
         };
-        let addition = class.len()
+        let addition = class
+            .len()
             .checked_add(digits)
             .and_then(|len| len.checked_add(3))
             .and_then(|len| len.checked_add(usize::from(index > 0) * 2))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        classes_len = classes_len.checked_add(addition)
+        classes_len = classes_len
+            .checked_add(addition)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    let (mut classes, _reservation) = crate::text_admission::reserve_scoped_string(ctx, classes_len, OPERATION)?;
+    let (mut classes, _reservation) =
+        crate::text_admission::reserve_scoped_string(ctx, classes_len, OPERATION)?;
     for (index, (class, class_count)) in unsupported.iter().enumerate() {
         if index > 0 {
             classes.push_str(", ");
         }
         classes.push_str(class);
         classes.push_str(" (");
-        write!(&mut classes, "{class_count}").map_err(|_| {
-            ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        write!(&mut classes, "{class_count}")
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         classes.push(')');
     }
-    let message = crate::text_admission::format_retained(ctx, 
+    let message = crate::text_admission::format_retained(
+        ctx,
         format_args!(
             "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
         ),

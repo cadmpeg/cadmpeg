@@ -52,10 +52,7 @@ fn retained_refusal_at(
     panic!("target charge was not reached within fixture admissions");
 }
 
-fn collection_refusal_at(
-    source: &[u8],
-    operation: &str,
-) -> cadmpeg_core::decode::ResourceLimit {
+fn collection_refusal_at(source: &[u8], operation: &str) -> cadmpeg_core::decode::ResourceLimit {
     collection_refusal_with_options(source, DecodeOptions::default(), operation)
 }
 
@@ -71,7 +68,8 @@ fn collection_refusal_with_options(
         let error = SldprtCodec
             .decode(&mut Cursor::new(source), &options)
             .expect_err("collection limit must refuse the decode");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
         else {
             panic!("expected a collection-item refusal");
         };
@@ -108,7 +106,8 @@ fn work_refusal_with_options(
         let error = SldprtCodec
             .decode(&mut Cursor::new(source), &options)
             .expect_err("work limit must refuse the decode");
-        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) = error
+        let cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)) =
+            error
         else {
             panic!("expected a work-unit refusal");
         };
@@ -215,11 +214,7 @@ fn merged_brep_site_identity_refuses_retained_limit() {
     ));
     let mut options = DecodeOptions::default();
     options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &source,
-        &mut options,
-        "qualify SLDPRT identity",
-    );
+    let error = retained_refusal_at(&source, &mut options, "qualify SLDPRT identity");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -297,11 +292,8 @@ fn metadata_document_attributes_refuse_collection_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = collection_refusal_with_options(
-        &source,
-        options,
-        "collect SLDPRT document attributes",
-    );
+    let limit =
+        collection_refusal_with_options(&source, options, "collect SLDPRT document attributes");
     assert_eq!(limit.additional, 1);
 }
 
@@ -332,24 +324,17 @@ fn metadata_history_xml_refuses_scoped_limit() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
     let scan = container::scan_bytes(&source);
-    let classification = crate::dialect::classify_layers(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .unwrap();
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let mut admitted_entities = 0;
-    let error = super::super::build_metadata_ir(
-        &ctx,
-        &scan,
-        &classification,
-        None,
-        &mut admitted_entities,
-    )
-    .expect_err("history XML text exceeds the scoped materialization limit");
+    let error =
+        super::super::build_metadata_ir(&ctx, &scan, &classification, None, &mut admitted_entities)
+            .expect_err("history XML text exceeds the scoped materialization limit");
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
@@ -390,11 +375,8 @@ fn metadata_custom_property_projection_refuses_collection_limit() {
         container_only: true,
         ..DecodeOptions::default()
     };
-    let limit = collection_refusal_with_options(
-        &source,
-        options,
-        "project SLDPRT custom properties",
-    );
+    let limit =
+        collection_refusal_with_options(&source, options, "project SLDPRT custom properties");
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
     assert_eq!(limit.additional, 1);
 }
@@ -409,11 +391,7 @@ fn metadata_custom_property_projection_refuses_retained_limit() {
         ..DecodeOptions::default()
     };
     options.policy.limits.max_retained_bytes = 1;
-    let error = retained_refusal_at(
-        &source,
-        &mut options,
-        "project SLDPRT custom properties",
-    );
+    let error = retained_refusal_at(&source, &mut options, "project SLDPRT custom properties");
     assert!(matches!(
         error,
         cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
@@ -538,11 +516,9 @@ fn geometry_history_xml_refuses_scoped_limit() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
     let mut scan = container::scan_bytes(&source);
-    let classification = crate::dialect::classify_layers(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .unwrap();
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = (payload.len() - 1) as u64;
@@ -776,7 +752,9 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let stream_entities = crate::decode::active_body_streams(&ctx, &scan).unwrap().len();
+    let stream_entities = crate::decode::active_body_streams(&ctx, &scan)
+        .unwrap()
+        .len();
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
@@ -946,7 +924,9 @@ mod projections;
 fn decoded_curve_carrier_copy_refuses_work_limit() {
     let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
     let options = DecodeOptions::default();
-    let decoded = SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap();
     assert!(!decoded.ir().model.curves.is_empty());
     work_refusal_with_options(&source, options, "copy Parasolid NURBS curve");
 }

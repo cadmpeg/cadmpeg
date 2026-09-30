@@ -84,7 +84,13 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
     let second = entity("second", 144, [3.0, 4.0]);
     let markers = [&line, &first, &second];
     assert_eq!(
-        coordinate_centered_line_endpoints(&cadmpeg_test_support::service_decode_context(), &payload, &line, &markers).unwrap(),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &line,
+            &markers
+        )
+        .unwrap(),
         Some([&first, &second])
     );
 
@@ -109,12 +115,24 @@ fn coordinate_lines_use_their_centered_endpoint_pairs() {
     extended_line.coordinates_m = None;
     let markers = [&extended_line, &first, &second];
     assert_eq!(
-        coordinate_centered_line_endpoints(&cadmpeg_test_support::service_decode_context(), &extended, &extended_line, &markers).unwrap(),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &extended,
+            &extended_line,
+            &markers
+        )
+        .unwrap(),
         Some([&first, &second])
     );
     extended[84] ^= 1;
     assert_eq!(
-        coordinate_centered_line_endpoints(&cadmpeg_test_support::service_decode_context(), &extended, &extended_line, &markers).unwrap(),
+        coordinate_centered_line_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &extended,
+            &extended_line,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -266,17 +284,29 @@ fn extended_wide_selected_axis_uses_object_ids_then_one_based_point_roster() {
     let markers = [&curve, &first, &second, &third];
 
     assert_eq!(
-        extended_wide_selected_axis_endpoints(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
-            .expect("object-index endpoints")
-            .map(crate::records::SketchInputEntity::id),
+        extended_wide_selected_axis_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .expect("object-index endpoints")
+        .map(crate::records::SketchInputEntity::id),
         ["first", "second"]
     );
 
     payload[64..66].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        extended_wide_selected_axis_endpoints(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
-            .expect("one-based roster endpoints")
-            .map(crate::records::SketchInputEntity::id),
+        extended_wide_selected_axis_endpoints(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap()
+        .expect("one-based roster endpoints")
+        .map(crate::records::SketchInputEntity::id),
         ["third", "second"]
     );
 }
@@ -319,8 +349,14 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         .chain(points.iter())
         .collect::<Vec<_>>();
 
-    let endpoints = one_based_point_roster_line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
-        .expect("one-based point roster");
+    let endpoints = one_based_point_roster_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap()
+    .expect("one-based point roster");
     assert_eq!(
         endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
@@ -333,13 +369,25 @@ fn current_line_resolves_one_based_point_roster_endpoints() {
         .chain(std::iter::once(&arc))
         .collect::<Vec<_>>();
     assert_eq!(
-        one_based_point_roster_line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &mixed).unwrap(),
+        one_based_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &mixed
+        )
+        .unwrap(),
         None
     );
 
     payload[56..58].fill(0);
     assert_eq!(
-        one_based_point_roster_line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap(),
+        one_based_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -383,8 +431,14 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
         .chain(points.iter())
         .collect::<Vec<_>>();
 
-    let endpoints = legacy_point_roster_line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
-        .expect("zero-based point roster");
+    let endpoints = legacy_point_roster_line_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &curve,
+        &markers,
+    )
+    .unwrap()
+    .expect("zero-based point roster");
     assert_eq!(
         endpoints.map(crate::records::SketchInputEntity::id),
         ["second", "fourth"]
@@ -392,7 +446,13 @@ fn legacy_geometry_locus_line_resolves_zero_based_point_roster_endpoints() {
 
     payload[80..84].fill(0xff);
     assert_eq!(
-        legacy_point_roster_line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap(),
+        legacy_point_roster_line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &curve,
+            &markers
+        )
+        .unwrap(),
         None
     );
 }
@@ -460,7 +520,13 @@ fn native_owner_operand_keeps_a_missing_source_index() {
         owner = owner.with_test_identity(owner.object_index(), index);
         let markers = HashMap::from([(relation.id(), &relation), (owner.id(), &owner)]);
         let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
-            typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap()
+            typed_marker_relation_definition(
+                &cadmpeg_test_support::service_decode_context(),
+                &relation,
+                &markers,
+                &HashMap::new(),
+            )
+            .unwrap()
         else {
             panic!("native relation");
         };

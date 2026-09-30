@@ -16,9 +16,9 @@ use super::super::unique_repaired_profile_line_angle_pair;
 use super::super::unique_repaired_profile_line_distance_pair;
 use super::super::unique_repaired_profile_point_line_pair;
 use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
-use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::transforms::tests::marker;
 use crate::resolved_features::transforms::ProfileAxis;
+use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::typed_relations::binary_relation_matches_evaluated_geometry;
 use crate::resolved_features::typed_relations::marker_relation_is_inactive;
 use crate::resolved_features::typed_relations::typed_marker_relation_definition_in_sketch;
@@ -321,47 +321,56 @@ fn locus_relations_require_matching_evaluated_geometry() {
         ),
     ]);
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &coincident,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &merge_points,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::ArcAngle { .. })
     ));
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &symmetric,
             &sketch,
             &[
@@ -371,7 +380,8 @@ fn locus_relations_require_matching_evaluated_geometry() {
             ],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(symmetric_first.id().clone()),
             second: SketchLocus::Entity(symmetric_second.id().clone()),
@@ -379,13 +389,15 @@ fn locus_relations_require_matching_evaluated_geometry() {
         })
     );
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::AtIntersection {
             point: SketchLocus::Entity(first.id().clone()),
             first: line.id().clone(),
@@ -397,23 +409,27 @@ fn locus_relations_require_matching_evaluated_geometry() {
         position: Point2::new(1.0, 0.0),
     })
     .unwrap();
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &coincident,
         &sketch,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
         &markers,
         &loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed coincident relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::CoincidentLoci { .. }
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &coincident,
         &definition,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
-    ).unwrap());
+    )
+    .unwrap());
     first.clone_from(&entity(
         "synthetic:test:id#first",
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -422,23 +438,27 @@ fn locus_relations_require_matching_evaluated_geometry() {
         .unwrap(),
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -449,13 +469,15 @@ fn locus_relations_require_matching_evaluated_geometry() {
     })
     .unwrap();
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     symmetric_second.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -463,13 +485,15 @@ fn locus_relations_require_matching_evaluated_geometry() {
     })
     .unwrap();
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &symmetric,
             &sketch,
             &[symmetric_first, symmetric_second, symmetry_axis],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
@@ -505,7 +529,8 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
     let second = point("synthetic:test:id#second", 3.0, 4.0);
     let unrelated = point("synthetic:test:id#unrelated", 20.0, 20.0);
     assert_eq!(
-        unique_profile_distance_loci_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_distance_loci_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[
@@ -514,7 +539,8 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
                 second.clone(),
                 unrelated.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((
             SketchLocus::Entity(first.id().clone()),
             SketchLocus::Entity(second.id().clone()),
@@ -523,11 +549,13 @@ fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
 
     let ambiguous = point("synthetic:test:id#ambiguous", 23.0, 24.0);
     assert_eq!(
-        unique_profile_distance_loci_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_distance_loci_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -565,28 +593,39 @@ fn axis_distance_fallback_requires_one_pair_in_the_complete_sketch() {
     let second_locus = SketchLocus::Entity(second.id().clone());
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_axis_distance_locus(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_axis_distance_locus(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &first_locus,
             &parameter,
             &entities,
             ProfileAxis::U,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(second_locus.clone())
     );
     assert_eq!(
-        unique_profile_axis_distance_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities, ProfileAxis::U).unwrap(),
+        unique_profile_axis_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            &parameter,
+            &entities,
+            ProfileAxis::U
+        )
+        .unwrap(),
         Some((first_locus, second_locus))
     );
 
     let ambiguous = point("synthetic:test:id#ambiguous", 10.0, 30.0);
     assert_eq!(
-        unique_profile_axis_distance_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_axis_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
             ProfileAxis::U,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -631,11 +670,24 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     };
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_line_distance_entity(&cadmpeg_test_support::service_decode_context(), &sketch, first.id(), &parameter, &entities).unwrap(),
+        unique_profile_line_distance_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            first.id(),
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some(second.id().clone())
     );
     assert_eq!(
-        unique_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities).unwrap(),
+        unique_profile_line_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some((first.id().clone(), second.id().clone()))
     );
 
@@ -645,7 +697,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, 2.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             first.id(),
             wrong.id(),
@@ -656,7 +709,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
                 second.clone(),
                 unrelated.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((first.id().clone(), second.id().clone()))
     );
 
@@ -666,13 +720,15 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, -5.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             first.id(),
             wrong.id(),
             &parameter,
             &[first.clone(), wrong.clone(), second.clone(), other_solved,],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -687,7 +743,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(30.0, 25.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             first.id(),
             wrong.id(),
@@ -698,7 +755,8 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
                 unrelated_first,
                 unrelated_second,
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -708,11 +766,13 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, 10.0),
     );
     assert_eq!(
-        unique_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_line_distance_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -759,11 +819,24 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     };
     let entities = [horizontal.clone(), vertical.clone(), diagonal.clone()];
     assert_eq!(
-        unique_profile_line_angle_entity(&cadmpeg_test_support::service_decode_context(), &sketch, horizontal.id(), &parameter, &entities).unwrap(),
+        unique_profile_line_angle_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            horizontal.id(),
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some(vertical.id().clone())
     );
     assert_eq!(
-        unique_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities).unwrap(),
+        unique_profile_line_angle_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
@@ -773,7 +846,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(3.0_f64.sqrt(), 1.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_angle_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -784,7 +858,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 vertical.clone(),
                 diagonal.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
@@ -794,7 +869,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(5.0, 10.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_angle_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -805,7 +881,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 vertical.clone(),
                 ambiguous.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -820,7 +897,8 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(-3.0_f64.sqrt() * 0.5, 0.5),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_line_angle_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -831,15 +909,18 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 unrelated_first,
                 unrelated_second,
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        unique_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_line_angle_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[horizontal, vertical, diagonal, ambiguous],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -888,15 +969,35 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
     let point_locus = SketchLocus::Entity(point.id().clone());
     let entities = [point.clone(), horizontal.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_point_line_entity(&cadmpeg_test_support::service_decode_context(), &sketch, &point_locus, &parameter, &entities).unwrap(),
+        unique_profile_point_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            &point_locus,
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some(horizontal.id().clone())
     );
     assert_eq!(
-        unique_profile_line_point_locus(&cadmpeg_test_support::service_decode_context(), &sketch, horizontal.id(), &parameter, &entities).unwrap(),
+        unique_profile_line_point_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            horizontal.id(),
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some(point_locus.clone())
     );
     assert_eq!(
-        unique_profile_point_line_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities).unwrap(),
+        unique_profile_point_line_pair(
+            &cadmpeg_test_support::service_decode_context(),
+            &sketch,
+            &parameter,
+            &entities
+        )
+        .unwrap(),
         Some((point_locus, horizontal.id().clone()))
     );
 
@@ -906,7 +1007,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(10.0, 2.0),
     );
     assert_eq!(
-        unique_repaired_profile_point_line_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_point_line_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &SketchLocus::Entity(point.id().clone()),
             wrong.id(),
@@ -917,7 +1019,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
                 horizontal.clone(),
                 unrelated.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some((
             SketchLocus::Entity(point.id().clone()),
             horizontal.id().clone(),
@@ -930,7 +1033,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(10.0, 10.0),
     );
     assert_eq!(
-        unique_repaired_profile_point_line_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_point_line_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &SketchLocus::Entity(point.id().clone()),
             wrong.id(),
@@ -941,7 +1045,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
                 horizontal.clone(),
                 ambiguous.clone(),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 
@@ -963,7 +1068,8 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(30.0, 20.0),
     );
     assert_eq!(
-        unique_repaired_profile_point_line_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_repaired_profile_point_line_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &SketchLocus::Entity(point.id().clone()),
             wrong.id(),
@@ -974,15 +1080,18 @@ fn point_line_fallback_requires_one_pair_in_the_complete_sketch() {
                 unrelated_point,
                 unrelated_line,
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        unique_profile_point_line_pair(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_point_line_pair(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &parameter,
             &[point, horizontal, unrelated, ambiguous],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1037,7 +1146,8 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
         vec![SketchLocus::Entity(first_entity.id().clone())],
     )]);
     assert_eq!(
-        unique_axis_aligned_linked_loci(&cadmpeg_test_support::service_decode_context(), 
+        unique_axis_aligned_linked_loci(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &[
@@ -1048,7 +1158,8 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
             &markers,
             &loci,
             ProfileAxis::U,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![
             SketchLocus::Entity(first_entity.id().clone()),
             SketchLocus::Entity(second_entity.id().clone()),
@@ -1057,14 +1168,16 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
 
     let ambiguous = point("synthetic:test:id#ambiguous", 6.0, 2.0);
     assert_eq!(
-        unique_axis_aligned_linked_loci(&cadmpeg_test_support::service_decode_context(), 
+        unique_axis_aligned_linked_loci(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &[first_entity, second_entity, unrelated, ambiguous],
             &markers,
             &loci,
             ProfileAxis::U,
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -1113,13 +1226,15 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
     .with_native_ref(Some(point.id().to_string()));
 
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Fixed { entity: point_id })
     );
 }
@@ -1191,12 +1306,14 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), 
+        single_marker_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
             relation.id(),
             &markers,
             &loci,
             &[line, first_entity, second_entity],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(line_id)
     );
 }
@@ -1226,11 +1343,25 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
     ]);
 
     assert_eq!(
-        resolved_marker_locus(&cadmpeg_test_support::service_decode_context(), ambiguous.id(), &markers, &loci, &mut HashSet::new()).unwrap(),
+        resolved_marker_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            ambiguous.id(),
+            &markers,
+            &loci,
+            &mut HashSet::new()
+        )
+        .unwrap(),
         Some(expected)
     );
     assert_eq!(
-        marker_entities(&cadmpeg_test_support::service_decode_context(), ambiguous.id(), &markers, &loci, MarkerEntityFilter::All).unwrap(),
+        marker_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            ambiguous.id(),
+            &markers,
+            &loci,
+            MarkerEntityFilter::All
+        )
+        .unwrap(),
         vec![SketchEntityId::mint("synthetic:test:id#line-a").unwrap()]
     );
 }
@@ -1274,7 +1405,14 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
     )]);
 
     assert_eq!(
-        resolved_marker_locus(&cadmpeg_test_support::service_decode_context(), point.id(), &markers, &loci, &mut HashSet::new()).unwrap(),
+        resolved_marker_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            point.id(),
+            &markers,
+            &loci,
+            &mut HashSet::new()
+        )
+        .unwrap(),
         None
     );
 }

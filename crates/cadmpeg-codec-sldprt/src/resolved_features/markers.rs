@@ -15,9 +15,7 @@ use super::endpoints::{
     wide_indexed_curve_endpoint_indices,
 };
 use super::relation_loci::same_dimension_length;
-use super::relation_records::{
-    unique_relation_declaration_candidates_charged,
-};
+use super::relation_records::unique_relation_declaration_candidates_charged;
 use super::scalars::{feature_object_name, operand_kind};
 use super::selections::{marker_local_links, operand_accepts_marker};
 use super::{
@@ -68,18 +66,30 @@ pub(crate) fn spatial_sketches(
     )?;
     let record_count = histories.iter().try_fold(0usize, |count, history| {
         count.checked_add(history.features.len()).ok_or_else(|| {
-            ctx.refuse_codec_limit("index SLDPRT spatial feature records", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "index SLDPRT spatial feature records",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })
     })?;
     ctx.charge_collection_items(
         u64::try_from(record_count).map_err(|_| {
-            ctx.refuse_codec_limit("index SLDPRT spatial feature records", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "index SLDPRT spatial feature records",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?,
         "index SLDPRT spatial feature records",
     )?;
     let mut records = HashMap::new();
     records.try_reserve(record_count).map_err(|_| {
-        ctx.refuse_codec_limit("index SLDPRT spatial feature records", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "index SLDPRT spatial feature records",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     for record in histories.iter().flat_map(|history| &history.features) {
         records.insert(record.id.as_str(), record);
@@ -133,27 +143,38 @@ pub(crate) fn spatial_sketches(
                     continue;
                 };
                 if !relation_ranges.is_empty()
-                    && (!relation_ranges.iter().any(|(start, end)| {
-                        marker.offset() > *start && marker.offset() < *end
-                    }) || !matches!(
-                        marker_native_code(&lane.native_payload, offset),
-                        Some(1..=85)
-                    ))
+                    && (!relation_ranges
+                        .iter()
+                        .any(|(start, end)| marker.offset() > *start && marker.offset() < *end)
+                        || !matches!(
+                            marker_native_code(&lane.native_payload, offset),
+                            Some(1..=85)
+                        ))
                 {
                     continue;
                 }
-                let point = marker_spatial_coordinates(&lane.native_payload, offset).or_else(|| {
-                    declared_spatial.then(|| {
-                        current_indexed_spatial_relation_coordinates(&lane.native_payload, offset)
-                    }).flatten()
-                });
+                let point =
+                    marker_spatial_coordinates(&lane.native_payload, offset).or_else(|| {
+                        declared_spatial
+                            .then(|| {
+                                current_indexed_spatial_relation_coordinates(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                            })
+                            .flatten()
+                    });
                 if let Some(point) = point {
                     ctx.reserve_collection_vec(&mut points, 1, "collect SLDPRT spatial points")?;
                     points.push((marker.id(), point, offset));
                 }
             }
             if !points.is_empty() {
-                ctx.reserve_collection_vec(&mut point_candidates, 1, "collect SLDPRT spatial point lanes")?;
+                ctx.reserve_collection_vec(
+                    &mut point_candidates,
+                    1,
+                    "collect SLDPRT spatial point lanes",
+                )?;
                 point_candidates.push((lane, points));
             }
         }
@@ -171,9 +192,11 @@ pub(crate) fn spatial_sketches(
             let mut projected = Vec::new();
             let mut valid_points = true;
             for (native_ref, point, offset) in points {
-                let Ok(geometry) = SpatialSketchGeometry::try_from(
-                    SpatialSketchGeometryDefinition::Point { position: *point },
-                ) else {
+                let Ok(geometry) =
+                    SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                        position: *point,
+                    })
+                else {
                     valid_points = false;
                     break;
                 };
@@ -184,14 +207,14 @@ pub(crate) fn spatial_sketches(
             if !valid_points {
                 continue;
             }
-            let lines = spatial_line_vertices_charged(ctx, histories, record, lane)?
-                .unwrap_or_default();
+            let lines =
+                spatial_line_vertices_charged(ctx, histories, record, lane)?.unwrap_or_default();
             let mut projected_lines = Vec::new();
             let mut valid_lines = true;
             for (offsets, vertices) in lines.1.chunks_exact(2).zip(lines.2.chunks_exact(2)) {
-                let Ok(geometry) = SpatialSketchGeometry::try_line_from_parts(
-                    vertices[0], vertices[1],
-                ) else {
+                let Ok(geometry) =
+                    SpatialSketchGeometry::try_line_from_parts(vertices[0], vertices[1])
+                else {
                     valid_lines = false;
                     break;
                 };
@@ -213,9 +236,16 @@ pub(crate) fn spatial_sketches(
             projected.extend(projected_lines);
             projected.sort_unstable_by_key(|(offset, ..)| *offset);
             let sketch_record_id = clone_spatial_sketch_id(ctx, &sketch_id)?;
-            let name = feature.name.as_deref().map(|name| copy_spatial_text(ctx, name)).transpose()?;
+            let name = feature
+                .name
+                .as_deref()
+                .map(|name| copy_spatial_text(ctx, name))
+                .transpose()?;
             let configuration = if point_candidates.len() == 1 {
-                lane.configuration.as_deref().map(|name| copy_spatial_text(ctx, name)).transpose()?
+                lane.configuration
+                    .as_deref()
+                    .map(|name| copy_spatial_text(ctx, name))
+                    .transpose()?
             } else {
                 None
             };
@@ -230,7 +260,8 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(native_lane_ref),
             });
             for (index, (_, native_ref, geometry)) in projected.into_iter().enumerate() {
-                let entity_id = crate::text_admission::format_retained(ctx, 
+                let entity_id = crate::text_admission::format_retained(
+                    ctx,
                     format_args!("{}:entity:{index}", sketch_id.as_str()),
                     "retain SLDPRT spatial entity identity",
                 )?;
@@ -278,7 +309,11 @@ pub(crate) fn spatial_sketches(
             };
             let vertices = spatial_vertex_coordinates_charged(ctx, object)?;
             if vertices.len() >= 2 && vertices.len().is_multiple_of(2) {
-                ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT spatial line lanes")?;
+                ctx.reserve_collection_vec(
+                    &mut candidates,
+                    1,
+                    "collect SLDPRT spatial line lanes",
+                )?;
                 candidates.push((lane, vertices));
             }
         }
@@ -297,7 +332,8 @@ pub(crate) fn spatial_sketches(
         let mut projected = Vec::new();
         let mut valid_lines = true;
         for (index, vertices) in vertices.chunks_exact(2).enumerate() {
-            let entity_id = crate::text_admission::format_retained(ctx, 
+            let entity_id = crate::text_admission::format_retained(
+                ctx,
                 format_args!("{}:entity:{index}", sketch_id.as_str()),
                 "retain SLDPRT spatial entity identity",
             )?;
@@ -317,8 +353,16 @@ pub(crate) fn spatial_sketches(
         }
 
         let sketch_record_id = clone_spatial_sketch_id(ctx, &sketch_id)?;
-        let name = feature.name.as_deref().map(|name| copy_spatial_text(ctx, name)).transpose()?;
-        let configuration = lane.configuration.as_deref().map(|name| copy_spatial_text(ctx, name)).transpose()?;
+        let name = feature
+            .name
+            .as_deref()
+            .map(|name| copy_spatial_text(ctx, name))
+            .transpose()?;
+        let configuration = lane
+            .configuration
+            .as_deref()
+            .map(|name| copy_spatial_text(ctx, name))
+            .transpose()?;
         let native_lane_ref = copy_spatial_text(ctx, &lane.id)?;
         ctx.reserve_collection_vec(&mut sketches, 1, "collect SLDPRT spatial sketches")?;
         sketches.push(SpatialSketch {
@@ -347,11 +391,19 @@ pub(crate) fn spatial_sketches(
 }
 
 fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT spatial identity", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain SLDPRT spatial identity", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT spatial identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT spatial identity")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut copy,
+        value.len(),
+        "retain SLDPRT spatial identity",
+    )?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -365,7 +417,8 @@ fn spatial_sketch_id_charged(
     let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
         let (head, tail) = feature_id.split_at(index);
         let suffix = &tail[FEATURE_PREFIX.len()..];
-        crate::text_admission::format_retained(ctx, 
+        crate::text_admission::format_retained(
+            ctx,
             format_args!("{head}{SKETCH_PREFIX}{suffix}"),
             "retain SLDPRT spatial sketch identity",
         )?
@@ -414,7 +467,7 @@ fn spatial_line_vertices_charged(
         && vertices
             .chunks_exact(2)
             .all(|vertices| vertices[0] != vertices[1]))
-        .then_some((start, offsets, vertices)))
+    .then_some((start, offsets, vertices)))
 }
 
 pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
@@ -856,7 +909,7 @@ pub(super) fn admit_sketch_input_entities(
         .enumerate()
         .try_fold(Vec::new(), |mut entities, (ordinal, offset)| {
             let Some(code) = marker_native_code(payload, offset) else {
-                return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
+                return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
                     format_args!("SolidWorks feature-input marker at byte {offset} has no native code"),
                     "report SLDPRT marker native code",
                 )?));
@@ -998,18 +1051,18 @@ pub(super) fn admit_sketch_input_entities(
             let ordinal = match u32::try_from(ordinal) {
                 Ok(ordinal) => ordinal,
                 Err(_) => {
-                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
+                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
                         format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"),
                         "report SLDPRT marker count",
                     )?));
                 }
             };
-            let id = crate::text_admission::format_retained(ctx, 
+            let id = crate::text_admission::format_retained(ctx,
                 format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
                 "retain SLDPRT sketch marker identity",
             )?;
             let mut parent_copy = String::new();
-            crate::text_admission::reserve_retained_string(ctx, 
+            crate::text_admission::reserve_retained_string(ctx,
                 &mut parent_copy,
                 parent.len(),
                 "retain SLDPRT sketch marker parent",
@@ -1028,7 +1081,7 @@ pub(super) fn admit_sketch_input_entities(
             ) {
                 Ok(entity) => entity,
                 Err(error) => {
-                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
+                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
                         format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"),
                         "report SLDPRT marker construction",
                     )?));
@@ -1287,14 +1340,19 @@ pub(super) fn relation_bindings_scoped(
     intervals: &[(u64, Option<u64>, String)],
 ) -> Result<Vec<FeatureInputRelationBinding>, CodecError> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    let candidates = unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
+    let candidates =
+        unique_relation_declaration_candidates_charged(ctx, classes, scalars, intervals)?;
     let mut bindings = Vec::new();
     for (class, scalar, family) in candidates {
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
         })?;
-        let id = crate::text_admission::format_retained(ctx, 
-            format_args!("sldprt:feature-input:relation-binding#{lane_key}:{}", class.offset),
+        let id = crate::text_admission::format_retained(
+            ctx,
+            format_args!(
+                "sldprt:feature-input:relation-binding#{lane_key}:{}",
+                class.offset
+            ),
             "retain SLDPRT relation binding identity",
         )?;
         let parent = copy_reference_text(ctx, parent)?;
@@ -1348,7 +1406,12 @@ pub(crate) fn reference_cells_charged(
             });
         }
     }
-    ctx.stable_sort_by(&mut cells, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort SLDPRT reference cells")?;
+    ctx.stable_sort_by(
+        &mut cells,
+        |left, right| left.offset.cmp(&right.offset),
+        |_| 0,
+        "sort SLDPRT reference cells",
+    )?;
     cells.dedup_by_key(|cell| cell.offset);
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = u32::try_from(ordinal).map_err(|_| {
@@ -1356,11 +1419,19 @@ pub(crate) fn reference_cells_charged(
         })?;
     }
     let comparisons = cells.len().checked_mul(classes.len()).ok_or_else(|| {
-        ctx.refuse_codec_limit("match SLDPRT reference declarations", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "match SLDPRT reference declarations",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     ctx.charge_work(
         u64::try_from(comparisons).map_err(|_| {
-            ctx.refuse_codec_limit("match SLDPRT reference declarations", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "match SLDPRT reference declarations",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?,
         "match SLDPRT reference declarations",
     )?;
@@ -1399,11 +1470,19 @@ pub(crate) fn reference_cells_charged(
 }
 
 fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT reference identity", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain SLDPRT reference identity", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT reference identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT reference identity")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut copy,
+        value.len(),
+        "retain SLDPRT reference identity",
+    )?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -3351,61 +3430,95 @@ enum ReverseIncidenceOffsets {
 impl ReverseIncidenceOffsets {
     fn include_offset(&mut self, offset: u64) {
         match self {
-            Self::One(first) if *first != offset => { *self = Self::Pair([(*first).min(offset), (*first).max(offset)]); }
-            Self::Pair(pair) if !pair.contains(&offset) => { *self = Self::Many; }
+            Self::One(first) if *first != offset => {
+                *self = Self::Pair([(*first).min(offset), (*first).max(offset)]);
+            }
+            Self::Pair(pair) if !pair.contains(&offset) => {
+                *self = Self::Many;
+            }
             Self::One(_) | Self::Pair(_) | Self::Many => {}
         }
     }
 }
 
 pub(super) fn current_reverse_incidence_endpoint_offsets(
-    ctx: &DecodeContext<'_>, payload: &[u8], curve: &SketchInputEntity, markers: &[&SketchInputEntity],
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&SketchInputEntity],
 ) -> Result<Option<[u64; 2]>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT reverse incidence endpoints";
     ctx.charge_work(256, OPERATION)?;
     let curve_index = (|| {
-    let offset = usize::try_from(curve.offset()).ok()?;
-    let curve_index = u16::try_from(curve.object_index()?).ok()?;
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(1)
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
-    {
-        return None;
-    }
-    Some(curve_index)
+        let offset = usize::try_from(curve.offset()).ok()?;
+        let curve_index = u16::try_from(curve.object_index()?).ok()?;
+        if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+            || marker_native_code(payload, offset) != Some(1)
+            || marker_profile_curve_role(payload, offset) != Some(1)
+            || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
+        {
+            return None;
+        }
+        Some(curve_index)
     })();
-    let Some(curve_index) = curve_index else { return Ok(None); };
+    let Some(curve_index) = curve_index else {
+        return Ok(None);
+    };
     let mut by_selector = BTreeMap::<u16, ReverseIncidenceOffsets>::new();
     for marker in markers.iter().copied() {
-        for len in [marker.feature_ref.as_deref().map_or(0, str::len), curve.feature_ref.as_deref().map_or(0, str::len)] {
-            let work = cadmpeg_core::decode::u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(4))
+        for len in [
+            marker.feature_ref.as_deref().map_or(0, str::len),
+            curve.feature_ref.as_deref().map_or(0, str::len),
+        ] {
+            let work = cadmpeg_core::decode::u64_from_index(len)
+                .checked_add(1)
+                .and_then(|work| work.checked_mul(4))
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(work, OPERATION)?;
         }
         ctx.charge_work(512, OPERATION)?;
-        if marker.feature_ref != curve.feature_ref { continue; }
-        let Ok(marker_offset) = usize::try_from(marker.offset()) else { return Ok(None); };
-        let Some((_, links)) = linked_profile_point(payload, marker_offset) else { continue; };
+        if marker.feature_ref != curve.feature_ref {
+            continue;
+        }
+        let Ok(marker_offset) = usize::try_from(marker.offset()) else {
+            return Ok(None);
+        };
+        let Some((_, links)) = linked_profile_point(payload, marker_offset) else {
+            continue;
+        };
         for (selector, linked_curve) in links {
-            if linked_curve != curve_index { continue; }
+            if linked_curve != curve_index {
+                continue;
+            }
             let levels = u64::from(by_selector.len().checked_ilog2().unwrap_or(0));
-            let work = levels.checked_add(1).and_then(|levels| levels.checked_mul(32))
+            let work = levels
+                .checked_add(1)
+                .and_then(|levels| levels.checked_mul(32))
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(work, OPERATION)?;
-            if !by_selector.contains_key(&selector) { ctx.charge_collection_items(1, OPERATION)?; }
-            by_selector.entry(selector).and_modify(|offsets| offsets.include_offset(marker.offset()))
+            if !by_selector.contains_key(&selector) {
+                ctx.charge_collection_items(1, OPERATION)?;
+            }
+            by_selector
+                .entry(selector)
+                .and_modify(|offsets| offsets.include_offset(marker.offset()))
                 .or_insert(ReverseIncidenceOffsets::One(marker.offset()));
         }
     }
-    let work = cadmpeg_core::decode::u64_from_index(by_selector.len()).checked_add(1).and_then(|work| work.checked_mul(32))
+    let work = cadmpeg_core::decode::u64_from_index(by_selector.len())
+        .checked_add(1)
+        .and_then(|work| work.checked_mul(32))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, OPERATION)?;
-    let mut candidates = by_selector.into_values().filter_map(|offsets| match offsets {
-        ReverseIncidenceOffsets::Pair(pair) => Some(pair),
-        ReverseIncidenceOffsets::One(_) | ReverseIncidenceOffsets::Many => None,
-    });
-    let Some(endpoints) = candidates.next() else { return Ok(None); };
+    let mut candidates = by_selector
+        .into_values()
+        .filter_map(|offsets| match offsets {
+            ReverseIncidenceOffsets::Pair(pair) => Some(pair),
+            ReverseIncidenceOffsets::One(_) | ReverseIncidenceOffsets::Many => None,
+        });
+    let Some(endpoints) = candidates.next() else {
+        return Ok(None);
+    };
     Ok(candidates.next().is_none().then_some(endpoints))
 }
 

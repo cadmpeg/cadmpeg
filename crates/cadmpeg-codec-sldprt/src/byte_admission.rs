@@ -19,7 +19,11 @@ pub(crate) fn concat_retained(
     operation: &'static str,
 ) -> Result<Vec<u8>, CodecError> {
     ctx.charge_work(u64_from_index(parts.len()), operation)?;
-    let bytes = parts.iter().try_fold(0u64, |bytes, part| bytes.checked_add(u64_from_index(part.len())))
+    let bytes = parts
+        .iter()
+        .try_fold(0u64, |bytes, part| {
+            bytes.checked_add(u64_from_index(part.len()))
+        })
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(bytes, operation)?;
     ctx.concat_retained(parts, operation)

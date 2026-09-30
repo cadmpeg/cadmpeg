@@ -45,14 +45,18 @@ fn repeated_aliases_from_one_parameter_remain_unambiguous() {
             "Width".into(),
         )]),
     );
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![owner],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap();
 
     let aliases = parameter_aliases(
         &parameters,
@@ -78,14 +82,18 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
         ),
         (cadmpeg_core::nonblank_literal!("D1"), "1 +".into()),
     ]);
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![owner],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap();
     let by_name = parameters
         .iter()
         .map(|parameter| (parameter.name.as_str(), parameter))
@@ -103,7 +111,14 @@ fn project_parameters_preserves_composite_txd_text_without_hiding_bad_equations(
     );
     assert_eq!(by_name["D1"].value, None);
     assert_eq!(
-        parameters_with_unevaluable_expressions(&cadmpeg_test_support::service_decode_context(), &parameters, &HashMap::new(), &HashSet::new(), &[],).unwrap(),
+        parameters_with_unevaluable_expressions(
+            &cadmpeg_test_support::service_decode_context(),
+            &parameters,
+            &HashMap::new(),
+            &HashSet::new(),
+            &[],
+        )
+        .unwrap(),
         1
     );
 }
@@ -140,8 +155,13 @@ fn layered_parameter_aliases_match_materialized_precedence() {
             native_ref: None,
         },
     ];
-    let aliases =
-        ParameterAliases::new(&cadmpeg_test_support::service_decode_context(), &parameters, &HashMap::new(), &HashSet::from([global_owner])).unwrap();
+    let aliases = ParameterAliases::new(
+        &cadmpeg_test_support::service_decode_context(),
+        &parameters,
+        &HashMap::new(),
+        &HashSet::from([global_owner]),
+    )
+    .unwrap();
 
     for owner in [
         Some(local_owner),
@@ -162,7 +182,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
         definite_parameter_reference, expression_identifier_tokens, ExpressionIdentifier,
     };
     let ctx = cadmpeg_test_support::service_decode_context();
-    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width").unwrap().expect("closed quotes");
+    let tokens = expression_identifier_tokens(&ctx, "\"\" + Width")
+        .unwrap()
+        .expect("closed quotes");
     assert_eq!(
         tokens
             .iter()
@@ -172,7 +194,9 @@ fn an_empty_quoted_run_is_not_a_parameter_reference() {
     );
     assert!(!tokens.iter().any(definite_parameter_reference));
 
-    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"").unwrap().expect("closed quotes");
+    let named = expression_identifier_tokens(&ctx, "\"D1@Sketch1\"")
+        .unwrap()
+        .expect("closed quotes");
     assert_eq!(
         named
             .iter()
@@ -202,14 +226,18 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
             "\"4\" * 2".into(),
         ),
     ]);
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![owner],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap();
     let by_name = parameters
         .iter()
         .map(|parameter| (parameter.name.as_str(), parameter))
@@ -226,8 +254,13 @@ fn numeric_literals_do_not_bind_numeric_parameter_names() {
     );
     assert!(!unquoted_expression_identifier("4"));
     assert_eq!(
-        rewrite_parameter_expression(&cadmpeg_test_support::service_decode_context(), "Width * 2", &HashMap::from([("Width".into(), "4".into())]),)
-            .unwrap().as_deref(),
+        rewrite_parameter_expression(
+            &cadmpeg_test_support::service_decode_context(),
+            "Width * 2",
+            &HashMap::from([("Width".into(), "4".into())]),
+        )
+        .unwrap()
+        .as_deref(),
         Some("\"4\" * 2")
     );
 }
@@ -240,14 +273,18 @@ fn subtraction_projects_both_parameter_dependencies() {
         (cadmpeg_core::nonblank_literal!("B"), "2".into()),
         (cadmpeg_core::nonblank_literal!("C"), "A-B".into()),
     ]);
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![owner],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }],
+    )
+    .unwrap();
 
     assert_eq!(
         parameters[2].dependencies.as_slice(),
@@ -266,14 +303,18 @@ fn unqualified_aliases_are_local_to_the_expression_owner() {
     second
         .parameters
         .insert(cadmpeg_core::nonblank_literal!("Width"), "5mm".into());
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![first, second],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second],
+        }],
+    )
+    .unwrap();
 
     let first_aliases = parameter_aliases(
         &parameters,
@@ -318,14 +359,18 @@ fn equation_driven_parameters_are_global() {
         "Width * 2".into(),
     );
 
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![equations, consumer],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![equations, consumer],
+        }],
+    )
+    .unwrap();
 
     assert_eq!(
         parameters[1].dependencies.as_slice(),
@@ -349,14 +394,18 @@ fn ordinary_feature_parameters_do_not_leak_globally() {
         "Width * 2".into(),
     );
 
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![source, consumer],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![source, consumer],
+        }],
+    )
+    .unwrap();
 
     assert!(parameters[1].dependencies.is_empty());
     assert_eq!(parameters[1].value, None);
@@ -378,14 +427,18 @@ fn local_parameter_precedes_same_named_global() {
         ),
     ]);
 
-    let parameters = project_parameters(&cadmpeg_test_support::service_decode_context(), &[FeatureHistory {
-        id: "history".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![equations, consumer],
-    }]).unwrap();
+    let parameters = project_parameters(
+        &cadmpeg_test_support::service_decode_context(),
+        &[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![equations, consumer],
+        }],
+    )
+    .unwrap();
 
     assert_eq!(
         parameters[1].dependencies.as_slice(),
@@ -424,7 +477,11 @@ fn ambiguous_and_missing_history_references_do_not_bind_arbitrarily() {
         features: vec![first, second, dependent, malformed],
     };
 
-    let projected = project_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history)).unwrap();
+    let projected = project_features(
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_ref(&history),
+    )
+    .unwrap();
 
     assert!(projected[2].dependencies.is_empty());
     assert_eq!(
@@ -450,10 +507,11 @@ fn incomplete_history_reference_index_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"history", &arena, &policy,
-    ).unwrap();
-    let error = incomplete_history_reference_features(&ctx, &[history]).err().unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"history", &arena, &policy).unwrap();
+    let error = incomplete_history_reference_features(&ctx, &[history])
+        .err()
+        .unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -470,10 +528,11 @@ fn incomplete_history_reference_scan_refuses_work_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"history", &arena, &policy,
-    ).unwrap();
-    let error = incomplete_history_reference_features(&ctx, &[history]).err().unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"history", &arena, &policy).unwrap();
+    let error = incomplete_history_reference_features(&ctx, &[history])
+        .err()
+        .unwrap();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
 
@@ -506,7 +565,12 @@ fn stored_configuration_id_precedes_ordinal_fallback() {
     let lanes = [feature_input_lane("lane", Some("1"))];
 
     assert_eq!(
-        configuration_lane_assignments(&cadmpeg_test_support::service_decode_context(), &configurations, &lanes).unwrap(),
+        configuration_lane_assignments(
+            &cadmpeg_test_support::service_decode_context(),
+            &configurations,
+            &lanes
+        )
+        .unwrap(),
         [(0, 0)]
     );
 }

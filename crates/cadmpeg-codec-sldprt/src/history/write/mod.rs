@@ -59,7 +59,9 @@ pub(crate) fn native_parameters_match_source(
 ) -> Result<bool, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     Ok(native
@@ -100,9 +102,14 @@ pub(crate) fn apply_feature_name_changes(
             .filter_map(|owner| owner.as_ref().and_then(|owner| changes.get(owner)))
             .collect::<Vec<_>>();
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(parameter.expression.as_bytes(), &arena, &DecodePolicy::service())?;
+        let (ctx, _) = DecodeContext::from_root_bytes(
+            parameter.expression.as_bytes(),
+            &arena,
+            &DecodePolicy::service(),
+        )?;
         let aliases = expression_identifier_tokens(&ctx, &parameter.expression)?
-            .unwrap_or_default().into_iter()
+            .unwrap_or_default()
+            .into_iter()
             .filter_map(|token| {
                 dependency_changes
                     .iter()
@@ -114,7 +121,9 @@ pub(crate) fn apply_feature_name_changes(
                     })
             })
             .collect::<HashMap<_, _>>();
-        if let Some(rewritten) = rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)? {
+        if let Some(rewritten) =
+            rewrite_parameter_expression(&ctx, &parameter.expression, &aliases)?
+        {
             parameter.expression = rewritten;
         }
     }
@@ -132,7 +141,9 @@ pub(crate) fn prepare_features_for_write(
 ) -> Result<Vec<features::FeatureInputRename>, CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let neutral_hash = feature_hash(&hash_ctx, &ir.model)?;
@@ -171,13 +182,17 @@ pub(crate) fn prepare_features_for_write(
                 .map(project_feature_model_with_native_inputs)
                 .transpose()?
                 .map(|projection| {
-                    let projection_bytes = native.as_ref().into_iter()
+                    let projection_bytes = native
+                        .as_ref()
+                        .into_iter()
                         .flat_map(|native| &native.feature_input_lanes)
                         .flat_map(|lane| lane.native_payload.iter().copied())
                         .collect::<Vec<_>>();
                     let arena = DecodeArena::new();
                     let (ctx, _) = DecodeContext::from_root_bytes(
-                        &projection_bytes, &arena, &DecodePolicy::service(),
+                        &projection_bytes,
+                        &arena,
+                        &DecodePolicy::service(),
                     )?;
                     Ok::<_, CodecError>(projection.into_model(&ctx)?.0)
                 })
@@ -215,11 +230,8 @@ fn validate_embedded_helix_edits(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &projection_bytes,
-        &arena,
-        &DecodePolicy::service(),
-    )?;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let embedded = project_features(&ctx, &native.feature_histories)?
         .into_iter()
         .filter_map(|feature| {
@@ -373,11 +385,16 @@ fn validate_compact_body_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let bytes = native.feature_input_lanes.iter()
-        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputBodySelection>>::new();
     for selection in native
@@ -409,7 +426,8 @@ fn validate_compact_body_selection_edits(
                 .map(u32::to_string)
                 .collect(),
             crate::resolved_features::component_paths::compact_body_selection_value_charged(
-                &ctx, &selection.local_body_ids,
+                &ctx,
+                &selection.local_body_ids,
             )?,
         )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
@@ -440,11 +458,16 @@ fn validate_compact_edge_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let bytes = native.feature_input_lanes.iter()
-        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputEdgeSelection>>::new();
     for selection in native
@@ -486,9 +509,11 @@ fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
-            &ctx, edge_selections,
-        )?;
+        let native =
+            crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
+                &ctx,
+                edge_selections,
+            )?;
         let generated = edge_selections
             .iter()
             .map(|selection| {
@@ -529,7 +554,9 @@ fn validate_compact_surface_selection_edits(
     let Some(native) = native else { return Ok(()) };
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputSurfaceSelection>>::new();
     for selection in native
@@ -591,7 +618,8 @@ fn validate_compact_surface_selection_edits(
             _ => continue,
         };
         let native = crate::resolved_features::terminations::compact_surface_selection_value(
-            &ctx, &selection.components,
+            &ctx,
+            &selection.components,
         )?;
         let producer = if first_component {
             selection.producer_feature_refs.first().map(String::as_str)

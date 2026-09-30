@@ -138,8 +138,7 @@ fn scan_length_user_units(
         }
         let scalars = || {
             char::decode_utf16(
-                (0..bytes.len() / 2)
-                    .filter_map(|index| View::u16_le_at(bytes, index * 2)),
+                (0..bytes.len() / 2).filter_map(|index| View::u16_le_at(bytes, index * 2)),
             )
             .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
         };
@@ -152,7 +151,12 @@ fn scan_length_user_units(
             })
         })?;
         let mut value = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut value, text_bytes, "retain SLDPRT linear unit name")?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut value,
+            text_bytes,
+            "retain SLDPRT linear unit name",
+        )?;
         for scalar in scalars() {
             value.push(scalar);
         }
@@ -180,7 +184,8 @@ fn scan_units_xml(
         ctx,
         section.payload(),
         "materialize SLDPRT document metadata XML",
-    )? else {
+    )?
+    else {
         return Ok(());
     };
     let Ok(document) = roxmltree::Document::parse(text.as_str()) else {
@@ -249,7 +254,15 @@ fn scan_vectors(
             continue;
         };
         ctx.reserve_collection_vec(out, 1, "collect SLDPRT document attributes")?;
-        out.push(attribute(ctx, section, offset, name, token, values, annotations)?);
+        out.push(attribute(
+            ctx,
+            section,
+            offset,
+            name,
+            token,
+            values,
+            annotations,
+        )?);
     }
     Ok(())
 }

@@ -95,7 +95,13 @@ fn current_indexed_line_uses_its_unique_reverse_incidence_pair() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        current_reverse_incidence_endpoint_offsets(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap(),
+        current_reverse_incidence_endpoint_offsets(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap(),
         Some([first as u64, second as u64])
     );
 }

@@ -337,7 +337,11 @@ impl SketchProfiles {
         let mut profile = Vec::new();
         ctx.reserve_collection_vec(&mut profile, 1, OPERATION)?;
         if self.0.len() == self.0.capacity() {
-            ctx.charge_work(u64::try_from(self.0.len()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            ctx.charge_work(
+                u64::try_from(self.0.len())
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                OPERATION,
+            )?;
         }
         ctx.reserve_collection_vec(&mut self.0, 1, OPERATION)?;
         profile.push(entity);
@@ -354,17 +358,29 @@ impl SketchProfiles {
         const OPERATION: &str = "filter sketch profile uses";
         let count = self.0.iter().try_fold(0usize, |count, profile| {
             ctx.charge_work(1, OPERATION)?;
-            count.checked_add(profile.len())
+            count
+                .checked_add(profile.len())
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
         })?;
-        ctx.charge_work(u64::try_from(count).ok().and_then(|count| count.checked_mul(4))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        ctx.charge_work(
+            u64::try_from(count)
+                .ok()
+                .and_then(|count| count.checked_mul(4))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
         let mut decisions = Vec::new();
         ctx.reserve_collection_vec(&mut decisions, count, OPERATION)?;
         for profile in &self.0 {
             for usage in profile {
-                ctx.charge_work(u64::try_from(usage.entity.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
-                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                ctx.charge_work(
+                    u64::try_from(usage.entity.as_str().len())
+                        .ok()
+                        .and_then(|len| len.checked_add(1))
+                        .and_then(|work| work.checked_mul(4))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+                    OPERATION,
+                )?;
                 decisions.push(keep(usage));
             }
         }

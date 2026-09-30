@@ -151,7 +151,8 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
 pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<(HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>), cadmpeg_core::CodecError> {
+) -> Result<(HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>), cadmpeg_core::CodecError>
+{
     ctx.charge_work(bytes.len() as u64, "scan SLDPRT blend carriers")?;
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
@@ -159,7 +160,9 @@ pub(super) fn scan(
         if let Some(carrier) = parse_blend(bytes, offset) {
             if !blends.contains_key(&carrier.attr) {
                 ctx.charge_collection_items(1, "index SLDPRT blend carriers")?;
-                blends.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT blend carriers", u64::MAX - 1, u64::MAX))?;
+                blends.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT blend carriers", u64::MAX - 1, u64::MAX)
+                })?;
             }
             blends.entry(carrier.attr).or_insert(carrier);
         }
@@ -170,7 +173,13 @@ pub(super) fn scan(
             {
                 if !pairs.contains_key(&raw.attr) {
                     ctx.charge_collection_items(1, "index SLDPRT blend support pairs")?;
-                    pairs.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT blend support pairs", u64::MAX - 1, u64::MAX))?;
+                    pairs.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "index SLDPRT blend support pairs",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                 }
                 pairs.entry(raw.attr).or_insert(SupportPairCarrier {
                     supports: [raw.references[0], raw.references[1]],
@@ -187,13 +196,16 @@ mod tests {
     use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
     use std::collections::HashMap;
 
-    fn scan_with_service_context(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+    fn scan_with_service_context(
+        bytes: &[u8],
+    ) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             bytes,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("test carrier bytes fit service policy");
+        )
+        .expect("test carrier bytes fit service policy");
         super::scan(&ctx, bytes).expect("test carriers fit service policy")
     }
 
@@ -215,7 +227,10 @@ mod tests {
                 bytes.extend_from_slice(&value.to_be_bytes());
             }
 
-            let carrier = scan_with_service_context(&bytes).0.remove(&9).expect("blend carrier");
+            let carrier = scan_with_service_context(&bytes)
+                .0
+                .remove(&9)
+                .expect("blend carrier");
             assert_eq!(carrier.offset, 0);
             assert_eq!(
                 carrier.supports,
@@ -263,7 +278,11 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         assert_eq!(
-            scan_with_service_context(&bytes).0.get(&9).expect("blend").reversed,
+            scan_with_service_context(&bytes)
+                .0
+                .get(&9)
+                .expect("blend")
+                .reversed,
             [false, true]
         );
     }

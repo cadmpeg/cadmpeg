@@ -94,7 +94,8 @@ fn patch_partition_inner(
         .flat_map(|(bytes, _)| bytes.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let ctx = match DecodeContext::from_root_bytes(&scanned_bytes, &arena, &DecodePolicy::service()) {
+    let ctx = match DecodeContext::from_root_bytes(&scanned_bytes, &arena, &DecodePolicy::service())
+    {
         Ok((ctx, _)) => ctx,
         Err(error) => return Some(Err(error)),
     };
@@ -401,7 +402,8 @@ fn patch_points(
         let offset = raw_annotation_offset(annotations, &old.id).ok()?;
         let body = payload.get(body_start..)?;
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()).ok()?;
         let tables = crate::brep::topology::scan(&ctx, body).ok()?;
         let point = tables
             .points()

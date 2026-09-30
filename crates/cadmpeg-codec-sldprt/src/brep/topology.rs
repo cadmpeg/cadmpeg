@@ -434,7 +434,11 @@ fn parse_point(
     })?;
     ctx.charge_collection_items(count, "copy Parasolid point references")?;
     let mut refs = Vec::new();
-    ctx.reserve_precharged_vec(&mut refs, reference_count, "copy Parasolid point references")?;
+    ctx.reserve_precharged_vec(
+        &mut refs,
+        reference_count,
+        "copy Parasolid point references",
+    )?;
     refs.extend_from_slice(&references[..reference_count]);
 
     Ok(Some(Point {
@@ -462,40 +466,90 @@ impl Tables {
         &self.bridges
     }
 
-    pub(super) fn insert_bridge(&mut self, ctx: &DecodeContext<'_>, record: Bridge) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.bridges, record.attr, record, "index Parasolid topology bridges")
+    pub(super) fn insert_bridge(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        record: Bridge,
+    ) -> Result<(), CodecError> {
+        insert_record(
+            ctx,
+            &mut self.bridges,
+            record.attr,
+            record,
+            "index Parasolid topology bridges",
+        )
     }
 
     pub(super) fn loops(&self) -> &HashMap<u16, Loop> {
         &self.loops
     }
 
-    pub(super) fn insert_loop(&mut self, ctx: &DecodeContext<'_>, record: Loop) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.loops, record.attr, record, "index Parasolid topology loops")
+    pub(super) fn insert_loop(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        record: Loop,
+    ) -> Result<(), CodecError> {
+        insert_record(
+            ctx,
+            &mut self.loops,
+            record.attr,
+            record,
+            "index Parasolid topology loops",
+        )
     }
 
     pub(super) fn edge_uses(&self) -> &HashMap<u16, EdgeUse> {
         &self.edge_uses
     }
 
-    fn insert_edge_use(&mut self, ctx: &DecodeContext<'_>, record: EdgeUse) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.edge_uses, record.attr, record, "index Parasolid topology edge uses")
+    fn insert_edge_use(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        record: EdgeUse,
+    ) -> Result<(), CodecError> {
+        insert_record(
+            ctx,
+            &mut self.edge_uses,
+            record.attr,
+            record,
+            "index Parasolid topology edge uses",
+        )
     }
 
     pub(super) fn coedges(&self) -> &HashMap<u16, Coedge> {
         &self.coedges
     }
 
-    pub(super) fn insert_coedge(&mut self, ctx: &DecodeContext<'_>, record: Coedge) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.coedges, record.attr, record, "index Parasolid topology coedges")
+    pub(super) fn insert_coedge(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        record: Coedge,
+    ) -> Result<(), CodecError> {
+        insert_record(
+            ctx,
+            &mut self.coedges,
+            record.attr,
+            record,
+            "index Parasolid topology coedges",
+        )
     }
 
     pub(super) fn vertex_uses(&self) -> &HashMap<u16, VertexUse> {
         &self.vertex_uses
     }
 
-    fn insert_vertex_use(&mut self, ctx: &DecodeContext<'_>, record: VertexUse) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.vertex_uses, record.attr, record, "index Parasolid topology vertex uses")
+    fn insert_vertex_use(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        record: VertexUse,
+    ) -> Result<(), CodecError> {
+        insert_record(
+            ctx,
+            &mut self.vertex_uses,
+            record.attr,
+            record,
+            "index Parasolid topology vertex uses",
+        )
     }
 
     pub(crate) fn points(&self) -> &HashMap<u16, Point> {
@@ -503,7 +557,13 @@ impl Tables {
     }
 
     fn insert_point(&mut self, ctx: &DecodeContext<'_>, record: Point) -> Result<(), CodecError> {
-        insert_record(ctx, &mut self.points, record.attr, record, "index Parasolid topology points")
+        insert_record(
+            ctx,
+            &mut self.points,
+            record.attr,
+            record,
+            "index Parasolid topology points",
+        )
     }
 
     /// Merge deltas without replacing partition topology membership.
@@ -523,14 +583,45 @@ impl Tables {
             self.bridges = deltas.bridges;
         } else if let Some(selected_bridge_attrs) = selected_bridge_attrs {
             retain_selected_bridges(&mut deltas.bridges, selected_bridge_attrs);
-            merge_missing(ctx, &mut self.bridges, deltas.bridges, "merge Parasolid topology bridges")?;
+            merge_missing(
+                ctx,
+                &mut self.bridges,
+                deltas.bridges,
+                "merge Parasolid topology bridges",
+            )?;
         }
-        merge_missing(ctx, &mut self.loops, deltas.loops, "merge Parasolid topology loops")?;
-        merge_missing(ctx, &mut self.edge_uses, deltas.edge_uses, "merge Parasolid topology edge uses")?;
-        merge_missing(ctx, &mut self.coedges, deltas.coedges, "merge Parasolid topology coedges")?;
-        merge_missing(ctx, &mut self.vertex_uses, deltas.vertex_uses, "merge Parasolid topology vertex uses")?;
+        merge_missing(
+            ctx,
+            &mut self.loops,
+            deltas.loops,
+            "merge Parasolid topology loops",
+        )?;
+        merge_missing(
+            ctx,
+            &mut self.edge_uses,
+            deltas.edge_uses,
+            "merge Parasolid topology edge uses",
+        )?;
+        merge_missing(
+            ctx,
+            &mut self.coedges,
+            deltas.coedges,
+            "merge Parasolid topology coedges",
+        )?;
+        merge_missing(
+            ctx,
+            &mut self.vertex_uses,
+            deltas.vertex_uses,
+            "merge Parasolid topology vertex uses",
+        )?;
         for (attr, record) in deltas.points.drain() {
-            insert_record(ctx, &mut self.points, attr, record, "merge Parasolid topology points")?;
+            insert_record(
+                ctx,
+                &mut self.points,
+                attr,
+                record,
+                "merge Parasolid topology points",
+            )?;
         }
         Ok(())
     }
@@ -545,9 +636,9 @@ fn insert_record<T>(
 ) -> Result<(), CodecError> {
     if !target.contains_key(&attr) {
         ctx.charge_collection_items(1, operation)?;
-        target.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        target
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     target.insert(attr, record);
     Ok(())
@@ -643,11 +734,19 @@ fn insert_candidates<T: Candidate>(
     if !target.contains_key(&attr) {
         ctx.charge_collection_items(1, "index Parasolid topology candidates")?;
         target.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("index Parasolid topology candidates", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "index Parasolid topology candidates",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
     }
     let count = u64::try_from(records.len()).map_err(|_| {
-        ctx.refuse_codec_limit("collect Parasolid topology frame candidates", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "collect Parasolid topology frame candidates",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     match target.entry(attr) {
         std::collections::hash_map::Entry::Vacant(entry) => {
@@ -760,7 +859,11 @@ fn select_coedge(
         return Ok(candidates.first().cloned());
     }
     let mut evidence = Vec::new();
-    ctx.reserve_collection_vec(&mut evidence, candidates.len(), "collect Parasolid coedge evidence")?;
+    ctx.reserve_collection_vec(
+        &mut evidence,
+        candidates.len(),
+        "collect Parasolid coedge evidence",
+    )?;
     for candidate in candidates {
         evidence.push(coedge_evidence(
             candidate,
@@ -854,7 +957,9 @@ pub(crate) fn patch_point_values(
 pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let Ok((ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        buf, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        buf,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     ) else {
         return false;
     };
@@ -954,8 +1059,16 @@ fn scan_with_point_framing(
                     loop_candidates.push(record);
                 }
             }
-            0x10 => insert_candidates(ctx, &mut edge_candidates, parse_edge_use_candidates(body, i))?,
-            0x11 => insert_candidates(ctx, &mut coedge_candidates, parse_coedge_candidates(body, i))?,
+            0x10 => insert_candidates(
+                ctx,
+                &mut edge_candidates,
+                parse_edge_use_candidates(body, i),
+            )?,
+            0x11 => insert_candidates(
+                ctx,
+                &mut coedge_candidates,
+                parse_coedge_candidates(body, i),
+            )?,
             0x12 => {
                 if let Some(record) = parse_vertex_use(body, i) {
                     t.insert_vertex_use(ctx, record)?;
@@ -1029,7 +1142,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes).err().expect("bridge map exceeds collection limit");
+        let error = scan(&ctx, &bytes)
+            .err()
+            .expect("bridge map exceeds collection limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1045,7 +1160,9 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_work_units = u64::try_from(bytes.len()).expect("fixture length") - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = scan(&ctx, &bytes).err().expect("topology scan exceeds work limit");
+        let error = scan(&ctx, &bytes)
+            .err()
+            .expect("topology scan exceeds work limit");
         assert!(matches!(
             error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1069,8 +1186,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = parse_point(&ctx, &bytes, 0, false)
-            .expect_err("four references exceed three items");
+        let error =
+            parse_point(&ctx, &bytes, 0, false).expect_err("four references exceed three items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1102,8 +1219,8 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = 3;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error = parse_point(&ctx, &bytes, 0, true)
-            .expect_err("four references exceed three items");
+        let error =
+            parse_point(&ctx, &bytes, 0, true).expect_err("four references exceed three items");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::CollectionItems
@@ -1201,10 +1318,13 @@ mod tests {
 
     #[test]
     fn shared_typed_face_with_loop_remains_a_topology_bridge() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let body = bridge_with_refs(&[1, 2, 3, 7, 8], false);
         let excluded = HashSet::from([0]);
 
@@ -1219,10 +1339,13 @@ mod tests {
 
     #[test]
     fn ownership_only_typed_face_does_not_replace_a_compact_bridge() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let body = bridge_with_refs(&[1, 2, 0, 7, 8], false);
         let excluded = HashSet::from([0]);
 
@@ -1304,8 +1427,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let tables = scan(&ctx, &body).expect("topology scan");
         let coedge = tables.coedges.get(&30).expect("tripled coedge");
         assert_eq!(coedge.refs[1], 20);
@@ -1322,8 +1448,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let tables = scan(&ctx, &body).expect("topology scan");
         assert_eq!(tables.edge_uses[&40].sequence, 0x0102_0304);
         assert_eq!(tables.vertex_uses[&50].sequence, 0x0506_0708);
@@ -1331,10 +1460,13 @@ mod tests {
 
     #[test]
     fn suffix_edge_use_frame_wins_when_first_reference_starts_with_one() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = vec![0, 0x10];
         bytes.extend(40_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());
@@ -1347,7 +1479,10 @@ mod tests {
         }
 
         assert!(
-            scan(&ctx, &bytes).expect("topology scan").edge_uses.is_empty(),
+            scan(&ctx, &bytes)
+                .expect("topology scan")
+                .edge_uses
+                .is_empty(),
             "ambiguous without a carrier set"
         );
         let curve_attrs = HashSet::from([0x0103]);
@@ -1359,10 +1494,13 @@ mod tests {
 
     #[test]
     fn patch_point_uses_parsed_adjacent_coordinate_offset() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = vec![0, 0x1d];
         bytes.extend(60_u16.to_be_bytes());
         bytes.extend(0_u32.to_be_bytes());

@@ -31,11 +31,13 @@ fn native_validation_rejects_broken_feature_graph() {
                 source_id: None,
             });
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| finding.message.contains("missing tree parent"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("missing tree parent")));
 }
 
 #[test]
@@ -67,10 +69,14 @@ fn native_validation_rejects_broken_history_root_graph() {
         ];
     });
 
-    let messages = crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-        .into_iter()
-        .map(|finding| finding.message)
-        .collect::<Vec<_>>();
+    let messages = crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap()
+    .into_iter()
+    .map(|finding| finding.message)
+    .collect::<Vec<_>>();
     assert!(messages
         .iter()
         .any(|message| message.contains("references nested feature")));
@@ -115,14 +121,15 @@ fn native_validation_rejects_orphan_history_records() {
         .get_mut("features")
         .unwrap()[0] =
         cadmpeg_ir::NativeRecord::new(orphan.id(), orphan_fields).expect("valid native identity");
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| {
-                finding.message.contains("invalid owner")
-                    && finding.message.contains("missing-history")
-            })
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| {
+        finding.message.contains("invalid owner") && finding.message.contains("missing-history")
+    }));
 }
 
 #[test]
@@ -142,15 +149,17 @@ fn native_validation_rejects_edited_relation_binding() {
             crate::records::FeatureInputRelationFamily::LineLineDistance;
     });
 
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| {
-                finding
-                    .message
-                    .contains("relation bindings do not match the native payload")
-            })
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| {
+        finding
+            .message
+            .contains("relation bindings do not match the native payload")
+    }));
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -180,15 +189,17 @@ fn native_validation_rejects_edited_relation_instance() {
             .clear_parameter();
     });
 
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| {
-                finding
-                    .message
-                    .contains("relation instances do not match the native payload")
-            })
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| {
+        finding
+            .message
+            .contains("relation instances do not match the native payload")
+    }));
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
@@ -204,7 +215,9 @@ fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDime
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let source = sldprt_with_compact_relation_pair(&triangle_body());
-    let decoded = SldprtCodec.decode(&mut Cursor::new(&source), &DecodeOptions::default()).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     let selected = match dimension {
@@ -217,7 +230,9 @@ fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDime
     };
     *selected = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    let CodecError::ResourceLimit(limit) = SldprtCodec.validate_native(&ctx, decoded.ir()).unwrap_err() else {
+    let CodecError::ResourceLimit(limit) =
+        SldprtCodec.validate_native(&ctx, decoded.ir()).unwrap_err()
+    else {
         panic!("native validation must propagate a resource refusal");
     };
     assert_eq!(limit.dimension, dimension);
@@ -231,8 +246,10 @@ fn native_validation_route_refusal(dimension: cadmpeg_core::decode::ResourceDime
     };
     *selected = limit.used + limit.additional - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
-    assert!(matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
-        if refusal.dimension == dimension && refusal.operation == limit.operation));
+    assert!(
+        matches!(SldprtCodec.validate_native(&ctx, decoded.ir()), Err(CodecError::ResourceLimit(refusal))
+        if refusal.dimension == dimension && refusal.operation == limit.operation)
+    );
 }
 
 #[test]

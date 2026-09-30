@@ -514,11 +514,9 @@ pub(in crate::history) fn sync_neutral_features(
         let expected = feature
             .dependencies
             .iter()
-            .map(|dependency| {
-                match record_ids.get(dependency) {
-                    Some(record) => neutral_feature_id_charged(&ctx, record),
-                    None => Ok(dependency.clone()),
-                }
+            .map(|dependency| match record_ids.get(dependency) {
+                Some(record) => neutral_feature_id_charged(&ctx, record),
+                None => Ok(dependency.clone()),
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
         let consistent = projected_features
@@ -837,7 +835,9 @@ mod tests {
             "sldprt:generated:feature#test:model:feature%23original%2523key"
         );
         assert!(cadmpeg_ir::ids::is_valid_identity(&record));
-        let projected = neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), &record).unwrap();
+        let projected =
+            neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), &record)
+                .unwrap();
         assert!(cadmpeg_ir::ids::is_valid_identity(projected.as_str()));
     }
     #[test]

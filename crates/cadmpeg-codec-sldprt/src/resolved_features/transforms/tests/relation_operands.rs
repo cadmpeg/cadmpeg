@@ -70,7 +70,13 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: line.clone(),
         })
@@ -86,45 +92,53 @@ fn unary_relation_uses_one_resolved_reverse_curve_owner() {
         .unwrap(),
     )
     .with_construction(true);
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
         &markers,
         &loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed horizontal relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::Horizontal { .. }
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         std::slice::from_ref(&projected)
-    ).unwrap());
+    )
+    .unwrap());
     projected.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
         start: Point2::new(0.0, 0.0),
         end: Point2::new(1.0, 2.0),
     })
     .unwrap();
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &sketch,
         std::slice::from_ref(&projected),
         &markers,
         &loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed horizontal relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::Horizontal { .. }
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         std::slice::from_ref(&projected)
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -174,7 +188,13 @@ fn point_relation_ignores_auxiliary_relation_links() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
@@ -266,7 +286,13 @@ fn axis_relation_expands_intermediate_relation_handle() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &horizontal, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &horizontal,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
@@ -303,13 +329,15 @@ fn axis_relation_expands_intermediate_relation_handle() {
         .with_native_ref(Some(second.id().to_string())),
     ];
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
             &markers,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(
@@ -337,13 +365,15 @@ fn axis_relation_expands_intermediate_relation_handle() {
         .with_endpoint_refs(duplicate.endpoint_refs.clone()),
     );
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &ambiguous_entities,
             &markers,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
@@ -424,13 +454,15 @@ fn axis_relation_prefers_forward_points_over_reverse_owners() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &horizontal,
             &sketch,
             &entities,
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(first_entity.id().clone()),
@@ -492,9 +524,16 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
         point(second_id, None, Point2::new(1.0, 2.0)),
     ];
 
-    let definition =
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), &relation, &sketch, &entities, &markers, &loci).unwrap()
-            .expect("typed horizontal point relation");
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &sketch,
+        &entities,
+        &markers,
+        &loci,
+    )
+    .unwrap()
+    .expect("typed horizontal point relation");
 
     assert_eq!(
         definition,
@@ -507,11 +546,13 @@ fn axis_relation_resolves_a_point_proxy_despite_an_index_collision() {
             .unwrap()
         }
     );
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities,
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -551,7 +592,13 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Parallel {
             first: first.clone(),
             second: second.clone(),
@@ -568,13 +615,15 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     let first_line = line(first, Point2::new(0.0, 0.0), Point2::new(4.0, 0.0));
     let mut second_line = line(second, Point2::new(0.0, 2.0), Point2::new(4.0, 2.0));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &[first_line.clone(), second_line.clone()],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Parallel { .. })
     ));
     second_line.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -583,18 +632,27 @@ fn binary_relation_uses_two_resolved_reverse_curve_owners() {
     })
     .unwrap();
     let entities = [first_line, second_line];
-    let definition =
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), &relation, &sketch, &entities, &markers, &loci).unwrap()
-            .expect("typed parallel relation");
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &sketch,
+        &entities,
+        &markers,
+        &loci,
+    )
+    .unwrap()
+    .expect("typed parallel relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::Parallel { .. }
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities,
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -620,7 +678,12 @@ fn construction_line_endpoints_accept_reverse_incidence() {
     ]);
 
     assert_eq!(
-        line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &line, &markers).unwrap(),
+        line_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &line,
+            &markers
+        )
+        .unwrap(),
         vec![&first, &second]
     );
 }
@@ -628,7 +691,12 @@ fn construction_line_endpoints_accept_reverse_incidence() {
 #[test]
 fn endpoint_incidence_binds_an_existing_profile_line() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line_id = SketchEntityId::mint("synthetic:test:id#profile-line").unwrap();
     let sketch = Sketch {
@@ -704,7 +772,8 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
     };
 
     assert_eq!(
-        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane]).expect("transform resource admission")["line"],
+        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane])
+            .expect("transform resource admission")["line"],
         vec![SketchLocus::Entity(line_id)]
     );
 }
@@ -712,7 +781,12 @@ fn endpoint_incidence_binds_an_existing_profile_line() {
 #[test]
 fn point_marker_materializing_a_circle_binds_its_center() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let circle_id = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let sketch = Sketch {
@@ -778,7 +852,8 @@ fn point_marker_materializing_a_circle_binds_its_center() {
     };
 
     assert_eq!(
-        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane]).expect("transform resource admission")["circle-marker"],
+        profile_loci_by_marker(&resource_ctx, &[feature], &[sketch], &[entity], &[lane])
+            .expect("transform resource admission")["circle-marker"],
         vec![SketchLocus::Center(circle_id)]
     );
 }
@@ -786,7 +861,12 @@ fn point_marker_materializing_a_circle_binds_its_center() {
 #[test]
 fn point_operand_canonicalizes_shared_endpoint_loci() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let sketch = Sketch {
         id: sketch_id.clone(),
@@ -887,12 +967,14 @@ fn point_operand_canonicalizes_shared_endpoint_loci() {
         sketch_entities: vec![first_start, shared, second_end],
     };
 
-    let loci = profile_loci_by_marker(&resource_ctx,
+    let loci = profile_loci_by_marker(
+        &resource_ctx,
         &[feature],
         std::slice::from_ref(&sketch),
         &[first, second],
         std::slice::from_ref(&lane),
-    ).expect("transform resource admission");
+    )
+    .expect("transform resource admission");
 
     assert_eq!(
         loci["shared"],
@@ -931,23 +1013,27 @@ fn distance_fallback_requires_one_locus_in_the_complete_sketch() {
     };
     let known_locus = SketchLocus::Entity(known.id().clone());
     assert_eq!(
-        unique_profile_distance_locus(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_distance_locus(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &known_locus,
             &parameter,
             &[known.clone(), candidate.clone()],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchLocus::Entity(candidate.id().clone()))
     );
 
     let ambiguous = point("synthetic:test:id#ambiguous", -3.0, -4.0);
     assert_eq!(
-        unique_profile_distance_locus(&cadmpeg_test_support::service_decode_context(), 
+        unique_profile_distance_locus(
+            &cadmpeg_test_support::service_decode_context(),
             &sketch,
             &known_locus,
             &parameter,
             &[known, candidate, ambiguous],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -991,11 +1077,25 @@ fn line_operand_rejects_a_circular_geometry_alias() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "circle-marker", &HashMap::new(), &loci, &entities).unwrap(),
+        single_marker_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "circle-marker",
+            &HashMap::new(),
+            &loci,
+            &entities
+        )
+        .unwrap(),
         None
     );
     assert_eq!(
-        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "line-marker", &HashMap::new(), &loci, &entities).unwrap(),
+        single_marker_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "line-marker",
+            &HashMap::new(),
+            &loci,
+            &entities
+        )
+        .unwrap(),
         Some(line_id)
     );
 }
@@ -1108,7 +1208,14 @@ fn line_operand_uses_linked_endpoint_incidence_beside_a_direct_point_locus() {
     ]);
 
     assert_eq!(
-        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "handle", &markers, &loci, &entities).unwrap(),
+        single_marker_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "handle",
+            &markers,
+            &loci,
+            &entities
+        )
+        .unwrap(),
         Some(line_id)
     );
 }
@@ -1144,7 +1251,14 @@ fn line_operand_uses_the_unique_profile_line_through_a_point_handle() {
     let loci = HashMap::from([(point.id().to_string(), vec![SketchLocus::Entity(point_id)])]);
 
     assert_eq!(
-        single_marker_line_entity(&cadmpeg_test_support::service_decode_context(), "point-handle", &markers, &loci, &entities).unwrap(),
+        single_marker_line_entity(
+            &cadmpeg_test_support::service_decode_context(),
+            "point-handle",
+            &markers,
+            &loci,
+            &entities
+        )
+        .unwrap(),
         Some(line_id)
     );
 }
@@ -1202,18 +1316,27 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
         (second.id().to_string(), vec![SketchLocus::End(second_id)]),
     ]);
 
-    let definition =
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), &relation, &sketch, &entities, &markers, &loci).unwrap()
-            .expect("typed horizontal-points relation");
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &sketch,
+        &entities,
+        &markers,
+        &loci,
+    )
+    .unwrap()
+    .expect("typed horizontal-points relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities
-    ).unwrap());
+    )
+    .unwrap());
 
     let mut swapped_relation = relation.clone();
     swapped_relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
@@ -1231,23 +1354,27 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
             )],
         ),
     ]);
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &swapped_relation,
         &sketch,
         &entities,
         &markers,
         &swapped_loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed legacy horizontal relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &swapped_relation,
         &definition,
         &entities
-    ).unwrap());
+    )
+    .unwrap());
 
     let mut owner_relation = marker("owner-relation", None);
     owner_relation.reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
@@ -1292,23 +1419,27 @@ fn axis_relation_preserves_native_kind_and_reports_unsatisfied_geometry() {
             vec![SketchLocus::Entity(second_point)],
         ),
     ]);
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &owner_relation,
         &sketch,
         &owner_entities,
         &owner_markers,
         &owner_loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed owner horizontal relation");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::SameCoordinate { ref relation } if relation.axis() == SketchCoordinateAxis::V
     ));
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &owner_relation,
         &definition,
         &owner_entities
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -1361,13 +1492,15 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
     .with_construction(true)
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
-    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+    let definition = typed_marker_relation_definition_in_sketch(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &sketch,
         &entities,
         &markers,
         &HashMap::new(),
-    ).unwrap()
+    )
+    .unwrap()
     .expect("typed horizontal point relation");
     assert_eq!(
         definition,
@@ -1380,22 +1513,26 @@ fn axis_relation_uses_unique_point_native_identity_when_loci_are_ambiguous() {
             .unwrap()
         }
     );
-    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities
-    ).unwrap());
+    )
+    .unwrap());
 
     let mut ambiguous_entities = entities.clone();
     ambiguous_entities.push(first_entity);
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &ambiguous_entities,
             &markers,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
@@ -1476,24 +1613,28 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         native_ref: Some("scalar".into()),
     };
 
-    let definition = typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+    let definition = typed_relation_definition(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
         &entities,
         &markers,
         &loci,
-    ).unwrap()
+    )
+    .unwrap()
     .expect("stored relation operands are authoritative");
     assert!(matches!(
         definition,
         SketchConstraintDefinitionInput::DistanceLoci { .. }
     ));
-    assert!(relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &entities
-    ).unwrap());
+    )
+    .unwrap());
 
     let mut exact_entities = entities.clone();
     exact_entities[0].native_ref = Some(first.id().to_string());

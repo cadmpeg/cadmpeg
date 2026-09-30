@@ -168,7 +168,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
     };
     let mut surfaces = vec![surface(0, -9.0), surface(1, 13.0), surface(2, 100.0)];
 
-    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap()
+    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+        .unwrap()
         .expect("required invariant");
     assert_eq!(placements.len(), 2);
     assert!(placements.iter().any(|placement| matches!(
@@ -211,7 +212,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         },
     ]);
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap()
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+            .unwrap()
             .expect("object-indexed arc centers form the exact position roster")
             .len(),
         2
@@ -231,7 +233,11 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
         source_object: None,
     };
     surfaces.extend([opposite_side(3, -9.0), opposite_side(4, 13.0)]);
-    assert!(marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None).unwrap().is_none());
+    assert!(
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.1, &surfaces, None)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(
         marker_pattern_bore_axes(
             &ctx,
@@ -240,7 +246,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             2.1,
             &surfaces,
             Some(Vector3::new(0.0, 0.0, 1.0)),
-        ).unwrap()
+        )
+        .unwrap()
         .expect("required invariant")
         .len(),
         2
@@ -273,7 +280,8 @@ fn object_indexed_curve_markers_select_a_congruent_bore_pattern() {
             2.1,
             &surfaces,
             Some(Vector3::new(0.0, 0.0, 1.0)),
-        ).unwrap()
+        )
+        .unwrap()
         .expect("required invariant")
         .len(),
         2
@@ -427,7 +435,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);
 
     let mut surfaces = vec![cylinder(0, -9.0), cylinder(1, 13.0), cylinder(2, 100.0)];
-    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
+    let placements = marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+        .unwrap()
         .expect("unique congruent pattern");
     assert_eq!(placements.len(), 2);
 
@@ -462,7 +471,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         .collect::<Vec<_>>();
     surfaces.extend(opposite);
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+            .unwrap()
             .expect("unoriented coincident axes")
             .len(),
         2
@@ -482,7 +492,8 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
         source_object: None,
     });
     assert_eq!(
-        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None).unwrap()
+        marker_pattern_bore_axes(&ctx, &lane, "position", 2.0, &surfaces, None)
+            .unwrap()
             .expect("complete paired roster takes precedence")
             .len(),
         3
@@ -653,7 +664,8 @@ fn embedded_position_sketch_name_resolves_its_typed_source() {
             &legacy_history.features[0],
             std::slice::from_ref(&legacy_history),
             &[lane],
-        ).unwrap()
+        )
+        .unwrap()
         .map(|feature| feature.id.as_str()),
         Some("native-position")
     );
@@ -806,13 +818,15 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     alternate_configuration.id = "alternate-lane".into();
     alternate_configuration.configuration = Some("alternate".into());
 
-    project_hole_position_sketches(&ctx,
+    project_hole_position_sketches(
+        &ctx,
         &mut features,
         std::slice::from_ref(&sketch),
         &entities,
         std::slice::from_ref(&history),
         &[lane, alternate_configuration],
-    ).unwrap();
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -842,13 +856,15 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
     );
 
     let mut paired_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(&ctx,
+    project_hole_position_sketches(
+        &ctx,
         &mut paired_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&paired_lane),
-    ).unwrap();
+    )
+    .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements: paired_placements,
         ..
@@ -905,13 +921,15 @@ fn typed_position_sketch_reference_lifts_authored_object_loci() {
         constructed_marker
     });
     let mut incomplete_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(&ctx,
+    project_hole_position_sketches(
+        &ctx,
         &mut incomplete_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&incomplete_lane),
-    ).unwrap();
+    )
+    .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         incomplete_features[0].evaluation.definition()
     else {
@@ -1001,13 +1019,15 @@ fn unique_unindexed_point_locus_is_projected() {
     };
     let mut features = vec![hole, sketch_feature];
 
-    project_hole_position_sketches(&ctx,
+    project_hole_position_sketches(
+        &ctx,
         &mut features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1033,13 +1053,15 @@ fn unique_unindexed_point_locus_is_projected() {
     lane.sketch_entities
         .push(marker("ambiguous-locus", 3, [0.006, 0.007]));
     let mut ambiguous_features = vec![model_hole(), features[1].clone()];
-    project_hole_position_sketches(&ctx,
+    project_hole_position_sketches(
+        &ctx,
         &mut ambiguous_features,
         std::slice::from_ref(&sketch),
         &[],
         std::slice::from_ref(&history),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         ambiguous_features[0].evaluation.definition()
     else {
@@ -1185,7 +1207,8 @@ fn spatial_position_point_uses_unique_radius_matched_bore_axis() {
         &[surface],
         &[history],
         &[lane],
-    ).unwrap();
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1286,7 +1309,8 @@ fn shared_spatial_sketch_falls_back_to_geometry_without_scoped_markers() {
         &[],
         &[history],
         &[lane],
-    ).unwrap();
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1419,7 +1443,8 @@ fn spatial_position_relation_handle_uses_its_model_space_bore_locus() {
         &[surface],
         &[history],
         &[lane],
-    ).unwrap();
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         features[0].evaluation.definition()
@@ -1479,23 +1504,30 @@ fn noncollinear_coplanar_spatial_positions_define_one_hole_axis() {
         ])
     );
     assert_eq!(
-        coplanar_spatial_position_placements(&ctx, &[
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 1.0, 1.0),
-            Point3::new(0.0, 2.0, 0.0),
-        ]).unwrap(),
+        coplanar_spatial_position_placements(
+            &ctx,
+            &[
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 1.0),
+                Point3::new(0.0, 2.0, 0.0),
+            ]
+        )
+        .unwrap(),
         None
     );
     let translated =
         points.map(|point| Point3::new(point.x + 1.0e12, point.y - 1.0e12, point.z + 1.0e12));
-    assert!(coplanar_spatial_position_placements(&ctx, &translated).unwrap().is_some());
+    assert!(coplanar_spatial_position_placements(&ctx, &translated)
+        .unwrap()
+        .is_some());
 }
 
 #[test]
 fn source_intervals_supply_legacy_hole_profiles() {
     let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
+    let (hole_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     history.features.push(crate::records::Feature {
         id: "native-profile-sketch".into(),
@@ -1599,7 +1631,8 @@ fn source_intervals_supply_legacy_hole_profiles() {
 #[test]
 fn serialized_position_successor_owns_legacy_hole_profile() {
     let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
+    let (hole_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();
@@ -1661,7 +1694,12 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
         },
     ]);
 
-    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[lane.clone()]).unwrap();
+    enrich_history_hole_constructions(
+        &hole_ctx,
+        std::slice::from_mut(&mut history),
+        &[lane.clone()],
+    )
+    .unwrap();
     assert_eq!(
         history.features[0]
             .properties
@@ -1704,7 +1742,12 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
             object_id: ObjectId::from_value(58),
         },
     ]);
-    enrich_history_hole_constructions(&hole_ctx, std::slice::from_mut(&mut history), &[lane, alternate_lane]).unwrap();
+    enrich_history_hole_constructions(
+        &hole_ctx,
+        std::slice::from_mut(&mut history),
+        &[lane, alternate_lane],
+    )
+    .unwrap();
     assert!(!history.features[0]
         .properties
         .contains_key("DissectableChildren"));
@@ -1713,7 +1756,8 @@ fn serialized_position_successor_owns_legacy_hole_profile() {
 #[test]
 fn ordered_legacy_sketch_children_identify_the_unique_hole_profile() {
     let hole_arena = DecodeArena::new();
-    let (hole_ctx, _) = DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
+    let (hole_ctx, _) =
+        DecodeContext::from_root_bytes(&[], &hole_arena, &DecodePolicy::service()).unwrap();
     let mut history = native_history();
     let mut position = history.features[0].clone();
     position.id = "native-position-sketch".into();

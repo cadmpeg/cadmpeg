@@ -38,7 +38,9 @@ pub(crate) fn prepare_sketches_for_write(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let baseline_neutral = ir
@@ -107,11 +109,16 @@ fn patch_spatial_sketches(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let bytes = native.feature_input_lanes.iter()
-        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     for sketch in &ir.model.spatial_sketches {
         let owners = ir
@@ -967,7 +974,8 @@ fn constraint_locus_point(
 ) -> Result<Point2, cadmpeg_core::CodecError> {
     let entity = sketch_constraint_entity(ir, constraint, locus_entity(locus))?;
     sketch_entity_locus_points(entity)
-        .into_iter().flatten()
+        .into_iter()
+        .flatten()
         .find_map(|(point, role)| role.matches(locus).then_some(point))
         .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
@@ -1477,14 +1485,20 @@ fn source_less_lanes(
         lane.classes = class_declarations(&ctx, &lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
         lane.scalars = named_scalars_charged(&ctx, &lane.native_payload, &lane.id, &lane.names)?;
-        lane.relation_bindings = relation_bindings_charged(&ctx, &lane.id, &lane.classes, &lane.scalars)?;
+        lane.relation_bindings =
+            relation_bindings_charged(&ctx, &lane.id, &lane.classes, &lane.scalars)?;
         lane.references = reference_cells_charged(&ctx, &lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&ctx, &lane.native_payload, &lane.id)?;
     }
-    let bytes = lanes.iter().flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let bytes = lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     bind_scalar_operands(&ctx, &native.feature_histories, &mut lanes)?;
     Ok(lanes)
@@ -1734,10 +1748,13 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_coordinate_marker_carries_two_reverse_relations() {
-    let link_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let link_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &link_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut payload = Vec::new();
         append_coordinate_marker(
             &mut payload,
@@ -1852,10 +1869,13 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_at_intersection_carries_point_reverse_incidence() {
-    let link_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let link_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &link_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let sketch = generated_sketch();
         let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
@@ -1922,10 +1942,13 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_symmetry_carries_axis_reverse_incidence() {
-    let link_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let link_arena = cadmpeg_core::decode::DecodeArena::new();
+        let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &link_arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let sketch = generated_sketch();
         let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);

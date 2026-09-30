@@ -176,8 +176,14 @@ fn definition_candidates(
         let Some(definition) = View::u16_be_at(buf, p + 4).filter(|node| *node > 1) else {
             continue;
         };
-        let family = crate::byte_admission::copy_retained(ctx, text, "copy Parasolid attribute family")?;
-        reserve_map_entry(ctx, &mut found, &definition, "collect Parasolid attribute definitions")?;
+        let family =
+            crate::byte_admission::copy_retained(ctx, text, "copy Parasolid attribute family")?;
+        reserve_map_entry(
+            ctx,
+            &mut found,
+            &definition,
+            "collect Parasolid attribute definitions",
+        )?;
         match found.entry(definition) {
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(Some(family));
@@ -215,7 +221,10 @@ pub(super) fn definition_table(
         "resolve Parasolid attribute definitions",
     )?;
     for (node, family) in candidates {
-        resolved.insert(node, family.and_then(|family| String::from_utf8(family).ok()));
+        resolved.insert(
+            node,
+            family.and_then(|family| String::from_utf8(family).ok()),
+        );
     }
     Ok(resolved)
 }
@@ -237,13 +246,15 @@ fn definitions(
         "collect Parasolid supported definitions",
     )?;
     for (node, family) in definitions {
-            let Some(family) = family else { continue; };
-            let family = match family.as_str() {
-                ATOM_ID => ATOM_ID,
-                LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
-                _ => continue,
-            };
-            supported.insert(node, family);
+        let Some(family) = family else {
+            continue;
+        };
+        let family = match family.as_str() {
+            ATOM_ID => ATOM_ID,
+            LAST_BODY_MODIFIER => LAST_BODY_MODIFIER,
+            _ => continue,
+        };
+        supported.insert(node, family);
     }
     Ok(supported)
 }
@@ -293,7 +304,12 @@ fn integer_lists(
             values.push(value);
         }
         if values.len() == count {
-            reserve_map_entry(ctx, &mut found, &node, "collect Parasolid attribute value lists")?;
+            reserve_map_entry(
+                ctx,
+                &mut found,
+                &node,
+                "collect Parasolid attribute value lists",
+            )?;
             match found.entry(node) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(Some(values));
@@ -402,7 +418,8 @@ pub(super) fn scan(
         if face_attr <= 1 {
             continue;
         }
-        let Some((values, trailing_fields)) = atom_payload(ctx, buf, p + attr_inst::LEN, &lists)? else {
+        let Some((values, trailing_fields)) = atom_payload(ctx, buf, p + attr_inst::LEN, &lists)?
+        else {
             continue;
         };
         let identity = if let Ok(feature_source_id) =
@@ -452,7 +469,12 @@ pub(super) fn scan(
     let mut out = Vec::new();
     ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid face atoms")?;
     out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(&mut out, |left, right| left.face_attr.cmp(&right.face_attr), |_| 0, "sort Parasolid face atoms")?;
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| left.face_attr.cmp(&right.face_attr),
+        |_| 0,
+        "sort Parasolid face atoms",
+    )?;
     Ok(out)
 }
 
@@ -488,8 +510,14 @@ pub(super) fn scan_body_modifiers(
         };
         let Some(values) = referenced_payload(ctx, buf, p + attr_inst::LEN, &lists, |values| {
             values.len() == 1 && values[0] > 0
-        })? else {
-            reserve_map_entry(ctx, &mut found, &body_attr, "collect Parasolid body modifiers")?;
+        })?
+        else {
+            reserve_map_entry(
+                ctx,
+                &mut found,
+                &body_attr,
+                "collect Parasolid body modifiers",
+            )?;
             found.insert(body_attr, None);
             continue;
         };
@@ -509,7 +537,12 @@ pub(super) fn scan_body_modifiers(
             Some(None) => {}
             Some(Some(_)) => {}
             None => {
-                reserve_map_entry(ctx, &mut found, &body_attr, "collect Parasolid body modifiers")?;
+                reserve_map_entry(
+                    ctx,
+                    &mut found,
+                    &body_attr,
+                    "collect Parasolid body modifiers",
+                )?;
                 found.insert(body_attr, Some(modifier));
             }
         }
@@ -518,7 +551,12 @@ pub(super) fn scan_body_modifiers(
     let mut out = Vec::new();
     ctx.reserve_precharged_vec(&mut out, found.len(), "retain Parasolid body modifiers")?;
     out.extend(found.into_values().flatten());
-    ctx.stable_sort_by(&mut out, |left, right| left.body_attr.cmp(&right.body_attr), |_| 0, "sort Parasolid body modifiers")?;
+    ctx.stable_sort_by(
+        &mut out,
+        |left, right| left.body_attr.cmp(&right.body_attr),
+        |_| 0,
+        "sort Parasolid body modifiers",
+    )?;
     Ok(out)
 }
 
@@ -623,8 +661,7 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = ATOM_ID.len() as u64 - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("root");
-        let error =
-            definition_table(&ctx, &bytes).expect_err("family copy exceeds retained limit");
+        let error = definition_table(&ctx, &bytes).expect_err("family copy exceeds retained limit");
         assert!(matches!(error,
             cadmpeg_core::CodecError::ResourceLimit(limit)
                 if limit.dimension == ResourceDimension::RetainedBytes
@@ -785,10 +822,13 @@ mod tests {
 
     #[test]
     fn atom_source_sentinels_have_no_identity() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         for source in [0, u32::MAX] {
             let atoms = scan(&ctx, &stream(&[74, source, 1_390_698_820, 0, 3], 333))
                 .expect("attribute scan");
@@ -800,10 +840,13 @@ mod tests {
 
     #[test]
     fn instance_binds_face_to_producing_feature() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let atoms =
             scan(&ctx, &stream(&[74, 75, 1_390_698_820, 0, 3], 333)).expect("attribute scan");
         assert_eq!(atoms.len(), 1);
@@ -822,10 +865,13 @@ mod tests {
 
     #[test]
     fn instance_preserves_optional_persistent_tail() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let atoms = scan(&ctx, &stream(&[49, 266, 1_704_609_508, 0, 2, 10, 8], 333))
             .expect("attribute scan");
         assert_eq!(atoms.len(), 1);
@@ -837,10 +883,13 @@ mod tests {
 
     #[test]
     fn payload_with_a_nonzero_guard_position_is_not_a_face_identity() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         assert!(scan(&ctx, &stream(&[74, 75, 1_390_698_820, 9, 3], 333))
             .expect("attribute scan")
             .is_empty());
@@ -848,10 +897,13 @@ mod tests {
 
     #[test]
     fn stream_without_the_family_declaration_yields_nothing() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body[8] = b'X';
         assert!(scan(&ctx, &body).expect("attribute scan").is_empty());
@@ -859,10 +911,13 @@ mod tests {
 
     #[test]
     fn conflicting_definition_identity_is_withheld() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = Vec::new();
         append_definition(&mut body, ATOM_ID, 15, 16);
         append_definition(&mut body, LAST_BODY_MODIFIER, 17, 16);
@@ -876,10 +931,13 @@ mod tests {
 
     #[test]
     fn definition_table_retains_unsupported_families() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = Vec::new();
         append_definition(&mut body, "SDL/TYSA_COLOUR", 15, 16);
 
@@ -897,10 +955,13 @@ mod tests {
 
     #[test]
     fn unsupported_and_truncated_integer_lists_are_not_candidates() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = Vec::new();
         body.extend([0x00, 0x52]);
         body.extend(2_u32.to_be_bytes());
@@ -918,10 +979,13 @@ mod tests {
 
     #[test]
     fn conflicting_integer_list_identity_is_withheld() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = Vec::new();
         for value in [2_u32, 3] {
             body.extend([0x00, 0x52]);
@@ -936,10 +1000,13 @@ mod tests {
 
     #[test]
     fn conflicting_face_identity_is_withheld() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3], 333);
         body.extend(stream_with_list_node(
             &[74, 76, 1_390_698_820, 0, 4],
@@ -951,10 +1018,13 @@ mod tests {
 
     #[test]
     fn conflicting_persistent_tail_is_withheld() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut body = stream(&[74, 75, 1_390_698_820, 0, 3, 10], 333);
         body.extend(stream_with_list_node(
             &[74, 75, 1_390_698_820, 0, 3, 11],
@@ -966,10 +1036,13 @@ mod tests {
 
     #[test]
     fn body_modifier_binds_one_history_ordinal() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let modifiers =
             scan_body_modifiers(&ctx, &body_modifier_stream(&[&[2]], 333)).expect("modifier scan");
         assert_eq!(modifiers.len(), 1);
@@ -979,10 +1052,13 @@ mod tests {
 
     #[test]
     fn body_modifier_rejects_non_scalar_and_conflicting_payloads() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         assert!(
             scan_body_modifiers(&ctx, &body_modifier_stream(&[&[0]], 333))
                 .expect("modifier scan")

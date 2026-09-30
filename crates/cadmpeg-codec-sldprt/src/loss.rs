@@ -387,7 +387,8 @@ pub(crate) fn spline_lane_refusal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: impl std::fmt::Display,
 ) -> Result<LossNote, cadmpeg_core::CodecError> {
-    let message = crate::text_admission::format_retained(ctx, 
+    let message = crate::text_admission::format_retained(
+        ctx,
         format_args!(
             "{record}; the carrier is not emitted and the entities that reference it fall back \
              to an untyped support."
@@ -411,17 +412,18 @@ mod tests {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 5;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits policy");
-        let Err(CodecError::ResourceLimit(limit)) = super::spline_lane_refusal(
-            &ctx, "carrier attribute 9",
-        ) else { panic!("input-sized loss text must use retained budget") };
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
+        let Err(CodecError::ResourceLimit(limit)) =
+            super::spline_lane_refusal(&ctx, "carrier attribute 9")
+        else {
+            panic!("input-sized loss text must use retained budget")
+        };
         assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
             .expect("empty root fits service policy");
-        let note = super::spline_lane_refusal(&ctx, "carrier attribute 9")
-            .expect("service budget");
+        let note = super::spline_lane_refusal(&ctx, "carrier attribute 9").expect("service budget");
         assert_eq!(note.message, "carrier attribute 9; the carrier is not emitted and the entities that reference it fall back to an untyped support.");
     }
 

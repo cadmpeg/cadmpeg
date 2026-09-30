@@ -507,5 +507,10 @@ fn keywords_root_id_does_not_create_feature_parentage() {
         history.features[1].parent_source_id(),
         FeatureSource::from_value(1)
     );
-    assert!(crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap().is_empty());
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .is_empty());
 }

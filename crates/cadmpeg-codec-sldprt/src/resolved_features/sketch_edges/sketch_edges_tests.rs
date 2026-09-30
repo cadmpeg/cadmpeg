@@ -47,8 +47,8 @@ fn accepts_vertices_on_nondegenerate_analytic_carriers() {
 
 #[test]
 fn projected_sketch_nurbs_refuses_collection_limit() {
-    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::topology::{Edge, EdgeCarrier};
@@ -77,7 +77,8 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
             vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
             None,
             false,
-        ).expect("valid curve"),
+        )
+        .expect("valid curve"),
     ));
     let curves = HashMap::from([(&curve_id, &geometry)]);
     let frame = super::SketchPlaneFrame {
@@ -91,24 +92,46 @@ fn projected_sketch_nurbs_refuses_collection_limit() {
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("empty root fits policy");
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = super::project_edge(
-        &ctx, &edge, &vertices, &points, &curves, frame,
+        &ctx,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
-    ) else { panic!("four knots exceed three collection items") };
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    ) else {
+        panic!("four knots exceed three collection items")
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).expect("empty root fits service policy");
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("empty root fits service policy");
     assert!(super::project_edge(
-        &ctx, &edge, &vertices, &points, &curves, frame,
+        &ctx,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
-    ).expect("service budget").is_some());
+    )
+    .expect("service budget")
+    .is_some());
 }
 
 fn shared_endpoint_constraints(
     policy: &cadmpeg_core::decode::DecodePolicy,
 ) -> Result<Vec<cadmpeg_ir::sketches::SketchConstraint>, cadmpeg_core::CodecError> {
-    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+    use cadmpeg_ir::sketches::{
+        SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    };
 
     let sketch = SketchId::mint("test:model:sketch#shared").expect("valid sketch ID");
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -156,9 +179,16 @@ fn sketch_projection_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
-    else { panic!("shared endpoints must charge collection items") };
+    else {
+        panic!("shared endpoints must charge collection items")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
-    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+    assert_eq!(
+        shared_endpoint_constraints(&DecodePolicy::service())
+            .expect("service budget")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -168,9 +198,16 @@ fn sketch_projection_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
-    else { panic!("shared endpoints must charge retained bytes") };
+    else {
+        panic!("shared endpoints must charge retained bytes")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
-    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+    assert_eq!(
+        shared_endpoint_constraints(&DecodePolicy::service())
+            .expect("service budget")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -180,9 +217,16 @@ fn sketch_projection_refuses_work_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let Err(cadmpeg_core::CodecError::ResourceLimit(limit)) = shared_endpoint_constraints(&policy)
-    else { panic!("shared endpoints must charge work") };
+    else {
+        panic!("shared endpoints must charge work")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
-    assert_eq!(shared_endpoint_constraints(&DecodePolicy::service()).expect("service budget").len(), 1);
+    assert_eq!(
+        shared_endpoint_constraints(&DecodePolicy::service())
+            .expect("service budget")
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -225,7 +269,12 @@ fn sketch_projection_refuses_opaque_curve_retained_limit() {
     policy.limits.max_retained_bytes = 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = super::project_edge(
-        &limited, &edge, &vertices, &points, &curves, frame,
+        &limited,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect_err("opaque curve text exceeds retained limit");
@@ -235,10 +284,15 @@ fn sketch_projection_refuses_opaque_curve_retained_limit() {
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain SLDPRT opaque sketch curve"
     ));
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("empty root");
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("empty root");
     assert!(super::project_edge(
-        &service, &edge, &vertices, &points, &curves, frame,
+        &service,
+        &edge,
+        &vertices,
+        &points,
+        &curves,
+        frame,
         &mut crate::lane_refusal::LaneRefusals::new(),
     )
     .expect("service budget")

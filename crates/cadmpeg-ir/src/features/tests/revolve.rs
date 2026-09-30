@@ -18,7 +18,9 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
         "face_maker_class": "Part::FaceMakerBullseye"
     }))
     .unwrap();
-    construction.set_axis(Some(serde_json::from_value::<RevolutionAxis>(axis.clone()).unwrap()));
+    construction.set_axis(Some(
+        serde_json::from_value::<RevolutionAxis>(axis.clone()).unwrap(),
+    ));
     assert_eq!(
         serde_json::to_value(construction).unwrap(),
         serde_json::json!({
@@ -31,4 +33,3 @@ fn revolve_set_axis_preserves_owned_profile_extent_and_selections() {
         })
     );
 }
-

@@ -103,10 +103,16 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
         &zero_object,
     ];
     let endpoint_ids = |payload: &[u8]| {
-        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), payload, &curve, &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>()
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            payload,
+            &curve,
+            &markers,
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>()
     };
 
     let roster = profile_payload(1, 0x44, [2, 4], false);
@@ -118,14 +124,35 @@ fn compact_legacy_92_profile_prefers_roster_and_recovers_direct_object_ids() {
     assert_eq!(endpoint_ids(&roster), ["third", "coordinate-line"]);
 
     let direct = profile_payload(1, 0x44, [4, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &direct, &curve, &markers).unwrap().is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &direct,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(endpoint_ids(&direct), ["third", "coordinate-line"]);
 
     let terminal = profile_payload(0, 0x04, [4, 13], true);
-    assert!(coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &terminal, &curve, &markers).unwrap().is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &terminal,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert_eq!(endpoint_ids(&terminal), ["third", "coordinate-line"]);
 
     let zero_direct = profile_payload(1, 0x44, [0, 13], false);
-    assert!(coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &zero_direct, &curve, &markers).unwrap().is_empty());
+    assert!(coordinate_roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &zero_direct,
+        &curve,
+        &markers
+    )
+    .unwrap()
+    .is_empty());
     assert!(endpoint_ids(&zero_direct).is_empty());
 }

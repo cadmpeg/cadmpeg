@@ -140,8 +140,8 @@ fn pattern_hole_limit_error(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     pattern_hole_nominal_context(&ctx, &features).expect_err("pattern context must refuse")
 }
 
@@ -149,7 +149,9 @@ fn pattern_hole_limit_error(
 fn pattern_hole_nominal_context_refuses_collection_limit() {
     let CodecError::ResourceLimit(limit) =
         pattern_hole_limit_error(|limits| limits.max_collection_items = 0)
-    else { panic!("expected collection refusal") };
+    else {
+        panic!("expected collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
@@ -157,7 +159,9 @@ fn pattern_hole_nominal_context_refuses_collection_limit() {
 fn pattern_hole_nominal_context_refuses_retained_limit() {
     let CodecError::ResourceLimit(limit) =
         pattern_hole_limit_error(|limits| limits.max_retained_bytes = 0)
-    else { panic!("expected retained refusal") };
+    else {
+        panic!("expected retained refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
@@ -165,7 +169,9 @@ fn pattern_hole_nominal_context_refuses_retained_limit() {
 fn pattern_hole_nominal_context_refuses_work_limit() {
     let CodecError::ResourceLimit(limit) =
         pattern_hole_limit_error(|limits| limits.max_work_units = 0)
-    else { panic!("expected work refusal") };
+    else {
+        panic!("expected work refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
@@ -301,7 +307,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(222, 22)],
         &[(333, 33)],
         &[(444, 44)],
-    ).expect("topology index");
+    )
+    .expect("topology index");
 
     assert_eq!(
         index.resolve("schema-a:11").cloned(),
@@ -354,7 +361,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(222, 22)],
         &[],
         &[],
-    ).expect("topology index");
+    )
+    .expect("topology index");
     assert_eq!(
         active_with_alternate.resolve("schema-g:222").cloned(),
         Some(PmiTarget::Face {
@@ -377,7 +385,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
         &[],
         &[],
-    ).expect("topology index");
+    )
+    .expect("topology index");
     assert_eq!(
         index.resolve("schema-g:11").cloned(),
         Some(PmiTarget::Body {
@@ -394,7 +403,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[],
         &[(11, 33)],
         &[],
-    ).expect("topology index");
+    )
+    .expect("topology index");
     assert_eq!(
         sequence_wins.resolve("schema-h:11").cloned(),
         Some(PmiTarget::Edge {
@@ -411,7 +421,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(11, 999)],
         &[],
         &[],
-    ).expect("topology index");
+    )
+    .expect("topology index");
     assert!(unresolved.resolve("schema-i:11").cloned().is_none());
 
     let conflicting = TopologyIdentityIndex::from_model(
@@ -429,7 +440,8 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(77, 22), (77, 23)],
         &[],
         &[],
-    ).expect("topology index");
+    )
+    .expect("topology index");
     assert!(conflicting.resolve("schema-j:77").cloned().is_none());
 
     let conflicting_families = TopologyIdentityIndex::from_model(
@@ -441,8 +453,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
         &[(88, 22)],
         &[(88, 33)],
         &[],
-    ).expect("topology index");
-    assert!(conflicting_families.resolve("schema-k:88").cloned().is_none());
+    )
+    .expect("topology index");
+    assert!(conflicting_families
+        .resolve("schema-k:88")
+        .cloned()
+        .is_none());
 }
 
 fn topology_index_limit_error(
@@ -463,8 +479,8 @@ fn topology_index_limit_error(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     TopologyIdentityIndex::from_model(&ctx, &[body], &[], &[], &[], &[], &[], &[])
         .expect_err("topology index must refuse")
 }
@@ -473,7 +489,9 @@ fn topology_index_limit_error(
 fn swift_topology_index_refuses_work_limit() {
     let CodecError::ResourceLimit(limit) =
         topology_index_limit_error(|limits| limits.max_work_units = 0)
-    else { panic!("expected work refusal") };
+    else {
+        panic!("expected work refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
@@ -481,7 +499,9 @@ fn swift_topology_index_refuses_work_limit() {
 fn swift_topology_index_refuses_retained_limit() {
     let CodecError::ResourceLimit(limit) =
         topology_index_limit_error(|limits| limits.max_retained_bytes = 0)
-    else { panic!("expected retained refusal") };
+    else {
+        panic!("expected retained refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
@@ -489,6 +509,8 @@ fn swift_topology_index_refuses_retained_limit() {
 fn swift_topology_index_refuses_collection_limit() {
     let CodecError::ResourceLimit(limit) =
         topology_index_limit_error(|limits| limits.max_collection_items = 0)
-    else { panic!("expected collection refusal") };
+    else {
+        panic!("expected collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }

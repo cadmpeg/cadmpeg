@@ -22,7 +22,9 @@ enum ExpressionFailure {
 }
 
 impl From<CodecError> for ExpressionFailure {
-    fn from(error: CodecError) -> Self { Self::Resource(error) }
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 pub(super) struct ParameterExpressionParser<'a, 'ctx, 'arena> {
@@ -51,18 +53,34 @@ impl ParameterAliasMap<'_> {
 
 impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
     pub(super) fn new(
-        ctx: &'ctx DecodeContext<'arena>, input: &'a str,
-        aliases: ParameterAliasView<'a>, values: &'a HashMap<ParameterId, ParameterValue>,
+        ctx: &'ctx DecodeContext<'arena>,
+        input: &'a str,
+        aliases: ParameterAliasView<'a>,
+        values: &'a HashMap<ParameterId, ParameterValue>,
     ) -> Self {
-        Self { ctx, input, offset: 0, aliases: ParameterAliasMap::Layered(aliases), values }
+        Self {
+            ctx,
+            input,
+            offset: 0,
+            aliases: ParameterAliasMap::Layered(aliases),
+            values,
+        }
     }
 
     #[cfg(test)]
     pub(in crate::history) fn new_flat(
-        ctx: &'ctx DecodeContext<'arena>, input: &'a str,
-        aliases: &'a HashMap<String, Option<ParameterId>>, values: &'a HashMap<ParameterId, ParameterValue>,
+        ctx: &'ctx DecodeContext<'arena>,
+        input: &'a str,
+        aliases: &'a HashMap<String, Option<ParameterId>>,
+        values: &'a HashMap<ParameterId, ParameterValue>,
     ) -> Self {
-        Self { ctx, input, offset: 0, aliases: ParameterAliasMap::Flat(aliases), values }
+        Self {
+            ctx,
+            input,
+            offset: 0,
+            aliases: ParameterAliasMap::Flat(aliases),
+            values,
+        }
     }
 
     pub(super) fn parse(mut self) -> Result<Option<ParameterValue>, CodecError> {
@@ -77,60 +95,90 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         self.skip_space()?;
         self.take('=');
         self.skip_space()?;
-        self.ctx.charge_work((self.input.len() - self.offset) as u64, "parse SLDPRT parameter literal")?;
-        if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) { return Ok(value); }
+        self.ctx.charge_work(
+            (self.input.len() - self.offset) as u64,
+            "parse SLDPRT parameter literal",
+        )?;
+        if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
+            return Ok(value);
+        }
         let value = self.comparison()?;
         self.skip_space()?;
-        if self.offset == self.input.len() { Ok(value) } else { Err(ExpressionFailure::NoValue) }
+        if self.offset == self.input.len() {
+            Ok(value)
+        } else {
+            Err(ExpressionFailure::NoValue)
+        }
     }
 
     fn comparison(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter comparison")?;
-        self.ctx.charge_work(1, "parse SLDPRT parameter expression")?;
+        self.ctx
+            .charge_work(1, "parse SLDPRT parameter expression")?;
         let left = self.sum()?;
         self.skip_space()?;
-        let operator = ["<=", ">=", "<>", "=", "<", ">"].into_iter()
+        let operator = ["<=", ">=", "<>", "=", "<", ">"]
+            .into_iter()
             .find(|operator| self.input[self.offset..].starts_with(operator));
-        let Some(operator) = operator else { return Ok(left); };
+        let Some(operator) = operator else {
+            return Ok(left);
+        };
         self.offset += operator.len();
         compare_parameter_values(&left, &self.sum()?, operator)
-            .map(ParameterValue::Boolean).ok_or(ExpressionFailure::NoValue)
+            .map(ParameterValue::Boolean)
+            .ok_or(ExpressionFailure::NoValue)
     }
 
     fn sum(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let mut value = self.product()?;
         loop {
-            self.ctx.charge_work(1, "parse SLDPRT parameter expression")?;
+            self.ctx
+                .charge_work(1, "parse SLDPRT parameter expression")?;
             self.skip_space()?;
-            let Some(op) = self.take_one(&['+', '-']) else { return Ok(value); };
-            value = add_parameter_values(value, self.product()?, op == '-').ok_or(ExpressionFailure::NoValue)?;
+            let Some(op) = self.take_one(&['+', '-']) else {
+                return Ok(value);
+            };
+            value = add_parameter_values(value, self.product()?, op == '-')
+                .ok_or(ExpressionFailure::NoValue)?;
         }
     }
 
     fn product(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let mut value = self.unary()?;
         loop {
-            self.ctx.charge_work(1, "parse SLDPRT parameter expression")?;
+            self.ctx
+                .charge_work(1, "parse SLDPRT parameter expression")?;
             self.skip_space()?;
-            let Some(op) = self.take_one(&['*', '/']) else { return Ok(value); };
-            value = multiply_parameter_values(value, self.unary()?, op == '/').ok_or(ExpressionFailure::NoValue)?;
+            let Some(op) = self.take_one(&['*', '/']) else {
+                return Ok(value);
+            };
+            value = multiply_parameter_values(value, self.unary()?, op == '/')
+                .ok_or(ExpressionFailure::NoValue)?;
         }
     }
 
     fn unary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let _depth = self.ctx.enter_nested("parse SLDPRT parameter unary")?;
-        self.ctx.charge_work(1, "parse SLDPRT parameter expression")?;
+        self.ctx
+            .charge_work(1, "parse SLDPRT parameter expression")?;
         self.skip_space()?;
-        if self.take('-') { negate_parameter_value(&self.unary()?).ok_or(ExpressionFailure::NoValue) }
-        else if self.take('+') { self.unary() }
-        else { self.power() }
+        if self.take('-') {
+            negate_parameter_value(&self.unary()?).ok_or(ExpressionFailure::NoValue)
+        } else if self.take('+') {
+            self.unary()
+        } else {
+            self.power()
+        }
     }
 
     fn power(&mut self) -> Result<ParameterValue, ExpressionFailure> {
         let base = self.primary()?;
         self.skip_space()?;
-        if self.take('^') { exponentiate_parameter_value(&base, &self.unary()?).ok_or(ExpressionFailure::NoValue) }
-        else { Ok(base) }
+        if self.take('^') {
+            exponentiate_parameter_value(&base, &self.unary()?).ok_or(ExpressionFailure::NoValue)
+        } else {
+            Ok(base)
+        }
     }
 
     fn primary(&mut self) -> Result<ParameterValue, ExpressionFailure> {
@@ -138,38 +186,54 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         if self.take('(') {
             let value = self.comparison()?;
             self.skip_space()?;
-            return if self.take(')') { Ok(value) } else { Err(ExpressionFailure::NoValue) };
+            return if self.take(')') {
+                Ok(value)
+            } else {
+                Err(ExpressionFailure::NoValue)
+            };
         }
         let token = self.token()?;
         if let Token::Bare(token) = &token {
             self.skip_space()?;
             if self.take('(') {
-                let function = ParameterFunction::parse(token.as_str()).ok_or(ExpressionFailure::NoValue)?;
+                let function =
+                    ParameterFunction::parse(token.as_str()).ok_or(ExpressionFailure::NoValue)?;
                 let mut arguments = Vec::with_capacity(function.argument_count());
                 for index in 0..function.argument_count() {
                     if index != 0 {
                         self.skip_space()?;
-                        if !self.take(',') { return Err(ExpressionFailure::NoValue); }
+                        if !self.take(',') {
+                            return Err(ExpressionFailure::NoValue);
+                        }
                     }
                     arguments.push(self.comparison()?);
                 }
                 self.skip_space()?;
-                if !self.take(')') { return Err(ExpressionFailure::NoValue); }
+                if !self.take(')') {
+                    return Err(ExpressionFailure::NoValue);
+                }
                 return function.apply(arguments).ok_or(ExpressionFailure::NoValue);
             }
             if token.as_str().eq_ignore_ascii_case("pi") {
-                return FiniteReal::new(std::f64::consts::PI).map(ParameterValue::Real).ok_or(ExpressionFailure::NoValue);
+                return FiniteReal::new(std::f64::consts::PI)
+                    .map(ParameterValue::Real)
+                    .ok_or(ExpressionFailure::NoValue);
             }
         }
         let referenced = |token: &str| -> Result<ParameterValue, ExpressionFailure> {
-            let value = self.aliases.get(token).and_then(Option::as_ref)
-                .and_then(|id| self.values.get(id)).ok_or(ExpressionFailure::NoValue)?;
+            let value = self
+                .aliases
+                .get(token)
+                .and_then(Option::as_ref)
+                .and_then(|id| self.values.get(id))
+                .ok_or(ExpressionFailure::NoValue)?;
             Ok(copy_parameter_value(self.ctx, value)?)
         };
         match token {
             Token::Quoted(token) => referenced(token.as_str()),
             Token::Bare(token) => match parse_parameter_literal(token.as_str()) {
-                Some(value) => Ok(value), None => referenced(token.as_str()),
+                Some(value) => Ok(value),
+                None => referenced(token.as_str()),
             },
         }
     }
@@ -179,19 +243,41 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
         self.ctx.charge_work(1, "parse SLDPRT parameter token")?;
         let rest = &self.input[self.offset..];
         if let Some((marker, prefix)) = [
-            ("<MOD-DIAM>", "<MOD-DIAM>"), ("&lt;MOD-DIAM&gt;", "<MOD-DIAM>"),
-            ("<MOD-RHO>", "R"), ("&lt;MOD-RHO&gt;", "R"),
-        ].into_iter().find(|(marker, _)| rest.starts_with(marker)) {
+            ("<MOD-DIAM>", "<MOD-DIAM>"),
+            ("&lt;MOD-DIAM&gt;", "<MOD-DIAM>"),
+            ("<MOD-RHO>", "R"),
+            ("&lt;MOD-RHO&gt;", "R"),
+        ]
+        .into_iter()
+        .find(|(marker, _)| rest.starts_with(marker))
+        {
             self.offset += marker.len();
-            let Token::Bare(value) = self.token()? else { return Err(ExpressionFailure::NoValue); };
-            let bytes = prefix.len().checked_add(value.as_str().len()).ok_or_else(|| self.ctx.refuse_codec_limit(
-                "normalize SLDPRT parameter token", u64::MAX - 1, u64::MAX,
-            ))?;
-            self.ctx.charge_work(bytes as u64, "normalize SLDPRT parameter token")?;
-            let (mut text, reservation) = crate::text_admission::reserve_scoped_string(self.ctx, bytes, "normalize SLDPRT parameter token")?;
+            let Token::Bare(value) = self.token()? else {
+                return Err(ExpressionFailure::NoValue);
+            };
+            let bytes = prefix
+                .len()
+                .checked_add(value.as_str().len())
+                .ok_or_else(|| {
+                    self.ctx.refuse_codec_limit(
+                        "normalize SLDPRT parameter token",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+            self.ctx
+                .charge_work(bytes as u64, "normalize SLDPRT parameter token")?;
+            let (mut text, reservation) = crate::text_admission::reserve_scoped_string(
+                self.ctx,
+                bytes,
+                "normalize SLDPRT parameter token",
+            )?;
             text.push_str(prefix);
             text.push_str(value.as_str());
-            return Ok(Token::Bare(ParameterTokenText::Owned { value: text, _reservation: reservation }));
+            return Ok(Token::Bare(ParameterTokenText::Owned {
+                value: text,
+                _reservation: reservation,
+            }));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -199,59 +285,105 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
             let mut end = start;
             let mut closed = false;
             while end < self.input.len() {
-                self.ctx.charge_work(1, "scan SLDPRT quoted parameter token")?;
+                self.ctx
+                    .charge_work(1, "scan SLDPRT quoted parameter token")?;
                 let rest = &self.input[end..];
-                if rest.starts_with("\"\"") { end += 2; }
-                else if rest.starts_with('"') { closed = true; break; }
-                else { end += rest.chars().next().ok_or(ExpressionFailure::NoValue)?.len_utf8(); }
+                if rest.starts_with("\"\"") {
+                    end += 2;
+                } else if rest.starts_with('"') {
+                    closed = true;
+                    break;
+                } else {
+                    end += rest
+                        .chars()
+                        .next()
+                        .ok_or(ExpressionFailure::NoValue)?
+                        .len_utf8();
+                }
             }
-            if !closed { self.offset = end; return Err(ExpressionFailure::NoValue); }
-            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(self.ctx, end - start, "retain SLDPRT quoted parameter token")?;
-            self.ctx.charge_work((end - start) as u64, "copy SLDPRT quoted parameter token")?;
+            if !closed {
+                self.offset = end;
+                return Err(ExpressionFailure::NoValue);
+            }
+            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(
+                self.ctx,
+                end - start,
+                "retain SLDPRT quoted parameter token",
+            )?;
+            self.ctx
+                .charge_work((end - start) as u64, "copy SLDPRT quoted parameter token")?;
             let mut cursor = start;
             while cursor < end {
                 let rest = &self.input[cursor..end];
-                if rest.starts_with("\"\"") { value.push('"'); cursor += 2; }
-                else {
+                if rest.starts_with("\"\"") {
+                    value.push('"');
+                    cursor += 2;
+                } else {
                     let character = rest.chars().next().ok_or(ExpressionFailure::NoValue)?;
-                    value.push(character); cursor += character.len_utf8();
+                    value.push(character);
+                    cursor += character.len_utf8();
                 }
             }
             self.offset = end + 1;
-            return Ok(Token::Quoted(ParameterTokenText::Owned { value, _reservation: reservation }));
+            return Ok(Token::Quoted(ParameterTokenText::Owned {
+                value,
+                _reservation: reservation,
+            }));
         }
         let start = self.offset;
-        let numeric = self.input[start..].chars().next()
+        let numeric = self.input[start..]
+            .chars()
+            .next()
             .is_some_and(|character| character.is_ascii_digit() || character == '.');
         while self.offset < self.input.len() {
             self.ctx.charge_work(1, "scan SLDPRT parameter token")?;
-            let character = self.input[self.offset..].chars().next().ok_or(ExpressionFailure::NoValue)?;
-            let exponent_sign = numeric && matches!(character, '+' | '-')
+            let character = self.input[self.offset..]
+                .chars()
+                .next()
+                .ok_or(ExpressionFailure::NoValue)?;
+            let exponent_sign = numeric
+                && matches!(character, '+' | '-')
                 && self.input[start..self.offset].ends_with(['e', 'E']);
-            if character.is_whitespace() || (!exponent_sign && "+-*/^(),=<>".contains(character)) { break; }
+            if character.is_whitespace() || (!exponent_sign && "+-*/^(),=<>".contains(character)) {
+                break;
+            }
             self.offset += character.len_utf8();
         }
-        if self.offset == start { return Err(ExpressionFailure::NoValue); }
-        Ok(Token::Bare(ParameterTokenText::Borrowed(&self.input[start..self.offset])))
+        if self.offset == start {
+            return Err(ExpressionFailure::NoValue);
+        }
+        Ok(Token::Bare(ParameterTokenText::Borrowed(
+            &self.input[start..self.offset],
+        )))
     }
 
     fn skip_space(&mut self) -> Result<(), ExpressionFailure> {
         while let Some(character) = self.input[self.offset..].chars().next() {
-            self.ctx.charge_work(1, "scan SLDPRT parameter whitespace")?;
-            if !character.is_whitespace() { break; }
+            self.ctx
+                .charge_work(1, "scan SLDPRT parameter whitespace")?;
+            if !character.is_whitespace() {
+                break;
+            }
             self.offset += character.len_utf8();
         }
         Ok(())
     }
 
     fn take(&mut self, expected: char) -> bool {
-        if self.input[self.offset..].starts_with(expected) { self.offset += expected.len_utf8(); true }
-        else { false }
+        if self.input[self.offset..].starts_with(expected) {
+            self.offset += expected.len_utf8();
+            true
+        } else {
+            false
+        }
     }
 
     fn take_one(&mut self, expected: &[char]) -> Option<char> {
         let character = self.input[self.offset..].chars().next()?;
-        expected.contains(&character).then(|| { self.offset += character.len_utf8(); character })
+        expected.contains(&character).then(|| {
+            self.offset += character.len_utf8();
+            character
+        })
     }
 }
 

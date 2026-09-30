@@ -34,8 +34,11 @@ fn appearance_from_nameless_block_keeps_source_owner() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &source, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let definitions = super::definitions(&ctx, &scan).unwrap();
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].source_name.as_str(), "block@8");
@@ -223,8 +226,11 @@ fn visual_states_feature_assignment_decodes_identity_and_color() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &source, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let assignments = super::feature_assignments(&ctx, &container::scan_bytes(&source)).unwrap();
     assert_eq!(assignments.len(), 1);
     assert_eq!(assignments[0].feature_source_id.value(), 36);
@@ -295,8 +301,7 @@ fn display_feature_binding_refuses_retained_limit() {
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref()
-            == Some("Contents/DisplayLists::DisplayFace[0]")
+        binding.source_entity_id.as_deref() == Some("Contents/DisplayLists::DisplayFace[0]")
     }));
 
     let mut options = DecodeOptions::default();
@@ -525,7 +530,11 @@ fn decode_does_not_bind_color_to_an_unemitted_face() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
