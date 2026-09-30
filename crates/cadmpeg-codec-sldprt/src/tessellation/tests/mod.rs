@@ -1092,8 +1092,10 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
 
 #[test]
 fn cylindrical_trim_uses_the_short_boundary_arc() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let mut angles = vec![0.0, std::f64::consts::FRAC_PI_2];
-    let (start, span) = circular_interval(&mut angles).unwrap();
+    let (start, span) = circular_interval(&ctx, &mut angles).unwrap().unwrap();
     assert_eq!(start, 0.0);
     assert_eq!(span, std::f64::consts::FRAC_PI_2);
     assert!(circular_interval_contains(

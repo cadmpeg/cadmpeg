@@ -1070,10 +1070,10 @@ pub(super) fn scan(bytes: &[u8], ctx: &DecodeContext<'_>) -> Result<Facts, Codec
             }
         }
     }
-    facts.bodies.sort_by_key(|node| node.offset);
-    facts.shells.sort_by_key(|node| node.offset);
-    facts.regions.sort_by_key(|node| node.offset);
-    facts.faces.sort_by_key(|node| node.offset);
+    ctx.stable_sort_by(&mut facts.bodies, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort typed Parasolid records")?;
+    ctx.stable_sort_by(&mut facts.shells, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort typed Parasolid records")?;
+    ctx.stable_sort_by(&mut facts.regions, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort typed Parasolid records")?;
+    ctx.stable_sort_by(&mut facts.faces, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort typed Parasolid records")?;
     Ok(facts)
 }
 

@@ -688,7 +688,7 @@ pub(crate) fn section_display_faces(
             });
         }
     }
-    faces.sort_by_key(|face| face.table.start());
+    ctx.stable_sort_by(&mut faces, |left, right| left.table.start().cmp(&right.table.start()), |_| 0, "sort SLDPRT display faces")?;
     for index in 0..faces.len() {
         let metadata_end = faces
             .get(index + 1)
@@ -1114,7 +1114,7 @@ fn approximate_surface_owner(
     if fits.is_empty() {
         return approximate_trimmed_surface_owner(ctx, mesh, candidates, quantization_tolerance);
     }
-    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
+    ctx.stable_sort_by(&mut fits, |left, right| left.1.total_cmp(&right.1), |_| 0, "sort SLDPRT tessellation surface fits")?;
     let best_deflection = fits[0].1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     let mut trimmed = Vec::new();
@@ -1193,7 +1193,7 @@ fn approximate_trimmed_surface_owner(
         ctx.reserve_collection_vec(&mut fits, 1, "collect SLDPRT tessellation trimmed fits")?;
         fits.push(fit);
     }
-    fits.sort_by(|left, right| left.1.total_cmp(&right.1));
+    ctx.stable_sort_by(&mut fits, |left, right| left.1.total_cmp(&right.1), |_| 0, "sort SLDPRT tessellation surface fits")?;
     let Some(first) = fits.first() else { return Ok(None); };
     let best_deflection = first.1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
@@ -2157,7 +2157,7 @@ fn cylindrical_trim(
             angles.push(angle);
         }
     }
-    let (angular_start, angular_span) = require_some!(circular_interval(&mut angles));
+    let (angular_start, angular_span) = require_some!(circular_interval(ctx, &mut angles)?);
     Ok((max_axial - min_axial > tolerance).then_some(CylindricalTrim {
         origin,
         frame,
@@ -2307,7 +2307,7 @@ fn conical_trim(
         }
     }
     let (min_axial, max_axial) = require_some!(axial_bounds);
-    let (angular_start, angular_span) = require_some!(circular_interval(&mut angles));
+    let (angular_start, angular_span) = require_some!(circular_interval(ctx, &mut angles)?);
     Ok((max_axial - min_axial > tolerance).then_some(ConicalTrim {
         origin,
         frame,
@@ -2363,17 +2363,18 @@ fn cone_angle(
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn circular_interval(angles: &mut Vec<f64>) -> Option<(f64, f64)> {
+fn circular_interval(ctx: &DecodeContext<'_>, angles: &mut Vec<f64>) -> Result<Option<(f64, f64)>, cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(angles.len()), "select SLDPRT circular trim angles")?;
     angles.retain(|angle| angle.is_finite());
     if angles.is_empty() {
-        return None;
+        return Ok(None);
     }
-    angles.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(angles, f64::total_cmp, |_| 0, "sort SLDPRT circular trim angles")?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
     if angles.len() == 1 {
-        return Some((angles[0], std::f64::consts::TAU));
+        return Ok(Some((angles[0], std::f64::consts::TAU)));
     }
-    let (largest_gap_index, largest_gap) = (0..angles.len())
+    let Some((largest_gap_index, largest_gap)) = (0..angles.len())
         .map(|index| {
             let next = angles[(index + 1) % angles.len()];
             let gap = if index + 1 == angles.len() {
@@ -2383,9 +2384,9 @@ fn circular_interval(angles: &mut Vec<f64>) -> Option<(f64, f64)> {
             };
             (index, gap)
         })
-        .max_by(|left, right| left.1.total_cmp(&right.1))?;
+        .max_by(|left, right| left.1.total_cmp(&right.1)) else { return Ok(None); };
     let start = angles[(largest_gap_index + 1) % angles.len()];
-    Some((start, std::f64::consts::TAU - largest_gap))
+    Ok(Some((start, std::f64::consts::TAU - largest_gap)))
 }
 
 fn circular_interval_contains(start: f64, span: f64, angle: f64, tolerance: f64) -> bool {
@@ -2797,7 +2798,7 @@ fn chordal_hole_constraint(
             boundary_angles.push((point.v - hole.center.v).atan2(point.u - hole.center.u));
         }
     }
-    boundary_angles.sort_by(f64::total_cmp);
+    ctx.stable_sort_by(&mut boundary_angles, f64::total_cmp, |_| 0, "sort SLDPRT circular trim angles")?;
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);
     if boundary_angles.len() < 3 {
         return Ok(None);
