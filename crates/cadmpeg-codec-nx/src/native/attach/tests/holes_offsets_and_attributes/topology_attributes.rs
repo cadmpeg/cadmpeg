@@ -23,41 +23,42 @@ fn attribute_field_name(
     field_uses: &[crate::native::parasolid::ParasolidAttributeFieldUse],
     field_names: &[crate::native::parasolid::ParasolidAttributeFieldNames],
 ) -> Option<String> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut reservation = ctx
-        .reserve_scoped(0, "test Parasolid attribute names")
-        .unwrap();
-    ParasolidAttributeNameIndex::new(
-        &ctx,
-        &mut reservation,
-        class_uses,
-        definitions,
-        field_uses,
-        field_names,
-    )
-    .unwrap()
-    .field_name(&ctx, topology_reference, value_use)
-    .unwrap()
+    crate::test_support::with_decode_context(|ctx| {
+        let mut reservation = ctx
+            .reserve_scoped(0, "test Parasolid attribute names")
+            .unwrap();
+        ParasolidAttributeNameIndex::new(
+            ctx,
+            &mut reservation,
+            class_uses,
+            definitions,
+            field_uses,
+            field_names,
+        )
+        .unwrap()
+        .field_name(ctx, topology_reference, value_use)
+        .unwrap()
+    })
 }
 
 fn attribute_name_index_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
-    let mut index = BTreeMap::<&str, Option<&u8>>::new();
-    let value = 7_u8;
-    insert_sole(&ctx, &mut reservation, &mut index, "first", &value)?;
-    insert_sole(&ctx, &mut reservation, &mut index, "second", &value)?;
-    assert_eq!(index.len(), 2);
-    Ok(())
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "NX attribute name index test")?;
+            let mut index = BTreeMap::<&str, Option<&u8>>::new();
+            let value = 7_u8;
+            insert_sole(ctx, &mut reservation, &mut index, "first", &value)?;
+            insert_sole(ctx, &mut reservation, &mut index, "second", &value)?;
+            assert_eq!(index.len(), 2);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -94,14 +95,19 @@ fn topology_target_index_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let mut reservation = ctx.reserve_scoped(0, "test Parasolid topology targets")?;
-    let targets = parasolid_topology_attribute_targets(&ctx, &mut reservation, &ir)?;
-    assert!(!targets.is_empty());
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut reservation = ctx.reserve_scoped(0, "test Parasolid topology targets")?;
+            let targets = parasolid_topology_attribute_targets(ctx, &mut reservation, &ir)?;
+            assert!(!targets.is_empty());
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -150,13 +156,19 @@ fn topology_context_index_with_limit(
             inflated_offset: 300,
         },
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let index = ParasolidTopologyAttributeIndex::new(&ctx, &ir, &references, &[], &[], &[], &[])?;
-    assert_eq!(index.contexts.len(), 1);
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let index =
+                ParasolidTopologyAttributeIndex::new(ctx, &ir, &references, &[], &[], &[], &[])?;
+            assert_eq!(index.contexts.len(), 1);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -193,11 +205,13 @@ fn topology_context_index_refuses_work_limit() {
 fn fallback_attribute_name_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    topology_attribute_name(&ctx, None, Some("CLASS"), "84", 7)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| topology_attribute_name(ctx, None, Some("CLASS"), "84", 7),
+    )
 }
 
 #[test]
@@ -258,118 +272,133 @@ fn attribute_output_route(
         attribute_list_record: Some("entity".into()),
         inflated_offset: 300,
     };
-    let index_arena = cadmpeg_core::decode::DecodeArena::new();
-    let index_policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (index_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &index_arena, &index_policy)?;
-    let index = ParasolidTopologyAttributeIndex::new(
-        &index_ctx,
-        &ir,
-        std::slice::from_ref(&reference),
-        &[],
-        &[],
-        &[],
-        &[],
-    )?;
-    assert_eq!(index.contexts.len(), 1);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    match route {
-        AttributeRoute::String => {
-            let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
+    crate::test_support::with_decode_context(|index_ctx| {
+        let index = ParasolidTopologyAttributeIndex::new(
+            index_ctx,
+            &ir,
+            std::slice::from_ref(&reference),
+            &[],
+            &[],
+            &[],
+            &[],
+        )?;
+        assert_eq!(index.contexts.len(), 1);
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+                match route {
+                    AttributeRoute::String => {
+                        let value_use: ParasolidEntity51StringUse = serde_json::from_value(serde_json::json!({
                 "id": "string-use", "stream_ordinal": 3, "entity_51_record": "entity",
                 "reference_ordinal": 5, "referenced_xmt": 70, "string_record": "string-value",
                 "inflated_offset": 200
             }))
             .unwrap();
-            let value: ParasolidEntity54StringRecord = serde_json::from_value(serde_json::json!({
-                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
-                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
-            }))
-            .unwrap();
-            attach_parasolid_topology_string_attributes(
-                &ctx,
-                &mut ir,
-                &ParasolidStringAttributeSources {
-                    string_uses: &[value_use],
-                    strings: &[value],
-                },
-                &index,
-                &mut annotations,
-            )?;
-        }
-        AttributeRoute::Numeric => {
-            let value_use = ParasolidEntity51NumericUse {
-                id: "numeric-use".into(),
-                stream_ordinal: 3,
-                entity_51_record: "entity".into(),
-                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                kind: ParasolidEntity51NumericKind::UnsignedIntegers,
-                value_record: "numeric-value".into(),
-                inflated_offset: 200,
-            };
-            let value = ParasolidEntity52IntegerRecord {
-                id: "numeric-value".into(),
-                stream_ordinal: 3,
-                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
-                byte_len: 14,
-                inflated_offset: 400,
-            };
-            attach_parasolid_topology_numeric_attributes(
-                &ctx,
-                &mut ir,
-                &ParasolidNumericAttributeSources {
-                    numeric_uses: &[value_use],
-                    integers: &[value],
-                    doubles: &[],
-                },
-                &index,
-                &mut annotations,
-            )?;
-        }
-        AttributeRoute::Structured => {
-            let value_use = ParasolidEntity51StructuredUse {
-                id: "structured-use".into(),
-                stream_ordinal: 3,
-                entity_51_record: "entity".into(),
-                position: crate::parasolid::entity_references::FieldPosition::try_from(5).unwrap(),
-                referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                kind: StructuredValueKind::Points,
-                value_record: "structured-value".into(),
-                inflated_offset: 200,
-            };
-            let value = ParasolidEntityVectorRecord {
-                id: "structured-value".into(),
-                stream_ordinal: 3,
-                kind: ParasolidVectorValueKind::Points,
-                xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
-                values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]])
-                    .unwrap(),
-                byte_len: 36,
-                inflated_offset: 400,
-            };
-            attach_parasolid_topology_structured_attributes(
-                &ctx,
-                &mut ir,
-                &ParasolidStructuredAttributeSources {
-                    structured_uses: &[value_use],
-                    vectors: &[value],
-                    axes: &[],
-                    tags: &[],
-                    unicode: &[],
-                },
-                &index,
-                &mut annotations,
-            )?;
-        }
-    }
-    Ok(ir.model.attributes.len())
+                        let value: ParasolidEntity54StringRecord =
+                            serde_json::from_value(serde_json::json!({
+                                "id": "string-value", "stream_ordinal": 3, "xmt": 70,
+                                "value": "TEXT", "byte_len": 18, "inflated_offset": 400
+                            }))
+                            .unwrap();
+                        attach_parasolid_topology_string_attributes(
+                            ctx,
+                            &mut ir,
+                            &ParasolidStringAttributeSources {
+                                string_uses: &[value_use],
+                                strings: &[value],
+                            },
+                            &index,
+                            &mut annotations,
+                        )?;
+                    }
+                    AttributeRoute::Numeric => {
+                        let value_use = ParasolidEntity51NumericUse {
+                            id: "numeric-use".into(),
+                            stream_ordinal: 3,
+                            entity_51_record: "entity".into(),
+                            position: crate::parasolid::entity_references::FieldPosition::try_from(
+                                5,
+                            )
+                            .unwrap(),
+                            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
+                                .unwrap(),
+                            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+                            value_record: "numeric-value".into(),
+                            inflated_offset: 200,
+                        };
+                        let value = ParasolidEntity52IntegerRecord {
+                            id: "numeric-value".into(),
+                            stream_ordinal: 3,
+                            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                            values: crate::parasolid::counted_values::CountedValues::new(vec![7])
+                                .unwrap(),
+                            byte_len: 14,
+                            inflated_offset: 400,
+                        };
+                        attach_parasolid_topology_numeric_attributes(
+                            ctx,
+                            &mut ir,
+                            &ParasolidNumericAttributeSources {
+                                numeric_uses: &[value_use],
+                                integers: &[value],
+                                doubles: &[],
+                            },
+                            &index,
+                            &mut annotations,
+                        )?;
+                    }
+                    AttributeRoute::Structured => {
+                        let value_use = ParasolidEntity51StructuredUse {
+                            id: "structured-use".into(),
+                            stream_ordinal: 3,
+                            entity_51_record: "entity".into(),
+                            position: crate::parasolid::entity_references::FieldPosition::try_from(
+                                5,
+                            )
+                            .unwrap(),
+                            referenced_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70)
+                                .unwrap(),
+                            kind: StructuredValueKind::Points,
+                            value_record: "structured-value".into(),
+                            inflated_offset: 200,
+                        };
+                        let value = ParasolidEntityVectorRecord {
+                            id: "structured-value".into(),
+                            stream_ordinal: 3,
+                            kind: ParasolidVectorValueKind::Points,
+                            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+                            values: crate::parasolid::counted_values::CountedValues::new(vec![[
+                                1.0, 2.0, 3.0,
+                            ]])
+                            .unwrap(),
+                            byte_len: 36,
+                            inflated_offset: 400,
+                        };
+                        attach_parasolid_topology_structured_attributes(
+                            ctx,
+                            &mut ir,
+                            &ParasolidStructuredAttributeSources {
+                                structured_uses: &[value_use],
+                                vectors: &[value],
+                                axes: &[],
+                                tags: &[],
+                                unicode: &[],
+                            },
+                            &index,
+                            &mut annotations,
+                        )?;
+                    }
+                }
+                Ok(ir.model.attributes.len())
+            },
+        )
+    })
 }
 
 #[test]
@@ -568,79 +597,78 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         integers: &[integer],
         doubles: &[double],
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
-        &ir,
-        &references,
-        &class_uses,
-        &definitions,
-        &[],
-        &[],
-    )
-    .unwrap();
-    let mut annotations = AnnotationBuilder::new();
 
-    attach_parasolid_topology_numeric_attributes(
-        &ctx,
-        &mut ir,
-        &sources,
-        &topology_attribute_index,
-        &mut annotations,
-    )
-    .expect("valid exactness fields");
+    crate::test_support::with_decode_context(|ctx| {
+        let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+            ctx,
+            &ir,
+            &references,
+            &class_uses,
+            &definitions,
+            &[],
+            &[],
+        )
+        .unwrap();
+        let mut annotations = AnnotationBuilder::new();
 
-    let attributes = ir
-        .model
-        .attributes
-        .iter()
-        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
-        .collect::<Vec<_>>();
-    assert_eq!(attributes.len(), 6);
-    assert_eq!(
-        attributes[0].target,
-        AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
-    );
-    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
-    assert_eq!(
-        attributes[4].name,
-        "SDL/TYSA_DENSITY.parasolid_type_integer_reference_5"
-    );
-    assert_eq!(
-        attributes[0].values,
-        [
-            AttributeValue::Integer(4),
-            AttributeValue::Integer(i64::from(u32::MAX))
-        ]
-    );
-    for (attributes, target) in [
-        (
-            &attributes[0..2],
-            AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar")),
-        ),
-        (
-            &attributes[2..4],
-            AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar")),
-        ),
-        (
-            &attributes[4..6],
-            AttributeTarget::Loop(LoopId::mint("nx:s3:loop#59").expect("identity grammar")),
-        ),
-    ] {
-        assert!(attributes
+        attach_parasolid_topology_numeric_attributes(
+            ctx,
+            &mut ir,
+            &sources,
+            &topology_attribute_index,
+            &mut annotations,
+        )
+        .expect("valid exactness fields");
+
+        let attributes = ir
+            .model
+            .attributes
             .iter()
-            .all(|attribute| attribute.target == target));
+            .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
+            .collect::<Vec<_>>();
+        assert_eq!(attributes.len(), 6);
         assert_eq!(
-            attributes[1].values,
+            attributes[0].target,
+            AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar"))
+        );
+        assert_eq!(attributes[0].name, "parasolid_type_integer_reference_5");
+        assert_eq!(
+            attributes[4].name,
+            "SDL/TYSA_DENSITY.parasolid_type_integer_reference_5"
+        );
+        assert_eq!(
+            attributes[0].values,
             [
-                AttributeValue::float(0.25).expect("finite"),
-                AttributeValue::float(7.5).expect("finite")
+                AttributeValue::Integer(4),
+                AttributeValue::Integer(i64::from(u32::MAX))
             ]
         );
-    }
+        for (attributes, target) in [
+            (
+                &attributes[0..2],
+                AttributeTarget::Shell(ShellId::mint("nx:s3:shell#58").expect("identity grammar")),
+            ),
+            (
+                &attributes[2..4],
+                AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar")),
+            ),
+            (
+                &attributes[4..6],
+                AttributeTarget::Loop(LoopId::mint("nx:s3:loop#59").expect("identity grammar")),
+            ),
+        ] {
+            assert!(attributes
+                .iter()
+                .all(|attribute| attribute.target == target));
+            assert_eq!(
+                attributes[1].values,
+                [
+                    AttributeValue::float(0.25).expect("finite"),
+                    AttributeValue::float(7.5).expect("finite")
+                ]
+            );
+        }
+    });
 }
 
 #[test]
@@ -1017,83 +1045,88 @@ fn topology_attribute_index_retains_linked_type_81_records() {
             inflated_offset: 410,
         },
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
-        &ir,
-        std::slice::from_ref(&reference),
-        &class_uses,
-        std::slice::from_ref(&definition),
-        &field_uses,
-        &[],
-    )
-    .unwrap();
 
-    assert_eq!(index.contexts.len(), 2);
-    assert_eq!(
-        index.class_names.get(reference.id.as_str()).copied(),
-        Some(Some("CLASS"))
-    );
-    let mut conflicting_definition = definition.clone();
-    conflicting_definition.name =
-        crate::printable_string::PrintableString::new("OTHER".to_string()).unwrap();
-    let conflicting_definitions = [definition.clone(), conflicting_definition];
-    let mut class_reservation = ctx.reserve_scoped(0, "test Parasolid class names").unwrap();
-    let class_names = parasolid_topology_attribute_class_names(
-        &ctx,
-        &mut class_reservation,
-        &class_uses,
-        &conflicting_definitions,
-    )
-    .unwrap();
-    assert_eq!(class_names.get(reference.id.as_str()).copied(), Some(None));
-    assert_eq!(
-        index
-            .attribute_names
-            .field_name(&ctx, &reference, "head-use")
-            .unwrap()
-            .as_deref(),
-        Some("CLASS.field_0.parasolid_type_2")
-    );
-    assert_eq!(
-        index
-            .attribute_names
-            .field_name(&ctx, &reference, "child-use")
-            .unwrap()
-            .as_deref(),
-        Some("CLASS.field_0.parasolid_type_2")
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let index = ParasolidTopologyAttributeIndex::new(
+            ctx,
+            &ir,
+            std::slice::from_ref(&reference),
+            &class_uses,
+            std::slice::from_ref(&definition),
+            &field_uses,
+            &[],
+        )
+        .unwrap();
 
-    let sources = ParasolidNumericAttributeSources {
-        numeric_uses: &numeric_uses,
-        integers: &[],
-        doubles: &doubles,
-    };
-    let mut annotations = AnnotationBuilder::new();
-    attach_parasolid_topology_numeric_attributes(&ctx, &mut ir, &sources, &index, &mut annotations)
+        assert_eq!(index.contexts.len(), 2);
+        assert_eq!(
+            index.class_names.get(reference.id.as_str()).copied(),
+            Some(Some("CLASS"))
+        );
+        let mut conflicting_definition = definition.clone();
+        conflicting_definition.name =
+            crate::printable_string::PrintableString::new("OTHER".to_string()).unwrap();
+        let conflicting_definitions = [definition.clone(), conflicting_definition];
+        let mut class_reservation = ctx.reserve_scoped(0, "test Parasolid class names").unwrap();
+        let class_names = parasolid_topology_attribute_class_names(
+            ctx,
+            &mut class_reservation,
+            &class_uses,
+            &conflicting_definitions,
+        )
+        .unwrap();
+        assert_eq!(class_names.get(reference.id.as_str()).copied(), Some(None));
+        assert_eq!(
+            index
+                .attribute_names
+                .field_name(ctx, &reference, "head-use")
+                .unwrap()
+                .as_deref(),
+            Some("CLASS.field_0.parasolid_type_2")
+        );
+        assert_eq!(
+            index
+                .attribute_names
+                .field_name(ctx, &reference, "child-use")
+                .unwrap()
+                .as_deref(),
+            Some("CLASS.field_0.parasolid_type_2")
+        );
+
+        let sources = ParasolidNumericAttributeSources {
+            numeric_uses: &numeric_uses,
+            integers: &[],
+            doubles: &doubles,
+        };
+        let mut annotations = AnnotationBuilder::new();
+        attach_parasolid_topology_numeric_attributes(
+            ctx,
+            &mut ir,
+            &sources,
+            &index,
+            &mut annotations,
+        )
         .expect("valid exactness fields");
-    let attributes = ir
-        .model
-        .attributes
-        .iter()
-        .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
-        .collect::<Vec<_>>();
-    assert_eq!(attributes.len(), 2);
-    assert!(attributes.iter().all(|attribute| {
-        attribute.target
-            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
-            && attribute.name == "CLASS.field_0.parasolid_type_2"
-    }));
-    assert_ne!(attributes[0].id, attributes[1].id);
-    assert!(attributes
-        .iter()
-        .any(|attribute| { attribute.values == [AttributeValue::float(1.0).expect("finite")] }));
-    assert!(attributes
-        .iter()
-        .any(|attribute| { attribute.values == [AttributeValue::float(2.0).expect("finite")] }));
+        let attributes = ir
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.id.as_str().contains("topology-numeric-attribute"))
+            .collect::<Vec<_>>();
+        assert_eq!(attributes.len(), 2);
+        assert!(attributes.iter().all(|attribute| {
+            attribute.target
+                == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
+                && attribute.name == "CLASS.field_0.parasolid_type_2"
+        }));
+        assert_ne!(attributes[0].id, attributes[1].id);
+        assert!(attributes.iter().any(|attribute| {
+            attribute.values == [AttributeValue::float(1.0).expect("finite")]
+        }));
+        assert!(attributes.iter().any(|attribute| {
+            attribute.values == [AttributeValue::float(2.0).expect("finite")]
+        }));
+    });
 }
 
 #[test]
@@ -1201,63 +1234,62 @@ fn topology_structured_attribute_values_preserve_serialized_lanes() {
         tags: &[tag],
         unicode: &[unicode],
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
-        &ctx,
-        &ir,
-        std::slice::from_ref(&reference),
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
-    attach_parasolid_topology_structured_attributes(
-        &ctx,
-        &mut ir,
-        &sources,
-        &topology_attribute_index,
-        &mut annotations,
-    )
-    .expect("valid exactness fields");
 
-    let attributes = ir
-        .model
-        .attributes
-        .iter()
-        .filter(|attribute| {
-            attribute
-                .id
-                .as_str()
-                .contains("topology-structured-attribute")
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(attributes.len(), 6);
-    assert!(attributes.iter().all(|attribute| {
-        attribute.target
-            == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
-    }));
-    let values = attributes
-        .iter()
-        .map(|attribute| (attribute.name.as_str(), attribute.values.as_slice()))
-        .collect::<BTreeMap<_, _>>();
-    assert_eq!(
-        values["parasolid_type_85_point_reference_5"],
-        [AttributeValue::vector([1.0, 2.0, 3.0]).expect("finite")]
-    );
-    assert_eq!(
-        values["parasolid_type_87_axis_reference_8"],
-        [AttributeValue::vector([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("finite")]
-    );
-    assert_eq!(
-        values["parasolid_type_88_tag_reference_9"],
-        [AttributeValue::Integer(i64::from(u32::MAX))]
-    );
-    assert_eq!(
-        values["parasolid_type_98_unicode_reference_10"],
-        [AttributeValue::String("μ".into())]
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+            ctx,
+            &ir,
+            std::slice::from_ref(&reference),
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+        .unwrap();
+        attach_parasolid_topology_structured_attributes(
+            ctx,
+            &mut ir,
+            &sources,
+            &topology_attribute_index,
+            &mut annotations,
+        )
+        .expect("valid exactness fields");
+
+        let attributes = ir
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| {
+                attribute
+                    .id
+                    .as_str()
+                    .contains("topology-structured-attribute")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(attributes.len(), 6);
+        assert!(attributes.iter().all(|attribute| {
+            attribute.target
+                == AttributeTarget::Face(FaceId::mint("nx:s3:face#60").expect("identity grammar"))
+        }));
+        let values = attributes
+            .iter()
+            .map(|attribute| (attribute.name.as_str(), attribute.values.as_slice()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            values["parasolid_type_85_point_reference_5"],
+            [AttributeValue::vector([1.0, 2.0, 3.0]).expect("finite")]
+        );
+        assert_eq!(
+            values["parasolid_type_87_axis_reference_8"],
+            [AttributeValue::vector([1.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("finite")]
+        );
+        assert_eq!(
+            values["parasolid_type_88_tag_reference_9"],
+            [AttributeValue::Integer(i64::from(u32::MAX))]
+        );
+        assert_eq!(
+            values["parasolid_type_98_unicode_reference_10"],
+            [AttributeValue::String("μ".into())]
+        );
+    });
 }

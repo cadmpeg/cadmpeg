@@ -301,3 +301,52 @@ pub(crate) fn world(payload: &mut Vec<u8>, value: f64) {
     });
     payload.extend_from_slice(&raw[1..]);
 }
+
+/// Check every retained boundary on the route at one byte below its next need.
+/// Each run owns a fresh caller context; the service run keeps the caller's assertions.
+pub(crate) fn assert_retained_boundaries<T>(
+    operations: &[&str],
+    run: impl Fn(&cadmpeg_core::decode::DecodeContext<'_>) -> Result<T, cadmpeg_core::CodecError>,
+) -> T {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut cap = 0;
+    for _ in 0..4096 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+        match run(&ctx) {
+            Err(CodecError::ResourceLimit(resource)) => {
+                assert_eq!(resource.dimension, ResourceDimension::RetainedBytes);
+                let need = resource
+                    .used
+                    .checked_add(resource.additional)
+                    .expect("byte need fits");
+                assert!(need > cap);
+                if operations.contains(&resource.operation) {
+                    policy.limits.max_retained_bytes = need - 1;
+                    let (ctx, _) =
+                        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+                    assert!(
+                        matches!(run(&ctx), Err(CodecError::ResourceLimit(ref below))
+                        if below.dimension == ResourceDimension::RetainedBytes
+                            && below.operation == resource.operation)
+                    );
+                    seen.insert(resource.operation);
+                }
+                cap = need;
+            }
+            Err(error) => panic!("unexpected route refusal: {error:?}"),
+            Ok(_) => {
+                assert!(
+                    operations.iter().all(|operation| seen.contains(operation)),
+                    "missing retained boundary: {operations:?} vs {seen:?}"
+                );
+                return crate::decode::with_test_decode_ctx(|ctx| run(ctx)).expect("service route");
+            }
+        }
+    }
+    panic!("retained route did not finish within boundary bound");
+}

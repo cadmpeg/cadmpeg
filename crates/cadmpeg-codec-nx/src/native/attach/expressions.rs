@@ -9,7 +9,7 @@ use super::{
 pub(in crate::native) fn attach_expression_parameters(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    expressions: &[crate::native::om::Expression],
+    expressions: &[crate::native::om::ParameterFormula],
     declarations: &[crate::native::om::ExpressionDeclaration],
     parameter_uses: &[crate::native::features::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
@@ -29,7 +29,7 @@ pub(in crate::native) fn attach_expression_parameters(
         }
         declaration_index.insert(declaration.id.as_str(), declaration);
     }
-    let mut tables = BTreeMap::<&str, Vec<&crate::native::om::Expression>>::new();
+    let mut tables = BTreeMap::<&str, Vec<&crate::native::om::ParameterFormula>>::new();
     for expression in expressions {
         let table = expression.source_table.as_str();
         ctx.charge_work(
@@ -39,7 +39,7 @@ pub(in crate::native) fn attach_expression_parameters(
         if !tables.contains_key(table) {
             ctx.charge_collection_items(1, "NX expression table index")?;
             reservation.grow(cadmpeg_core::decode::u64_from_index(
-                std::mem::size_of::<(&str, Vec<&crate::native::om::Expression>)>() * 4,
+                std::mem::size_of::<(&str, Vec<&crate::native::om::ParameterFormula>)>() * 4,
             ))?;
         }
         let table_expressions = tables.entry(table).or_default();
@@ -562,7 +562,7 @@ pub(in crate::native) fn attach_expression_parameters(
 fn order_expression_dependencies(
     ctx: &DecodeContext<'_>,
     reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
-    expressions: &mut Vec<&crate::native::om::Expression>,
+    expressions: &mut Vec<&crate::native::om::ParameterFormula>,
 ) -> Result<usize, CodecError> {
     let count = expressions.len();
     let emitted_bytes = count

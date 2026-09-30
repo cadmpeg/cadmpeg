@@ -290,10 +290,7 @@ fn insert_feature_dependency(
         return Ok(());
     }
     if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, "f3d feature dependency")?;
-        dependencies
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d feature dependency", 0, 1))?;
+        dependencies.reserve_for_decode(ctx, 1, "f3d feature dependency")?;
     }
     let id = copy_feature_id(ctx, dependency, "f3d feature dependency id")?;
     // discarded-value: the preceding membership check admits this dependency.
@@ -2085,11 +2082,9 @@ face_operands,
                 continue;
             }
             if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "f3d parameter dependency")?;
                 parameter
                     .dependencies
-                    .try_reserve(1)
-                    .map_err(|_| ctx.refuse_codec_limit("f3d parameter dependency", 0, 1))?;
+                    .reserve_for_decode(ctx, 1, "f3d parameter dependency")?;
             }
             let dependency = copy_parameter_id(ctx, candidate, "f3d parameter dependency id")?;
             // discarded-value: the membership check admits this dependency.

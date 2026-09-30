@@ -67,7 +67,8 @@ GENERATED_ID_OWNERS = {
         Path("crates/cadmpeg-codec-inventor/src/dialect/registry_ids.rs"), "pub(crate)"
     ),
     "nx": GeneratedIdOwner(
-        Path("crates/cadmpeg-codec-nx/src/dialect/registry_ids.rs"), "pub(crate)"
+        Path("crates/cadmpeg-codec-nx/src/dialect/registry_ids.rs"), "pub(crate)",
+        include_detect_unreachable=False,
     ),
     "parasolid": GeneratedIdOwner(
         Path("crates/cadmpeg-parasolid/src/registry_ids.rs"), "pub(crate)", "pub"

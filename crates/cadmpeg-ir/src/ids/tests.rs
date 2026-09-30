@@ -4,27 +4,6 @@
 use super::{is_valid_identity, IdentityComponent, IdentityError, IdentityKey, IdentityNamespace};
 
 #[test]
-fn try_clone_for_decode_refuses_before_allocation_and_succeeds_under_service_profile() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
-    use cadmpeg_core::CodecError;
-
-    let id = super::BodyId::mint("test:model:body#1").unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len() - 1);
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
-    assert!(matches!(
-        id.try_clone_for_decode(&ctx, "identity test"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RetainedBytes
-    ));
-
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
-    assert_eq!(id.try_clone_for_decode(&ctx, "identity test").unwrap(), id);
-}
-
-#[test]
 fn source_key_encoding_preserves_reserved_and_separator_distinctions() {
     let mut seen = std::collections::BTreeSet::new();
     for (source, expected) in [
@@ -476,4 +455,30 @@ fn const_whitespace_grammar_matches_runtime_identity_grammar_for_every_scalar() 
             "key grammar disagrees with identity grammar for U+{scalar:04X}"
         );
     }
+}
+
+#[test]
+fn typed_identity_copy_refuses_retained_bytes_before_duplication() {
+    let id = crate::sketches::SketchId::mint("synthetic:test:sketch#42").expect("valid fixture ID");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root");
+    let error = id
+        .try_clone_for_decode(&ctx, "typed identity copy")
+        .expect_err("copy exceeds cap");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(resource)
+        if resource.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+            && resource.operation == "typed identity copy")
+    );
+    let service = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &service)
+        .expect("empty root");
+    assert_eq!(
+        id.try_clone_for_decode(&ctx, "typed identity copy")
+            .expect("service copy"),
+        id
+    );
 }

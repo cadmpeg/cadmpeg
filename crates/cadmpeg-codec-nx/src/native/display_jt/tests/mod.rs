@@ -1,16 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-fn with_jt_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("test decode context");
-    f(&ctx)
-}
-
 fn with_jt_budget<T>(
     container: &crate::container::Container,
     run: impl FnOnce(
@@ -20,18 +9,19 @@ fn with_jt_budget<T>(
         ),
     ) -> T,
 ) -> T {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+    crate::test_support::with_decode_context_over(
         container.data.as_ref(),
-        &arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(container.data.as_ref());
+
+            run((ctx, root))
+        },
     )
-    .expect("test DisplayJT root");
-    run((&ctx, root))
 }
 
 fn high_degree_lane_count(representation: &[u8], bindings: u64) -> Option<usize> {
-    with_jt_context(|ctx| {
+    crate::test_support::with_decode_context(|ctx| {
         super::jt9_topology_high_degree_lane_count(ctx, representation, bindings)
             .expect("service JT budget")
     })
@@ -362,176 +352,173 @@ fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
 fn display_jt_index_requires_every_declared_header() {
     use crate::container::{Container, DirEntry, Region};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let mut inflated = Vec::new();
+        inflated.extend_from_slice(&24_u32.to_le_bytes());
+        inflated.extend_from_slice(&[3; 16]);
+        inflated.push(1);
+        inflated.extend_from_slice(&5_u32.to_le_bytes());
+        inflated.extend_from_slice(&[9, 8, 7]);
+        inflated.extend_from_slice(&16_u32.to_le_bytes());
+        inflated.extend_from_slice(&[0xff; 16]);
+        inflated.extend_from_slice(&[6, 5]);
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+        encoder.write_all(&inflated).expect("required invariant");
+        let compressed = encoder.finish().expect("required invariant");
+        let segment_byte_len =
+            24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
+        let mut data = Vec::new();
+        data.extend_from_slice(&9_u32.to_le_bytes());
+        data.extend_from_slice(&1_u32.to_le_bytes());
+        data.extend_from_slice(&0_u32.to_le_bytes());
+        data.extend_from_slice(&100_u32.to_le_bytes());
+        data.extend_from_slice(&0_u32.to_le_bytes());
+        data.extend_from_slice(&28_u32.to_le_bytes());
+        data.extend_from_slice(&[0; 4]);
+        let mut version = [b' '; 80];
+        version[..14].copy_from_slice(b"Version 9.4 JT");
+        data.extend_from_slice(&version);
+        data.push(0);
+        data.extend_from_slice(&0_u32.to_le_bytes());
+        data.extend_from_slice(&105_u32.to_le_bytes());
+        data.extend_from_slice(&[1; 16]);
+        data.extend_from_slice(&1_u32.to_le_bytes());
+        data.extend_from_slice(&[2; 16]);
+        data.extend_from_slice(&137_u32.to_le_bytes());
+        data.extend_from_slice(&segment_byte_len.to_le_bytes());
+        data.extend_from_slice(&1_u32.to_be_bytes());
+        data.extend_from_slice(&[2; 16]);
+        data.extend_from_slice(&1_u32.to_le_bytes());
+        data.extend_from_slice(&segment_byte_len.to_le_bytes());
+        data.extend_from_slice(&2_u32.to_le_bytes());
+        data.extend_from_slice(
+            &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
+        );
+        data.push(2);
+        data.extend_from_slice(&compressed);
+        let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
+        let data_len = cadmpeg_core::decode::u64_from_index(data.len());
+        let container = Container {
+            data: data.clone().into(),
+            physical_size,
+            layout: crate::container::test_modern_layout(6),
+            entries: vec![DirEntry {
+                name: "/Root/UG_PART/DisplayJT".to_string(),
+                region: Region::Footer,
+                body: crate::container::DirEntryBody::File {
+                    offset: 0,
+                    len: data_len,
+                },
+            }],
+            fastload_table: None,
+            indexed_section_layouts: std::sync::OnceLock::new(),
+            om_section_cache: std::sync::OnceLock::new(),
+        };
+        let indices = super::display_jt_indices(ctx, &container).unwrap();
+        assert_eq!(indices[0].version, 9);
+        assert_eq!(indices[0].declared_count(), 1);
+        assert_eq!(indices[0].rows.first().header_offset, 28);
+        assert_eq!(indices[0].rows.first().value.get(), 100);
+        let documents = super::display_jt_documents(ctx, &container, &indices).unwrap();
+        assert_eq!(
+            (documents[0].version.major(), documents[0].version.minor()),
+            (9, 4)
+        );
+        assert_eq!(documents[0].toc_offset, 105);
+        assert_eq!(
+            documents[0].physical_byte_len,
+            137 + u64::from(segment_byte_len)
+        );
+        assert_eq!(documents[0].toc_entries.len(), 1);
+        assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
+        assert_eq!(
+            documents[0].toc_entries[0].segment_byte_len,
+            segment_byte_len
+        );
+        assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
+        let segments = with_jt_budget(&container, |budget| {
+            super::display_jt_segments(budget, &container, &documents)
+        })
+        .unwrap();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].id.matches('#').count(), 1);
+        assert!(!segments[0].id.contains(&documents[0].id));
+        assert_eq!(segments[0].segment_type, 1);
+        assert_eq!(segments[0].segment_byte_len, segment_byte_len);
+        let compression = segments[0]
+            .compression
+            .as_ref()
+            .expect("required invariant");
+        assert_eq!(
+            super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
+            u32::try_from(compressed.len()).expect("fixture value fits u32") + 1
+        );
+        assert_eq!(
+            compression.envelope.compressed_byte_len,
+            u32::try_from(compressed.len()).expect("fixture value fits u32")
+        );
+        assert_eq!(
+            compression.inflated_sha256,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&inflated)
+        );
 
-    let mut inflated = Vec::new();
-    inflated.extend_from_slice(&24_u32.to_le_bytes());
-    inflated.extend_from_slice(&[3; 16]);
-    inflated.push(1);
-    inflated.extend_from_slice(&5_u32.to_le_bytes());
-    inflated.extend_from_slice(&[9, 8, 7]);
-    inflated.extend_from_slice(&16_u32.to_le_bytes());
-    inflated.extend_from_slice(&[0xff; 16]);
-    inflated.extend_from_slice(&[6, 5]);
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-    encoder.write_all(&inflated).expect("required invariant");
-    let compressed = encoder.finish().expect("required invariant");
-    let segment_byte_len =
-        24 + 9 + u32::try_from(compressed.len()).expect("fixture value fits u32");
-    let mut data = Vec::new();
-    data.extend_from_slice(&9_u32.to_le_bytes());
-    data.extend_from_slice(&1_u32.to_le_bytes());
-    data.extend_from_slice(&0_u32.to_le_bytes());
-    data.extend_from_slice(&100_u32.to_le_bytes());
-    data.extend_from_slice(&0_u32.to_le_bytes());
-    data.extend_from_slice(&28_u32.to_le_bytes());
-    data.extend_from_slice(&[0; 4]);
-    let mut version = [b' '; 80];
-    version[..14].copy_from_slice(b"Version 9.4 JT");
-    data.extend_from_slice(&version);
-    data.push(0);
-    data.extend_from_slice(&0_u32.to_le_bytes());
-    data.extend_from_slice(&105_u32.to_le_bytes());
-    data.extend_from_slice(&[1; 16]);
-    data.extend_from_slice(&1_u32.to_le_bytes());
-    data.extend_from_slice(&[2; 16]);
-    data.extend_from_slice(&137_u32.to_le_bytes());
-    data.extend_from_slice(&segment_byte_len.to_le_bytes());
-    data.extend_from_slice(&1_u32.to_be_bytes());
-    data.extend_from_slice(&[2; 16]);
-    data.extend_from_slice(&1_u32.to_le_bytes());
-    data.extend_from_slice(&segment_byte_len.to_le_bytes());
-    data.extend_from_slice(&2_u32.to_le_bytes());
-    data.extend_from_slice(
-        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 1).to_le_bytes(),
-    );
-    data.push(2);
-    data.extend_from_slice(&compressed);
-    let physical_size = cadmpeg_core::decode::u64_from_index(data.len());
-    let data_len = cadmpeg_core::decode::u64_from_index(data.len());
-    let container = Container {
-        data: data.clone().into(),
-        physical_size,
-        layout: crate::container::test_modern_layout(6),
-        entries: vec![DirEntry {
-            name: "/Root/UG_PART/DisplayJT".to_string(),
-            region: Region::Footer,
+        let mut cross_entry = container.clone();
+        cross_entry.entries[0].body = crate::container::DirEntryBody::File {
+            offset: 0,
+            len: data_len - 1,
+        };
+        cross_entry.entries.push(DirEntry {
+            name: "/Root/other".to_string(),
+            region: Region::Header,
             body: crate::container::DirEntryBody::File {
-                offset: 0,
-                len: data_len,
+                offset: data_len - 1,
+                len: 1,
             },
-        }],
-        fastload_table: None,
-        indexed_section_layouts: std::sync::OnceLock::new(),
-        om_section_cache: std::sync::OnceLock::new(),
-    };
-    let indices = super::display_jt_indices(&ctx, &container).unwrap();
-    assert_eq!(indices[0].version, 9);
-    assert_eq!(indices[0].declared_count(), 1);
-    assert_eq!(indices[0].rows.first().header_offset, 28);
-    assert_eq!(indices[0].rows.first().value.get(), 100);
-    let documents = super::display_jt_documents(&ctx, &container, &indices).unwrap();
-    assert_eq!(
-        (documents[0].version.major(), documents[0].version.minor()),
-        (9, 4)
-    );
-    assert_eq!(documents[0].toc_offset, 105);
-    assert_eq!(
-        documents[0].physical_byte_len,
-        137 + u64::from(segment_byte_len)
-    );
-    assert_eq!(documents[0].toc_entries.len(), 1);
-    assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
-    assert_eq!(
-        documents[0].toc_entries[0].segment_byte_len,
-        segment_byte_len
-    );
-    assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
-    let segments = with_jt_budget(&container, |budget| {
-        super::display_jt_segments(budget, &container, &documents)
-    })
-    .unwrap();
-    assert_eq!(segments.len(), 1);
-    assert_eq!(segments[0].id.matches('#').count(), 1);
-    assert!(!segments[0].id.contains(&documents[0].id));
-    assert_eq!(segments[0].segment_type, 1);
-    assert_eq!(segments[0].segment_byte_len, segment_byte_len);
-    let compression = segments[0]
-        .compression
-        .as_ref()
-        .expect("required invariant");
-    assert_eq!(
-        super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
-        u32::try_from(compressed.len()).expect("fixture value fits u32") + 1
-    );
-    assert_eq!(
-        compression.envelope.compressed_byte_len,
-        u32::try_from(compressed.len()).expect("fixture value fits u32")
-    );
-    assert_eq!(
-        compression.inflated_sha256,
-        cadmpeg_ir::hash::digest::Sha256Digest::digest(&inflated)
-    );
+        });
+        assert!(
+            with_jt_budget(&cross_entry, |budget| super::display_jt_segments(
+                budget,
+                &cross_entry,
+                &documents
+            ))
+            .unwrap()
+            .is_empty()
+        );
 
-    let mut cross_entry = container.clone();
-    cross_entry.entries[0].body = crate::container::DirEntryBody::File {
-        offset: 0,
-        len: data_len - 1,
-    };
-    cross_entry.entries.push(DirEntry {
-        name: "/Root/other".to_string(),
-        region: Region::Header,
-        body: crate::container::DirEntryBody::File {
-            offset: data_len - 1,
-            len: 1,
-        },
+        let (compressed_elements, sequences) = with_jt_budget(&container, |budget| {
+            super::display_jt_compressed_element_sequences(budget, &container, &segments)
+        })
+        .unwrap();
+        assert_eq!(compressed_elements.len(), 1);
+        assert_eq!(compressed_elements[0].segment_type, 1);
+        assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
+        assert_eq!(compressed_elements[0].object_id, 5);
+        assert_eq!(compressed_elements[0].object_base_type, 1);
+        assert_eq!(compressed_elements[0].body_byte_len(), 3);
+        assert_eq!(sequences.len(), 1);
+        assert_eq!(sequences[0].framed_byte_len(), 48);
+        assert_eq!(sequences[0].tail, [6, 5]);
+
+        let mut malformed_compression = container.clone();
+        malformed_compression.data.to_mut()[193..197].copy_from_slice(
+            &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
+        );
+        assert!(
+            with_jt_budget(&malformed_compression, |budget| super::display_jt_segments(
+                budget,
+                &malformed_compression,
+                &documents
+            ))
+            .unwrap()
+            .is_empty()
+        );
+
+        let mut malformed = container;
+        malformed.data.to_mut()[28] = b'X';
+        assert!(super::display_jt_indices(ctx, &malformed)
+            .unwrap()
+            .is_empty());
     });
-    assert!(
-        with_jt_budget(&cross_entry, |budget| super::display_jt_segments(
-            budget,
-            &cross_entry,
-            &documents
-        ))
-        .unwrap()
-        .is_empty()
-    );
-
-    let (compressed_elements, sequences) = with_jt_budget(&container, |budget| {
-        super::display_jt_compressed_element_sequences(budget, &container, &segments)
-    })
-    .unwrap();
-    assert_eq!(compressed_elements.len(), 1);
-    assert_eq!(compressed_elements[0].segment_type, 1);
-    assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
-    assert_eq!(compressed_elements[0].object_id, 5);
-    assert_eq!(compressed_elements[0].object_base_type, 1);
-    assert_eq!(compressed_elements[0].body_byte_len(), 3);
-    assert_eq!(sequences.len(), 1);
-    assert_eq!(sequences[0].framed_byte_len(), 48);
-    assert_eq!(sequences[0].tail, [6, 5]);
-
-    let mut malformed_compression = container.clone();
-    malformed_compression.data.to_mut()[193..197].copy_from_slice(
-        &(u32::try_from(compressed.len()).expect("fixture value fits u32") + 2).to_le_bytes(),
-    );
-    assert!(
-        with_jt_budget(&malformed_compression, |budget| super::display_jt_segments(
-            budget,
-            &malformed_compression,
-            &documents
-        ))
-        .unwrap()
-        .is_empty()
-    );
-
-    let mut malformed = container;
-    malformed.data.to_mut()[28] = b'X';
-    assert!(super::display_jt_indices(&ctx, &malformed)
-        .unwrap()
-        .is_empty());
 }
 
 #[test]
@@ -731,9 +718,11 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
     let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
     body.extend_from_slice(&3_u32.to_le_bytes());
     body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-    let value = with_jt_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
-        .unwrap()
-        .expect("required invariant");
+    let value = crate::test_support::with_decode_context(|ctx| {
+        super::parse_jt_string_property_atom_body(ctx, &body)
+    })
+    .unwrap()
+    .expect("required invariant");
     assert_eq!(
         value.encode_utf16().collect::<Vec<_>>(),
         [0x4e, 0x58, 0x3a9]
@@ -741,48 +730,48 @@ fn display_jt_string_property_body_requires_exact_utf16_frame() {
     assert_eq!(value, "NXΩ");
 
     body.push(0);
-    assert!(
-        with_jt_context(|ctx| super::parse_jt_string_property_atom_body(ctx, &body))
-            .unwrap()
-            .is_none()
-    );
+    assert!(crate::test_support::with_decode_context(|ctx| {
+        super::parse_jt_string_property_atom_body(ctx, &body)
+    })
+    .unwrap()
+    .is_none());
 }
 
 fn assert_jt_string_resource_limit(
-    policy: cadmpeg_core::decode::DecodePolicy,
+    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     dimension: cadmpeg_core::decode::ResourceDimension,
     operation: &'static str,
 ) {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-
     let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
     body.extend_from_slice(&3_u32.to_le_bytes());
     body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::parse_jt_string_property_atom_body(&ctx, &body).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-        if limit.dimension == dimension && limit.operation == operation)
-    );
 
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert_eq!(
-        super::parse_jt_string_property_atom_body(&service, &body)
-            .unwrap()
-            .as_deref(),
-        Some("NXΩ")
-    );
+    crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+        let error = super::parse_jt_string_property_atom_body(ctx, &body).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == dimension && limit.operation == operation)
+        );
+
+        crate::test_support::with_decode_context(|service| {
+            assert_eq!(
+                super::parse_jt_string_property_atom_body(service, &body)
+                    .unwrap()
+                    .as_deref(),
+                Some("NXΩ")
+            );
+        });
+    });
 }
 
 #[test]
 fn jt_string_code_units_refuse_before_collection_growth() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 2;
+    use cadmpeg_core::decode::ResourceDimension;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_collection_items = 2;
+    };
     assert_jt_string_resource_limit(
-        policy,
+        adjust_policy,
         ResourceDimension::CollectionItems,
         "decode DisplayJT string code units",
     );
@@ -790,11 +779,12 @@ fn jt_string_code_units_refuse_before_collection_growth() {
 
 #[test]
 fn jt_string_code_units_refuse_before_scoped_allocation() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 5;
+    use cadmpeg_core::decode::ResourceDimension;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_materialized_bytes = 5;
+    };
     assert_jt_string_resource_limit(
-        policy,
+        adjust_policy,
         ResourceDimension::MaterializedBytes,
         "decode DisplayJT string code units",
     );
@@ -802,11 +792,12 @@ fn jt_string_code_units_refuse_before_scoped_allocation() {
 
 #[test]
 fn jt_string_value_refuses_before_retained_allocation() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 3;
+    use cadmpeg_core::decode::ResourceDimension;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_retained_bytes = 3;
+    };
     assert_jt_string_resource_limit(
-        policy,
+        adjust_policy,
         ResourceDimension::RetainedBytes,
         "retain DisplayJT string property",
     );
@@ -814,11 +805,12 @@ fn jt_string_value_refuses_before_retained_allocation() {
 
 #[test]
 fn jt_string_scan_refuses_before_utf16_work() {
-    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 2;
+    use cadmpeg_core::decode::ResourceDimension;
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_work_units = 2;
+    };
     assert_jt_string_resource_limit(
-        policy,
+        adjust_policy,
         ResourceDimension::WorkUnits,
         "decode DisplayJT string code units",
     );
@@ -1254,7 +1246,7 @@ fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
         source_offset: 106,
     };
 
-    let tessellations = with_jt_context(|ctx| {
+    let tessellations = crate::test_support::with_decode_context(|ctx| {
         super::display_jt_tessellations(
             ctx,
             &super::DisplayJtTessellationInputs {
@@ -1400,20 +1392,23 @@ fn jt9_topology_bounds_variable_high_degree_lane_count() {
 #[test]
 fn jt9_topology_lookahead_returns_packet_nesting_refusal() {
     let representation = vec![0; 21 * 4];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_recursion_depth = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&representation, &arena, &policy)
-            .expect("bounded JT lookahead input");
-    let error = super::jt9_topology_high_degree_lane_count(&ctx, &representation, 10)
-        .expect_err("the packet frame exceeds the nesting limit");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
-                && limit.operation == "frame JT integer packet"
-    ));
+
+    crate::test_support::with_decode_context_over(
+        &representation,
+        |policy| {
+            policy.limits.max_recursion_depth = 0;
+        },
+        |ctx| {
+            let error = super::jt9_topology_high_degree_lane_count(ctx, &representation, 10)
+                .expect_err("the packet frame exceeds the nesting limit");
+            assert!(matches!(
+                error,
+                cadmpeg_core::CodecError::ResourceLimit(limit)
+                    if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+                        && limit.operation == "frame JT integer packet"
+            ));
+        },
+    );
 }
 
 #[test]
@@ -1828,7 +1823,7 @@ fn jt9_topology_packets_retain_decoded_primal_values() {
         source_offset,
     }];
 
-    let sequences = with_jt_context(|ctx| {
+    let sequences = crate::test_support::with_decode_context(|ctx| {
         display_jt_topology_packet_sequences(ctx, &container, &elements).expect("service JT budget")
     })
     .sequences;

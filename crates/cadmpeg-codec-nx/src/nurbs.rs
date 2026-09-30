@@ -513,7 +513,12 @@ fn arrays(bytes: &[u8]) -> Arrays<'_> {
     let mut out = Arrays::default();
     let mut duplicate_u16s = BTreeSet::new();
     let mut duplicate_f64s = BTreeSet::new();
-    for pos in 0..bytes.len().saturating_sub(7) {
+    for pos in bytes
+        .len()
+        .checked_sub(7)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if let Some(record) = array_record_at(bytes, pos) {
             match record.values {
                 ArrayValues::U16(values) => {
@@ -583,7 +588,11 @@ impl Payload<'_> {
 }
 
 fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload<'_>> {
-    let records = (0..bytes.len().saturating_sub(96))
+    let records = bytes
+        .len()
+        .checked_sub(96)
+        .into_iter()
+        .flat_map(|last| 0..last)
         .filter_map(|pos| surface_payload_at(bytes, pos).map(|(xmt, payload, _)| (xmt, payload)));
     unique_records(records)
 }
@@ -651,7 +660,11 @@ fn surface_data_header_at(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
 }
 
 fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload<'_>> {
-    let records = (0..bytes.len().saturating_sub(14))
+    let records = bytes
+        .len()
+        .checked_sub(14)
+        .into_iter()
+        .flat_map(|last| 0..last)
         .filter_map(|pos| curve_payload_at(bytes, pos).map(|(xmt, payload, _)| (xmt, payload)));
     unique_records(records)
 }
@@ -717,9 +730,14 @@ struct SurfaceDescriptor {
 }
 
 fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u32, SurfaceDescriptor> {
-    let records = (0..bytes.len().saturating_sub(47)).filter_map(|pos| {
-        surface_descriptor_at(bytes, pos).map(|(xmt, descriptor, _)| (xmt, descriptor))
-    });
+    let records = bytes
+        .len()
+        .checked_sub(47)
+        .into_iter()
+        .flat_map(|last| 0..last)
+        .filter_map(|pos| {
+            surface_descriptor_at(bytes, pos).map(|(xmt, descriptor, _)| (xmt, descriptor))
+        });
     let mut descriptors = BTreeMap::<u32, SurfaceDescriptor>::new();
     let mut conflicts = BTreeSet::new();
     for (xmt, descriptor) in records {
@@ -880,9 +898,14 @@ struct CurveBasis {
 }
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
-    let records = (0..bytes.len().saturating_sub(26)).filter_map(|pos| {
-        curve_descriptor_at(bytes, pos, true).map(|(xmt, descriptor, _)| (xmt, descriptor))
-    });
+    let records = bytes
+        .len()
+        .checked_sub(26)
+        .into_iter()
+        .flat_map(|last| 0..last)
+        .filter_map(|pos| {
+            curve_descriptor_at(bytes, pos, true).map(|(xmt, descriptor, _)| (xmt, descriptor))
+        });
     let mut descriptors = BTreeMap::<u32, CurveDescriptor>::new();
     let mut conflicts = BTreeSet::new();
     for (xmt, descriptor) in records {

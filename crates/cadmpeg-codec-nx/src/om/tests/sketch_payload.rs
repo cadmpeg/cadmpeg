@@ -56,16 +56,20 @@ fn pair_refusal(
         bytes.truncate(bytes.len() - 8);
         bytes.extend([0x50, 0x50, 0x00, 0x00]);
     }
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    if fixed {
-        crate::om::sketch_payload_fixed_pairs(&ctx, &bytes).unwrap_err()
-    } else {
-        crate::om::sketch_payload_mixed_pairs(&ctx, &bytes).unwrap_err()
-    }
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            if fixed {
+                crate::om::sketch_payload_fixed_pairs(ctx, &bytes).unwrap_err()
+            } else {
+                crate::om::sketch_payload_mixed_pairs(ctx, &bytes).unwrap_err()
+            }
+        },
+    )
 }
 
 fn scalar_lane_refusal(
@@ -82,12 +86,14 @@ fn scalar_lane_refusal(
     shifted_f32[0] += 0x10;
     bytes.extend_from_slice(&shifted_f32);
     bytes.push(0x00);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    crate::om::sketch_payload_scalar_lanes(&ctx, &bytes).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::sketch_payload_scalar_lanes(ctx, &bytes).unwrap_err(),
+    )
 }
 
 #[test]
@@ -349,13 +355,17 @@ fn sketch_scalar_mapping_refusal(
     bytes.extend_from_slice(&shifted_f32);
     bytes.push(0);
     let lane = sketch_payload_scalar_lanes(&bytes).remove(0);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    lane.try_map_locations(&ctx, |offset, ()| Some(offset))
-        .unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            lane.try_map_locations(ctx, |offset, ()| Some(offset))
+                .unwrap_err()
+        },
+    )
 }
 
 #[test]

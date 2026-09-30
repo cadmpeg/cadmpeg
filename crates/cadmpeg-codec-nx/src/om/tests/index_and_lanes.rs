@@ -16,12 +16,14 @@ fn data_block_frame_refusal(
         0xaa, 0x81, 0x72, 0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80,
         0x86, 0x02, 0x01, 0x02, 0x80, 0xa4, 0xff,
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    crate::om::data_block_object_frames(&ctx, &bytes).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::data_block_object_frames(ctx, &bytes).unwrap_err(),
+    )
 }
 
 #[test]
@@ -65,12 +67,14 @@ fn datum_csys_pair_refusal(
     bytes.extend_from_slice(&[0x40, 0, 0, 0, 0, 0, 0]);
     bytes.extend_from_slice(&[0x00, 0x30]);
     bytes.extend_from_slice(&[0xc0, 0, 0, 0, 0, 0, 0]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    crate::om::datum_csys_payload_fixed_pairs(&ctx, &bytes).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::datum_csys_payload_fixed_pairs(ctx, &bytes).unwrap_err(),
+    )
 }
 
 #[test]
@@ -131,16 +135,20 @@ fn draft_scalar_lane_refusal(
             0x86, 0x02, 0x00, 0x03, 0x00, 0x4f, 0x80, 0, 0, 0xcf, 0x80, 0, 0, 0,
         ]
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    if fixed {
-        crate::om::draft_construction_fixed_lanes(&ctx, &bytes).unwrap_err()
-    } else {
-        crate::om::draft_construction_binary32_lanes(&ctx, &bytes).unwrap_err()
-    }
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            if fixed {
+                crate::om::draft_construction_fixed_lanes(ctx, &bytes).unwrap_err()
+            } else {
+                crate::om::draft_construction_binary32_lanes(ctx, &bytes).unwrap_err()
+            }
+        },
+    )
 }
 
 #[test]
@@ -228,14 +236,19 @@ fn operation_body_reference_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let record =
-        crate::om::operation_record::OperationBodyInput::new(&bytes, 100, 0, "EXTRUDE").unwrap();
-    crate::om::operation_body_references(&ctx, record).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationBodyInput::new(&bytes, 100, 0, "EXTRUDE")
+                    .unwrap();
+            crate::om::operation_body_references(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]
@@ -336,42 +349,54 @@ fn data_block_object_references(bytes: &[u8]) -> Vec<crate::om::DataBlockObjectR
 #[test]
 fn om_data_block_object_references_refuse_collection_limit() {
     let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
 #[test]
 fn om_data_block_object_references_refuse_retained_limit() {
     let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn om_data_block_object_references_refuse_work_limit() {
     let bytes = [0x04, 0x00, 0x09, 0x02, 0x0b];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = crate::om::data_block_object_references(&ctx, &bytes).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = crate::om::data_block_object_references(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
     );
 }
 
@@ -392,45 +417,60 @@ fn one_common_frame_payload() -> &'static [u8] {
 #[test]
 fn om_common_frame_route_refuses_collection_limit() {
     let bytes = one_common_frame_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
-    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
 #[test]
 fn om_common_frame_route_refuses_retained_limit() {
     let bytes = one_common_frame_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
-    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn om_common_frame_route_refuses_work_limit() {
     let bytes = one_common_frame_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let record = crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
-    let error = crate::om::operation_terminal_frame(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(bytes, 0, "FSET").unwrap();
+            let error = crate::om::operation_terminal_frame(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
     );
 }
 
@@ -467,48 +507,63 @@ fn one_simple_hole_scalar_payload() -> Vec<u8> {
 #[test]
 fn om_simple_hole_text_and_scalar_route_refuses_collection_limit() {
     let bytes = one_simple_hole_scalar_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 2;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let record =
-        crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
-    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 2;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
 #[test]
 fn om_simple_hole_text_and_scalar_route_refuses_retained_limit() {
     let bytes = one_simple_hole_scalar_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let record =
-        crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
-    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn om_simple_hole_text_and_scalar_route_refuses_work_limit() {
     let bytes = one_simple_hole_scalar_payload();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let record =
-        crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE").unwrap();
-    let error = crate::om::simple_hole_repeated_scalar_lane(&ctx, record).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&bytes, 0, "SIMPLE HOLE")
+                    .unwrap();
+            let error = crate::om::simple_hole_repeated_scalar_lane(ctx, record).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
     );
 }
 
@@ -622,14 +677,18 @@ fn construction_scalar_scan_refuses_collection_limit() {
     let bytes = [
         0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72,
     ];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = construction_payload_scalar_fields(&ctx, &bytes).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = construction_payload_scalar_fields(ctx, &bytes).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
@@ -695,14 +754,18 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
 #[test]
 fn offset_store_named_point_refuses_scoped_limit() {
     let first = [0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'7', 0x00];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&first, &arena, &policy).unwrap();
-    let error = offset_store_named_point(&ctx, [&first[..]]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+
+    crate::test_support::with_decode_context_over(
+        &first,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = offset_store_named_point(ctx, [&first[..]]).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+            );
+        },
     );
 }
 
@@ -1238,15 +1301,19 @@ fn om_datum_plane_descriptor_requires_complete_lowercase_hex_identity() {
 #[test]
 fn om_datum_plane_descriptor_route_refuses_retained_limit() {
     let bytes = b"793487222121a5474a9125451b8e31f5?A\xf0\x1e\xff\x02\x01\x33";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("test root is admitted");
-    assert!(matches!(
-        datum_plane_descriptor_block(&ctx, bytes),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                datum_plane_descriptor_block(ctx, bytes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]
@@ -1278,15 +1345,19 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
 #[test]
 fn om_datum_csys_descriptor_route_refuses_retained_limit() {
     let bytes = b"\x02\x01ae166162820ea2d993e1fdf49091850e?A\x80\xa0\xf0\x26";
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 1;
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("test root is admitted");
-    assert!(matches!(
-        datum_csys_descriptor_block(&ctx, bytes),
-        Err(cadmpeg_core::CodecError::ResourceLimit(_))
-    ));
+
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 1;
+        },
+        |ctx| {
+            assert!(matches!(
+                datum_csys_descriptor_block(ctx, bytes),
+                Err(cadmpeg_core::CodecError::ResourceLimit(_))
+            ));
+        },
+    );
 }
 
 #[test]

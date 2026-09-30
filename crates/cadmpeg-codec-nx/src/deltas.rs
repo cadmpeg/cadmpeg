@@ -1232,16 +1232,16 @@ fn inline_schema_declaration(
                 };
                 return Some(InlineSchemaDeclaration {
                     fields: InlineSchemaFields::Type38 {
-                        state: Type38State::new(
+                        state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
                             xmt,
                             node_id,
                             leading_references,
                             leading_statuses,
                             marker,
-                            linked_references,
-                            state_references,
+                            linked_references: &linked_references,
+                            state_references: &state_references,
                             numeric_values,
-                        )
+                        })
                         .ok()?,
                     },
                     offset,
@@ -1253,16 +1253,16 @@ fn inline_schema_declaration(
             (end <= gap_end).then_some(())?;
             return Some(InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(
+                    state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
                         xmt,
                         node_id,
                         leading_references,
                         leading_statuses,
                         marker,
-                        linked_references,
-                        state_references,
-                        None,
-                    )
+                        linked_references: &linked_references,
+                        state_references: &state_references,
+                        numeric_values: None,
+                    })
                     .ok()?,
                 },
                 offset,
@@ -1459,7 +1459,10 @@ fn inline_body_state(
         ]
         .iter()
         .any(|header| {
-            stream.get(*candidate..candidate.saturating_add(header.len())) == Some(*header)
+            candidate
+                .checked_add(header.len())
+                .and_then(|end| stream.get(*candidate..end))
+                == Some(*header)
         })
     });
     let expected_end = next_header.unwrap_or(gap_end);
@@ -2161,11 +2164,11 @@ fn merge_records(
     let merged_complete = merged_graph.has_complete_body_topology(ctx)?;
     let deletes_owner = deletions.keys().any(|(kind, _)| matches!(kind, 12 | 13));
     let deleted_faces = deletions.keys().filter(|(kind, _)| *kind == 14).count();
-    let unaccounted_face_loss = !deletes_owner
-        && merged_graph
-            .body_shape_face_count()
-            .saturating_add(deleted_faces)
-            < graph.body_shape_face_count();
+    let accounted_faces = merged_graph
+        .body_shape_face_count()
+        .checked_add(deleted_faces)
+        .ok_or_else(|| CodecError::Malformed("NX accounted face count overflow".into()))?;
+    let unaccounted_face_loss = !deletes_owner && accounted_faces < graph.body_shape_face_count();
     if base_complete && (!merged_complete || unaccounted_face_loss) {
         let (selected, reservation) = build(false)?;
         reservation.commit()?;
@@ -3438,8 +3441,6 @@ fn consume_intersection_data(
     )
 }
 
-// Names follow the ordered source slots in this fixed-width lane.
-#[allow(clippy::many_single_char_names)]
 fn consume_intersection_auxiliary(
     ctx: &DecodeContext<'_>,
     stream: &[u8],
@@ -3456,13 +3457,13 @@ fn consume_intersection_auxiliary(
     } else if let Some((term, end)) = crate::intersection::term_use_at(stream, offset) {
         (RecordFamily::TermUse, term.xmt, end)
     } else if let Some((bound, end)) = crate::intersection::blend_bound_at(stream, offset) {
-        let [a, b, c, d, e] = bound.state.header_references();
+        let headers = bound.state.header_references();
         let references = [
-            a,
-            b,
-            c,
-            d,
-            e,
+            headers[0],
+            headers[1],
+            headers[2],
+            headers[3],
+            headers[4],
             bound.state.boundary_index(),
             bound.state.blend_surface(),
         ];
@@ -4027,31 +4028,37 @@ mod inline_schema_tests {
     #[test]
     fn deltas_attdef_route_refuses_collection_limit() {
         let stream = attdef_list_declaration();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 1;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-                .expect("test root is admitted");
-        assert!(matches!(
-            super::census::walk(&ctx, &stream),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &stream,
+            |policy| {
+                policy.limits.max_collection_items = 1;
+            },
+            |ctx| {
+                assert!(matches!(
+                    super::census::walk(ctx, &stream),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
+                ));
+            },
+        );
     }
 
     #[test]
     fn deltas_attdef_route_refuses_retained_limit() {
         let stream = attdef_list_declaration();
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 7;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy)
-                .expect("test root is admitted");
-        assert!(matches!(
-            super::census::walk(&ctx, &stream),
-            Err(cadmpeg_core::CodecError::ResourceLimit(_))
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &stream,
+            |policy| {
+                policy.limits.max_retained_bytes = 7;
+            },
+            |ctx| {
+                assert!(matches!(
+                    super::census::walk(ctx, &stream),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(_))
+                ));
+            },
+        );
     }
 
     fn type_70_declaration() -> Vec<u8> {
@@ -4161,27 +4168,27 @@ mod inline_schema_tests {
             census.inline_schema_declarations,
             [InlineSchemaDeclaration {
                 fields: InlineSchemaFields::Type38 {
-                    state: Type38State::new(
-                        40_000u32.try_into().unwrap(),
-                        17,
-                        [1, 7, 8, 9, 1],
-                        [1; 5],
-                        IntersectionMarker::Type2d,
-                        [11u32, 12]
+                    state: Type38State::new(&crate::deltas::type38_state::Type38StateParts {
+                        xmt: 40_000u32.try_into().unwrap(),
+                        node_id: 17,
+                        leading_references: [1, 7, 8, 9, 1],
+                        leading_statuses: [1; 5],
+                        marker: IntersectionMarker::Type2d,
+                        linked_references: &[11u32, 12]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect(),
-                        [40_003u32, 40_002, 40_001]
+                            .collect::<Vec<_>>(),
+                        state_references: &[40_003u32, 40_002, 40_001]
                             .into_iter()
                             .map(|value| value.try_into().unwrap())
-                            .collect(),
-                        Some(
+                            .collect::<Vec<_>>(),
+                        numeric_values: Some(
                             FiniteVector::new([
                                 0.5, -0.25, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0
                             ])
                             .unwrap()
-                        ),
-                    )
+                        )
+                    })
                     .unwrap(),
                 },
                 offset: 0,
@@ -5023,16 +5030,21 @@ mod transmit_header_tests {
 
     #[test]
     fn deltas_census_route_refuses_retained_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let bytes = header(&[0x04, 0x27, 0x04, 0x28]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = walk(&ctx, &bytes).expect_err("retained refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = walk(ctx, &bytes).expect_err("retained refusal");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes)
+                );
+            },
         );
     }
 

@@ -1,16 +1,52 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS boundary regressions.
 
-use super::{
-    edit, nurbs_plane_boundary_curve, shared_extrusion_generator_curve, CurveGeometry,
-    NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes, PlaneEquation, Point3,
-    SolvedCurveGeometry,
-};
+use crate::decode::analytic::equations::PlaneEquation;
 use crate::decode::quadratic::Coefficient;
 use crate::decode::surfaces::nurbs_boundaries::{
     cubic_extrusion_plane_generator_curve, cubic_unit_interval_roots,
 };
+use crate::decode::surfaces::nurbs_boundaries::{
+    nurbs_plane_boundary_curve as decode_nurbs_plane_boundary_curve,
+    shared_extrusion_generator_curve as decode_shared_extrusion_generator_curve,
+};
 use crate::decode::tests::with_decode_ctx;
+use cadmpeg_ir::geometry::nurbs::{
+    NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes,
+};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_test_support::edit;
+
+fn nurbs_plane_boundary_curve(
+    nurbs: &NurbsSurface,
+    surface_id: u32,
+    plane: PlaneEquation,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<CurveGeometry> {
+    with_decode_ctx(|ctx| decode_nurbs_plane_boundary_curve(ctx, nurbs, surface_id, plane, refusal))
+        .expect("service profile admits the boundary")
+}
+
+fn shared_extrusion_generator_curve(
+    first: &NurbsSurface,
+    first_surface_id: u32,
+    second: &NurbsSurface,
+    second_surface_id: u32,
+    refusal: &mut crate::lane_refusal::LaneRefusals,
+) -> Option<CurveGeometry> {
+    with_decode_ctx(|ctx| {
+        decode_shared_extrusion_generator_curve(
+            ctx,
+            first,
+            first_surface_id,
+            second,
+            second_surface_id,
+            refusal,
+        )
+    })
+    .expect("service profile admits the shared boundary")
+}
 
 #[test]
 fn extrusion_nurbs_boundary_requires_one_plane_supported_control_edge() {

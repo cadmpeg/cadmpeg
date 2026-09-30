@@ -540,7 +540,13 @@ impl Decoder<'_> {
         }
         let mut best: Option<usize> = None;
         let mut index = self.active.len();
-        while index > self.active.len().saturating_sub(16) {
+        while index > 0 {
+            let Some(distance) = self.active.len().checked_sub(index) else {
+                return best;
+            };
+            if distance >= 16 {
+                break;
+            }
             index -= 1;
             let face = self.active[index];
             if self.removed[face] {

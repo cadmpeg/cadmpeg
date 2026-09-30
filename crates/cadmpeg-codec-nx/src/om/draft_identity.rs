@@ -67,10 +67,8 @@ impl Prefix {
     }
 
     fn raw_stack(&self) -> ([u8; 8], usize) {
-        // The wire adapter receives the optional field by reference, including its absence.
-        #[allow(clippy::ref_option)]
-        fn nullable(atom: &Option<CompactIndexAtom>) -> &[u8] {
-            atom.as_ref().map_or(&[0xff], CompactIndexAtom::raw)
+        fn nullable(atom: Option<&CompactIndexAtom>) -> &[u8] {
+            atom.map_or(&[0xff], CompactIndexAtom::raw)
         }
         let mut bytes = [0_u8; 8];
         let mut at = 0;
@@ -87,12 +85,12 @@ impl Prefix {
                 append(&[0x41]);
                 append(first.raw());
                 append(&[0xf0]);
-                append(nullable(second));
+                append(nullable(second.as_ref()));
                 append(&[u8::from(*branch), 0x01]);
             }
             Self::Tagged { index } => {
                 append(&[0x41, 0xf0]);
-                append(nullable(index));
+                append(nullable(index.as_ref()));
                 append(&[0xff, 0x02, 0x01]);
             }
         }
@@ -226,14 +224,18 @@ mod tests {
     #[test]
     fn draft_identity_text_refuses_retained_limit() {
         let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let error = DraftIdentityFrame::read(&ctx, bytes, 0).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = DraftIdentityFrame::read(ctx, bytes, 0).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
     }
 

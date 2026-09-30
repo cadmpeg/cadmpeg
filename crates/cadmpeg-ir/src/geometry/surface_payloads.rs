@@ -1058,6 +1058,10 @@ impl LinearSweepSurfaceConstruction {
     pub fn direction(&self) -> &DirectionAboveEpsilon {
         &self.direction
     }
+    /// Replace the admitted sweep direction while preserving its directrix.
+    pub fn set_direction(&mut self, direction: DirectionAboveEpsilon) {
+        self.direction = direction;
+    }
 }
 
 impl TryFrom<LinearSweepSurfaceConstructionWire> for LinearSweepSurfaceConstruction {

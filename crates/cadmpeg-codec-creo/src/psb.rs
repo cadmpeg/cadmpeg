@@ -86,14 +86,13 @@ pub(crate) enum TokenKind {
 ///
 /// Numeric forms that depend on a parent grammar remain compact or unknown
 /// tokens.
-pub(crate) fn tokens(data: &[u8]) -> Vec<Token> {
-    let mut result = Vec::new();
+pub(crate) fn tokens(data: &[u8]) -> impl Iterator<Item = Token> + '_ {
     let mut offset = 0;
-    while let Some(token) = token_at(data, offset) {
+    std::iter::from_fn(move || {
+        let token = token_at(data, offset)?;
         offset += token.length;
-        result.push(token);
-    }
-    result
+        Some(token)
+    })
 }
 
 /// Decode one byte-self-delimiting PSB token at `offset`.
@@ -390,7 +389,7 @@ mod tests {
             0xe0, 0x22, b'p', 0, 0xf8, 0x81, 0x02, 0x2f, 0x43, 0x00, 0xf7, 0x80, 0x80, 0xcc,
         ];
         assert_eq!(
-            tokens(&payload),
+            tokens(&payload).collect::<Vec<_>>(),
             vec![
                 Token {
                     offset: 0,
@@ -423,7 +422,7 @@ mod tests {
 
     #[test]
     fn token_walker_bounds_compact_scalar_body_extents() {
-        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]);
+        let tokens = tokens(&[0xf9, 0x80, 0x88, 0x03, 0x0f]).collect::<Vec<_>>();
         assert_eq!(tokens[0].kind, TokenKind::ScalarBody);
         assert_eq!(tokens[0].length, 4);
         assert_eq!(tokens[1].offset, 4);
@@ -432,7 +431,7 @@ mod tests {
     #[test]
     fn token_walker_marks_truncated_structural_tokens() {
         assert_eq!(
-            tokens(&[token::NAMED_RECORD]),
+            tokens(&[token::NAMED_RECORD]).collect::<Vec<_>>(),
             vec![Token {
                 offset: 0,
                 length: 1,

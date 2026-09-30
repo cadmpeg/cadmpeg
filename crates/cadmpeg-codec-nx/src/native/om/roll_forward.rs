@@ -331,27 +331,32 @@ mod tests {
 
     #[test]
     fn roll_forward_frame_conversion_refuses_collection_limit() {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_core::decode::ResourceDimension;
         let group: OmRollForwardStateGroup = serde_json::from_str(
             r#"{"id":"group","opener":[1,0],"count_prefix":null,"declared_count":0,"rows":[],"source_offset":0}"#,
         ).unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::OmRollForwardStateTable::from_frames(
-            &ctx,
-            0,
-            "section",
-            "entry",
-            super::GroupTableFooter::try_from(&[][..]).unwrap(),
-            8,
-            [group.frame],
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::OmRollForwardStateTable::from_frames(
+                    ctx,
+                    0,
+                    "section",
+                    "entry",
+                    super::GroupTableFooter::try_from(&[][..]).unwrap(),
+                    8,
+                    [group.frame],
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems)
+                );
+            },
         );
     }
 

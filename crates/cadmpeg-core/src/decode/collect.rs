@@ -494,15 +494,6 @@ impl DecodeContext<'_> {
         Self::reserve_admitted_string(text, additional, operation)
     }
 
-    fn collection_allocation_failed(&self, count: usize, operation: &'static str) -> CodecError {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::CollectionItems,
-            self.policy().limits.max_collection_items,
-            u64_from_index(count),
-            operation,
-        ))
-    }
-
     fn allocation_failed(
         &self,
         dimension: ResourceDimension,
@@ -804,6 +795,21 @@ impl DecodeContext<'_> {
             .try_reserve(1)
             .map_err(|_| self.collection_allocation_failed(1, operation))?;
         values.push_back(value);
+        Ok(())
+    }
+
+    /// Prepends a deque item after charging its slot.
+    pub fn push_front<T>(
+        &self,
+        values: &mut VecDeque<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| self.collection_allocation_failed(1, operation))?;
+        values.push_front(value);
         Ok(())
     }
 
@@ -1632,6 +1638,30 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"),
         |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back")
     );
+    #[test]
+    fn push_front_refuses_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 0);
+        let mut values = VecDeque::new();
+        assert!(
+            matches!(ctx.push_front(&mut values, 1_u8, "test push front"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        assert_eq!(values.capacity(), 0);
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_front_service_profile_preserves_order() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut values = VecDeque::from([2_u8]);
+        ctx.push_front(&mut values, 1, "test push front")
+            .expect("service profile");
+        assert_eq!(values, VecDeque::from([1, 2]));
+    }
+
     collection_case!(
         reserve_heap_charges_before_growth,
         1,

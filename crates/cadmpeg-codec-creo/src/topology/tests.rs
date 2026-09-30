@@ -9,6 +9,8 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::container::{self};
@@ -32,9 +34,421 @@ fn row(id: u32, next: u32) -> CurveTopologyRow {
         offset: 0,
     }
 }
+
+fn build_service(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<super::Loop>) {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    build(&ctx, rows).expect("service topology build")
+}
+
+fn with_service_context<T>(run: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    run(&ctx)
+}
+
+fn with_collection_limit<T>(
+    max_collection_items: u64,
+    run: impl FnOnce(&DecodeContext<'_>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    run(&ctx)
+}
+
+fn assert_collection_error(error: &CodecError, operation: &'static str) {
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn paired_incidence() -> [HalfEdgeVertexIncidence; 2] {
+    [
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::Zero,
+            },
+            start_vertex_id: 10,
+            end_vertex_id: Some(20),
+        },
+        HalfEdgeVertexIncidence {
+            half_edge: HalfEdgeId {
+                curve_id: 7,
+                side: crate::topology::Side::One,
+            },
+            start_vertex_id: 20,
+            end_vertex_id: None,
+        },
+    ]
+}
+
+#[test]
+fn start_vertex_pairs_refuse_group_node() {
+    let error = with_collection_limit(0, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs a grouping node");
+    assert_collection_error(&error, "creo start-vertex pair group nodes");
+}
+
+#[test]
+fn start_vertex_pairs_refuse_output_node() {
+    let error = with_collection_limit(1, |ctx| edge_start_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs an output node");
+    assert_collection_error(&error, "creo start-vertex pair nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_refuse_group_node() {
+    let error = with_collection_limit(0, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs a grouping node");
+    assert_collection_error(&error, "creo edge-vertex pair group nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_refuse_output_node() {
+    let error = with_collection_limit(1, |ctx| edge_vertex_pairs(ctx, &paired_incidence()))
+        .expect_err("one curve needs an output node");
+    assert_collection_error(&error, "creo edge-vertex pair nodes");
+}
+
+#[test]
+fn edge_vertex_pairs_reject_duplicate_side_without_a_temporary_vector() {
+    let [first, second] = paired_incidence();
+    let incidence = [first.clone(), first, second];
+    let start = with_service_context(|ctx| {
+        edge_start_vertex_pairs(ctx, &incidence).expect("service start pairs")
+    });
+    let edge =
+        with_service_context(|ctx| edge_vertex_pairs(ctx, &incidence).expect("service edge pairs"));
+    assert!(!start.contains_key(&7));
+    assert!(!edge.contains_key(&7));
+}
+
+fn one_incident_vertex() -> (Vec<TopologicalVertex>, Vec<HalfEdge>) {
+    let edge = orphan_edge();
+    (
+        vec![TopologicalVertex {
+            id: 1,
+            half_edges: vec![edge.id],
+        }],
+        vec![edge],
+    )
+}
+
+#[test]
+fn vertex_incident_faces_refuse_half_edge_lookup_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(0, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one edge needs a lookup node");
+    assert_collection_error(&error, "creo incident-face half-edge lookup nodes");
+}
+
+#[test]
+fn vertex_incident_faces_refuse_face_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(1, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one incident face needs a set node");
+    assert_collection_error(&error, "creo incident face nodes");
+}
+
+#[test]
+fn vertex_incident_faces_refuse_vertex_node() {
+    let (vertices, edges) = one_incident_vertex();
+    let error = with_collection_limit(2, |ctx| vertex_incident_faces(ctx, &vertices, &edges))
+        .expect_err("one vertex needs an output node");
+    assert_collection_error(&error, "creo incident-face vertex nodes");
+}
+
+fn build_with_collection_limit(
+    rows: &[CurveTopologyRow],
+    max_collection_items: u64,
+) -> Result<(Vec<HalfEdge>, Vec<super::Loop>), CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    build(&ctx, rows)
+}
+
+fn assert_build_collection_refusal(limit: u64, operation: &'static str) {
+    let error = build_with_collection_limit(&[row(1, 1)], limit)
+        .expect_err("one closed face-side ring exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn orbit_with_collection_limit(
+    edges: &[HalfEdge],
+    max_collection_items: u64,
+) -> Result<super::VertexOrbits, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    vertex_orbits(&ctx, edges)
+}
+
+fn orphan_edge() -> HalfEdge {
+    HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 1,
+            side: crate::topology::Side::Zero,
+        },
+        face_id: std::num::NonZeroU32::new(10),
+        next: None,
+    }
+}
+
+fn assert_orbit_collection_refusal(limit: u64, operation: &'static str) {
+    let error = orbit_with_collection_limit(&[orphan_edge()], limit)
+        .expect_err("one half-edge exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+fn components_with_collection_limit(
+    rows: &[CurveTopologyRow],
+    max_collection_items: u64,
+) -> Result<Vec<super::FaceComponent>, CodecError> {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = max_collection_items;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    face_components(&ctx, rows)
+}
+
+fn assert_component_collection_refusal(limit: u64, operation: &'static str) {
+    let error = components_with_collection_limit(&[row(1, 1)], limit)
+        .expect_err("one two-face component exceeds the limit");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == operation));
+}
+
+#[test]
+fn face_components_refuse_unique_row_count_node() {
+    assert_component_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn face_components_refuse_unique_row_projection() {
+    assert_component_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn face_components_refuse_adjacency_node() {
+    assert_component_collection_refusal(2, "creo face adjacency nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_group_node() {
+    assert_component_collection_refusal(3, "creo face curve group nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_member_node() {
+    assert_component_collection_refusal(4, "creo face curve member nodes");
+}
+
+#[test]
+fn face_components_refuse_adjacency_link() {
+    assert_component_collection_refusal(8, "creo face adjacency links");
+}
+
+#[test]
+fn face_components_refuse_seen_start_node() {
+    assert_component_collection_refusal(10, "creo seen component faces");
+}
+
+#[test]
+fn face_components_refuse_pending_start() {
+    assert_component_collection_refusal(11, "creo pending component faces");
+}
+
+#[test]
+fn face_components_refuse_face_member_node() {
+    assert_component_collection_refusal(12, "creo component face nodes");
+}
+
+#[test]
+fn face_components_refuse_curve_node() {
+    assert_component_collection_refusal(13, "creo component curve nodes");
+}
+
+#[test]
+fn face_components_refuse_seen_neighbor_node() {
+    assert_component_collection_refusal(14, "creo seen component faces");
+}
+
+#[test]
+fn face_components_refuse_pending_neighbor() {
+    assert_component_collection_refusal(15, "creo pending component faces");
+}
+
+#[test]
+fn face_components_refuse_face_id_vector() {
+    assert_component_collection_refusal(17, "creo component face IDs");
+}
+
+#[test]
+fn face_components_refuse_curve_id_vector() {
+    assert_component_collection_refusal(19, "creo component curve IDs");
+}
+
+#[test]
+fn face_components_refuse_component_vector() {
+    assert_component_collection_refusal(20, "creo face components");
+}
+
+#[test]
+fn vertex_orbits_refuse_half_edge_lookup_node() {
+    assert_orbit_collection_refusal(0, "creo vertex-orbit half-edge lookup nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_adjacency_node() {
+    assert_orbit_collection_refusal(1, "creo vertex adjacency nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_pending_seed() {
+    assert_orbit_collection_refusal(2, "creo vertex orbit pending edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_visited_node() {
+    assert_orbit_collection_refusal(3, "creo visited vertex-orbit edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_member_node() {
+    assert_orbit_collection_refusal(4, "creo vertex orbit member nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_half_edge_vector() {
+    assert_orbit_collection_refusal(5, "creo vertex orbit half-edges");
+}
+
+#[test]
+fn vertex_orbits_refuse_vertex_vector() {
+    assert_orbit_collection_refusal(6, "creo topological vertices");
+}
+
+#[test]
+fn vertex_orbits_refuse_start_vertex_lookup_node() {
+    assert_orbit_collection_refusal(7, "creo start-vertex lookup nodes");
+}
+
+#[test]
+fn vertex_orbits_refuse_incidence_vector() {
+    assert_orbit_collection_refusal(8, "creo half-edge vertex incidence");
+}
+
+#[test]
+fn vertex_orbits_refuse_predecessor_group_node() {
+    let mut edge = orphan_edge();
+    edge.next = Some(edge.id);
+    let error = orbit_with_collection_limit(&[edge], 1)
+        .expect_err("one successor needs a predecessor node");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo predecessor group nodes"));
+}
+
+#[test]
+fn vertex_orbits_refuse_predecessor_group_member() {
+    let mut edge = orphan_edge();
+    edge.next = Some(edge.id);
+    let error = orbit_with_collection_limit(&[edge], 2)
+        .expect_err("one successor needs a predecessor member");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo predecessor group members"));
+}
+
+#[test]
+fn vertex_orbits_refuse_adjacency_links() {
+    let mut first = orphan_edge();
+    first.next = Some(HalfEdgeId {
+        curve_id: 2,
+        side: crate::topology::Side::Zero,
+    });
+    let second = HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 1,
+            side: crate::topology::Side::One,
+        },
+        ..orphan_edge()
+    };
+    let third = HalfEdge {
+        id: HalfEdgeId {
+            curve_id: 2,
+            side: crate::topology::Side::Zero,
+        },
+        ..orphan_edge()
+    };
+    let error = orbit_with_collection_limit(&[first, second, third], 8)
+        .expect_err("linked predecessor needs an adjacency edge");
+    assert!(matches!(error, CodecError::ResourceLimit(resource)
+        if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "creo vertex adjacency links"));
+}
+
+#[test]
+fn topology_build_refuses_unique_row_count_node() {
+    assert_build_collection_refusal(0, "creo unique-row count nodes");
+}
+
+#[test]
+fn topology_build_refuses_unique_row_projection() {
+    assert_build_collection_refusal(1, "creo unique-row projection");
+}
+
+#[test]
+fn topology_build_refuses_face_side_group_node() {
+    assert_build_collection_refusal(2, "creo face-side group nodes");
+}
+
+#[test]
+fn topology_build_refuses_face_side_group_member() {
+    assert_build_collection_refusal(3, "creo face-side group members");
+}
+
+#[test]
+fn topology_build_refuses_half_edge_vector() {
+    assert_build_collection_refusal(6, "creo topology half-edges");
+}
+
+#[test]
+fn topology_build_refuses_ring_visit_node() {
+    assert_build_collection_refusal(8, "creo topology ring visit nodes");
+}
+
+#[test]
+fn topology_build_refuses_ring_half_edge() {
+    assert_build_collection_refusal(9, "creo topology ring half-edges");
+}
+
+#[test]
+fn topology_build_refuses_consumed_half_edge_node() {
+    assert_build_collection_refusal(10, "creo consumed topology half-edges");
+}
+
+#[test]
+fn topology_build_refuses_loop_vector() {
+    assert_build_collection_refusal(11, "creo topology loops");
+}
+
 #[test]
 fn builds_closed_face_side_rings_without_guessing() {
-    let (half_edges, loops) = build(&[row(1, 2), row(2, 3), row(3, 1)]);
+    let (half_edges, loops) = build_service(&[row(1, 2), row(2, 3), row(3, 1)]);
     assert_eq!(half_edges.len(), 6);
     assert_eq!(loops.len(), 2);
     assert_eq!(loops[0].face_id, std::num::NonZeroU32::new(10));
@@ -61,20 +475,23 @@ fn builds_closed_face_side_rings_without_guessing() {
 fn duplicate_curve_identities_do_not_contribute_derived_topology() {
     let rows = [row(1, 2), row(2, 1), row(2, 1)];
 
-    let (half_edges, loops) = build(&rows);
+    let (half_edges, loops) = build_service(&rows);
     assert_eq!(half_edges.len(), 2);
     assert!(half_edges.iter().all(|edge| edge.id.curve_id == 1));
     assert!(half_edges.iter().all(|edge| edge.next.is_none()));
     assert!(loops.is_empty());
 
-    let components = face_components(&rows);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let components = face_components(&ctx, &rows).expect("service face components");
     assert_eq!(components.len(), 1);
     assert_eq!(components[0].face_ids, [10, 20]);
     assert_eq!(components[0].curve_ids, [1]);
 }
 #[test]
 fn withholds_ambiguous_successors() {
-    let (half_edges, loops) = build(&[
+    let (half_edges, loops) = build_service(&[
         row(1, 2),
         CurveTopologyRow {
             faces: [std::num::NonZeroU32::new(10), std::num::NonZeroU32::new(10)],
@@ -130,7 +547,12 @@ fn vertex_orbits_close_predecessor_relations_in_both_directions() {
         },
     ];
 
-    let vertices = vertex_orbits(&edges).vertices;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
+    let vertices = vertex_orbits(&ctx, &edges)
+        .expect("service vertex orbits")
+        .vertices;
     assert!(vertices.iter().any(|vertex| vertex.half_edges
         == vec![
             HalfEdgeId {
@@ -194,8 +616,11 @@ fn vertex_incident_faces_include_both_sides_of_each_orbit_edge() {
         ],
     };
 
+    let incident_faces = with_service_context(|ctx| {
+        vertex_incident_faces(ctx, &[vertex], &edges).expect("service incident faces")
+    });
     assert_eq!(
-        vertex_incident_faces(&[vertex], &edges).get(&1).cloned(),
+        incident_faces.get(&1).cloned(),
         Some(BTreeSet::from([10, 20, 30]))
     );
 }
@@ -223,12 +648,22 @@ fn edge_vertex_pair_accepts_one_closed_face_and_rejects_disagreement() {
         ]
     };
 
-    assert_eq!(edge_vertex_pairs(&incidence(None)).get(&7), Some(&[10, 20]));
     assert_eq!(
-        edge_vertex_pairs(&incidence(Some(10))).get(&7),
+        with_service_context(|ctx| edge_vertex_pairs(ctx, &incidence(None)).expect("service pairs"))
+            .get(&7),
         Some(&[10, 20])
     );
-    assert!(!edge_vertex_pairs(&incidence(Some(30))).contains_key(&7));
+    assert_eq!(
+        with_service_context(|ctx| {
+            edge_vertex_pairs(ctx, &incidence(Some(10))).expect("service pairs")
+        })
+        .get(&7),
+        Some(&[10, 20])
+    );
+    assert!(!with_service_context(|ctx| {
+        edge_vertex_pairs(ctx, &incidence(Some(30))).expect("service pairs")
+    })
+    .contains_key(&7));
 }
 
 #[test]
@@ -252,8 +687,17 @@ fn edge_start_vertex_pair_survives_an_unresolved_successor() {
         },
     ];
 
-    assert_eq!(edge_start_vertex_pairs(&incidence).get(&7), Some(&[10, 20]));
-    assert!(!edge_vertex_pairs(&incidence).contains_key(&7));
+    assert_eq!(
+        with_service_context(|ctx| {
+            edge_start_vertex_pairs(ctx, &incidence).expect("service start pairs")
+        })
+        .get(&7),
+        Some(&[10, 20])
+    );
+    assert!(!with_service_context(|ctx| {
+        edge_vertex_pairs(ctx, &incidence).expect("service edge pairs")
+    })
+    .contains_key(&7));
 }
 
 #[test]
@@ -542,7 +986,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
         ]
     );
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 

@@ -60,29 +60,57 @@ struct PendingFace {
     tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct TopologyStream<'inputs> {
+    pub(super) stream_index: usize,
+    pub(super) graph: &'inputs Graph,
+    pub(super) points: &'inputs BTreeMap<u32, PointId>,
+    pub(super) surfaces: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) curves: &'inputs BTreeMap<u32, CurveId>,
+    pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
+    pub(super) pcurve_supports: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) trim_ranges: &'inputs BTreeMap<u32, [f64; 2]>,
+    pub(super) source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
+    pub(super) intersection_starts: IntersectionEntityStarts,
+    pub(super) procedural_start: usize,
+}
+
+pub(super) struct TopologyBudgets<'inputs> {
+    pub(super) exact_transfer: &'inputs TransferBudget<'inputs>,
+    pub(super) completion_transfer: &'inputs TransferBudget<'inputs>,
+    pub(super) adaptive_geometry: &'inputs GeometryWorkBudget<'inputs>,
+    pub(super) completion_geometry: &'inputs GeometryWorkBudget<'inputs>,
+}
+
 pub(super) fn emit_topology(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    stream_index: usize,
-    graph: &Graph,
-    points: &BTreeMap<u32, PointId>,
-    surfaces: &BTreeMap<u32, SurfaceId>,
-    curves: &BTreeMap<u32, CurveId>,
-    pcurves: &BTreeMap<u32, PcurveId>,
-    pcurve_supports: &BTreeMap<u32, SurfaceId>,
-    trim_ranges: &BTreeMap<u32, [f64; 2]>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    topology_stream: &TopologyStream<'_>,
     annotations: &mut AnnotationBuilder,
     intersection_index: &mut IntersectionIncidenceIndex,
-    intersection_starts: IntersectionEntityStarts,
-    procedural_start: usize,
-    exact_transfer_budget: &TransferBudget<'_>,
-    completion_transfer_budget: &TransferBudget<'_>,
-    adaptive_geometry_budget: &GeometryWorkBudget<'_>,
-    completion_geometry_budget: &GeometryWorkBudget<'_>,
+    topology_budgets: &TopologyBudgets<'_>,
     topology_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<EndpointWitnesses, CodecError> {
+    let &TopologyBudgets {
+        exact_transfer: exact_transfer_budget,
+        completion_transfer: completion_transfer_budget,
+        adaptive_geometry: adaptive_geometry_budget,
+        completion_geometry: completion_geometry_budget,
+    } = topology_budgets;
+
+    let &TopologyStream {
+        stream_index,
+        graph,
+        points,
+        surfaces,
+        curves,
+        pcurves,
+        pcurve_supports,
+        trim_ranges,
+        source_stream,
+        intersection_starts,
+        procedural_start,
+    } = topology_stream;
+
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let mut valid_face_xmts = BTreeSet::new();
     for shell in graph.body_shape_shells() {
@@ -578,13 +606,15 @@ pub(super) fn emit_topology(
                 ctx,
                 ir,
                 annotations,
-                &scope,
-                node,
-                curve,
-                curve_index,
-                param_range,
-                source_stream,
-                decoded_tolerance(fields.tolerance),
+                &ClosedEdge {
+                    scope: &scope,
+                    edge: node,
+                    curve,
+                    curve_index,
+                    range: param_range,
+                    source_stream,
+                    tolerance: decoded_tolerance(fields.tolerance),
+                },
                 &mut curve_point_cache,
                 adaptive_geometry_budget,
             )?
@@ -646,15 +676,18 @@ pub(super) fn emit_topology(
             {
                 orient_edge_range_for_geometry_with_budget(
                     ctx,
-                    &ir.model.curves[curve_index].geometry,
-                    carrier,
-                    range,
-                    start_position,
-                    start_tolerance,
-                    end_position,
-                    end_tolerance,
-                    decoded_tolerance(fields.tolerance).map(cadmpeg_ir::scalar::PositiveReal::get),
-                    procedural_curve_ids.contains(carrier),
+                    &EdgeGeometryRange {
+                        geometry: &ir.model.curves[curve_index].geometry,
+                        curve: carrier,
+                        range,
+                        start_position,
+                        start_tolerance,
+                        end_position,
+                        end_tolerance,
+                        edge_tolerance: decoded_tolerance(fields.tolerance)
+                            .map(cadmpeg_ir::scalar::PositiveReal::get),
+                        procedural_curve: procedural_curve_ids.contains(carrier),
+                    },
                     &mut curve_point_cache,
                     adaptive_geometry_budget,
                 )?
@@ -1299,18 +1332,30 @@ pub(super) fn emit_topology(
     Ok(endpoint_witnesses)
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct UnresolvedTopologyStream<'inputs> {
+    pub(super) stream_index: usize,
+    pub(super) graph: &'inputs Graph,
+    pub(super) surfaces: &'inputs mut BTreeMap<u32, SurfaceId>,
+    pub(super) curves: &'inputs mut BTreeMap<u32, CurveId>,
+    pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
+    pub(super) source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
+}
+
 pub(super) fn retain_unresolved_topology_carriers(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    stream_index: usize,
-    graph: &Graph,
-    surfaces: &mut BTreeMap<u32, SurfaceId>,
-    curves: &mut BTreeMap<u32, CurveId>,
-    pcurves: &BTreeMap<u32, PcurveId>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    unresolved_topology_stream: UnresolvedTopologyStream<'_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
+    let UnresolvedTopologyStream {
+        stream_index,
+        graph,
+        surfaces,
+        curves,
+        pcurves,
+        source_stream,
+    } = unresolved_topology_stream;
+
     let scope = IdScope::stream_charged(ctx, stream_index)?;
     let unknown: UnknownId = IdScope::container().id_charged(
         ctx,
@@ -1446,21 +1491,34 @@ pub(crate) fn decoded_tolerance(value: f64) -> Option<cadmpeg_ir::scalar::Positi
     cadmpeg_ir::scalar::PositiveReal::new(value * 1000.0)
 }
 
-#[allow(clippy::too_many_arguments)]
+struct ClosedEdge<'inputs> {
+    scope: &'inputs IdScope,
+    edge: &'inputs Node,
+    curve: &'inputs CurveId,
+    curve_index: usize,
+    range: Option<[f64; 2]>,
+    source_stream: &'inputs cadmpeg_ir::annotations::StreamHandle,
+    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+}
+
 fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    scope: &IdScope,
-    edge: &Node,
-    curve: &CurveId,
-    curve_index: usize,
-    range: Option<[f64; 2]>,
-    source_stream: &cadmpeg_ir::annotations::StreamHandle,
-    tolerance: Option<cadmpeg_ir::scalar::PositiveReal>,
+    closed_edge: &ClosedEdge<'_>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<VertexId>, CodecError> {
+    let &ClosedEdge {
+        scope,
+        edge,
+        curve,
+        curve_index,
+        range,
+        source_stream,
+        tolerance,
+    } = closed_edge;
+
     let parameter = {
         let geometry = &ir.model.curves[curve_index].geometry;
         range.map_or_else(
@@ -1616,15 +1674,17 @@ fn orient_edge_range_with_budget(
     let mut curve_point_cache = CurvePointCache::default();
     orient_edge_range_for_geometry_with_budget(
         ctx,
-        geometry,
-        curve,
-        range,
-        start_position,
-        start_tolerance,
-        end_position,
-        end_tolerance,
-        edge_tolerance,
-        procedural_curve,
+        &EdgeGeometryRange {
+            geometry,
+            curve,
+            range,
+            start_position,
+            start_tolerance,
+            end_position,
+            end_tolerance,
+            edge_tolerance,
+            procedural_curve,
+        },
         &mut curve_point_cache,
         geometry_budget,
     )
@@ -1675,11 +1735,9 @@ impl CurvePointCache {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn orient_edge_range_for_geometry_with_budget(
-    ctx: &DecodeContext<'_>,
-    geometry: &CurveGeometry,
-    curve: &CurveId,
+struct EdgeGeometryRange<'inputs> {
+    geometry: &'inputs CurveGeometry,
+    curve: &'inputs CurveId,
     range: [f64; 2],
     start_position: Point3,
     start_tolerance: Option<f64>,
@@ -1687,9 +1745,26 @@ fn orient_edge_range_for_geometry_with_budget(
     end_tolerance: Option<f64>,
     edge_tolerance: Option<f64>,
     procedural_curve: bool,
+}
+
+fn orient_edge_range_for_geometry_with_budget(
+    ctx: &DecodeContext<'_>,
+    edge_geometry_range: &EdgeGeometryRange<'_>,
     curve_point_cache: &mut CurvePointCache,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<([f64; 2], bool)>, CodecError> {
+    let &EdgeGeometryRange {
+        geometry,
+        curve,
+        range,
+        start_position,
+        start_tolerance,
+        end_position,
+        end_tolerance,
+        edge_tolerance,
+        procedural_curve,
+    } = edge_geometry_range;
+
     let range = if range[0] <= range[1] {
         range
     } else {
@@ -1922,7 +1997,10 @@ pub(super) fn source_meta(
         let (Ok(start), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = scan.container.data.get(start..start.saturating_add(size)) else {
+        let Some(end) = start.checked_add(size) else {
+            continue;
+        };
+        let Some(payload) = scan.container.data.get(start..end) else {
             continue;
         };
         let Some((width, height, precision, components)) = jpeg_dimensions(payload) else {
@@ -2138,7 +2216,7 @@ mod tests {
     use crate::container::Container;
     use crate::decode::Scan;
     use crate::parasolid::Stream;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
@@ -2171,62 +2249,74 @@ mod tests {
 
     #[test]
     fn unknown_stream_metadata_refuses_identity_text_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx unknown stream id"
-        ));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx unknown stream id"
+                ));
+            },
+        );
     }
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_text_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(Vec::new())),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx unknown stream digest"
-        ));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index("nx:container:parasolid#0".len());
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(Vec::new())),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx unknown stream digest"
+                ));
+            },
+        );
     }
 
     #[test]
     fn unknown_stream_metadata_refuses_digest_work_at_caller_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            unknown_stream_metadata(&ctx, 0, &preview_stream(vec![7])),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "hash NX unknown stream"
-        ));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    unknown_stream_metadata(ctx, 0, &preview_stream(vec![7])),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::WorkUnits
+                            && limit.operation == "hash NX unknown stream"
+                ));
+            },
+        );
     }
 
     #[test]
     fn unknown_stream_metadata_preserves_identity_and_digest_under_service_profile() {
         let stream = preview_stream(vec![7]);
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let unknown = unknown_stream_metadata(&ctx, 0, &stream).unwrap();
-        assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
-        assert_eq!(unknown.offset(), 0);
-        assert_eq!(unknown.data(), None);
-        let wire = serde_json::to_value(&unknown).unwrap();
-        assert_eq!(
-            wire["retention"]["sha256"],
-            cadmpeg_ir::hash::sha256_hex(&stream.inflated)
-        );
+
+        crate::test_support::with_decode_context(|ctx| {
+            let unknown = unknown_stream_metadata(ctx, 0, &stream).unwrap();
+            assert_eq!(unknown.id().as_str(), "nx:container:parasolid#0");
+            assert_eq!(unknown.offset(), 0);
+            assert_eq!(unknown.data(), None);
+            let wire = serde_json::to_value(&unknown).unwrap();
+            assert_eq!(
+                wire["retention"]["sha256"],
+                cadmpeg_ir::hash::sha256_hex(&stream.inflated)
+            );
+        });
     }
 
     #[test]
@@ -2237,16 +2327,21 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            source_meta(&ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx source attributes"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    source_meta(ctx, &scan, &dialects),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx source attributes"
+                ));
+            },
+        );
     }
 
     #[test]
@@ -2257,16 +2352,21 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(
-            source_meta(&ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx source attribute text"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    source_meta(ctx, &scan, &dialects),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx source attribute text"
+                ));
+            },
+        );
     }
 
     #[test]
@@ -2277,89 +2377,96 @@ mod tests {
         })
         .unwrap()
         .into_report_parts();
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (service_ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let expected = source_meta(&service_ctx, &scan, &dialects).unwrap();
-        assert_eq!(expected.attributes["file_size"], "0");
-        let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_collection_items =
-            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
-        let (limited_ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-        assert!(matches!(
-            source_meta(&limited_ctx, &scan, &dialects),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx source attribute names"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |_| {},
+            |service_ctx| {
+                let expected = source_meta(service_ctx, &scan, &dialects).unwrap();
+                assert_eq!(expected.attributes["file_size"], "0");
+
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_collection_items =
+                            cadmpeg_core::decode::u64_from_index(expected.attributes.len());
+                    },
+                    |limited_ctx| {
+                        assert!(matches!(
+                            source_meta(limited_ctx, &scan, &dialects),
+                            Err(CodecError::ResourceLimit(limit))
+                                if limit.dimension == ResourceDimension::CollectionItems
+                                    && limit.operation == "nx source attribute names"
+                        ));
+                    },
+                );
+            },
+        );
     }
 
     #[test]
     fn unknown_stream_copy_refuses_when_retained_budget_is_exhausted() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 2;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[0], &arena, &policy)
-            .expect("bounded test input");
-        let stream = Stream {
-            file_offset: 0,
-            consumed: 0,
-            inflated: vec![1, 2, 3],
-            body: crate::parasolid::StreamBody::Parasolid {
-                subtype: crate::parasolid::ParasolidSubtype::Partition,
-                schema: None,
+        crate::test_support::with_decode_context_over(
+            &[0],
+            |policy| {
+                policy.limits.max_retained_bytes = 2;
             },
-        };
+            |ctx| {
+                let stream = Stream {
+                    file_offset: 0,
+                    consumed: 0,
+                    inflated: vec![1, 2, 3],
+                    body: crate::parasolid::StreamBody::Parasolid {
+                        subtype: crate::parasolid::ParasolidSubtype::Partition,
+                        schema: None,
+                    },
+                };
 
-        assert!(matches!(
-            unknown_stream(&ctx, 0, &stream),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
-                    && limit.operation == "retain NX unknown stream"
-        ));
+                assert!(matches!(
+                    unknown_stream(ctx, 0, &stream),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
+                            && limit.operation == "retain NX unknown stream"
+                ));
+            },
+        );
     }
 
     #[test]
     fn curve_point_cache_reuses_an_exact_parameter_evaluation() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let curve =
+                CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
+            let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
+                    None,
+                    false,
+                )
+                .expect("valid test curve"),
+            ));
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(1024),
+            );
+            let mut cache = CurvePointCache::default();
 
-        let curve = CurveId::mint("test:model:entity#synthetic:curve").expect("identity grammar");
-        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-                1,
-                vec![0.0, 0.0, 1.0, 1.0],
-                vec![Point3::new(1.0, 2.0, 3.0), Point3::new(5.0, 7.0, 9.0)],
-                None,
-                false,
-            )
-            .expect("valid test curve"),
-        ));
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(1024),
-        );
-        let mut cache = CurvePointCache::default();
+            crate::test_support::with_decode_context(|ctx| {
+                let first = cache
+                    .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
+                    .expect("evaluator allocation succeeds")
+                    .expect("NURBS evaluation");
+                let remaining_after_first = geometry_budget.remaining();
+                let second = cache
+                    .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
+                    .expect("evaluator allocation succeeds")
+                    .expect("cached NURBS evaluation");
 
-        crate::test_support::with_decode_context(|ctx| {
-            let first = cache
-                .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
-                .expect("evaluator allocation succeeds")
-                .expect("NURBS evaluation");
-            let remaining_after_first = geometry_budget.remaining();
-            let second = cache
-                .point_with_budget(ctx, &curve, &geometry, 0.25, &geometry_budget)
-                .expect("evaluator allocation succeeds")
-                .expect("cached NURBS evaluation");
-
-            assert_eq!(first, second);
-            assert_eq!(geometry_budget.remaining(), remaining_after_first);
+                assert_eq!(first, second);
+                assert_eq!(geometry_budget.remaining(), remaining_after_first);
+            });
         });
     }
 }

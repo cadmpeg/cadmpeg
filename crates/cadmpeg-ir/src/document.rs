@@ -15,7 +15,9 @@ use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
 };
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::{DialectLayers, DialectMatch, FormatIdentity};
+use cadmpeg_core::CodecError;
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
@@ -1099,56 +1101,84 @@ impl Model {
         owner: &SurfaceId,
         procedural: ProceduralSurface,
     ) -> Result<(), ProceduralCarrierError> {
+        match self.attach_procedural_surface(owner, procedural, |id| {
+            Ok::<_, std::convert::Infallible>(id.clone())
+        }) {
+            Ok(result) => result,
+            Err(never) => match never {},
+        }
+    }
+
+    /// Attach a procedural surface using the caller's retained-byte budget.
+    pub fn add_procedural_surface_charged(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        owner: &SurfaceId,
+        procedural: ProceduralSurface,
+    ) -> Result<Result<(), ProceduralCarrierError>, CodecError> {
+        self.attach_procedural_surface(owner, procedural, |id| {
+            let value = ctx.copy_retained_text(id.as_str(), "procedural surface owner identity")?;
+            ProceduralSurfaceId::mint(value).map_err(CodecError::malformed)
+        })
+    }
+
+    fn attach_procedural_surface<E>(
+        &mut self,
+        owner: &SurfaceId,
+        procedural: ProceduralSurface,
+        copy_construction: impl FnOnce(&ProceduralSurfaceId) -> Result<ProceduralSurfaceId, E>,
+    ) -> Result<Result<(), ProceduralCarrierError>, E> {
         if self
             .procedural_surfaces
             .iter()
             .any(|existing| existing.id == procedural.id)
         {
-            return Err(ProceduralCarrierError::new(format!(
+            return Ok(Err(ProceduralCarrierError::new(format!(
                 "procedural surface construction {} already exists",
                 procedural.id
-            )));
+            ))));
         }
         if let Some(existing_owner) = self.surfaces.iter().find(|surface| {
             &surface.id != owner
                 && surface.geometry.procedural_construction() == Some(&procedural.id)
         }) {
-            return Err(ProceduralCarrierError::new(format!(
+            return Ok(Err(ProceduralCarrierError::new(format!(
                 "procedural surface construction {} already owns surface {}",
                 procedural.id, existing_owner.id
-            )));
+            ))));
         }
-        let surface = self
+        let Some(surface) = self
             .surfaces
             .iter_mut()
             .find(|surface| &surface.id == owner)
-            .ok_or_else(|| {
-                ProceduralCarrierError::new(format!(
-                    "procedural surface {} references missing surface {owner}",
-                    procedural.id
-                ))
-            })?;
+        else {
+            return Ok(Err(ProceduralCarrierError::new(format!(
+                "procedural surface {} references missing surface {owner}",
+                procedural.id
+            ))));
+        };
         match &surface.geometry {
             SurfaceGeometry::Procedural {
                 construction,
                 cache: None,
             } if *construction == procedural.id => {
                 if procedural.cache_fit_tolerance().is_some() {
-                    return Err(ProceduralCarrierError::new(format!(
+                    return Ok(Err(ProceduralCarrierError::new(format!(
                         "direct procedural surface {owner} cannot carry a solved-cache tolerance"
-                    )));
+                    ))));
                 }
             }
             SurfaceGeometry::Procedural { construction, .. } => {
-                return Err(ProceduralCarrierError::new(format!(
+                return Ok(Err(ProceduralCarrierError::new(format!(
                     "surface {owner} is already owned by procedural construction {construction}"
-                )));
+                ))));
             }
             SurfaceGeometry::Solved(_) => {
+                let construction = copy_construction(&procedural.id)?;
                 let previous = std::mem::replace(
                     &mut surface.geometry,
                     SurfaceGeometry::Procedural {
-                        construction: procedural.id.clone(),
+                        construction,
                         cache: None,
                     },
                 );
@@ -1162,7 +1192,7 @@ impl Model {
             }
         }
         self.procedural_surfaces.push(procedural);
-        Ok(())
+        Ok(Ok(()))
     }
 
     /// Attaches one procedural curve construction to its carrier.

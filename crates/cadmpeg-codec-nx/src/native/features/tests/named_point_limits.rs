@@ -20,12 +20,14 @@ fn named_point_refusal(
             .expect("admitted named point route");
     assert!(!admitted.is_empty());
     assert!(admitted[0].data_blocks.len() >= 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    offset_store_named_points(&ctx, &container).expect_err("named point resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| offset_store_named_points(ctx, &container).expect_err("named point resource limit"),
+    )
 }
 
 #[test]
@@ -86,13 +88,17 @@ fn named_point_block_use_refusal(
     })
     .expect("admitted block use")
     .is_empty());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_sketch_named_point_block_uses(&ctx, &references, &points)
-        .expect_err("named point block-use resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_sketch_named_point_block_uses(ctx, &references, &points)
+                .expect_err("named point block-use resource limit")
+        },
+    )
 }
 
 #[test]
@@ -174,13 +180,17 @@ fn preceding_named_point_refusal(
     })
     .expect("admitted preceding named-point route");
     assert!(!admitted.is_empty());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_sketch_preceding_named_point_uses(&ctx, &references, &points)
-        .expect_err("preceding named-point resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_sketch_preceding_named_point_uses(ctx, &references, &points)
+                .expect_err("preceding named-point resource limit")
+        },
+    )
 }
 
 #[test]

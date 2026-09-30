@@ -1103,7 +1103,7 @@ pub(crate) fn chart_source_records(
         "scan NX chart records",
     )?;
     let mut tag = 0usize;
-    while tag.saturating_add(2) <= stream.len() {
+    while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 40]) {
             if let Some((record, end)) = chart_source_record_at(ctx, stream, tag, point_layout)? {
                 ctx.reserve_retained_vec(&mut out, 1, "NX chart source records")?;
@@ -1420,7 +1420,7 @@ pub(crate) fn support_uv_records(
         "scan NX support-UV records",
     )?;
     let mut tag = 0usize;
-    while tag.saturating_add(2) <= stream.len() {
+    while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
             if let Some((record, end)) = support_uv_record_at(ctx, stream, tag)? {
                 insert_unique_charged(

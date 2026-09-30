@@ -551,6 +551,87 @@ pub struct SketchGeometry(
 );
 
 impl SketchGeometry {
+    /// Copy geometry after charging each retained nested allocation.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        use SketchGeometryDefinition as Definition;
+        let definition = match self.definition() {
+            Definition::Nurbs { curve } => Definition::Nurbs {
+                curve: curve.try_clone_for_decode(ctx, operation)?,
+            },
+            Definition::Text {
+                text,
+                font_family,
+                font_weight,
+                height,
+                width_factor,
+                placement,
+                horizontal_alignment,
+                vertical_alignment,
+            } => Definition::Text {
+                text: text.try_clone_for_decode(ctx, operation)?,
+                font_family: font_family.try_clone_for_decode(ctx, operation)?,
+                font_weight: *font_weight,
+                height: *height,
+                width_factor: *width_factor,
+                placement: *placement,
+                horizontal_alignment: *horizontal_alignment,
+                vertical_alignment: *vertical_alignment,
+            },
+            Definition::ExternalReference {
+                document,
+                object,
+                subelements,
+            } => {
+                let document = document
+                    .as_deref()
+                    .map(|document| ctx.copy_retained_text(document, operation))
+                    .transpose()?;
+                let object = object.try_clone_for_decode(ctx, operation)?;
+                let mut copied_subelements = Vec::new();
+                ctx.reserve_vec(&mut copied_subelements, subelements.len(), operation)?;
+                for subelement in subelements {
+                    copied_subelements.push(ctx.copy_retained_text(subelement, operation)?);
+                }
+                Definition::ExternalReference {
+                    document,
+                    object,
+                    subelements: copied_subelements,
+                }
+            }
+            Definition::Native { native_kind } => Definition::Native {
+                native_kind: native_kind.try_clone_for_decode(ctx, operation)?,
+            },
+            Definition::Point { .. }
+            | Definition::Line { .. }
+            | Definition::ReferenceLine { .. }
+            | Definition::Circle { .. }
+            | Definition::Arc { .. }
+            | Definition::Ellipse { .. }
+            | Definition::Hyperbola { .. }
+            | Definition::Parabola { .. } => return Ok(self.clone()),
+        };
+        Ok(Self::from_admitted_definition(definition))
+    }
+
+    /// Build from a definition whose field types already carry the admitted invariants.
+    #[must_use]
+    pub fn from_admitted_definition(
+        definition: SketchGeometryDefinition<
+            FinitePoint2,
+            PositiveLength,
+            FiniteReal,
+            PositiveReal,
+            ReferenceLineDirection,
+            OrderedMajorRadius,
+        >,
+    ) -> Self {
+        Self(definition)
+    }
+
     /// Retain source-native geometry without solved numeric fields.
     #[must_use]
     pub fn native(native_kind: NonBlankString) -> Self {

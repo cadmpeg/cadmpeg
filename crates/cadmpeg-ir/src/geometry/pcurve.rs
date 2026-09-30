@@ -18,6 +18,8 @@ use cadmpeg_core::CodecError;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+mod scaling_admitted;
+
 fn finite_axis_is_nonzero(axis: FinitePoint2) -> bool {
     let axis = axis.get();
     axis.u.hypot(axis.v) > 0.0
@@ -1915,6 +1917,52 @@ impl PcurveNurbs {
             poles,
             periodic: self.periodic,
         })
+    }
+
+    /// Scale every pole position in place, charging one unit of work per pole.
+    ///
+    /// A non-finite result refuses with the poles scaled so far left in place,
+    /// so the caller discards the curve on refusal.
+    pub(crate) fn scale_points_admitted(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+        scale: PositiveReal,
+    ) -> Result<Result<(), NurbsError>, CodecError> {
+        fn scale_point(
+            ctx: &DecodeContext<'_>,
+            point: &mut FinitePoint2,
+            scale: PositiveReal,
+        ) -> Result<Result<(), NurbsError>, CodecError> {
+            ctx.charge_work(1, "IR sketch NURBS unit scaling work")?;
+            let raw = point.get();
+            let Some(scaled) =
+                FinitePoint2::new(Point2::new(raw.u * scale.get(), raw.v * scale.get()))
+            else {
+                return Ok(Err(NurbsError::Structure(ctx.copy_retained_text(
+                    "control_points contains a non-finite point",
+                    "IR NURBS refusal text",
+                )?)));
+            };
+            *point = scaled;
+            Ok(Ok(()))
+        }
+        match &mut self.poles {
+            PcurveNurbsPoles::Polynomial { points } => {
+                for point in points {
+                    if let Err(error) = scale_point(ctx, point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
+            }
+            PcurveNurbsPoles::Rational { points } => {
+                for pole in points {
+                    if let Err(error) = scale_point(ctx, &mut pole.point, scale)? {
+                        return Ok(Err(error));
+                    }
+                }
+            }
+        }
+        Ok(Ok(()))
     }
 
     /// Build from admitted knot and pole rows without copying either lane.

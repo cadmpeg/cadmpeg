@@ -2496,10 +2496,8 @@ fn default_legal_owner_flag_count() -> u8 {
     16
 }
 
-// Serde's `skip_serializing_if` callback is required to receive `&T`.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn is_default_legal_owner_flag_count(value: &u8) -> bool {
-    *value == default_legal_owner_flag_count()
+fn is_default_legal_owner_flag_count(value: impl std::borrow::Borrow<u8>) -> bool {
+    *value.borrow() == default_legal_owner_flag_count()
 }
 
 /// Named Parasolid attribute class declared in one inflated body stream.

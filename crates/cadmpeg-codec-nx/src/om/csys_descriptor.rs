@@ -108,19 +108,17 @@ impl CsysDescriptor {
         }))
     }
 
-    // This conversion consumes the input carrier at the typed construction boundary.
-    #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_wire(
-        prefix: Vec<u8>,
-        identity: CsysIdentity,
-        suffix: Vec<u8>,
+        prefix: &[u8],
+        identity: &CsysIdentity,
+        suffix: &[u8],
     ) -> Result<Self, &'static str> {
-        let mut bytes = prefix.clone();
+        let mut bytes = prefix.to_vec();
         bytes.extend_from_slice(identity.as_str().as_bytes());
-        bytes.extend_from_slice(&suffix);
+        bytes.extend_from_slice(suffix);
         let parsed = Self::read(&bytes)
             .ok_or("prefix/identity/suffix must contain one maximal descriptor identity")?;
-        if parsed.prefix != prefix || parsed.identity != identity || parsed.suffix != suffix {
+        if parsed.prefix != prefix || &parsed.identity != identity || parsed.suffix != suffix {
             return Err("prefix/identity/suffix disagree with the maximal identity run");
         }
         Ok(parsed)
@@ -217,14 +215,11 @@ mod tests {
         }
         assert!(CsysIdentity::try_from("A".repeat(30)).is_err());
         let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
-        assert!(CsysDescriptor::from_wire(vec![b'b'], identity.clone(), vec![b'?']).is_err());
-        assert!(CsysDescriptor::from_wire(
-            vec![0],
-            identity.clone(),
-            b"?bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_vec()
-        )
-        .is_err());
-        let descriptor = CsysDescriptor::from_wire(vec![2, 1], identity, vec![b'?']).unwrap();
+        assert!(CsysDescriptor::from_wire(b"b", &identity, b"?").is_err());
+        assert!(
+            CsysDescriptor::from_wire(&[0], &identity, b"?bbbbbbbbbbbbbbbbbbbbbbbbbbbbbb").is_err()
+        );
+        let descriptor = CsysDescriptor::from_wire(&[2, 1], &identity, b"?").unwrap();
         assert_eq!(
             LocatedCsysDescriptor::new(descriptor.clone(), u64::MAX - 2)
                 .unwrap()

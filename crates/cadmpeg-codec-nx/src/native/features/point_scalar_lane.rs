@@ -111,14 +111,12 @@ impl From<FeaturePointConstructionScalarLane> for FeaturePointConstructionScalar
 impl TryFrom<FeaturePointConstructionScalarLaneWire> for FeaturePointConstructionScalarLane {
     type Error = String;
 
-    // Names follow the ordered source slots in this fixed-width lane.
-    #[allow(clippy::many_single_char_names)]
     fn try_from(wire: FeaturePointConstructionScalarLaneWire) -> Result<Self, Self::Error> {
-        let [a, b, c, d, e, f] = std::array::from_fn::<_, 6, _>(|i| {
+        let [first, second, third, fourth, fifth, sixth] = std::array::from_fn::<_, 6, _>(|i| {
             ShiftedBinary64::from_wire(wire.values[i], wire.raw_values[i])
                 .map_err(|error| format!("values/raw_values[{i}]: {error}"))
         });
-        let scalars = [a?, b?, c?, d?, e?, f?];
+        let scalars = [first?, second?, third?, fourth?, fifth?, sixth?];
         let target_source_offset = wire.source_offsets[1]
             .checked_sub(5)
             .ok_or("source_offsets[1]: target prefix underflow")?;

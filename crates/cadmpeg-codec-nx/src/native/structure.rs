@@ -790,30 +790,36 @@ mod tests {
 
     #[test]
     fn fast_load_roster_refuses_candidate_work_limit() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        let file = container(payload(&["plate"], &[1]));
-        let error = super::fast_load_component_roster(&ctx, &file)
-            .expect_err("roster candidate selection needs work");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 0;
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                let error = super::fast_load_component_roster(ctx, &file)
+                    .expect_err("roster candidate selection needs work");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+                );
+            },
         );
     }
 
     fn fast_load_roster_refusal(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty test root");
-        let file = container(payload(&["plate"], &[1]));
-        super::fast_load_component_roster(&ctx, &file).unwrap_err()
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let file = container(payload(&["plate"], &[1]));
+                super::fast_load_component_roster(ctx, &file).unwrap_err()
+            },
+        )
     }
 
     #[test]
@@ -1147,13 +1153,17 @@ mod tests {
             source_entry: "om".to_string(),
             source_offset: 0,
         };
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        fast_load_component_object_groups(&ctx, &uuids, occurrences.as_slice(), &[value])
-            .unwrap_err()
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                fast_load_component_object_groups(ctx, &uuids, occurrences.as_slice(), &[value])
+                    .unwrap_err()
+            },
+        )
     }
 
     #[test]
