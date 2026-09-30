@@ -2685,31 +2685,36 @@ pub(crate) fn variable_fillet_dimension_index_for_feature(
     variable_fillet_dimension_index(name)
 }
 
-pub(super) fn compact_component_path_end_at(payload: &[u8], marker: usize) -> Option<usize> {
-    let count_start = marker.checked_sub(12)?;
-    let kind_start = marker.checked_sub(8)?;
-    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
-        || payload.get(marker + 16..marker + 18)? != [0, 0]
-    {
-        return None;
+pub(super) fn compact_component_path_end_at(
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<usize>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT component path end";
+    ctx.charge_work(32, OPERATION)?;
+    let count = (|| {
+        let count_start = marker.checked_sub(12)?;
+        let kind_start = marker.checked_sub(8)?;
+        if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+            || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
+            || payload.get(marker + 16..marker + 18)? != [0, 0] { return None; }
+        usize::try_from(View::u32_le_at(payload, count_start)?).ok()
+            .filter(|count| (1..=64).contains(count))
+    })();
+    let Some(count) = count else { return Ok(None); };
+    let candidates = [
+        compact_wide_component_path(payload, marker + 18, count),
+        compact_heterogeneous_component_path(payload, marker + 18, count),
+        compact_sparse_component_path(payload, marker + 18, count),
+    ];
+    let mut candidate: Option<(Vec<FeatureInputComponentPathEntry>, usize)> = None;
+    let mut ambiguous = false;
+    for path in candidates.into_iter().flatten() {
+        ctx.charge_work(u64_from_index(path.0.len()).checked_add(2)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if let Some(candidate) = &candidate {
+            if candidate != &path { ambiguous = true; }
+        } else { candidate = Some(path); }
     }
-    let count = usize::try_from(View::u32_le_at(payload, count_start)?)
-        .ok()
-        .filter(|count| (1..=64).contains(count))?;
-    let candidates = distinct_candidates(
-        [
-            compact_wide_component_path(payload, marker + 18, count),
-            compact_heterogeneous_component_path(payload, marker + 18, count),
-            compact_sparse_component_path(payload, marker + 18, count),
-        ]
-        .into_iter()
-        .flatten(),
-    );
-    let [(_, end)] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*end)
+    Ok(if ambiguous { None } else { candidate.map(|(_, end)| end) })
 }
 
 fn compact_edge_component_path(

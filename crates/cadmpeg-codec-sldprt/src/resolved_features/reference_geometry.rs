@@ -750,7 +750,7 @@ pub(crate) fn enrich_history_coordinate_systems(
             let Some(record) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            if let Some(frame) = resolved_coordinate_system(record) {
+            if let Some(frame) = resolved_coordinate_system(ctx, record)? {
                 let key = (history_index, feature_index);
                 if let Some(existing) = candidates.get_mut(&key) {
                     if existing.is_some_and(|existing| coordinate_system_frame_key(&existing) != coordinate_system_frame_key(&frame)) {
@@ -794,11 +794,12 @@ pub(crate) fn enrich_history_coordinate_systems(
     Ok(())
 }
 
-fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    if let Some(frame) = coordinate_system_two_point_frame(record) {
-        return Some(frame);
+fn resolved_coordinate_system(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<(Point3, Vector3, Vector3, Vector3)>, CodecError> {
+    if let Some(frame) = coordinate_system_two_point_frame(ctx, record)? {
+        return Ok(Some(frame));
     }
-    let (origin, generation, origin_end) = coordinate_system_origin(record)?;
+    let Some((origin, generation, origin_end)) = coordinate_system_origin(ctx, record)? else { return Ok(None); };
+    Ok((|| {
     let mut axes = coordinate_system_line_axes(record, generation, origin_end);
     let Some(first_axis) = axes.next() else {
         let (x_axis, y_axis) = coordinate_system_ordinal_axes(record, origin_end, origin)?;
@@ -846,6 +847,7 @@ fn resolved_coordinate_system(record: &[u8]) -> Option<(Point3, Vector3, Vector3
     .unit()?;
     let z_axis = x_axis.cross(y_axis).unit()?;
     Some((origin, x_axis, y_axis, z_axis))
+    })())
 }
 
 fn coordinate_system_ordinal_axes(
@@ -921,19 +923,21 @@ struct CoordinateSystemOrigin {
     extended: bool,
 }
 
-fn coordinate_system_origin(record: &[u8]) -> Option<(Point3, u32, usize)> {
-    let mut candidates = coordinate_system_origins(record);
-    let candidate = if let Some(candidate) = candidates.next() {
-        candidates.next().is_none().then_some(candidate)?
+fn coordinate_system_origin(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<(Point3, u32, usize)>, CodecError> {
+    let mut candidates = coordinate_system_origins(ctx, record);
+    let candidate = if let Some(candidate) = candidates.next().transpose()? {
+        if candidates.next().transpose()?.is_some() { return Ok(None); }
+        candidate
     } else {
-        let mut endpoint_candidates = coordinate_system_endpoint_origins(record);
-        let candidate = endpoint_candidates.next()?;
-        endpoint_candidates.next().is_none().then_some(candidate)?
+        let mut endpoint_candidates = coordinate_system_endpoint_origins(ctx, record);
+        let Some(candidate) = endpoint_candidates.next().transpose()? else { return Ok(None); };
+        if endpoint_candidates.next().transpose()?.is_some() { return Ok(None); }
+        candidate
     };
-    Some((candidate.point, candidate.generation, candidate.end))
+    Ok(Some((candidate.point, candidate.generation, candidate.end)))
 }
 
-fn coordinate_system_endpoint_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSystemOrigin> + '_ {
+fn coordinate_system_endpoint_origins<'a>(ctx: &'a DecodeContext<'_>, record: &'a [u8]) -> impl Iterator<Item = Result<CoordinateSystemOrigin, CodecError>> + 'a {
     const PREFIX: &[u8] = &[
         0x2f, 0x80, 0x02, 0, 0, 0, 0x40, 0, 0, 0x75, 0, 0, 0, 0x75, 0, 0, 0,
     ];
@@ -942,8 +946,11 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> impl Iterator<Item = Coo
     record
         .windows(COMPACT_EDGE_VECTOR_MARKER.len())
         .enumerate()
-        .filter(|(_, bytes)| *bytes == COMPACT_EDGE_VECTOR_MARKER)
-        .filter_map(|(marker, _)| {
+        .map(move |(marker, bytes)| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
+            ctx.charge_work(1, "scan SLDPRT coordinate system origins")?;
+            if !(bytes == COMPACT_EDGE_VECTOR_MARKER) { return Ok(None); }
+            ctx.charge_work(256, "parse SLDPRT coordinate system origin")?;
+            let header = (|| {
             let prefix = marker.checked_sub(ep_path_pre::COMPONENT_MARKER)?;
             if record.get(prefix..prefix + ep_path_pre::ZERO_HEADER)? != PREFIX
                 || record.get(prefix + ep_path_pre::ZERO_HEADER..prefix + ep_path_pre::SENTINEL)?
@@ -965,7 +972,11 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> impl Iterator<Item = Coo
             if matches!(selector, 0 | u32::MAX) || matches!(token, 0 | u32::MAX) {
                 return None;
             }
-            let path_end = compact_component_path_end_at(record, marker)?;
+            Some(prefix)
+            })();
+            let Some(prefix) = header else { return Ok(None); };
+            let Some(path_end) = compact_component_path_end_at(ctx, record, marker)? else { return Ok(None); };
+            Ok((|| {
             if record.get(path_end..path_end + 8)? != NULL_SLOT {
                 return None;
             }
@@ -1012,17 +1023,22 @@ fn coordinate_system_endpoint_origins(record: &[u8]) -> impl Iterator<Item = Coo
                 end: trailer.checked_add(ep_path_suf::LEN)?,
                 extended: false,
             })
+            })())
         })
+        .filter_map(Result::transpose)
 }
 
-fn coordinate_system_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSystemOrigin> + '_ {
+fn coordinate_system_origins<'a>(ctx: &'a DecodeContext<'_>, record: &'a [u8]) -> impl Iterator<Item = Result<CoordinateSystemOrigin, CodecError>> + 'a {
     const PREFIX_SUFFIX: &[u8] = &[0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     record
         .windows(PREFIX_SUFFIX.len() + 1)
         .enumerate()
-        .filter(|(_, bytes)| matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX)
-        .filter_map(|(prefix, _)| {
+        .map(move |(prefix, bytes)| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
+            ctx.charge_work(1, "scan SLDPRT coordinate system origins")?;
+            if !(matches!(bytes[0], 0x2d | 0x2f) && bytes[1..] == *PREFIX_SUFFIX) { return Ok(None); }
+            ctx.charge_work(256, "parse SLDPRT coordinate system origin")?;
+            let header = (|| {
             if record.get(prefix + cs_pt::ZERO_HEADER..prefix + cs_pt::SENTINEL) != Some(&[0; 35])
                 || record.get(prefix + cs_pt::SENTINEL..prefix + cs_pt::ZERO_BEFORE_SOURCE)
                     != Some(&[0xff; 16])
@@ -1035,15 +1051,20 @@ fn coordinate_system_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSy
             if source == 0 {
                 return None;
             }
-            if let Some(candidate) = coordinate_system_component_path_origin(record, prefix) {
-                return Some(CoordinateSystemOrigin {
+            Some(())
+            })();
+            if header.is_none() { return Ok(None); }
+            if let Some(candidate) = coordinate_system_component_path_origin(ctx, record, prefix)? {
+
+                return Ok(Some(CoordinateSystemOrigin {
                     point: candidate.0,
                     generation: candidate.1,
                     start: prefix,
                     end: candidate.2,
                     extended: false,
-                });
+                }));
             }
+            Ok((|| {
             let stamp = View::u32_le_at(record, prefix + cs_pt::SOURCE_STAMP)?;
             if stamp == 0 || stamp == u32::MAX {
                 return None;
@@ -1117,17 +1138,20 @@ fn coordinate_system_origins(record: &[u8]) -> impl Iterator<Item = CoordinateSy
                 end: prefix.checked_add(record_len)?,
                 extended,
             })
+            })())
         })
+        .filter_map(Result::transpose)
 }
 
-fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
-    let mut origins = coordinate_system_origins(record);
-    let (Some(origin), Some(axis_point)) = (origins.next(), origins.next()) else {
-        return None;
+fn coordinate_system_two_point_frame(ctx: &DecodeContext<'_>, record: &[u8]) -> Result<Option<(Point3, Vector3, Vector3, Vector3)>, CodecError> {
+    let mut origins = coordinate_system_origins(ctx, record);
+    let (Some(origin), Some(axis_point)) = (origins.next().transpose()?, origins.next().transpose()?) else {
+        return Ok(None);
     };
-    if origins.next().is_some() {
-        return None;
+    if origins.next().transpose()?.is_some() {
+        return Ok(None);
     }
+    Ok((|| {
     if !origin.extended || !axis_point.extended || origin.generation != axis_point.generation {
         return None;
     }
@@ -1195,21 +1219,27 @@ fn coordinate_system_two_point_frame(record: &[u8]) -> Option<(Point3, Vector3, 
     )
     .unit()?;
     Some((origin.point, x_axis, y_axis, x_axis.cross(y_axis).unit()?))
+    })())
 }
 
 fn coordinate_system_component_path_origin(
-    record: &[u8],
+    ctx: &DecodeContext<'_>, record: &[u8],
     prefix: usize,
-) -> Option<(Point3, u32, usize)> {
+) -> Result<Option<(Point3, u32, usize)>, CodecError> {
     const HANDLES: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     const NULL_SLOT: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
+    let marker = (|| {
     let marker = prefix.checked_add(cs_path_pre::COMPONENT_MARKER)?;
     if record.get(prefix + cs_path_pre::SENTINEL..prefix + cs_path_pre::PATH_ENTRY_COUNT)?
         != [0xff; 7]
     {
         return None;
     }
-    let path_end = compact_component_path_end_at(record, marker)?;
+    Some(marker)
+    })();
+    let Some(marker) = marker else { return Ok(None); };
+    let Some(path_end) = compact_component_path_end_at(ctx, record, marker)? else { return Ok(None); };
+    Ok((|| {
     let trailer = if record.get(path_end..path_end + NULL_SLOT.len()) == Some(NULL_SLOT) {
         path_end + NULL_SLOT.len()
     } else {
@@ -1251,6 +1281,7 @@ fn coordinate_system_component_path_origin(
         generation,
         trailer.checked_add(cs_path_suf::LEN)?,
     ))
+    })())
 }
 
 fn coordinate_system_line_axes(

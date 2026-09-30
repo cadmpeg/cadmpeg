@@ -349,6 +349,10 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
 
 #[test]
 fn solved_coordinate_system_requires_one_exact_complete_frame() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let record = coordinate_system_record(
         "lane",
         [0.125, -0.25, 0.5],
@@ -356,7 +360,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
         [0, 0, 0],
     );
     assert_eq!(
-        resolved_coordinate_system(&record.lane.native_payload),
+        resolved_coordinate_system(&path_ctx, &record.lane.native_payload).unwrap(),
         Some((
             Point3::new(125.0, -250.0, 500.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -371,13 +375,13 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     {
         other_generation[offset..offset + 4].copy_from_slice(&8000u32.to_le_bytes());
     }
-    assert!(resolved_coordinate_system(&other_generation).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &other_generation).unwrap().is_some());
 
     let mut alternate_family = record.lane.native_payload.clone();
     alternate_family[record.origin] = 0x2d;
-    assert!(resolved_coordinate_system(&alternate_family).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &alternate_family).unwrap().is_some());
     alternate_family[record.origin] = 0x2e;
-    assert_eq!(resolved_coordinate_system(&alternate_family), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &alternate_family).unwrap(), None);
 
     let mut extended_origin = record.lane.native_payload.clone();
     extended_origin.splice(record.origin + 103..record.origin + 103, [0; 14]);
@@ -390,7 +394,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     extended_origin[record.origin + 101..record.origin + 105]
         .copy_from_slice(&700u32.to_le_bytes());
     extended_origin[record.origin + 105..record.origin + 117].fill(0);
-    assert!(resolved_coordinate_system(&extended_origin).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &extended_origin).unwrap().is_some());
 
     let first_point = extended_origin[record.origin..record.origin + 165].to_vec();
     let mut second_point = first_point.clone();
@@ -418,7 +422,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     }
     two_point_frame.extend_from_slice(&0xc491u16.to_le_bytes());
     assert_eq!(
-        resolved_coordinate_system(&two_point_frame),
+        resolved_coordinate_system(&path_ctx, &two_point_frame).unwrap(),
         Some((
             Point3::new(125.0, -250.0, 500.0),
             Vector3::new(1.0, 0.0, 0.0),
@@ -429,12 +433,12 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     let mut malformed_two_point = two_point_frame.clone();
     let separator = record.origin + first_point.len();
     malformed_two_point[separator] = 3;
-    assert_eq!(resolved_coordinate_system(&malformed_two_point), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed_two_point).unwrap(), None);
     let mut malformed_two_point = two_point_frame;
     let repeated_direction = record.origin + first_point.len() + 14 + second_point.len() + 41;
     malformed_two_point[repeated_direction..repeated_direction + 8]
         .copy_from_slice(&(-1.0f64).to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&malformed_two_point), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed_two_point).unwrap(), None);
 
     let mut component_path_origin = Vec::new();
     component_path_origin
@@ -472,17 +476,17 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
         record.origin..record.origin + 151,
         component_path_origin.clone(),
     );
-    assert!(resolved_coordinate_system(&component_path_record).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &component_path_record).unwrap().is_some());
 
     let path_end = 110 + 3 * 20;
     component_path_origin.splice(path_end..path_end, [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
     let mut null_terminated_path = record.lane.native_payload.clone();
     null_terminated_path.splice(record.origin..record.origin + 151, component_path_origin);
-    assert!(resolved_coordinate_system(&null_terminated_path).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &null_terminated_path).unwrap().is_some());
 
     let mut malformed_path = component_path_record;
     malformed_path[record.origin + path_end] = 1;
-    assert_eq!(resolved_coordinate_system(&malformed_path), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed_path).unwrap(), None);
 
     let mut endpoint_origin = Vec::new();
     endpoint_origin.extend_from_slice(&[
@@ -526,11 +530,11 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     endpoint_frame.extend_from_slice(&endpoint_origin);
     endpoint_frame.extend_from_slice(&record.lane.native_payload[record.origin + 151..]);
     assert_eq!(
-        resolved_coordinate_system(&endpoint_frame),
-        resolved_coordinate_system(&record.lane.native_payload)
+        resolved_coordinate_system(&path_ctx, &endpoint_frame).unwrap(),
+        resolved_coordinate_system(&path_ctx, &record.lane.native_payload).unwrap()
     );
     endpoint_frame[record.origin + endpoint_trailer] = 1;
-    assert_eq!(resolved_coordinate_system(&endpoint_frame), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &endpoint_frame).unwrap(), None);
 
     let mut ordinal_frame = record.lane.native_payload.clone();
     ordinal_frame.truncate(record.origin + 151);
@@ -540,7 +544,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     ordinal_frame.extend_from_slice(&0.5f64.to_le_bytes());
     ordinal_frame.extend_from_slice(&0x8090u16.to_le_bytes());
     assert_eq!(
-        resolved_coordinate_system(&ordinal_frame),
+        resolved_coordinate_system(&path_ctx, &ordinal_frame).unwrap(),
         Some((
             Point3::new(125.0, -250.0, 500.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -550,40 +554,40 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     );
     let selector = ordinal_frame.len() - 37;
     ordinal_frame[selector + 2..selector + 4].copy_from_slice(&2u16.to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&ordinal_frame), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &ordinal_frame).unwrap(), None);
     ordinal_frame[selector + 2..selector + 4].copy_from_slice(&1u16.to_le_bytes());
     ordinal_frame[selector + 27..selector + 35].copy_from_slice(&0.25f64.to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&ordinal_frame), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &ordinal_frame).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.origin + 115..record.origin + 119].copy_from_slice(&9000u32.to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     let duplicate_origin = malformed[record.origin..record.origin + 151].to_vec();
     malformed.splice(record.origin..record.origin, duplicate_origin);
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     let extra_axis = malformed[record.axes[0]..record.axes[0] + 113].to_vec();
     malformed.splice(record.axes[0]..record.axes[0], extra_axis);
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.axes[1] + 89..record.axes[1] + 97].copy_from_slice(&0.5f64.to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.tail + 2] = 1;
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
 
     let mut malformed = record.lane.native_payload.clone();
     malformed[record.tail + 3..record.tail + 11].copy_from_slice(&0.25f64.to_le_bytes());
-    assert_eq!(resolved_coordinate_system(&malformed), None);
+    assert_eq!(resolved_coordinate_system(&path_ctx, &malformed).unwrap(), None);
     assert_eq!(
-        resolved_coordinate_system(
+        resolved_coordinate_system(&path_ctx, 
             &record.lane.native_payload[..record.lane.native_payload.len() - 1]
-        ),
+        ).unwrap(),
         None
     );
 
@@ -594,7 +598,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
         [0, 0, 0],
     );
     assert_eq!(
-        resolved_coordinate_system(&collinear.lane.native_payload),
+        resolved_coordinate_system(&path_ctx, &collinear.lane.native_payload).unwrap(),
         None
     );
     for axes in [
@@ -603,7 +607,7 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
     ] {
         let incomplete = coordinate_system_record("lane", [0.0; 3], axes, [0, 0, 0]);
         assert_eq!(
-            resolved_coordinate_system(&incomplete.lane.native_payload),
+            resolved_coordinate_system(&path_ctx, &incomplete.lane.native_payload).unwrap(),
             None
         );
     }
@@ -611,6 +615,10 @@ fn solved_coordinate_system_requires_one_exact_complete_frame() {
 
 #[test]
 fn solved_coordinate_system_constructs_y_from_one_offset_line_axis() {
+    let path_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (path_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &path_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut record =
         coordinate_system_record("lane", [0.0, 0.0, 0.0], &[[1.0, 0.0, 0.0]], [1, 1, 0]);
     let axis = record.axes[0];
@@ -619,7 +627,7 @@ fn solved_coordinate_system_constructs_y_from_one_offset_line_axis() {
         record.lane.native_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     assert_eq!(
-        resolved_coordinate_system(&record.lane.native_payload),
+        resolved_coordinate_system(&path_ctx, &record.lane.native_payload).unwrap(),
         Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(-1.0, 0.0, 0.0),
@@ -632,10 +640,10 @@ fn solved_coordinate_system_constructs_y_from_one_offset_line_axis() {
         .lane
         .native_payload
         .splice(record.tail..record.tail, [0, 0]);
-    assert!(resolved_coordinate_system(&record.lane.native_payload).is_some());
+    assert!(resolved_coordinate_system(&path_ctx, &record.lane.native_payload).unwrap().is_some());
     record.lane.native_payload[record.tail] = 1;
     assert_eq!(
-        resolved_coordinate_system(&record.lane.native_payload),
+        resolved_coordinate_system(&path_ctx, &record.lane.native_payload).unwrap(),
         None
     );
 }
