@@ -1939,10 +1939,12 @@ fn unique_dynamic_marker_point_pair(
     let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref() else {
         return Ok(None);
     };
-    let measure = |first: &SketchLocus, second: &SketchLocus| {
-        let first_point = profile_locus_point(first, sketch_entities)?;
-        let second_point = profile_locus_point(second, sketch_entities)?;
-        Some(match relation.family {
+    const OPERATION: &str = "select SLDPRT dynamic point pairs";
+    let measure = |first: &SketchLocus, second: &SketchLocus| -> Result<Option<f64>, cadmpeg_core::CodecError> {
+        let Some(first_point) = profile_locus_point_charged(ctx, first, sketch_entities, OPERATION)? else { return Ok(None); };
+        let Some(second_point) = profile_locus_point_charged(ctx, second, sketch_entities, OPERATION)? else { return Ok(None); };
+        ctx.charge_work(256, OPERATION)?;
+        Ok(Some(match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
                 (second_point.u - first_point.u).hypot(second_point.v - first_point.v)
             }
@@ -1960,11 +1962,11 @@ fn unique_dynamic_marker_point_pair(
                     (second_point.v - first_point.v).abs()
                 }
             }
-            _ => return None,
-        })
+            _ => return Ok(None),
+        }))
     };
     if let (Some(first), Some(second)) = (&known_first, &known_second) {
-        if measure(first, second)
+        if measure(first, second)?
             .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
         {
             return Ok(known_first.zip(known_second));
@@ -1981,6 +1983,9 @@ fn unique_dynamic_marker_point_pair(
                 loci_by_marker,
                 sketch_entities,
             )?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(additions.len())
+                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>()))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
             ctx.reserve_collection_vec(&mut candidates, additions.len(), "append SLDPRT dynamic point candidates")?;
             candidates.extend(additions);
         }
@@ -1993,23 +1998,23 @@ fn unique_dynamic_marker_point_pair(
     if first_candidates.is_empty() || second_candidates.is_empty() {
         return Ok(None);
     }
-    let mut pairs = Vec::new();
+    let mut selected: Option<(&SketchLocus, &SketchLocus)> = None;
     for first in &first_candidates {
         for second in &second_candidates {
-            if first == second {
-                continue;
-            }
-            if measure(first, second)
-                .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
-            {
-                let mut pair = [first.clone(), second.clone()];
-                pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-                let [first, second] = pair;
-                pairs.push((first, second));
-            }
+            let (selected_first, selected_second) = selected.map_or(("", ""), |(first, second)|
+                (locus_entity(first).as_str(), locus_entity(second).as_str()));
+            charge_relation_identity_work(ctx, [locus_entity(first).as_str(), locus_entity(second).as_str(),
+                selected_first, selected_second], 16, OPERATION)?;
+            if first == second { continue; }
+            if !measure(first, second)?.is_some_and(|value| same_relation_dimension_length(value, expected.get())) { continue; }
+            let pair = if locus_key(first) <= locus_key(second) { (first, second) } else { (second, first) };
+            if selected.is_some_and(|selected| selected != pair) { return Ok(None); }
+            selected = Some(pair);
         }
     }
-    Ok(sole_locus_pair(pairs))
+    let Some((first, second)) = selected else { return Ok(None); };
+    Ok(Some((super::transforms::SketchLocusRole::of_locus(first).copy_locus(ctx, locus_entity(first), OPERATION)?,
+        super::transforms::SketchLocusRole::of_locus(second).copy_locus(ctx, locus_entity(second), OPERATION)?)))
 }
 
 fn unique_dynamic_direct_point_roster_pair(
@@ -2761,6 +2766,18 @@ pub(super) fn profile_locus_point(
     sketch_entity_locus_points(entity)
         .into_iter().flatten()
         .find_map(|(point, role)| role.matches(locus).then_some(point))
+}
+
+fn profile_locus_point_charged(
+    ctx: &DecodeContext<'_>,
+    locus: &SketchLocus,
+    sketch_entities: &[SketchEntity],
+    operation: &'static str,
+) -> Result<Option<Point2>, cadmpeg_core::CodecError> {
+    let Some(entity) = find_profile_entity(ctx, sketch_entities, locus_entity(locus), operation)? else { return Ok(None); };
+    ctx.charge_work(32, operation)?;
+    Ok(sketch_entity_locus_points(entity).into_iter().flatten()
+        .find_map(|(point, role)| role.matches(locus).then_some(point)))
 }
 
 fn canonicalize_physical_loci(
