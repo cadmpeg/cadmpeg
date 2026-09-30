@@ -2119,137 +2119,120 @@ pub(crate) fn project_relation_solved_point_geometry(
     Ok(())
 }
 
+const DIMENSIONED_HANDLE_OPERATION: &str = "resolve SLDPRT dimensioned handles";
+
+fn charge_handle_marker_match(ctx: &DecodeContext<'_>, marker: &SketchInputEntity, feature: &str, identity: &str) -> Result<(), cadmpeg_core::CodecError> {
+    charge_relation_parameter_work(ctx, marker.id().len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+    charge_relation_parameter_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 4, DIMENSIONED_HANDLE_OPERATION)?;
+    charge_relation_parameter_work(ctx, feature.len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+    charge_relation_parameter_work(ctx, identity.len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+    ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)
+}
+
+fn collect_handle_markers<'a>(
+    ctx: &DecodeContext<'_>, markers: impl Iterator<Item = &'a SketchInputEntity>, feature: &str, keep: impl Fn(&SketchInputEntity) -> bool,
+) -> Result<Vec<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
+    let mut result = Vec::new();
+    for marker in markers {
+        charge_handle_marker_match(ctx, marker, feature, "")?;
+        if marker.feature_ref.as_deref() != Some(feature) || !keep(marker) { continue; }
+        ctx.reserve_collection_vec(&mut result, 1, DIMENSIONED_HANDLE_OPERATION)?;
+        result.push(marker);
+    }
+    Ok(result)
+}
+
+fn charge_handle_sort_work(ctx: &DecodeContext<'_>, len: usize) -> Result<(), cadmpeg_core::CodecError> {
+    let levels = u64::from(len.checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(64))
+        .ok_or_else(|| ctx.refuse_codec_limit(DIMENSIONED_HANDLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_relation_parameter_work(ctx, len, levels, DIMENSIONED_HANDLE_OPERATION)
+}
+
+fn sort_handle_markers(ctx: &DecodeContext<'_>, markers: &mut [&SketchInputEntity]) -> Result<(), cadmpeg_core::CodecError> {
+    charge_handle_sort_work(ctx, markers.len())?;
+    markers.sort_unstable_by_key(|marker| marker.offset());
+    Ok(())
+}
+
 pub(super) fn implicit_circle_marker<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand_kind: FeatureInputOperandKind,
-    index: u16,
-    expected_radius: f64,
-) -> Option<(&'a SketchInputEntity, f64)> {
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand_kind: FeatureInputOperandKind, index: u16, expected_radius: f64,
+) -> Result<Option<(&'a SketchInputEntity, f64)>, cadmpeg_core::CodecError> {
     // CircleDiameter selects the semantic family; native operand tags are only
     // carrier kinds and must not narrow the geometric witness search.
-    if !matches!(operand_kind, FeatureInputOperandKind::Native(_))
-        || !expected_radius.is_finite()
-        || expected_radius <= 0.0
-    {
-        return None;
-    }
-    let relation_index = u32::from(index).checked_add(1)?;
-    let mut candidates = lanes
-        .iter()
-        .filter_map(|lane| {
-            let relation = lane.sketch_entities.iter().find(|marker| {
-                marker.feature_ref.as_deref() == Some(feature)
-                    && marker.object_index() == Some(relation_index)
-                    && marker.kind() == SketchInputKind::Relation(SketchRelationKind::Distance)
-                    && matches!(marker.links(), [first, second]
-                        if first.entity_ref == second.entity_ref
-                            && first.local_id == second.local_id)
-            })?;
-            let center_id = relation.links().first()?.entity_ref.as_str();
-            let center = lane
-                .sketch_entities
-                .iter()
-                .find(|marker| marker.id() == center_id && marker.coordinates_m.is_some())?;
-            let radial = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker.feature_ref.as_deref() == Some(feature)
-                        && marker.offset() > center.offset()
-                        && marker.coordinates_m.is_some()
-                })
-                .min_by_key(|marker| marker.offset())?;
+    if !matches!(operand_kind, FeatureInputOperandKind::Native(_)) || !expected_radius.is_finite() || expected_radius <= 0.0 { return Ok(None); }
+    let Some(relation_index) = u32::from(index).checked_add(1) else { return Ok(None); };
+    let mut candidate: Option<(&SketchInputEntity, f64)> = None;
+    let mut disagree = false;
+    for lane in lanes {
+        for marker in &lane.sketch_entities {
+            charge_handle_marker_match(ctx, marker, feature, "")?;
+            if let [first, second] = marker.links() {
+                charge_relation_parameter_work(ctx, first.entity_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+                charge_relation_parameter_work(ctx, second.entity_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            }
+        }
+        let Some(relation) = lane.sketch_entities.iter().find(|marker| marker.feature_ref.as_deref() == Some(feature)
+            && marker.object_index() == Some(relation_index) && marker.kind() == SketchInputKind::Relation(SketchRelationKind::Distance)
+            && matches!(marker.links(), [first, second] if first.entity_ref == second.entity_ref && first.local_id == second.local_id)) else { continue; };
+        let Some(link) = relation.links().first() else { continue; };
+        let center_id = link.entity_ref.as_str();
+        for marker in &lane.sketch_entities { charge_handle_marker_match(ctx, marker, feature, center_id)?; }
+        let resolved = (|| {
+            let center = lane.sketch_entities.iter().find(|marker| marker.id() == center_id && marker.coordinates_m.is_some())?;
+            let radial = lane.sketch_entities.iter().filter(|marker| marker.feature_ref.as_deref() == Some(feature)
+                && marker.offset() > center.offset() && marker.coordinates_m.is_some()).min_by_key(|marker| marker.offset())?;
             let [cu, cv] = center.coordinates_m?.get();
             let [ru, rv] = radial.coordinates_m?.get();
             let radius = (ru - cu).hypot(rv - cv) * 1000.0;
             same_dimension_length(radius, expected_radius).then_some((center, radius))
-        });
-    if let Some(candidate) = candidates.next() {
-        if candidates.all(|other| {
-            other.0.id() == candidate.0.id() && other.1.to_bits() == candidate.1.to_bits()
-        }) {
-            return Some(candidate);
-        }
+        })();
+        let Some(resolved) = resolved else { continue; };
+        if let Some(first) = candidate {
+            charge_relation_parameter_work(ctx, first.0.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            charge_relation_parameter_work(ctx, resolved.0.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            if first.0.id() != resolved.0.id() || first.1.to_bits() != resolved.1.to_bits() { disagree = true; break; }
+        } else { candidate = Some(resolved); }
     }
-
-    let mut terminal_pair = None;
+    if !disagree && candidate.is_some() { return Ok(candidate); }
+    let mut terminal_pair: Option<(&SketchInputEntity, f64)> = None;
     let mut terminal_ambiguous = false;
     for lane in lanes {
-        let feature_markers = lane
-            .sketch_entities
-            .iter()
-            .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-            .filter(|marker| marker.coordinates_m.is_some())
-            .filter(|marker| {
-                matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-            })
-            .collect::<Vec<_>>();
-        for radial in feature_markers
-            .iter()
-            .copied()
-            .filter(|marker| marker.local_id().is_none())
-        {
-            for center in feature_markers
-                .iter()
-                .copied()
-                .filter(|marker| marker.local_id().is_some() && marker.offset() < radial.offset())
-            {
-                let [cu, cv] = center.coordinates_m?.get();
-                let [ru, rv] = radial.coordinates_m?.get();
+        let feature_markers = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |marker|
+            marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint))?;
+        for radial in feature_markers.iter().copied().filter(|marker| marker.local_id().is_none()) {
+            for center in feature_markers.iter().copied() {
+                ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+                if center.local_id().is_none() || center.offset() >= radial.offset() { continue; }
+                let Some([cu, cv]) = center.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { return Ok(None); };
+                let Some([ru, rv]) = radial.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { return Ok(None); };
                 let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-                if same_dimension_length(radius, expected_radius) {
-                    if terminal_pair.is_some_and(|(first, first_radius): (&SketchInputEntity, f64)| {
-                        first.id() != center.id() || first_radius.to_bits() != radius.to_bits()
-                    }) {
-                        terminal_ambiguous = true;
-                    } else if terminal_pair.is_none() {
-                        terminal_pair = Some((center, radius));
-                    }
-                }
+                if !same_dimension_length(radius, expected_radius) { continue; }
+                if let Some(first) = terminal_pair {
+                    charge_relation_parameter_work(ctx, first.0.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+                    charge_relation_parameter_work(ctx, center.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+                    if first.0.id() != center.id() || first.1.to_bits() != radius.to_bits() { terminal_ambiguous = true; }
+                } else { terminal_pair = Some((center, radius)); }
             }
         }
     }
-    if !terminal_ambiguous {
-        if let Some(candidate) = terminal_pair {
-            return Some(candidate);
-        }
-    }
-
+    if !terminal_ambiguous && terminal_pair.is_some() { return Ok(terminal_pair); }
     // Only 83fe defines an ordered center/radial point roster. Other native
     // carriers may use the relation-qualified witness tiers above, but their
     // point-marker order does not identify a circular-dimension pair.
-    if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) {
-        return None;
-    }
-
-    let mut markers = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| marker.local_id() != Some(0))
-        .filter(|marker| {
-            marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        })
-        .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset());
-    let pair = (markers.len() % 2 == 0)
-        .then(|| markers.chunks_exact(2).nth(usize::from(index)))
-        .flatten()?;
-    let [center, radial] = pair else {
-        return None;
-    };
-    let [cu, cv] = center.coordinates_m?.get();
-    let [ru, rv] = radial.coordinates_m?.get();
-    let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-    same_dimension_length(radius, expected_radius).then_some((*center, radius))
+    if operand_kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE) { return Ok(None); }
+    let mut markers = collect_handle_markers(ctx, lanes.iter().flat_map(|lane| &lane.sketch_entities), feature, |marker|
+        marker.local_id() != Some(0) && marker.coordinates_m.is_some()
+            && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint))?;
+    sort_handle_markers(ctx, &mut markers)?;
+    ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+    Ok((|| {
+        let pair = (markers.len() % 2 == 0).then(|| markers.chunks_exact(2).nth(usize::from(index))).flatten()?;
+        let [center, radial] = pair else { return None; };
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
+        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+        same_dimension_length(radius, expected_radius).then_some((*center, radius))
+    })())
 }
 
 #[derive(Clone, Copy)]
@@ -2260,28 +2243,27 @@ pub(super) enum DeclaredEntityHandleOwner<'a> {
 }
 
 pub(super) fn declared_entity_handle_owner<'a>(
-    lanes: &'a [FeatureInputLane],
-    operand: &FeatureInputOperand,
-) -> DeclaredEntityHandleOwner<'a> {
-    let mut owners = lanes.iter().filter_map(|lane| {
-        let reference = lane
-            .references
-            .iter()
-            .find(|reference| reference.id == operand.reference_ref)?;
-        let class = reference
-            .class_ref
-            .as_deref()
-            .and_then(|id| lane.classes.iter().find(|class| class.id == id))?;
-        (class.name == "sgEntHandle").then_some(lane)
-    });
-    let Some(lane) = owners.next() else {
-        return DeclaredEntityHandleOwner::Absent;
-    };
-    if owners.next().is_some() {
-        DeclaredEntityHandleOwner::Ambiguous
-    } else {
-        DeclaredEntityHandleOwner::Unique(lane)
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], operand: &FeatureInputOperand,
+) -> Result<DeclaredEntityHandleOwner<'a>, cadmpeg_core::CodecError> {
+    let mut owner = None;
+    for lane in lanes {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        for reference in &lane.references {
+            charge_relation_parameter_work(ctx, reference.id.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            charge_relation_parameter_work(ctx, operand.reference_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        }
+        let Some(reference) = lane.references.iter().find(|reference| reference.id == operand.reference_ref) else { continue; };
+        let Some(class_ref) = reference.class_ref.as_deref() else { continue; };
+        for class in &lane.classes {
+            charge_relation_parameter_work(ctx, class.id.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            charge_relation_parameter_work(ctx, class_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        }
+        let Some(class) = lane.classes.iter().find(|class| class.id == class_ref) else { continue; };
+        if class.name != "sgEntHandle" { continue; }
+        if owner.is_some() { return Ok(DeclaredEntityHandleOwner::Ambiguous); }
+        owner = Some(lane);
     }
+    Ok(owner.map_or(DeclaredEntityHandleOwner::Absent, DeclaredEntityHandleOwner::Unique))
 }
 
 /// Resolve the circular-dimension center carried by a slot handle.
@@ -2292,108 +2274,59 @@ pub(super) fn declared_entity_handle_owner<'a>(
 /// are required so a slot's center cannot be guessed from its radius or from
 /// the slot's boundary roster alone.
 pub(super) fn declared_slot_handle_dimension_center<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-) -> Option<(&'a SketchInputEntity, &'a SketchInputEntity)> {
-    let entity_ref = operand.entity_ref.as_deref()?;
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return None;
-    };
-    let marker = lane.sketch_entities.iter().find(|marker| {
-        marker.id() == entity_ref
-            && marker.feature_ref.as_deref() == Some(feature)
-            && matches!(
-                marker.kind(),
-                SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_)
-            )
-    })?;
-    let marker_offset = usize::try_from(marker.offset()).ok()?;
-    let (_, center_indices) = slot_curve_and_center_indices(&lane.native_payload, marker_offset)?;
-
-    let entity_class = lane
-        .references
-        .iter()
-        .find(|reference| reference.id == operand.reference_ref)
-        .and_then(|reference| reference.class_ref.as_deref())
-        .and_then(|class_ref| lane.classes.iter().find(|class| class.id == class_ref))
-        .filter(|class| class.name == "sgEntHandle")?;
-    let mut slot_classes = lane.classes.iter().filter(|class| {
-        class.name == "sgSlotHandle"
-            && class.offset > entity_class.offset
-            && class.offset < marker.offset()
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand: &FeatureInputOperand,
+) -> Result<Option<(&'a SketchInputEntity, &'a SketchInputEntity)>, cadmpeg_core::CodecError> {
+    let Some(entity_ref) = operand.entity_ref.as_deref() else { return Ok(None); };
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(None); };
+    for marker in &lane.sketch_entities { charge_handle_marker_match(ctx, marker, feature, entity_ref)?; }
+    let Some(marker) = lane.sketch_entities.iter().find(|marker| marker.id() == entity_ref && marker.feature_ref.as_deref() == Some(feature)
+        && matches!(marker.kind(), SketchInputKind::Native(_) | SketchInputKind::NativeHandle(_))) else { return Ok(None); };
+    let Ok(marker_offset) = usize::try_from(marker.offset()) else { return Ok(None); };
+    charge_relation_parameter_work(ctx, lane.native_payload.len(), 512, DIMENSIONED_HANDLE_OPERATION)?;
+    let Some((_, center_indices)) = slot_curve_and_center_indices(&lane.native_payload, marker_offset) else { return Ok(None); };
+    for reference in &lane.references {
+        charge_relation_parameter_work(ctx, reference.id.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, operand.reference_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+    }
+    let Some(class_ref) = lane.references.iter().find(|reference| reference.id == operand.reference_ref).and_then(|reference| reference.class_ref.as_deref()) else { return Ok(None); };
+    for class in &lane.classes {
+        charge_relation_parameter_work(ctx, class.id.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, class_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+    }
+    let Some(entity_class) = lane.classes.iter().find(|class| class.id == class_ref).filter(|class| class.name == "sgEntHandle") else { return Ok(None); };
+    charge_relation_parameter_work(ctx, lane.classes.len(), 64, DIMENSIONED_HANDLE_OPERATION)?;
+    let bounds = (|| {
+        let mut slot_classes = lane.classes.iter().filter(|class| class.name == "sgSlotHandle" && class.offset > entity_class.offset && class.offset < marker.offset());
+        let (Some(slot_class), None) = (slot_classes.next(), slot_classes.next()) else { return None; };
+        let class_end = lane.classes.iter().filter(|class| class.offset > slot_class.offset).map(|class| class.offset)
+            .min().unwrap_or_else(|| u64_from_index(lane.native_payload.len())).min(marker.offset());
+        let class_start = usize::try_from(slot_class.offset).ok()?;
+        let class_end = super::DeclaredEnd::of(usize::try_from(class_end).ok()?, lane.native_payload.len())?.get();
+        (class_start < class_end).then_some((class_start, class_end))
+    })();
+    let Some((class_start, class_end)) = bounds else { return Ok(None); };
+    charge_relation_parameter_work(ctx, class_end - class_start, 32, DIMENSIONED_HANDLE_OPERATION)?;
+    let mut reference_indices = (class_start..class_end).filter_map(|offset| {
+        let cell_end = offset.checked_add(12)?;
+        if cell_end > class_end { return None; }
+        let cell = lane.native_payload.get(offset..cell_end)?;
+        if cell.get(..2) != Some(&[0xe7, 0x88]) || cell.get(4..8) != Some(&[0xff; 4]) || cell.get(8..12) != Some(&[0; 4]) { return None; }
+        Some(usize::from(View::u16_le_at(&lane.native_payload, offset + 2)?))
     });
-    let (Some(slot_class), None) = (slot_classes.next(), slot_classes.next()) else {
-        return None;
-    };
-    let class_end = lane
-        .classes
-        .iter()
-        .filter(|class| class.offset > slot_class.offset)
-        .map(|class| class.offset)
-        .min()
-        .unwrap_or_else(|| u64_from_index(lane.native_payload.len()))
-        .min(marker.offset());
-    let class_start = usize::try_from(slot_class.offset).ok()?;
-    let class_end =
-        super::DeclaredEnd::of(usize::try_from(class_end).ok()?, lane.native_payload.len())?.get();
-    if class_start >= class_end {
-        return None;
-    }
-    let reference_indices = (class_start..class_end)
-        .filter_map(|offset| {
-            let cell_end = offset.checked_add(12)?;
-            if cell_end > class_end {
-                return None;
-            }
-            let cell = lane.native_payload.get(offset..cell_end)?;
-            if cell.get(..2) != Some(&[0xe7, 0x88])
-                || cell.get(4..8) != Some(&[0xff; 4])
-                || cell.get(8..12) != Some(&[0; 4])
-            {
-                return None;
-            }
-            Some(usize::from(View::u16_le_at(
-                &lane.native_payload,
-                offset + 2,
-            )?))
-        })
-        .collect::<Vec<_>>();
-    let [slot_index, center_index] = reference_indices.as_slice() else {
-        return None;
-    };
-    let slot_index = u32::try_from(*slot_index).ok()?;
-    let center_index = u32::try_from(*center_index).ok()?;
-    if slot_index != u32::from(operand.entity_index) || marker.local_id() != Some(slot_index) {
-        return None;
-    }
-
-    let mut points = lane
-        .sketch_entities
-        .iter()
-        .filter(|candidate| candidate.feature_ref.as_deref() == Some(feature))
-        .filter(|candidate| candidate.coordinates_m.is_some())
-        .filter(|candidate| {
-            matches!(
-                candidate.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-        })
-        .collect::<Vec<_>>();
-    points.sort_unstable_by_key(|candidate| candidate.offset());
+    let (Some(slot_index), Some(center_index), None) = (reference_indices.next(), reference_indices.next(), reference_indices.next()) else { return Ok(None); };
+    let (Ok(slot_index), Ok(center_index)) = (u32::try_from(slot_index), u32::try_from(center_index)) else { return Ok(None); };
+    if slot_index != u32::from(operand.entity_index) || marker.local_id() != Some(slot_index) { return Ok(None); }
+    let mut points = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |candidate|
+        candidate.coordinates_m.is_some() && matches!(candidate.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint))?;
+    sort_handle_markers(ctx, &mut points)?;
+    ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
     let [first, second] = center_indices.map(|index| points.get(index).copied());
-    let (first, second) = (first?, second?);
-    let center = match (
-        first.local_id() == Some(center_index),
-        second.local_id() == Some(center_index),
-    ) {
-        (true, false) => first,
-        (false, true) => second,
-        _ => return None,
+    let (Some(first), Some(second)) = (first, second) else { return Ok(None); };
+    let center = match (first.local_id() == Some(center_index), second.local_id() == Some(center_index)) {
+        (true, false) => first, (false, true) => second, _ => return Ok(None),
     };
-    center.coordinates_m?;
-    Some((marker, center))
+    if center.coordinates_m.is_none() { return Ok(None); }
+    Ok(Some((marker, center)))
 }
 
 /// Resolve the indexed point-pair form of a circular dimension.
@@ -2404,60 +2337,31 @@ pub(super) fn declared_slot_handle_dimension_center<'a>(
 /// center-to-radial object/local join; a radius match cannot establish the
 /// carrier on its own.
 pub(super) fn declared_entity_handle_indexed_circle_dimension_center<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-    expected_radius: f64,
-) -> Option<&'a SketchInputEntity> {
-    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E)
-        || operand.entity_ref.is_some()
-        || !expected_radius.is_finite()
-        || expected_radius <= 0.0
-    {
-        return None;
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand: &FeatureInputOperand, expected_radius: f64,
+) -> Result<Option<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
+    if operand.kind != FeatureInputOperandKind::Native(NativeOperandTag::TAG_836E) || operand.entity_ref.is_some()
+        || !expected_radius.is_finite() || expected_radius <= 0.0 { return Ok(None); }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(None); };
+    let mut markers = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |marker|
+        marker.coordinates_m.is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
+            && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint))?;
+    sort_handle_markers(ctx, &mut markers)?;
+    if !markers.chunks_exact(2).remainder().is_empty() { return Ok(None); }
+    for pair in markers.chunks_exact(2) {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        let [center, radial] = pair else { return Ok(None); };
+        let Some(center_local_id) = center.local_id() else { return Ok(None); };
+        if center_local_id == 0 || radial.object_index() != Some(center_local_id) || radial.local_id().is_none_or(|local_id| local_id == 0) { return Ok(None); }
     }
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return None;
-    };
-    let mut markers = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| {
-            marker
-                .coordinates_m
-                .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
-        })
-        .filter(|marker| {
-            matches!(
-                marker.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-        })
-        .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset());
-    let pairs = markers
-        .chunks_exact(2)
-        .map(|pair| [pair[0], pair[1]])
-        .collect::<Vec<_>>();
-    if !markers.chunks_exact(2).remainder().is_empty()
-        || pairs.iter().any(|[center, radial]| {
-            let Some(center_local_id) = center.local_id() else {
-                return true;
-            };
-            center_local_id == 0
-                || radial.object_index() != Some(center_local_id)
-                || radial.local_id().is_none_or(|local_id| local_id == 0)
-        })
-    {
-        return None;
-    }
-    let [center, radial] = *pairs.get(usize::from(operand.entity_index))?;
-    let [cu, cv] = center.coordinates_m?.get();
-    let [ru, rv] = radial.coordinates_m?.get();
-    let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-    same_dimension_length(radius, expected_radius).then_some(center)
+    ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+    Ok((|| {
+        let pair = markers.chunks_exact(2).nth(usize::from(operand.entity_index))?;
+        let [center, radial] = pair else { return None; };
+        let [cu, cv] = center.coordinates_m?.get();
+        let [ru, rv] = radial.coordinates_m?.get();
+        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+        same_dimension_length(radius, expected_radius).then_some(*center)
+    })())
 }
 
 fn point_dimension_marker_matches_operand(
@@ -2494,25 +2398,16 @@ fn point_dimension_marker_matches_operand(
 /// identifier. No radius-based pair or marker-family fallback is valid for
 /// this explicit identity form.
 pub(super) fn declared_entity_handle_point_dimension_center<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-) -> Option<&'a SketchInputEntity> {
-    if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) {
-        return None;
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand: &FeatureInputOperand,
+) -> Result<Option<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
+    if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) { return Ok(None); }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(None); };
+    for marker in &lane.sketch_entities {
+        charge_handle_marker_match(ctx, marker, feature, operand.entity_ref.as_deref().unwrap_or(""))?;
+        if !point_dimension_marker_matches_operand(marker, feature, operand) { continue; }
+        return Ok(marker.coordinates_m.is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite)).then_some(marker));
     }
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return None;
-    };
-    let marker = lane
-        .sketch_entities
-        .iter()
-        .find(|marker| point_dimension_marker_matches_operand(marker, feature, operand))?;
-    marker
-        .coordinates_m
-        .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
-        .then_some(marker)
+    Ok(None)
 }
 
 /// Resolve a classless direct point identity for a circular dimension.
@@ -2523,89 +2418,72 @@ pub(super) fn declared_entity_handle_point_dimension_center<'a>(
 /// agree. A point that is the radial member of an encoded center/radial pair
 /// at the dimension's radius is not a circle center.
 pub(super) fn direct_point_dimension_center<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-    expected_radius: f64,
-) -> Option<&'a SketchInputEntity> {
-    if !matches!(operand.kind, FeatureInputOperandKind::Native(_))
-        || !expected_radius.is_finite()
-        || expected_radius <= 0.0
-    {
-        return None;
-    }
-    let mut candidates = lanes.iter().filter_map(|lane| {
-        let reference = lane
-            .references
-            .iter()
-            .find(|reference| reference.id == operand.reference_ref)?;
-        if reference.feature_ref.as_deref() != Some(feature)
-            || reference.kind != operand.kind
-            || reference.object_index != operand.entity_index
-            || reference.class_ref.is_some()
-        {
-            return None;
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand: &FeatureInputOperand, expected_radius: f64,
+) -> Result<Option<&'a SketchInputEntity>, cadmpeg_core::CodecError> {
+    if !matches!(operand.kind, FeatureInputOperandKind::Native(_)) || !expected_radius.is_finite() || expected_radius <= 0.0 { return Ok(None); }
+    let mut unique = None;
+    for lane in lanes {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        for reference in &lane.references {
+            charge_relation_parameter_work(ctx, reference.id.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+            charge_relation_parameter_work(ctx, operand.reference_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
         }
-        let marker = lane
-            .sketch_entities
-            .iter()
-            .find(|marker| point_dimension_marker_matches_operand(marker, feature, operand))?;
-        marker
-            .coordinates_m
-            .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
-            .then_some((lane, marker))
-    });
-    let (lane, marker) = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
-    }
-    for [center, radial] in declared_entity_handle_pairs(lane, feature)
-        .into_iter()
-        .filter(|[_, radial]| radial.id() == marker.id())
-    {
-        let [cu, cv] = center.coordinates_m?.get();
-        let [ru, rv] = radial.coordinates_m?.get();
-        if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, expected_radius) {
-            return None;
+        let Some(reference) = lane.references.iter().find(|reference| reference.id == operand.reference_ref) else { continue; };
+        charge_relation_parameter_work(ctx, reference.feature_ref.as_deref().map_or(0, str::len), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, feature.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        if reference.feature_ref.as_deref() != Some(feature) || reference.kind != operand.kind || reference.object_index != operand.entity_index || reference.class_ref.is_some() { continue; }
+        let mut found = None;
+        for marker in &lane.sketch_entities {
+            charge_handle_marker_match(ctx, marker, feature, operand.entity_ref.as_deref().unwrap_or(""))?;
+            if point_dimension_marker_matches_operand(marker, feature, operand) { found = Some(marker); break; }
         }
+        let Some(marker) = found else { continue; };
+        if !marker.coordinates_m.is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite)) { continue; }
+        if unique.is_some() { return Ok(None); }
+        unique = Some((lane, marker));
     }
-    Some(marker)
+    let Some((lane, marker)) = unique else { return Ok(None); };
+    for [center, radial] in declared_entity_handle_pairs(ctx, lane, feature)? {
+        charge_relation_parameter_work(ctx, radial.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, marker.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        if radial.id() != marker.id() { continue; }
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        let Some([cu, cv]) = center.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { return Ok(None); };
+        let Some([ru, rv]) = radial.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { return Ok(None); };
+        if same_dimension_length((ru - cu).hypot(rv - cv) * 1000.0, expected_radius) { return Ok(None); }
+    }
+    Ok(Some(marker))
 }
 
 pub(super) fn declared_entity_handle_circular_marker<'a>(
-    lanes: &'a [FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-    expected_radius: f64,
-) -> Option<(&'a SketchInputEntity, f64)> {
-    if !expected_radius.is_finite() || expected_radius <= 0.0 {
-        return None;
-    }
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return None;
-    };
-    let child_pairs = declared_entity_handle_declared_child_pairs(lane, feature);
-    let pairs = declared_entity_handle_pairs(lane, feature);
+    ctx: &DecodeContext<'_>, lanes: &'a [FeatureInputLane], feature: &str, operand: &FeatureInputOperand, expected_radius: f64,
+) -> Result<Option<(&'a SketchInputEntity, f64)>, cadmpeg_core::CodecError> {
+    if !expected_radius.is_finite() || expected_radius <= 0.0 { return Ok(None); }
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(None); };
+    let child_pairs = declared_entity_handle_declared_child_pairs(ctx, lane, feature)?;
+    let pairs = declared_entity_handle_pairs(ctx, lane, feature)?;
     // An explicit radial identity is stronger than one feature-scoped child
     // declaration. Resolve it first because an unrelated line or arc child
     // can coexist with the circular-dimension point pair. Multiple child
     // declarations remain ambiguous, even when one point pair also matches.
     if child_pairs.len() <= 1 {
         if let Some(entity_ref) = operand.entity_ref.as_deref() {
-            let mut candidates = pairs
-                .iter()
-                .copied()
-                .filter(|[_, radial]| radial.id() == entity_ref);
-            let candidate = candidates.next();
-            if candidates.next().is_some() {
-                return None;
+            let mut unique = None;
+            for [center, radial] in &pairs {
+                charge_relation_parameter_work(ctx, radial.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+                charge_relation_parameter_work(ctx, entity_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+                if radial.id() != entity_ref { continue; }
+                if unique.is_some() { return Ok(None); }
+                unique = Some([*center, *radial]);
             }
-            if let Some([center, radial]) = candidate {
-                let [cu, cv] = center.coordinates_m?.get();
-                let [ru, rv] = radial.coordinates_m?.get();
-                let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-                return same_dimension_length(radius, expected_radius).then_some((center, radius));
+            if let Some([center, radial]) = unique {
+                ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+                return Ok((|| {
+                    let [cu, cv] = center.coordinates_m?.get();
+                    let [ru, rv] = radial.coordinates_m?.get();
+                    let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+                    same_dimension_length(radius, expected_radius).then_some((center, radius))
+                })());
             }
         }
     }
@@ -2614,111 +2492,95 @@ pub(super) fn declared_entity_handle_circular_marker<'a>(
         // that identity to reject a mismatched child. The scoped child
         // declaration already identifies this pair, so unrelated linked
         // pairs in the same feature do not make it ambiguous.
-        let operand_identifies_child = operand
-            .entity_ref
-            .as_deref()
-            .is_some_and(|entity_ref| child_pair[1].id() == entity_ref);
-        if operand.entity_ref.is_some() && !operand_identifies_child {
-            return None;
-        }
+        charge_relation_parameter_work(ctx, operand.entity_ref.as_deref().map_or(0, str::len), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, child_pair[1].id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        let operand_identifies_child = operand.entity_ref.as_deref().is_some_and(|entity_ref| child_pair[1].id() == entity_ref);
+        if operand.entity_ref.is_some() && !operand_identifies_child { return Ok(None); }
         let [center, radial] = *child_pair;
-        let [cu, cv] = center.coordinates_m?.get();
-        let [ru, rv] = radial.coordinates_m?.get();
-        let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-        return same_dimension_length(radius, expected_radius).then_some((center, radius));
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        return Ok((|| {
+            let [cu, cv] = center.coordinates_m?.get();
+            let [ru, rv] = radial.coordinates_m?.get();
+            let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+            same_dimension_length(radius, expected_radius).then_some((center, radius))
+        })());
     }
-    if !child_pairs.is_empty() {
-        return None;
-    }
-    let mut candidates = pairs.into_iter().filter_map(|[center, radial]| {
-        let [cu, cv] = center.coordinates_m?.get();
-        let [ru, rv] = radial.coordinates_m?.get();
+    if !child_pairs.is_empty() { return Ok(None); }
+    let mut unique = None;
+    for [center, radial] in pairs {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        let Some([cu, cv]) = center.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
+        let Some([ru, rv]) = radial.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
         let radius = (ru - cu).hypot(rv - cv) * 1000.0;
-        same_dimension_length(radius, expected_radius).then_some((center, radius))
-    });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
+        if !same_dimension_length(radius, expected_radius) { continue; }
+        if unique.is_some() { return Ok(None); }
+        unique = Some((center, radius));
+    }
+    Ok(unique)
 }
 
 pub(super) fn declared_entity_handle_has_resolved_pair(
-    lanes: &[FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-) -> bool {
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return false;
-    };
-    !declared_entity_handle_pairs(lane, feature).is_empty()
+    ctx: &DecodeContext<'_>, lanes: &[FeatureInputLane], feature: &str, operand: &FeatureInputOperand,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(false); };
+    Ok(!declared_entity_handle_pairs(ctx, lane, feature)?.is_empty())
 }
 
 /// Test whether an explicit point reference is the radial member of a
 /// declared entity-handle pair. Radial identity cannot be reinterpreted as a
 /// center by the native point-identity fallback.
 pub(super) fn declared_entity_handle_point_is_declared_radial(
-    lanes: &[FeatureInputLane],
-    feature: &str,
-    operand: &FeatureInputOperand,
-) -> bool {
-    let Some(entity_ref) = operand.entity_ref.as_deref() else {
-        return false;
-    };
-    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(lanes, operand)
-    else {
-        return false;
-    };
-    declared_entity_handle_pairs(lane, feature)
-        .iter()
-        .any(|[_, radial]| radial.id() == entity_ref)
+    ctx: &DecodeContext<'_>, lanes: &[FeatureInputLane], feature: &str, operand: &FeatureInputOperand,
+) -> Result<bool, cadmpeg_core::CodecError> {
+    let Some(entity_ref) = operand.entity_ref.as_deref() else { return Ok(false); };
+    let DeclaredEntityHandleOwner::Unique(lane) = declared_entity_handle_owner(ctx, lanes, operand)? else { return Ok(false); };
+    for [_, radial] in declared_entity_handle_pairs(ctx, lane, feature)? {
+        charge_relation_parameter_work(ctx, radial.id().len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, entity_ref.len(), 1, DIMENSIONED_HANDLE_OPERATION)?;
+        if radial.id() == entity_ref { return Ok(true); }
+    }
+    Ok(false)
 }
 
-fn declared_entity_handle_pairs<'a>(
-    lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<[&'a SketchInputEntity; 2]> {
-    let mut pairs = declared_entity_handle_linked_pairs(lane, feature);
-    pairs.extend(declared_entity_handle_declared_child_pairs(lane, feature));
-    pairs.extend(declared_entity_handle_indexed_point_pairs(lane, feature));
+fn declared_entity_handle_pairs<'a>(ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane, feature: &str) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+    let mut pairs = declared_entity_handle_linked_pairs(ctx, lane, feature)?;
+    let children = declared_entity_handle_declared_child_pairs(ctx, lane, feature)?;
+    let extending = pairs.len().checked_add(children.len()).ok_or_else(|| ctx.refuse_codec_limit(DIMENSIONED_HANDLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_relation_parameter_work(ctx, extending, 4, DIMENSIONED_HANDLE_OPERATION)?;
+    ctx.reserve_collection_vec(&mut pairs, children.len(), DIMENSIONED_HANDLE_OPERATION)?;
+    pairs.extend(children);
+    let indexed = declared_entity_handle_indexed_point_pairs(ctx, lane, feature)?;
+    let extending = pairs.len().checked_add(indexed.len()).ok_or_else(|| ctx.refuse_codec_limit(DIMENSIONED_HANDLE_OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_relation_parameter_work(ctx, extending, 4, DIMENSIONED_HANDLE_OPERATION)?;
+    ctx.reserve_collection_vec(&mut pairs, indexed.len(), DIMENSIONED_HANDLE_OPERATION)?;
+    pairs.extend(indexed);
+    charge_handle_sort_work(ctx, pairs.len())?;
     pairs.sort_unstable_by_key(|[center, radial]| (center.offset(), radial.offset()));
+    for [center, radial] in &pairs {
+        charge_relation_parameter_work(ctx, center.id().len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+        charge_relation_parameter_work(ctx, radial.id().len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+    }
     pairs.dedup_by(|left, right| left[0].id() == right[0].id() && left[1].id() == right[1].id());
-    pairs
+    Ok(pairs)
 }
 
 /// Resolve the indexed point form used by a declared entity handle when the
 /// radial point carries its own local identifier. The adjacent roster order
 /// and the center-to-radial object/local join are both required; a radius
 /// match alone is not a carrier identity.
-fn declared_entity_handle_indexed_point_pairs<'a>(
-    lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<[&'a SketchInputEntity; 2]> {
-    let mut markers = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| marker.coordinates_m.is_some())
-        .filter(|marker| {
-            matches!(
-                marker.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            )
-        })
-        .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset());
-    markers
-        .iter()
-        .zip(markers.iter().skip(1))
-        .filter_map(|(center, radial)| {
-            let center_local_id = center.local_id()?;
-            if center_local_id == 0
-                || radial.object_index() != Some(center_local_id)
-                || radial.local_id().is_none_or(|local_id| local_id == 0)
-            {
-                return None;
-            }
-            Some([*center, *radial])
-        })
-        .collect()
+fn declared_entity_handle_indexed_point_pairs<'a>(ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane, feature: &str) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+    let mut markers = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |marker|
+        marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint))?;
+    sort_handle_markers(ctx, &mut markers)?;
+    let mut pairs = Vec::new();
+    for (center, radial) in markers.iter().zip(markers.iter().skip(1)) {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        let Some(center_local_id) = center.local_id() else { continue; };
+        if center_local_id == 0 || radial.object_index() != Some(center_local_id) || radial.local_id().is_none_or(|local_id| local_id == 0) { continue; }
+        ctx.reserve_collection_vec(&mut pairs, 1, DIMENSIONED_HANDLE_OPERATION)?;
+        pairs.push([*center, *radial]);
+    }
+    Ok(pairs)
 }
 
 /// Resolve the wide child form where a curve marker is followed by its radial
@@ -2726,105 +2588,41 @@ fn declared_entity_handle_indexed_point_pairs<'a>(
 /// declaration is scoped to the following marker interval; a radius match
 /// alone is not sufficient because the same feature can contain repeated
 /// circular construction carriers.
-fn declared_entity_handle_declared_child_pairs<'a>(
-    lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<[&'a SketchInputEntity; 2]> {
-    let mut feature_markers = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .collect::<Vec<_>>();
-    feature_markers.sort_unstable_by_key(|marker| marker.offset());
-    let mut markers = feature_markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
-        })
-        .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset());
-    markers
-        .iter()
-        .zip(markers.iter().skip(1))
-        .filter_map(|(center, radial)| {
-            let class_name = match center.kind() {
-                SketchInputKind::Arc => "sgArcHandle",
-                SketchInputKind::LineOrCircle => "sgLineHandle",
-                _ => return None,
-            };
-            if !matches!(
-                radial.kind(),
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            ) {
-                return None;
-            }
-            let next_marker_offset = feature_markers
-                .iter()
-                .find(|marker| marker.offset() > radial.offset())
-                .map_or(u64::MAX, |marker| marker.offset());
-            let declared = lane.classes.iter().any(|class| {
-                class.name == class_name
-                    && class.offset > radial.offset()
-                    && class.offset < next_marker_offset
-            });
-            if !declared {
-                return None;
-            }
-            Some([*center, *radial])
-        })
-        .collect()
+fn declared_entity_handle_declared_child_pairs<'a>(ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane, feature: &str) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+    let mut feature_markers = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |_| true)?;
+    sort_handle_markers(ctx, &mut feature_markers)?;
+    let mut markers = collect_handle_markers(ctx, feature_markers.iter().copied(), feature, |marker|
+        marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc))?;
+    sort_handle_markers(ctx, &mut markers)?;
+    let mut pairs = Vec::new();
+    for (center, radial) in markers.iter().zip(markers.iter().skip(1)) {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        let class_name = match center.kind() { SketchInputKind::Arc => "sgArcHandle", SketchInputKind::LineOrCircle => "sgLineHandle", _ => continue };
+        if !matches!(radial.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { continue; }
+        charge_relation_parameter_work(ctx, feature_markers.len(), 4, DIMENSIONED_HANDLE_OPERATION)?;
+        let next_marker_offset = feature_markers.iter().find(|marker| marker.offset() > radial.offset()).map_or(u64::MAX, |marker| marker.offset());
+        charge_relation_parameter_work(ctx, lane.classes.len(), 32, DIMENSIONED_HANDLE_OPERATION)?;
+        if !lane.classes.iter().any(|class| class.name == class_name && class.offset > radial.offset() && class.offset < next_marker_offset) { continue; }
+        ctx.reserve_collection_vec(&mut pairs, 1, DIMENSIONED_HANDLE_OPERATION)?;
+        pairs.push([*center, *radial]);
+    }
+    Ok(pairs)
 }
 
-fn declared_entity_handle_linked_pairs<'a>(
-    lane: &'a FeatureInputLane,
-    feature: &str,
-) -> Vec<[&'a SketchInputEntity; 2]> {
-    let mut markers = lane
-        .sketch_entities
-        .iter()
-        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
-        .filter(|marker| marker.coordinates_m.is_some())
-        .filter(|marker| {
-            matches!(
-                marker.kind(),
-                SketchInputKind::Point
-                    | SketchInputKind::ConstrainedPoint
-                    | SketchInputKind::LineOrCircle
-                    | SketchInputKind::Arc
-            )
-        })
-        .collect::<Vec<_>>();
-    markers.sort_unstable_by_key(|marker| marker.offset());
-    markers
-        .iter()
-        .zip(markers.iter().skip(1))
-        .filter_map(|(center, radial)| {
-            if !matches!(
-                radial.kind(),
-                SketchInputKind::Point
-                    | SketchInputKind::ConstrainedPoint
-                    | SketchInputKind::LineOrCircle
-            ) {
-                return None;
-            }
-            let center_local_id = center.local_id()?;
-            if center_local_id == 0
-                || radial.object_index() != Some(center_local_id)
-                || !matches!(radial.local_id(), None | Some(0))
-            {
-                return None;
-            }
-            Some([*center, *radial])
-        })
-        .collect()
+fn declared_entity_handle_linked_pairs<'a>(ctx: &DecodeContext<'_>, lane: &'a FeatureInputLane, feature: &str) -> Result<Vec<[&'a SketchInputEntity; 2]>, cadmpeg_core::CodecError> {
+    let mut markers = collect_handle_markers(ctx, lane.sketch_entities.iter(), feature, |marker|
+        marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc))?;
+    sort_handle_markers(ctx, &mut markers)?;
+    let mut pairs = Vec::new();
+    for (center, radial) in markers.iter().zip(markers.iter().skip(1)) {
+        ctx.charge_work(64, DIMENSIONED_HANDLE_OPERATION)?;
+        if !matches!(radial.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle) { continue; }
+        let Some(center_local_id) = center.local_id() else { continue; };
+        if center_local_id == 0 || radial.object_index() != Some(center_local_id) || !matches!(radial.local_id(), None | Some(0)) { continue; }
+        ctx.reserve_collection_vec(&mut pairs, 1, DIMENSIONED_HANDLE_OPERATION)?;
+        pairs.push([*center, *radial]);
+    }
+    Ok(pairs)
 }
 
 pub(crate) fn project_relation_bindings(
