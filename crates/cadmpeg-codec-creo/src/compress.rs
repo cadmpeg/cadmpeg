@@ -65,15 +65,7 @@ pub(crate) fn decode(
     }
     output.write(&[final_byte])?;
     let mut written = 1;
-    ctx.charge_collection_items(u64_from_index(dictionary_limit), "creo LZW stack slots")?;
-    let mut stack = Vec::new();
-    stack.try_reserve_exact(dictionary_limit).map_err(|_| {
-        ctx.refuse_codec_limit(
-            "allocate Creo LZW stack",
-            u64_from_index(dictionary_limit),
-            u64_from_index(dictionary_limit) + 1,
-        )
-    })?;
+    let mut stack = ctx.collection_vec(dictionary_limit, "creo LZW stack slots")?;
 
     if written == expected_length {
         return finish_expansion(ctx, output, reservation).map(Some);

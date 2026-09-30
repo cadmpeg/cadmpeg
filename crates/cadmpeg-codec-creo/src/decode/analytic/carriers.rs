@@ -183,7 +183,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 annotations,
                 &id,
                 "VisibGeom",
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 if existing_count == 1 {
                     "conflicting_topology_plane_carrier"
                 } else {
@@ -206,7 +206,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             "plane_topology_boundary",
             Exactness::Derived,
         )?;
@@ -293,7 +293,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 } else {
                     "NovisGeom"
                 },
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 if namespace.is_visible() {
                     "unresolved_visible_surface_carrier"
                 } else {
@@ -350,7 +350,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             "unresolved_visible_curve_carrier",
             Exactness::Unknown,
         )?;
