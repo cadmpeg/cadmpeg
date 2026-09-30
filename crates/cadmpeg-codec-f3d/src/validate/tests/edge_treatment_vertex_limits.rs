@@ -135,3 +135,55 @@ fn vertex_operand_invalid_entity_refuses_retained_limit() {
         if limit.operation == "retain F3D validation entity")
     );
 }
+
+fn vertex_recipe_valid_at(recipe_offset: u64) -> bool {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        feature::{scope::{DesignFeatureKind, DesignParameterScope}, work_geometry::DesignVertexRecipe},
+        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut draft = operand().recipe.into_draft();
+        draft.byte_offset = recipe_offset - 47;
+        draft.paired_byte_offset = recipe_offset - 31;
+        draft.recipe_record_byte_offset = recipe_offset - 15;
+        draft.recipe_prefix_offset = recipe_offset - 4;
+        draft.recipe_program_offset = recipe_offset.saturating_add(18);
+        draft.next_byte_offset = draft.recipe_program_offset.saturating_add(4);
+        let vertex = DesignVertexRecipe::try_new(draft).unwrap();
+        let stream = super::super::design_stream(&vertex.recipe_id);
+        let scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#10", DesignFeatureKind::WorkPoint, 10);
+        let native = crate::native::F3dNative {
+            design_record_headers: vec![DesignRecordHeader {
+                id: "f3d:Design/BulkStream.dat:header#100".into(),
+                record_index: 100,
+                class_tag: vertex.class_tag.clone(),
+                byte_offset: vertex.byte_offset(),
+            }],
+            construction_recipes: vec![ConstructionRecipe {
+                id: vertex.recipe_id.clone(), byte_offset: recipe_offset,
+                kind: ConstructionRecipeKind::Vertex, design: None,
+                recipe_index: 0, record_index: None,
+            }],
+            ..Default::default()
+        };
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        super::super::valid_vertex_recipe(&ctx, &scope, stream, 100, &vertex).unwrap()
+    })
+}
+
+#[test]
+fn vertex_recipe_preserves_representable_program_layout() {
+    assert!(vertex_recipe_valid_at(1_047));
+}
+
+#[test]
+fn vertex_recipe_rejects_overflowed_program_origin() {
+    assert!(!vertex_recipe_valid_at(u64::MAX - 17));
+}
+
+#[test]
+fn vertex_recipe_rejects_overflowed_program_extent() {
+    assert!(!vertex_recipe_valid_at(u64::MAX - 20));
+}
