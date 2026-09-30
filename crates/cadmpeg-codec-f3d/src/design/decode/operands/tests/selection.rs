@@ -564,6 +564,8 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
 #[test]
 fn extrude_selection_group_and_members_have_exact_counted_frames() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let scope = DesignParameterScope::try_new(
         crate::records::feature::scope::DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
@@ -922,10 +924,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
     group.try_set_members(all_members).unwrap();
     let mut sketch = sketch;
     let second_profile_id = SketchEntityId::mint("synthetic:test:id#second-profile").unwrap();
-    sketch.profiles.push_single(SketchEntityUse {
+    sketch.profiles.push_single(&resource_ctx, SketchEntityUse {
         entity: second_profile_id.clone(),
         reversed: false,
-    });
+    }).unwrap();
     let point_entity = SketchEntity::new(
         neutral_sketch_point_id(&sketch_id, 587),
         sketch_id.clone(),

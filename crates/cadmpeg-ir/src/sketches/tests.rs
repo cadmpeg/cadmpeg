@@ -1474,6 +1474,8 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
 
 #[test]
 fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
 
     let usage = SketchEntityUse {
@@ -1503,20 +1505,20 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
         .edit(|chains| chains.push(vec![usage.clone()]))
         .unwrap();
     assert_eq!(profiles.len(), 2);
-    profiles.push_single(usage);
+    profiles.push_single(&resource_ctx, usage).unwrap();
     assert_eq!(profiles.len(), 3);
     let before_filter = profiles.clone();
     let mut calls = 0;
     assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        profiles.retain_uses(|_| {
+        profiles.retain_uses(&resource_ctx, |_| {
             calls += 1;
             assert_ne!(calls, 2, "filter interruption");
             false
-        });
+        }).unwrap();
     }))
     .is_err());
     assert_eq!(profiles, before_filter);
-    profiles.retain_uses(|_| false);
+    profiles.retain_uses(&resource_ctx, |_| false).unwrap();
     assert!(profiles.is_empty());
 }
 

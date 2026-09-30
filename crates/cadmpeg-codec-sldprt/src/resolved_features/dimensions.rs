@@ -1608,7 +1608,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     else {
                         continue;
                     };
-                    sketch.profiles.retain_uses(|usage| usage.entity != removed);
+                    sketch.profiles.retain_uses(ctx, |usage| usage.entity != removed)?;
                     let feature_key = feature
                         .id
                         .as_str()
@@ -1651,10 +1651,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                             )
                             .with_geometry_ref(parameter.native_ref.clone()),
                         );
-                        sketch.profiles.push_single(SketchEntityUse {
+                        sketch.profiles.push_single(ctx, SketchEntityUse {
                             entity: entity_id,
                             reversed: false,
-                        });
+                        })?;
                     }
                     continue;
                 }
@@ -1796,7 +1796,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 };
                 sketch
                     .profiles
-                    .retain_uses(|usage| !removed.contains(&usage.entity));
+                    .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     let Ok(entity_id) = SketchEntityId::mint(format!(
                         "sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"
@@ -1808,10 +1808,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                             )
                             .with_geometry_ref(parameter.native_ref.clone()),
                     );
-                    sketch.profiles.push_single(SketchEntityUse {
+                    sketch.profiles.push_single(ctx, SketchEntityUse {
                         entity: entity_id,
                         reversed: false,
-                    });
+                    })?;
                 }
                 continue 'feature;
             }
@@ -1940,7 +1940,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                     };
                     sketch
                         .profiles
-                        .retain_uses(|usage| !removed.contains(&usage.entity));
+                        .retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                     for (record, geometry) in transformed {
                         let lane_key = record
                             .0
@@ -1963,10 +1963,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                                 .with_geometry_ref(record.5.native_ref.clone()),
                         );
                         if !record.2 {
-                            sketch.profiles.push_single(SketchEntityUse {
+                            sketch.profiles.push_single(ctx, SketchEntityUse {
                                 entity: entity_id,
                                 reversed: false,
-                            });
+                            })?;
                         }
                     }
                     continue;
@@ -2080,10 +2080,10 @@ pub(crate) fn project_marker_dimensioned_circles(
                 .with_construction(construction)
                 .with_geometry_ref(parameter.native_ref.clone()),
             );
-            sketch.profiles.push_single(SketchEntityUse {
+            sketch.profiles.push_single(ctx, SketchEntityUse {
                 entity: entity_id,
                 reversed: false,
-            });
+            })?;
         }
     }
 

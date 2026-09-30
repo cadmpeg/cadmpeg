@@ -326,19 +326,58 @@ impl SketchProfiles {
         self.0.is_empty()
     }
 
-    /// Append a profile containing one entity use.
-    pub fn push_single(&mut self, entity: SketchEntityUse) {
-        self.0.push(vec![entity]);
+    /// Append a profile containing one entity use after resource admission.
+    pub fn push_single(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        entity: SketchEntityUse,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "append sketch profile use";
+        ctx.charge_work(2, OPERATION)?;
+        let mut profile = Vec::new();
+        ctx.reserve_collection_vec(&mut profile, 1, OPERATION)?;
+        if self.0.len() == self.0.capacity() {
+            ctx.charge_work(u64::try_from(self.0.len()).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        }
+        ctx.reserve_collection_vec(&mut self.0, 1, OPERATION)?;
+        profile.push(entity);
+        self.0.push(profile);
+        Ok(())
     }
 
-    /// Retain matching entity uses and remove chains emptied by the filter.
-    pub fn retain_uses(&mut self, mut keep: impl FnMut(&SketchEntityUse) -> bool) {
-        let mut profiles = self.0.clone();
-        for profile in &mut profiles {
-            profile.retain(&mut keep);
+    /// Retain matching uses and remove empty chains after every predicate returns.
+    pub fn retain_uses(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        mut keep: impl FnMut(&SketchEntityUse) -> bool,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "filter sketch profile uses";
+        let count = self.0.iter().try_fold(0usize, |count, profile| {
+            ctx.charge_work(1, OPERATION)?;
+            count.checked_add(profile.len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+        })?;
+        ctx.charge_work(u64::try_from(count).ok().and_then(|count| count.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let mut decisions = Vec::new();
+        ctx.reserve_collection_vec(&mut decisions, count, OPERATION)?;
+        for profile in &self.0 {
+            for usage in profile {
+                ctx.charge_work(u64::try_from(usage.entity.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                decisions.push(keep(usage));
+            }
         }
-        profiles.retain(|profile| !profile.is_empty());
-        self.0 = profiles;
+        let mut decision_index = 0;
+        for profile in &mut self.0 {
+            profile.retain(|_| {
+                let decision = decisions[decision_index];
+                decision_index += 1;
+                decision
+            });
+        }
+        self.0.retain(|profile| !profile.is_empty());
+        Ok(())
     }
 
     /// Append a nonempty profile chain.
