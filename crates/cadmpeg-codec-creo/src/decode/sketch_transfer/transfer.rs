@@ -26,7 +26,7 @@ use super::super::sketch_ids::{
     sketch_entity_id_admitted, sketch_feature_id_admitted, sketch_native_ref_admitted,
 };
 use super::super::uniqueness::unique_feature_section_transform;
-use super::entities::transfer_section_entities;
+use super::entities::{transfer_section_entities, SectionEntityTransfer};
 use crate::container::ContainerScan;
 use crate::coverage::SketchSegmentFamily;
 use crate::decode::sketch_transfer::constraints::{
@@ -573,29 +573,31 @@ pub(in super::super) fn transfer_sketches(
         }
         let (mut entities, profiles) = transfer_section_entities(
             ctx,
-            scan,
-            ir,
-            annotations,
-            definition,
-            transform,
-            &sketch_id,
-            &segments,
-            &unique_segment_ids,
-            &unique_saved_ids,
-            &ambiguous_segment_ids,
-            complete_segment_table,
-            &solved,
-            &segment_geometries,
-            &resolved_segment_geometries,
-            &circle_geometries,
-            &point_geometries,
-            &centered_line_geometries,
-            &reference_line_geometries,
-            &materialized_saved_section_external_ids,
-            profiles,
-            &profile_entities,
-            losses,
-            source_carriers,
+            SectionEntityTransfer {
+                scan,
+                ir,
+                annotations,
+                definition,
+                transform,
+                sketch_id: &sketch_id,
+                segments: &segments,
+                unique_segment_ids: &unique_segment_ids,
+                unique_saved_ids: &unique_saved_ids,
+                ambiguous_segment_ids: &ambiguous_segment_ids,
+                complete_segment_table,
+                solved: &solved,
+                segment_geometries: &segment_geometries,
+                resolved_segment_geometries: &resolved_segment_geometries,
+                circle_geometries: &circle_geometries,
+                point_geometries: &point_geometries,
+                centered_line_geometries: &centered_line_geometries,
+                reference_line_geometries: &reference_line_geometries,
+                materialized_saved_section_external_ids: &materialized_saved_section_external_ids,
+                profiles,
+                profile_entities: &profile_entities,
+                losses,
+                source_carriers,
+            },
         )?;
         let profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles)
             .map_err(cadmpeg_core::CodecError::malformed)?;

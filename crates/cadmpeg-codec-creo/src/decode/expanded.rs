@@ -8,7 +8,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::container::ContainerScan;
 
 use super::coverage::{source_section_ref, surface_family};
-use super::native::{emit_uniform, store_arena};
+use super::native::{emit_uniform, store_arena, UniformArena};
 use super::native_records::{
     CreoFc05CircleRecord, CreoFc05CylinderCapPairRecord, CreoFeatureSurfaceReplayAssociation,
     CreoHalfEdgeRef,
@@ -33,26 +33,30 @@ pub(super) fn attach_expanded_sections(
         ctx,
         ir,
         annotations,
-        "expanded_sections",
-        &records,
-        |record| &record.id,
-        |record| &record.name,
-        |record| record.source_offset as u64,
-        "unix_compress_expanded_section",
-        Exactness::Derived,
+        &UniformArena {
+            key: "expanded_sections",
+            records: &records,
+            id: |record| &record.id,
+            stream: |record| &record.name,
+            offset: |record| record.source_offset as u64,
+            tag: "unix_compress_expanded_section",
+            exactness: Exactness::Derived,
+        },
     )?;
     let tables = double_xar_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
         annotations,
-        "double_xar_tables",
-        &tables,
-        |table| &table.id,
-        |table| &table.table.section_name,
-        |table| table.table.section_source_offset as u64,
-        "model_scalar_dictionary",
-        Exactness::ByteExact,
+        &UniformArena {
+            key: "double_xar_tables",
+            records: &tables,
+            id: |table| &table.id,
+            stream: |table| &table.table.section_name,
+            offset: |table| table.table.section_source_offset as u64,
+            tag: "model_scalar_dictionary",
+            exactness: Exactness::ByteExact,
+        },
     )?;
     let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
     store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
