@@ -6159,10 +6159,10 @@ impl FaceSelection {
                 let mut copied = Vec::new();
                 for face in faces {
                     ctx.charge_work(1, operation)?;
-                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
                     let id = FaceId::mint(text)
                         .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
-                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
                     copied.push(id);
                 }
                 Ok(Self::Faces(copied))
@@ -6171,54 +6171,54 @@ impl FaceSelection {
                 let mut copied = Vec::new();
                 for face in faces {
                     ctx.charge_work(1, operation)?;
-                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
                     let id = FaceId::mint(text)
                         .map_err(|_| CodecError::malformed("invalid decoded face ID"))?;
-                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
                     copied.push(id);
                 }
-                let native = ctx.format_retained(format_args!("{native}"), operation)?;
+                let native = copy_feature_selection_text(ctx, native, operation)?;
                 Ok(Self::Resolved { faces: copied, native })
             }
             Self::Historical { state, faces, native } => {
-                let state_text = ctx.format_retained(format_args!("{}", state.as_str()), operation)?;
+                let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
                 let state = FeatureInputTopologyId::mint(state_text)
                     .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
                 let mut copied = Vec::new();
                 for face in faces.as_slice() {
                     ctx.charge_work(1, operation)?;
-                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
                     let id = HistoricalFaceId::mint(text)
                         .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
-                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
                     copied.push(id);
                 }
-                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
                 let native = NonBlankString::new(native_text)
                     .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
                 Ok(Self::Historical { state, faces: SelectionMembers(copied), native })
             }
             Self::HistoricalPartial { state, faces, unresolved, native } => {
-                let state_text = ctx.format_retained(format_args!("{}", state.as_str()), operation)?;
+                let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
                 let state = FeatureInputTopologyId::mint(state_text)
                     .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
                 let mut copied_faces = Vec::new();
                 for face in faces.as_slice() {
                     ctx.charge_work(1, operation)?;
-                    let text = ctx.format_retained(format_args!("{}", face.as_str()), operation)?;
+                    let text = copy_feature_selection_text(ctx, face.as_str(), operation)?;
                     let id = HistoricalFaceId::mint(text)
                         .map_err(|_| CodecError::malformed("invalid decoded historical face ID"))?;
-                    ctx.reserve_collection_vec(&mut copied_faces, 1, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied_faces, operation)?;
                     copied_faces.push(id);
                 }
                 let mut copied_unresolved = Vec::new();
                 for name in unresolved.as_slice() {
                     ctx.charge_work(1, operation)?;
-                    let text = ctx.format_retained(format_args!("{name}"), operation)?;
-                    ctx.reserve_collection_vec(&mut copied_unresolved, 1, operation)?;
+                    let text = copy_feature_selection_text(ctx, name, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied_unresolved, operation)?;
                     copied_unresolved.push(text);
                 }
-                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
                 let native = NonBlankString::new(native_text)
                     .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
                 Ok(Self::HistoricalPartial {
@@ -6232,29 +6232,47 @@ impl FaceSelection {
                 let mut copied = Vec::new();
                 for face in faces.as_slice() {
                     ctx.charge_work(1, operation)?;
-                    let feature_text = ctx.format_retained(
-                        format_args!("{}", face.feature.as_str()), operation,
-                    )?;
+                    let feature_text = copy_feature_selection_text(ctx, face.feature.as_str(), operation)?;
                     let feature = FeatureId::mint(feature_text)
                         .map_err(|_| CodecError::malformed("invalid decoded feature ID"))?;
-                    let local = ctx.format_retained(
-                        format_args!("{}", face.local_id.as_str()), operation,
-                    )?;
+                    let local = copy_feature_selection_text(ctx, face.local_id.as_str(), operation)?;
                     let face = GeneratedFaceRef::new(feature, local)
                         .map_err(|_| CodecError::malformed("invalid decoded generated face"))?;
-                    ctx.reserve_collection_vec(&mut copied, 1, operation)?;
+                    reserve_feature_selection_copy(ctx, &mut copied, operation)?;
                     copied.push(face);
                 }
-                let native_text = ctx.format_retained(format_args!("{}", native.as_str()), operation)?;
+                let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
                 let native = SelectionReference::try_from(native_text)
                     .map_err(|_| CodecError::malformed("invalid decoded face selection"))?;
                 Ok(Self::Generated { faces: NonEmptyMembers(copied), native })
             }
             Self::Native(native) => Ok(Self::Native(
-                ctx.format_retained(format_args!("{native}"), operation)?,
+                copy_feature_selection_text(ctx, native, operation)?,
             )),
         }
     }
+}
+
+fn copy_feature_selection_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let work = text.len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+    ctx.format_retained(format_args!("{text}"), operation)
+}
+
+fn reserve_feature_selection_copy<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &mut Vec<T>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let work = values.len().checked_add(1).and_then(|count| count.checked_mul(std::mem::size_of::<T>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+    ctx.reserve_collection_vec(values, 1, operation)
 }
 
 /// A nonempty sequence of members in source order.
