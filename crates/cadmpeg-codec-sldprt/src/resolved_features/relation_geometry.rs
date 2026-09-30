@@ -22,7 +22,7 @@ use super::relation_records::{
     circle_dimension_handle_driver, relation_uses_dynamic_operands, relation_uses_solver_points,
 };
 use super::transforms::{
-    marker_entities, sketch_entity_locus_points,
+    MarkerEntityFilter, marker_entities, sketch_entity_locus_points,
     sketch_frame_marker_transform, ProfileAxis,
 };
 use super::typed_relations::{
@@ -2716,14 +2716,22 @@ pub(crate) fn project_relation_bindings(
             let native_kind = relation_native_kind(relation.family);
             let mut entities = Vec::new();
             for marker in relation.operands.iter().filter_map(|operand| operand.entity_ref.as_deref()) {
-                for entity in marker_entities(marker, &markers_by_id, &loci_by_marker) {
+                for entity in marker_entities(ctx, marker, &markers_by_id, &loci_by_marker, MarkerEntityFilter::All)? {
                     ctx.reserve_collection_vec(
                         &mut entities, 1, "collect SLDPRT planar relation entities",
                     )?;
                     entities.push(entity);
                 }
             }
-            entities.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+            const ENTITY_SORT: &str = "sort SLDPRT planar relation entities";
+            let count = cadmpeg_core::decode::u64_from_index(entities.len());
+            ctx.charge_work(count, ENTITY_SORT)?;
+            let max_bytes = entities.iter().map(|identity| identity.as_str().len()).max().unwrap_or(0);
+            let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
+            ctx.charge_work(count.checked_mul(levels).and_then(|work| work.checked_mul(64))
+                .and_then(|work| cadmpeg_core::decode::u64_from_index(max_bytes).checked_mul(2).and_then(|bytes| bytes.checked_add(1)).and_then(|bytes| work.checked_mul(bytes)))
+                .ok_or_else(|| ctx.refuse_codec_limit(ENTITY_SORT, u64::MAX - 1, u64::MAX))?, ENTITY_SORT)?;
+            entities.sort_unstable_by(|left, right| left.as_str().cmp(right.as_str()));
             entities.dedup();
             let typed_definition = match relation.family {
                 FeatureInputRelationFamily::PointPointHorizontalDistance

@@ -16,7 +16,7 @@ use super::super::unique_repaired_profile_line_angle_pair;
 use super::super::unique_repaired_profile_line_distance_pair;
 use super::super::unique_repaired_profile_point_line_pair;
 use crate::records::{SketchInputKind, SketchInputLink, SketchRelationKind};
-use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::transforms::tests::marker;
 use crate::resolved_features::transforms::ProfileAxis;
 use crate::resolved_features::typed_relations::binary_relation_matches_evaluated_geometry;
@@ -1230,7 +1230,7 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
         Some(expected)
     );
     assert_eq!(
-        marker_entities(ambiguous.id(), &markers, &loci),
+        marker_entities(&cadmpeg_test_support::service_decode_context(), ambiguous.id(), &markers, &loci, MarkerEntityFilter::All).unwrap(),
         vec![SketchEntityId::mint("synthetic:test:id#line-a").unwrap()]
     );
 }

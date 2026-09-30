@@ -12,7 +12,7 @@ use crate::resolved_features::relation_loci::marker_point_locus;
 use crate::resolved_features::relation_loci::profile_loci_by_marker;
 use crate::resolved_features::transforms::dimensioned_circle_surface_transforms;
 use crate::resolved_features::transforms::dimensioned_circle_transform;
-use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::transforms::unique_compatible_marker_transform;
 use crate::resolved_features::transforms::unique_marker_transform;
 use crate::resolved_features::transforms::Axes;
@@ -639,7 +639,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_entities(point_marker.id(), &markers, &loci),
+        marker_entities(&cadmpeg_test_support::service_decode_context(), point_marker.id(), &markers, &loci, MarkerEntityFilter::All).unwrap(),
         vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
