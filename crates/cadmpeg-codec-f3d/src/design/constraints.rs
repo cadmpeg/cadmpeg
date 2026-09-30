@@ -1033,7 +1033,10 @@ fn exact_circular_pattern(
             let mut instances = Vec::new();
             let mut valid = true;
             for (index, instance) in patterned.chunks_exact(arity).enumerate().skip(1) {
-                let rotation = evaluated_angle.get() * index as f64 / divisor;
+                let Some(index) = cadmpeg_core::convert::f64_from_index(index) else {
+                    return Ok(None);
+                };
+                let rotation = evaluated_angle.get() * index / divisor;
                 if !seed.iter().zip(instance).all(|(source, result)| {
                     rotated_sketch_geometry_matches(
                         &source.geometry,
