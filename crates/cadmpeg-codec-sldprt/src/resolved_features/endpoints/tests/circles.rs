@@ -175,12 +175,12 @@ fn extended_full_circle_uses_center_and_radial_point_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         None
     );
 }
@@ -226,18 +226,18 @@ fn extended_geometry_kind_one_full_circle_uses_explicit_center_index() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
     payload[76..78].copy_from_slice(&2u16.to_le_bytes());
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap(),
         None
     );
     payload[76..78].copy_from_slice(&1u16.to_le_bytes());
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        extended_geometry_full_circle(&payload, &entities[0], &markers),
+        extended_geometry_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap(),
         None
     );
 }
@@ -302,7 +302,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &entities[3], &markers),
+        super::compact_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -311,7 +311,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let mut current_circle = entities[3].clone();
     current_circle.reclassify(SketchInputKind::Arc);
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &current_circle, &markers),
+        super::compact_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &current_circle, &markers).unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
@@ -321,11 +321,11 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     let current_kind_one_markers = current_kind_one_entities.iter().collect::<Vec<_>>();
     let current_kind_one_circle = &current_kind_one_entities[3];
     assert_eq!(
-        super::compact_profile_full_circle(
+        super::compact_profile_full_circle(&cadmpeg_test_support::service_decode_context(),
             &payload,
             current_kind_one_circle,
             &current_kind_one_markers,
-        ),
+        ).unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
@@ -334,7 +334,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     payload[56..60].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
     payload[104..].copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        super::equal_index_coordinate_roster_full_circle(&payload, &current_circle, &markers,),
+        super::equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &current_circle, &markers,).unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -347,7 +347,7 @@ fn extended_profile_circle_accepts_one_unambiguous_radial_interpretation() {
     conflicting[1].coordinates_m = cadmpeg_ir::units::FiniteVector::new([4.0, 0.0]);
     let markers = conflicting.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::compact_profile_full_circle(&payload, &conflicting[3], &markers),
+        super::compact_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &conflicting[3], &markers).unwrap(),
         None
     );
 }
@@ -398,18 +398,18 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(&cadmpeg_test_support::service_decode_context(), &payload, &entities[2], &markers).unwrap(),
         Some(([0.0, 0.0], 5.0))
     );
     payload[134] = b'x';
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(&cadmpeg_test_support::service_decode_context(), &payload, &entities[2], &markers).unwrap(),
         None
     );
     payload[134] = b's';
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &entities[2], &markers),
+        super::current_profile_circle_dimension(&cadmpeg_test_support::service_decode_context(), &payload, &entities[2], &markers).unwrap(),
         None
     );
     payload[58..60].copy_from_slice(&2u16.to_le_bytes());
@@ -420,7 +420,7 @@ fn current_profile_circle_dimension_uses_one_based_radial_roster() {
     ];
     let zero_markers = zero_radius.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::current_profile_circle_dimension(&payload, &zero_radius[2], &zero_markers),
+        super::current_profile_circle_dimension(&cadmpeg_test_support::service_decode_context(), &payload, &zero_radius[2], &zero_markers).unwrap(),
         None
     );
 }
@@ -489,7 +489,7 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap(),
         Some(([0.0, 0.0], 12.0))
     );
 
@@ -501,12 +501,12 @@ fn compact_legacy_repeated_radial_records_define_full_circles() {
     payload[circle_offset + 118..circle_offset + 120].copy_from_slice(&11u16.to_le_bytes());
     payload[circle_offset + 120..circle_offset + 131].copy_from_slice(b"sgCircleDim");
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap(),
         Some(([0.0, 0.0], 5.5))
     );
     payload[circle_offset + 120] = b'x';
     assert_eq!(
-        super::compact_legacy_profile_full_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_profile_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap(),
         None
     );
 }
@@ -758,12 +758,12 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
@@ -771,7 +771,7 @@ fn equal_index_coordinate_roster_carries_center_and_following_radial_point() {
     payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
     payload[104..104 + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
 }
@@ -815,7 +815,7 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
         .collect::<Vec<_>>();
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     let mut tagged = payload[..72].to_vec();
@@ -826,22 +826,22 @@ fn dimensioned_extended_full_circle_uses_center_and_radial_point_roster() {
     tagged.extend_from_slice(&1u32.to_le_bytes());
     tagged.extend_from_slice(&[0x1f, 0x81, 0xff, 0xfe, 0xff, 0x06]);
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &tagged, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     tagged[80] = 0x34;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &tagged, &circle, &markers).unwrap(),
         Some(([1.0, 1.0], 2.0))
     );
     tagged[72] = 0;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&tagged, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &tagged, &circle, &markers).unwrap(),
         None
     );
     payload[72] = 0;
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         None
     );
 }
@@ -890,7 +890,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -899,12 +899,12 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     let mut extended_circle = entities[3].clone();
     extended_circle.reclassify(SketchInputKind::LineOrCircle);
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &extended_circle, &markers).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[104..108].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &extended_circle, &markers),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &extended_circle, &markers).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     payload[104..108].copy_from_slice(&6u32.to_le_bytes());
@@ -919,7 +919,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     terminal_entities[0].reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let terminal_markers = terminal_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &terminal, &extended_circle, &terminal_markers,).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     terminal[64..68].copy_from_slice(&[0x01, 0x00, 0x01, 0x00]);
@@ -929,7 +929,7 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
         direct_entities[2].with_test_identity(Some(1), direct_entities[2].local_id());
     let direct_markers = direct_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &direct_markers,),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &terminal, &extended_circle, &direct_markers,).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     let mut short_terminal = payload[..102].to_vec();
@@ -940,21 +940,21 @@ fn wide_legacy_full_circle_uses_adjacent_center_and_radial_markers() {
     short_terminal[132..134].copy_from_slice(&11u16.to_le_bytes());
     short_terminal[134..145].copy_from_slice(b"sgCircleDim");
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(),
             &short_terminal,
             &extended_circle,
             &direct_markers,
-        ),
+        ).unwrap(),
         Some(([2.0, 3.0], 5.0))
     );
     terminal[133] = 1;
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&terminal, &extended_circle, &terminal_markers,),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &terminal, &extended_circle, &terminal_markers,).unwrap(),
         None
     );
     payload[66..68].copy_from_slice(&3u16.to_le_bytes());
     assert_eq!(
-        super::wide_coordinate_roster_full_circle(&payload, &entities[3], &markers),
+        super::wide_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         None
     );
 }
@@ -1002,12 +1002,12 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         Some(([0.0, 0.0], 3.0))
     );
     payload[64..68].copy_from_slice(&[0x02, 0x00, 0x02, 0x00]);
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         None
     );
 
@@ -1015,7 +1015,7 @@ fn legacy_profile_radial_circle_requires_one_selected_radial_locus() {
     payload[64..68].copy_from_slice(&[0x03, 0x00, 0x03, 0x00]);
     payload[104..128].fill(0);
     assert_eq!(
-        super::legacy_profile_radial_circle(&payload, &entities[3], &markers),
+        super::legacy_profile_radial_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap(),
         Some(([0.0, 0.0], 4.0))
     );
 }
