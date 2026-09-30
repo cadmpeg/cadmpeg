@@ -78,7 +78,7 @@ pub(super) fn add_extrusion_pcurve(
         annotations,
         &id,
         "FeatDefs",
-        source_offset as u64,
+        cadmpeg_core::decode::u64_from_index(source_offset),
         "extrusion_trim_pcurve",
         Exactness::Derived,
     )?;

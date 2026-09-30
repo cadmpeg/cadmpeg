@@ -266,7 +266,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 annotations,
                 &surface_id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "evaluated_analytic_revolution_surface",
                 Exactness::Derived,
             )?;
@@ -341,7 +341,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                     annotations,
                     &surface_id,
                     "FeatDefs",
-                    offset as u64,
+                    cadmpeg_core::decode::u64_from_index(offset),
                     "evaluated_saved_analytic_revolution_surface",
                     Exactness::Derived,
                 )?;
@@ -458,7 +458,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 annotations,
                 &surface_id,
                 "FeatDefs",
-                spline.offset as u64,
+                cadmpeg_core::decode::u64_from_index(spline.offset),
                 "evaluated_revolution_surface",
                 Exactness::Derived,
             )?;
@@ -467,7 +467,7 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 annotations,
                 &procedural_id,
                 "FeatDefs",
-                spline.offset as u64,
+                cadmpeg_core::decode::u64_from_index(spline.offset),
                 "revolution_surface_construction",
                 Exactness::Derived,
             )?;
@@ -618,7 +618,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
             annotations,
             &id,
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "evaluated_revolution_profile_vertex_orbit",
             Exactness::Derived,
         )?;
@@ -717,7 +717,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
             annotations,
             &id,
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "evaluated_extrusion_profile_vertex_orbit",
             Exactness::Derived,
         )?;

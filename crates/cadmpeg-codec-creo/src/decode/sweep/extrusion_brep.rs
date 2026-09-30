@@ -401,7 +401,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 annotations,
                 id,
                 "FeatDefs",
-                transform.offset as u64,
+                cadmpeg_core::decode::u64_from_index(transform.offset),
                 "extrusion_cap_plane",
                 Exactness::Derived,
             )?;

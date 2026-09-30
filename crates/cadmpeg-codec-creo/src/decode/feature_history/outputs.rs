@@ -290,7 +290,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
         )
         .is_some()
         {
-            ctx.charge_retained(candidate.len() as u64, "creo evaluated sweep body IDs")?;
+            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(candidate.len()), "creo evaluated sweep body IDs")?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
             outputs.push(body);
@@ -471,7 +471,7 @@ fn insert_feature_parameter(
     } else {
         (base, base_reservation)
     };
-    ctx.charge_retained(key.len() as u64, "creo feature parameter key")?;
+    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(key.len()), "creo feature parameter key")?;
     ctx.charge_collection_items(1, "creo feature parameter nodes")?;
     parameters.insert(key, value);
     drop(key_reservation);

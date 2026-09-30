@@ -202,7 +202,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             match (geometry.definition(), segment.kind) {
                 (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
                     "section_degenerate_axis_line"
@@ -280,7 +280,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_segment",
             Exactness::ByteExact,
         )?;
@@ -343,7 +343,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_circle"
             } else {
@@ -400,7 +400,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_point"
             } else {
@@ -456,7 +456,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_centered_line"
             } else {
@@ -519,7 +519,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_reference_line"
             } else {
@@ -574,7 +574,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_bounded_curve",
             Exactness::ByteExact,
         )?;
@@ -618,7 +618,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_conic",
             Exactness::ByteExact,
         )?;
@@ -679,7 +679,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "opaque_section_segment",
             Exactness::ByteExact,
         )?;
@@ -757,7 +757,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity_id.as_str(),
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "saved_section_entity",
             Exactness::Derived,
         )?;
@@ -891,7 +891,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity_id.as_str(),
             "FeatDefs",
-            spline.offset as u64,
+            cadmpeg_core::decode::u64_from_index(spline.offset),
             "saved_interpolation_spline",
             Exactness::Derived,
         )?;
@@ -945,7 +945,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity.id().as_str(),
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
         )?;
@@ -993,7 +993,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_curve",
                 Exactness::Derived,
             )?;
@@ -1043,7 +1043,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_circle",
                 Exactness::Derived,
             )?;
@@ -1093,7 +1093,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_line",
                 Exactness::Derived,
             )?;
@@ -1126,7 +1126,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "placed_saved_section_curve",
                 Exactness::Derived,
             )?;

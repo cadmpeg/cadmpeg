@@ -613,7 +613,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "solver_only_section_entity",
                 Exactness::ByteExact,
             )?;
@@ -849,7 +849,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "section_dimension_constraint",
                 Exactness::ByteExact,
             )?;
@@ -867,7 +867,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "section_segment_radius_constraint",
                 Exactness::ByteExact,
             )?;
@@ -961,7 +961,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "section_equation_constraint",
                 Exactness::ByteExact,
             )?;
@@ -985,7 +985,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "section_native_equation_constraint",
                 Exactness::ByteExact,
             )?;
@@ -1009,7 +1009,7 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 constraint.id.as_str(),
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "section_solver_constraint",
                 Exactness::ByteExact,
             )?;
@@ -1023,7 +1023,7 @@ pub(in super::super) fn transfer_sketches(
             annotations,
             sketch_id.as_str(),
             "FeatDefs",
-            source_offset as u64,
+            cadmpeg_core::decode::u64_from_index(source_offset),
             if transform.is_some() {
                 "datum_placed_section"
             } else {
@@ -1054,14 +1054,14 @@ pub(in super::super) fn transfer_sketches(
                 annotations,
                 feature_id.as_str(),
                 "FeatDefs",
-                source_offset as u64,
+                cadmpeg_core::decode::u64_from_index(source_offset),
                 "section_sketch_feature",
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model features")?;
             let feature = Feature {
                 id: feature_id,
-                ordinal: ir.model.features.len() as u64,
+                ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
                 name: None,
                 suppressed: Some(false),
                 dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -1161,7 +1161,7 @@ fn emit_verhor_constraint(
         annotations,
         id.as_str(),
         "FeatDefs",
-        offset as u64,
+        cadmpeg_core::decode::u64_from_index(offset),
         "section_verhor_constraint",
         Exactness::ByteExact,
     )?;

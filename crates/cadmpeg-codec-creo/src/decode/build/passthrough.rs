@@ -105,14 +105,14 @@ pub(super) fn preserve_passthrough_sections(
             annotations,
             &id,
             section.name(),
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             tag,
             exactness,
         )?;
         ctx.reserve_vec(&mut unknowns, 1, "creo passthrough unknown records")?;
         unknowns.push(UnknownRecord::retained(
             id,
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             ctx.copy_retained(bytes, "retain Creo passthrough section")?,
             Vec::new(),
         ));
@@ -146,7 +146,7 @@ where
             annotations,
             record.id(),
             legacy_source_stream(scan, record.offset),
-            record.offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
         )?;
@@ -175,7 +175,7 @@ pub(super) fn emit_legacy_arenas(
                 annotations,
                 record.id(),
                 legacy_source_stream(scan, record.offset),
-                record.offset as u64,
+                cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
             )?;
@@ -285,7 +285,7 @@ pub(super) fn emit_legacy_arenas(
                     annotations,
                     record.id(),
                     legacy_source_stream(scan, record.offset),
-                    record.offset as u64,
+                    cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
                 )?;

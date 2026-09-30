@@ -342,7 +342,7 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 annotations,
                 &curve_id,
                 "FeatDefs",
-                spline.offset as u64,
+                cadmpeg_core::decode::u64_from_index(spline.offset),
                 "placed_saved_interpolation_spline",
                 Exactness::Derived,
             )?;
@@ -645,7 +645,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "protextrude_section_carrier",
                 Exactness::Derived,
             )?;
@@ -715,7 +715,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 annotations,
                 &id,
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "protextrude_saved_section_carrier",
                 Exactness::Derived,
             )?;
@@ -845,7 +845,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     annotations,
                     &curve_id,
                     "FeatDefs",
-                    spline.offset as u64,
+                    cadmpeg_core::decode::u64_from_index(spline.offset),
                     "protextrude_spline_directrix",
                     Exactness::Derived,
                 )?;
@@ -893,7 +893,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 annotations,
                 &surface_id,
                 "FeatDefs",
-                spline.offset as u64,
+                cadmpeg_core::decode::u64_from_index(spline.offset),
                 "protextrude_spline_surface",
                 Exactness::Derived,
             )?;
@@ -902,7 +902,7 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 annotations,
                 &procedural_id,
                 "FeatDefs",
-                spline.offset as u64,
+                cadmpeg_core::decode::u64_from_index(spline.offset),
                 "protextrude_spline_surface_construction",
                 Exactness::Derived,
             )?;
