@@ -317,3 +317,65 @@ fn configuration_sketch_projection_refuses_unscoped_datum_retained_limit() {
 fn configuration_sketch_projection_refuses_unscoped_datum_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_unscoped_datum);
 }
+
+fn run_spatial_ownership(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchId};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let sketch = SpatialSketchId::mint("sldprt:model:spatial-sketch#scoped").unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut configuration = design_configuration("spatial", 0, Some(0), None);
+    for (ordinal, name, definition) in [
+        (0, "scoped", FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: None })),
+        (1, "alias", FeatureDefinition::Operation(FeatureOperation::Sketch {
+            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+        })),
+    ] {
+        let id = FeatureId::mint(format!("sldprt:model:feature#{name}")).unwrap();
+        ir.model.features.push(Feature {
+            id: id.clone(), ordinal, name: None, suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(), source_tag: None,
+            source_text: None, source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::SpatialSketch { sketch: Some(sketch.clone()) },
+            )), native_ref: None,
+        });
+        configuration.feature_states.insert(id, ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() },
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(), definition,
+        });
+    }
+    ir.model.configurations.push(configuration);
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch.clone(), name: None, configuration: Some("0".into()), visible: None,
+        profiles: Vec::new(), native_ref: Some("lane".into()),
+    });
+    let mut expected = ir.clone();
+    for state in expected.model.configurations[0].feature_states.values_mut() {
+        state.definition = FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(sketch.clone()) });
+    }
+    let losses = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[feature_input_lane("lane", Some("0"))],
+        &mut cadmpeg_ir::Annotations::default(),
+    )?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_ownership_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_spatial_ownership);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_ownership_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_spatial_ownership);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_ownership_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_spatial_ownership);
+}
