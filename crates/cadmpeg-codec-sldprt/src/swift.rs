@@ -224,6 +224,9 @@ fn copy_topology_id<T>(ctx: &DecodeContext<'_>, id: &str) -> Result<T, CodecErro
 where
     T: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>,
 {
+    let copy_work = cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("copy SWIFT topology identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "copy SWIFT topology identity")?;
     let text = ctx.format_retained(format_args!("{id}"), "copy SWIFT topology identity")?;
     T::try_from(text).map_err(|_| CodecError::malformed("invalid SWIFT topology identity"))
 }
@@ -2801,6 +2804,9 @@ fn pmi_id_charged(ctx: &DecodeContext<'_>, source_id: &str) -> Result<Option<Pmi
 }
 
 fn copy_pmi_id(ctx: &DecodeContext<'_>, id: &PmiId) -> Result<PmiId, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(id.as_str().len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("copy SWIFT PMI identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "copy SWIFT PMI identity")?;
     let text = ctx.format_retained(format_args!("{}", id.as_str()), "copy SWIFT PMI identity")?;
     PmiId::mint(text).map_err(|_| CodecError::malformed("invalid SWIFT PMI identity"))
 }

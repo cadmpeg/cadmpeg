@@ -172,6 +172,9 @@ fn invalid_namespace(ctx: &DecodeContext<'_>, error: cadmpeg_ir::NativeConvertEr
 }
 
 fn copy_finding_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT native finding identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT native finding identity")?;
     ctx.format_retained(format_args!("{id}"), "retain SLDPRT native finding identity")
 }
 

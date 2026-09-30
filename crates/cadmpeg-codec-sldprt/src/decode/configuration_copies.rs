@@ -13,6 +13,9 @@ use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalVertexId};
 const OPERATION: &str = "copy SLDPRT active configuration hole";
 
 fn copy_text(ctx: &DecodeContext<'_>, source: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(source.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, OPERATION)?;
     let mut text = String::new();
     ctx.reserve_retained_string(&mut text, source.len(), OPERATION)?;
     text.push_str(source);

@@ -502,6 +502,9 @@ pub(super) fn relation_instances(
 }
 
 fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT relation record identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT relation record identity")?;
     ctx.format_retained(format_args!("{text}"), "retain SLDPRT relation record identity")
 }
 

@@ -347,6 +347,9 @@ pub(crate) fn spatial_sketches(
 }
 
 fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT spatial identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT spatial identity")?;
     let mut copy = String::new();
     ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT spatial identity")?;
     copy.push_str(value);
@@ -1396,6 +1399,9 @@ pub(crate) fn reference_cells_charged(
 }
 
 fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT reference identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT reference identity")?;
     let mut copy = String::new();
     ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT reference identity")?;
     copy.push_str(value);

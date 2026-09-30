@@ -73,6 +73,9 @@ pub(crate) fn named_scalars_charged(
 }
 
 fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT scalar identity")?;
     let mut copy = String::new();
     ctx.reserve_retained_string(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
     copy.push_str(text);

@@ -319,15 +319,23 @@ pub(crate) fn format_native_scalar(
 }
 
 fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<ParameterId, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(id.as_str().len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT parameter reference")?;
     ParameterId::mint(ctx.format_retained(format_args!("{id}"), "retain SLDPRT parameter reference")?)
         .map_err(CodecError::malformed)
 }
 
 fn copy_parameter_value(ctx: &DecodeContext<'_>, value: &ParameterValue) -> Result<ParameterValue, CodecError> {
     match value {
-        ParameterValue::String(value) => Ok(ParameterValue::String(ctx.format_retained(
-            format_args!("{value}"), "retain SLDPRT parameter value text",
-        )?)),
+        ParameterValue::String(value) => {
+            let work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+                .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter value text", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, "retain SLDPRT parameter value text")?;
+            Ok(ParameterValue::String(ctx.format_retained(
+                format_args!("{value}"), "retain SLDPRT parameter value text",
+            )?))
+        },
         _ => Ok(value.clone()),
     }
 }
