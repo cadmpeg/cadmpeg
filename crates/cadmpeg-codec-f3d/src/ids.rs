@@ -296,13 +296,7 @@ fn identity_key_component_charged(
             .checked_add(width.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
     }
-    let bytes =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(bytes, operation)?;
-    let mut encoded = String::new();
-    encoded
-        .try_reserve(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
+    let mut encoded = ctx.retained_string(length, operation)?;
     for character in value.chars() {
         if matches!(character, ':' | '#' | '%') || character.is_whitespace() {
             let mut scalar = [0; 4];
@@ -406,7 +400,7 @@ pub(crate) fn neutral_component_insert_occurrence_id(
 /// Neutral assembly-joint key projected from one Design parameter scope.
 #[cfg(test)]
 pub(crate) fn neutral_assembly_joint_id(
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> Result<cadmpeg_ir::products::JointId, cadmpeg_core::CodecError> {
     struct JointKey<'a> {
@@ -422,17 +416,7 @@ pub(crate) fn neutral_assembly_joint_id(
         }
     }
     let stream = native_stream(&scope.id).unwrap_or(DEFAULT_STREAM);
-    let Some(ctx) = ctx else {
-        let encoded = identity_key_component(stream);
-        let key = cadmpeg_ir::ids::IdentityKey::from(encoded.len())
-            .then(cadmpeg_ir::identity_key!(":"))
-            .with_tail(&cadmpeg_ir::ids::IdentityKeyTail::percent_encode(stream))
-            .then(scope.record_index);
-        return Ok(cadmpeg_ir::products::JointId::compose(
-            &cadmpeg_ir::identity_namespace!("f3d", "model", "joint"),
-            key,
-        ));
-    };
+
     let encoded_len = escaped_scope_len(ctx, stream, "retain F3D neutral joint ID")?;
     let id = native_scoped_id_charged(
         ctx,
@@ -1231,12 +1215,7 @@ pub(crate) fn native_scope_charged(
         .len()
         .checked_add(escaped_len)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length_u64 =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length_u64, operation)?;
-    let mut id = String::new();
-    id.try_reserve(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length_u64))?;
+    let mut id = ctx.retained_string(length, operation)?;
     id.push_str("f3d:");
     push_escaped_scope(&mut id, scope);
     Ok(id)
@@ -1275,12 +1254,7 @@ pub(crate) fn native_scoped_id_charged(
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(key_len.0))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    let length_u64 =
-        u64::try_from(length).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(length_u64, operation)?;
-    let mut id = String::new();
-    id.try_reserve(length)
-        .map_err(|_| ctx.refuse_codec_limit(operation, 0, length_u64))?;
+    let mut id = ctx.retained_string(length, operation)?;
     id.push_str("f3d:");
     push_escaped_scope(&mut id, scope);
     id.push(':');
@@ -1529,8 +1503,8 @@ mod tests {
             7,
         );
         assert_eq!(
-            super::neutral_assembly_joint_id(Some(&ctx), &scope).unwrap(),
-            super::neutral_assembly_joint_id(None, &scope).unwrap(),
+            super::neutral_assembly_joint_id(&ctx, &scope).unwrap(),
+            crate::test_support::with_decode_context(|ctx| super::neutral_assembly_joint_id(ctx, &scope)).unwrap(),
         );
     }
 
@@ -1546,7 +1520,7 @@ mod tests {
             crate::records::feature::scope::DesignFeatureKind::Assemble,
             7,
         );
-        let error = super::neutral_assembly_joint_id(Some(&ctx), &scope).unwrap_err();
+        let error = super::neutral_assembly_joint_id(&ctx, &scope).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.operation == "retain F3D native record ID")

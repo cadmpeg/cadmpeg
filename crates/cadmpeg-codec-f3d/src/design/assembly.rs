@@ -1061,7 +1061,7 @@ mod tests {
             .iter()
             .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
             .sum::<usize>()
-            + crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+            + crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scopes[2]))
                 .expect("joint identifier")
                 .as_str()
                 .len();
@@ -1081,7 +1081,7 @@ mod tests {
     #[test]
     fn assembly_joint_native_reference_refuses_retained_limit() {
         let scopes = one_joint_scopes();
-        let key_length = crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+        let key_length = crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scopes[2]))
             .expect("joint identifier")
             .as_str()
             .len();
@@ -1089,7 +1089,7 @@ mod tests {
             .iter()
             .map(|scope| crate::ids::neutral_feature_id(scope).as_str().len())
             .sum::<usize>()
-            + crate::ids::neutral_assembly_joint_id(None, &scopes[2])
+            + crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scopes[2]))
                 .expect("joint identifier")
                 .as_str()
                 .len();
