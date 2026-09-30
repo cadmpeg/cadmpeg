@@ -4,8 +4,113 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use proc_macro2::{TokenStream, TokenTree};
+use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 use syn::UseTree;
+
+/// Source reads in all builds and in builds without test-only items.
+#[derive(Default)]
+pub(super) struct Reads {
+    all: BTreeSet<(String, String)>,
+    production: BTreeSet<(String, String)>,
+}
+
+impl Reads {
+    pub(super) fn contains(&self, record: &str, name: &str) -> bool {
+        self.all.contains(&(record.to_string(), name.to_string()))
+    }
+
+    pub(super) fn test_only(&self, record: &str, name: &str) -> bool {
+        self.contains(record, name)
+            && !self.production.contains(&(record.to_string(), name.to_string()))
+    }
+}
+
+fn requires_test(meta: &syn::Meta) -> bool {
+    match meta {
+        syn::Meta::Path(path) => path.is_ident("test"),
+        syn::Meta::List(list) if list.path.is_ident("all") || list.path.is_ident("any") => {
+            use syn::parse::Parser;
+            let terms = syn::punctuated::Punctuated::<syn::Meta, syn::Token![,]>::parse_terminated
+                .parse2(list.tokens.clone());
+            terms.is_ok_and(|terms| {
+                if list.path.is_ident("all") {
+                    terms.iter().any(requires_test)
+                } else {
+                    !terms.is_empty() && terms.iter().all(requires_test)
+                }
+            })
+        }
+        _ => false,
+    }
+}
+
+fn test_attribute(meta: &syn::Meta) -> bool {
+    if meta.path().is_ident("test") {
+        return true;
+    }
+    if let syn::Meta::List(list) = meta {
+        return list.path.is_ident("cfg")
+            && syn::parse2::<syn::Meta>(list.tokens.clone()).is_ok_and(|meta| requires_test(&meta));
+    }
+    false
+}
+
+/// Remove complete test-only items before deriving production reads.
+fn production_tokens(stream: TokenStream) -> TokenStream {
+    let tokens: Vec<_> = stream.into_iter().collect();
+    let mut output = TokenStream::new();
+    let mut index = 0;
+    while index < tokens.len() {
+        let start = index;
+        let mut test_only = false;
+        while let Some([hash, TokenTree::Group(attribute)]) = tokens.get(index..index + 2) {
+            if !is_punct(hash, '#') || attribute.delimiter() != Delimiter::Bracket {
+                break;
+            }
+            test_only |= syn::parse2::<syn::Meta>(attribute.stream()).is_ok_and(|meta| test_attribute(&meta));
+            index += 2;
+        }
+        if test_only {
+            while let Some(token) = tokens.get(index) {
+                index += 1;
+                if is_punct(token, ';') || matches!(token, TokenTree::Group(group) if group.delimiter() == Delimiter::Brace) {
+                    break;
+                }
+            }
+            continue;
+        }
+        output.extend(tokens[start..index].iter().cloned());
+        if let Some(token) = tokens.get(index) {
+            output.extend([match token {
+                TokenTree::Group(group) => TokenTree::Group(Group::new(group.delimiter(), production_tokens(group.stream()))),
+                token => token.clone(),
+            }]);
+            index += 1;
+        }
+    }
+    output
+}
+
+fn test_modules(items: &[syn::Item], directory: &Path, inherited: bool, files: &mut BTreeSet<PathBuf>) -> Result<(), String> {
+    for item in items {
+        let syn::Item::Mod(module) = item else { continue; };
+        if module.ident == "layout" { continue; }
+        let test_only = inherited || module.attrs.iter().any(|attr| test_attribute(&attr.meta));
+        let child = directory.join(module.ident.to_string());
+        if let Some((_, items)) = &module.content {
+            test_modules(items, &child, test_only, files)?;
+        } else {
+            let sibling = child.with_extension("rs");
+            let path = if sibling.is_file() { sibling } else { child.join("mod.rs") };
+            if !path.is_file() { continue; }
+            if test_only { files.insert(path.clone()); }
+            let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
+            let file = syn::parse_file(&source).map_err(|error| format!("{}: {error}", path.display()))?;
+            test_modules(&file.items, &child, test_only, files)?;
+        }
+    }
+    Ok(())
+}
 
 #[derive(Clone, Default)]
 struct Imports {
@@ -164,16 +269,25 @@ fn parent_imports(path: &Path, root: &Path) -> Result<Imports, String> {
 }
 
 /// Derive the generated items read by the owning crate's source tree.
-pub(super) fn layout_reads(root: &Path) -> Result<BTreeSet<(String, String)>, String> {
+pub(super) fn layout_reads(root: &Path) -> Result<Reads, String> {
     let mut paths = Vec::new();
     sources(root, &mut paths)?;
     paths.sort();
-    let mut reads = BTreeSet::new();
+    let source = std::fs::read_to_string(root.join("lib.rs")).map_err(|error| error.to_string())?;
+    let file = syn::parse_file(&source).map_err(|error| error.to_string())?;
+    let mut test_files = BTreeSet::new();
+    test_modules(&file.items, root, false, &mut test_files)?;
+    let mut reads = Reads::default();
     for path in paths {
         let result = (|| {
             let source = std::fs::read_to_string(&path).map_err(|error| error.to_string())?;
             let tokens = source.parse::<TokenStream>().map_err(|error| error.to_string())?;
-            scan(tokens, &parent_imports(&path, root)?, &mut reads)
+            let imports = parent_imports(&path, root)?;
+            scan(tokens.clone(), &imports, &mut reads.all)?;
+            if !test_files.contains(&path) {
+                scan(production_tokens(tokens), &imports, &mut reads.production)?;
+            }
+            Ok::<(), String>(())
         })();
         result.map_err(|error| format!("{}: {error}", path.display()))?;
     }
@@ -182,7 +296,7 @@ pub(super) fn layout_reads(root: &Path) -> Result<BTreeSet<(String, String)>, St
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, Imports};
+    use super::{layout_reads, production_tokens, scan, Imports};
     use std::collections::BTreeSet;
 
     fn reads(source: &str) -> Result<BTreeSet<(String, String)>, String> {
@@ -193,6 +307,33 @@ mod tests {
 
     fn expected(items: &[(&str, &str)]) -> BTreeSet<(String, String)> {
         items.iter().map(|(record, name)| (record.to_string(), name.to_string())).collect()
+    }
+
+    #[test]
+    fn layout_reads_separate_test_only_items() -> Result<(), String> {
+        let source = "use crate::layout::header as h; h::LEN; #[cfg(test)] mod tests { h::MAGIC; } #[test] fn test() { h::OFFSET; } #[cfg(all(feature = \"x\", test))] const C: usize = h::VALUE;";
+        let mut production = BTreeSet::new();
+        scan(production_tokens(source.parse().map_err(|error: proc_macro2::LexError| error.to_string())?), &Imports::default(), &mut production)?;
+        assert_eq!(production, expected(&[("header", "LEN")]));
+        assert_eq!(reads(source)?, expected(&[("header", "LEN"), ("header", "MAGIC"), ("header", "OFFSET"), ("header", "VALUE")]));
+        Ok(())
+    }
+
+    #[test]
+    fn layout_reads_follow_external_test_modules_and_ignore_generated_source() -> Result<(), Box<dyn std::error::Error>> {
+        let temporary = tempfile::tempdir()?;
+        let root = temporary.path();
+        std::fs::create_dir(root.join("reader"))?;
+        std::fs::write(root.join("lib.rs"), "mod reader; mod layout;")?;
+        std::fs::write(root.join("reader.rs"), "use crate::layout::header as h; const C: usize = h::LEN; #[cfg(test)] mod checks;")?;
+        std::fs::write(root.join("reader/checks.rs"), "use super::h; const C: usize = h::MAGIC;")?;
+        std::fs::write(root.join("layout.rs"), "crate::layout::unread::OFFSET;")?;
+        let reads = layout_reads(root)?;
+        assert!(reads.contains("header", "LEN"));
+        assert!(!reads.test_only("header", "LEN"));
+        assert!(reads.test_only("header", "MAGIC"));
+        assert!(!reads.contains("unread", "OFFSET"));
+        Ok(())
     }
 
     #[test]
