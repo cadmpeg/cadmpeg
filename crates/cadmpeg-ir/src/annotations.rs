@@ -283,6 +283,12 @@ impl AnnotationBuilder {
         Self { annotations }
     }
 
+    /// Borrow the annotations accumulated so far.
+    #[must_use]
+    pub fn annotations(&self) -> &Annotations {
+        &self.annotations
+    }
+
     /// Record an entity's source location.
     ///
     /// The returned value supports the ergonomic
@@ -375,8 +381,17 @@ impl AnnotationBuilder {
         field: impl Into<String>,
         exactness: Exactness,
     ) -> Result<&mut Self, &'static str> {
-        let id = id.to_string();
-        let field = FieldName::try_from(field.into())
+        self.field_exactness_owned(id.to_string(), field.into(), exactness)
+    }
+
+    /// Set field exactness with already allocated identity and field names.
+    pub fn field_exactness_owned(
+        &mut self,
+        id: String,
+        field: String,
+        exactness: Exactness,
+    ) -> Result<&mut Self, &'static str> {
+        let field = FieldName::try_from(field)
             .map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
             let Some(note) = self.annotations.exactness.remove(&id) else {
@@ -766,6 +781,26 @@ mod tests {
             let restored: Annotations = serde_json::from_value(wire).unwrap();
             assert_eq!(restored, annotations);
             assert_eq!(restored.provenance[id].stream(), "first");
+        }
+    }
+
+    #[test]
+    fn owned_field_exactness_matches_formatted_field_exactness() {
+        for entity_first in [false, true] {
+            let mut borrowed = AnnotationBuilder::new();
+            let mut owned = AnnotationBuilder::new();
+            for exactness in [Exactness::Derived, Exactness::Inferred, Exactness::ByteExact] {
+                if entity_first {
+                    borrowed.exactness("test:point#1", exactness);
+                    owned.exactness_owned("test:point#1".to_string(), exactness);
+                }
+                borrowed.field_exactness("test:point#1", "position.x", exactness).unwrap();
+                owned.field_exactness_owned("test:point#1".to_string(), "position.x".to_string(), exactness).unwrap();
+                assert_eq!(borrowed.annotations(), owned.annotations());
+            }
+            let before = owned.annotations().clone();
+            assert!(owned.field_exactness_owned("test:point#1".to_string(), String::new(), Exactness::Derived).is_err());
+            assert_eq!(owned.annotations(), &before);
         }
     }
 
