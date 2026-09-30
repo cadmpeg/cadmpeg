@@ -5714,7 +5714,7 @@ fn append_swift_pmi_losses(
         })?;
         classes.push(')');
     }
-    let message = ctx.format_retained(
+    let message = crate::retained_text::format_retained(ctx, 
         format_args!(
             "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
         ),

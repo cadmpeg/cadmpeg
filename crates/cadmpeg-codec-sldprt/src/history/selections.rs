@@ -676,14 +676,14 @@ fn resolve_body_selection(ctx: &DecodeContext<'_>, selection: &mut BodySelection
 
 fn copy_selection_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(value.len()), "retain SLDPRT topology selection identity")?;
-    ctx.format_retained(format_args!("{value}"), "retain SLDPRT topology selection identity")
+    crate::retained_text::format_retained(ctx, format_args!("{value}"), "retain SLDPRT topology selection identity")
 }
 
 fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(ctx: &DecodeContext<'_>, id: &str) -> Result<Id, CodecError> {
     let work = cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT topology selection identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "retain SLDPRT topology selection identity")?;
-    let text = ctx.format_retained(format_args!("{id}"), "retain SLDPRT topology selection identity")?;
+    let text = crate::retained_text::format_retained(ctx, format_args!("{id}"), "retain SLDPRT topology selection identity")?;
     Id::try_from(text).map_err(CodecError::malformed)
 }
 

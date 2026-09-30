@@ -483,7 +483,7 @@ fn copy_class_text(ctx: &cadmpeg_core::decode::DecodeContext<'_>, text: &str) ->
     let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "bind SLDPRT history classes")?;
-    ctx.format_retained(format_args!("{text}"), "bind SLDPRT history classes")
+    crate::retained_text::format_retained(ctx, format_args!("{text}"), "bind SLDPRT history classes")
 }
 
 fn reserve_class_map<K: Eq + std::hash::Hash, V>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut HashMap<K, V>) -> Result<(), cadmpeg_core::CodecError> {

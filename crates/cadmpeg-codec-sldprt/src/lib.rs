@@ -119,6 +119,7 @@ mod parasolid;
 mod pmi;
 mod records;
 mod resolved_features;
+mod retained_text;
 mod swift;
 mod tessellation;
 mod writer;

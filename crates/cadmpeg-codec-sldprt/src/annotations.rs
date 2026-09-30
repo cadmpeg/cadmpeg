@@ -28,12 +28,12 @@ pub(crate) fn note(
     }).and_then(|bytes| bytes.checked_mul(comparison_work))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(bytes, OPERATION)?;
-    let provenance_id = ctx.format_retained(format_args!("{id}"), OPERATION)?;
-    let exactness_id = ctx.format_retained(format_args!("{id}"), OPERATION)?;
-    let stream_name = ctx.format_retained(format_args!("{}", stream.as_str()), OPERATION)?;
+    let provenance_id = crate::retained_text::format_retained(ctx, format_args!("{id}"), OPERATION)?;
+    let exactness_id = crate::retained_text::format_retained(ctx, format_args!("{id}"), OPERATION)?;
+    let stream_name = crate::retained_text::format_retained(ctx, format_args!("{}", stream.as_str()), OPERATION)?;
     let stream_name = StreamName::try_from(stream_name)
         .map_err(|_| CodecError::malformed("empty SLDPRT annotation stream"))?;
-    let tag = ctx.format_retained(format_args!("{tag}"), OPERATION)?;
+    let tag = crate::retained_text::format_retained(ctx, format_args!("{tag}"), OPERATION)?;
     ctx.charge_collection_items(1, OPERATION)?;
     if !annotations.provenance.contains_key(id) {
         ctx.charge_collection_items(1, OPERATION)?;

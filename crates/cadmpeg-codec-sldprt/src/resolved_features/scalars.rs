@@ -49,7 +49,7 @@ pub(crate) fn named_scalars_charged(
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
         let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = ctx.format_retained(
+        let id = crate::retained_text::format_retained(ctx, 
             format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             "retain SLDPRT scalar identity",
         )?;
@@ -160,7 +160,7 @@ fn scalar_operands_charged(
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
         })?;
-        let reference_ref = ctx.format_retained(
+        let reference_ref = crate::retained_text::format_retained(ctx, 
             format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             "retain SLDPRT scalar identity",
         )?;

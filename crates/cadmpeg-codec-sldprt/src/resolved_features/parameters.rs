@@ -192,7 +192,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                     if value_only {
                         continue;
                     }
-                    let name = ctx.format_retained(
+                    let name = crate::retained_text::format_retained(ctx, 
                         format_args!("{name}"),
                         "retain SLDPRT parameter candidate name",
                     )?;

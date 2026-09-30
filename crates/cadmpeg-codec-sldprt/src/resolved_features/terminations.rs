@@ -334,7 +334,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     if let Some((reference, kind)) = compact_extrusion_to_vertex_at(ctx, &lane.native_payload, offset, end_spec_end)? {
                         let prefix = match kind { CompactPointReferenceKind::Point => "point-ref", CompactPointReferenceKind::EdgeEndpoint { .. } => "edge-endpoint-ref" };
                         ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                        let reference = ctx.format_retained(format_args!("sldprt:feature-input:{prefix}:{lane_key}:{reference}"), OPERATION)?;
+                        let reference = crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:{prefix}:{lane_key}:{reference}"), OPERATION)?;
                         return Ok(Some(TerminationVote::ToVertex { reference }));
                     }
                     compact_extrusion_to_face_at(ctx, &lane.native_payload, offset, end_spec_end)?
@@ -383,7 +383,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             TerminationVote::Blind { depth_m: Some(depth_m) } if !feature.parameters.contains_key("D1") && !feature.parameters.contains_key("Depth") => {
                 if let Some(depth) = cadmpeg_ir::scalar::Length::new(depth_m * 1000.0) {
                     ctx.charge_work(1, OPERATION)?;
-                    let value = ctx.format_retained(format_args!("{}", crate::history::literals::LengthLiteral(depth)), OPERATION)?;
+                    let value = crate::retained_text::format_retained(ctx, format_args!("{}", crate::history::literals::LengthLiteral(depth)), OPERATION)?;
                     insert_termination_field(ctx, &mut feature.parameters, "D1", value, OPERATION)?;
                 }
             }
@@ -441,7 +441,7 @@ fn compact_termination_face_vote(
 ) -> Result<TerminationVote, cadmpeg_core::CodecError> {
     const OPERATION: &str = "build SLDPRT extrusion face vote";
     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-    let reference = ctx.format_retained(format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"), OPERATION)?;
+    let reference = crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}"), OPERATION)?;
     for selection in &lane.surface_selections {
         let work = u64_from_index(selection.feature_ref.len()).checked_add(u64_from_index(feature_ref.len()))
             .and_then(|work| work.checked_add(1))
@@ -537,8 +537,8 @@ pub(crate) fn enrich_history_combine_selections(
                     ctx.charge_work(u64_from_index(lane_key.len()).checked_mul(2)
                         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                     Some(CombineSelection {
-                        target: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"), OPERATION)?,
-                        tools: ctx.format_retained(format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"), OPERATION)?,
+                        target: crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:body-path:{lane_key}:{target}"), OPERATION)?,
+                        tools: crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:body-path:{lane_key}:{tools}"), OPERATION)?,
                         operation: operation.map(|operation| copy_termination_text(ctx, operation, OPERATION)).transpose()?,
                     })
                 }
@@ -678,11 +678,11 @@ pub(crate) fn enrich_history_sweep_paths(
                 }
             }
             let path = if let Some(source) = source.filter(|_| !ambiguous_source) {
-                Some(ctx.format_retained(format_args!("{source}"), OPERATION)?)
+                Some(crate::retained_text::format_retained(ctx, format_args!("{source}"), OPERATION)?)
             } else if let Some(offset) = path_offset.filter(|_| !ambiguous_offset) {
                 let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
                 ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                Some(ctx.format_retained(format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"), OPERATION)?)
+                Some(crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"), OPERATION)?)
             } else { None };
             ctx.charge_work(u64_from_index(feature_id.len()).checked_mul(3)
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
@@ -881,7 +881,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     let feature_id = copy_termination_feature_id(ctx, id, OPERATION)?;
                     let local_id = component_local_ids(ctx, &components, OPERATION)?;
                     ctx.charge_work(u64_from_index(lane_key.len()), OPERATION)?;
-                    let native = ctx.format_retained(format_args!("sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"), OPERATION)?;
+                    let native = crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"), OPERATION)?;
                     let Ok(curve) = GeneratedCurveRef::new(feature_id, local_id) else { continue; };
                     let mut curves = Vec::new();
                     ctx.reserve_collection_vec(&mut curves, 1, OPERATION)?;

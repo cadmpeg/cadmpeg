@@ -604,12 +604,12 @@ pub(crate) fn project_dissected_sketches(
 }
 
 fn copy_dissected_feature_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(CodecError::malformed)
 }
 
 fn copy_dissected_sketch_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::sketches::SketchId) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
-    let text = ctx.format_retained(format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -726,7 +726,7 @@ pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
 
 fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "retain SLDPRT adjacent profile identity")?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT adjacent profile identity")
+    crate::retained_text::format_retained(ctx, format_args!("{text}"), "retain SLDPRT adjacent profile identity")
 }
 
 fn reserve_component_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>, operation: &'static str) -> Result<(), CodecError> {
