@@ -174,15 +174,14 @@ pub(crate) fn bind_pattern_inputs(
                 if !needs_seeds {
                     continue;
                 }
-                let seed_candidates = (0..object
-                    .len()
-                    .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-                    .filter(|offset| {
-                        object.get(*offset..*offset + COMPACT_EDGE_VECTOR_MARKER.len())
-                            == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-                    })
-                    .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
-                    .filter_map(|components| {
+                let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
+                for offset in 0..object.len().checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()).unwrap_or(0) {
+                    ctx.charge_work(16, "scan SLDPRT mirror pattern seed paths")?;
+                    if object.get(offset..offset + COMPACT_EDGE_VECTOR_MARKER.len()) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+                    let Some(components) = mirror_pattern_component_path_at(ctx, object, offset)? else { continue; };
+                    ctx.charge_work(u64_from_index(components.len()).checked_mul(u64_from_index(history_features.len()))
+                        .ok_or_else(|| ctx.refuse_codec_limit("resolve SLDPRT mirror pattern seeds", u64::MAX - 1, u64::MAX))?, "resolve SLDPRT mirror pattern seeds")?;
+                    let native = (|| {
                         for component in components.iter().rev() {
                             let source = View::u32_le_at(&component.type_signature, 4)?;
                             let mut matches = history_features
@@ -194,12 +193,16 @@ pub(crate) fn bind_pattern_inputs(
                             return matches.next().is_none().then_some(feature.id.as_str());
                         }
                         None
-                    })
-                    .filter_map(|native| model_by_native.get(native).copied())
-                    .filter(|seed_index| *seed_index != model_index)
-                    .map(|seed_index| &model_features[seed_index].id);
-                let mut seeds = Vec::new();
-                for seed in seed_candidates {
+                    })();
+                    let Some(native) = native else { continue; };
+                    ctx.charge_work(u64_from_index(native.len()), "resolve SLDPRT mirror pattern seeds")?;
+                    let Some(seed_index) = model_by_native.get(native).copied() else { continue; };
+                    if seed_index == model_index { continue; }
+                    let seed = &model_features[seed_index].id;
+                    for existing in &seeds {
+                        ctx.charge_work(u64_from_index(seed.as_str().len()).checked_add(u64_from_index(existing.as_str().len()))
+                            .ok_or_else(|| ctx.refuse_codec_limit("compare SLDPRT mirror pattern seeds", u64::MAX - 1, u64::MAX))?, "compare SLDPRT mirror pattern seeds")?;
+                    }
                     if !seeds.contains(seed) {
                         let seed = copy_feature_binding_id(ctx, seed)?;
                         push_feature_binding_candidate(ctx, &mut seeds, seed)?;
