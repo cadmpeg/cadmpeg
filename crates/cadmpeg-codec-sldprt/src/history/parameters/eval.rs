@@ -188,7 +188,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 "normalize SLDPRT parameter token", u64::MAX - 1, u64::MAX,
             ))?;
             self.ctx.charge_work(bytes as u64, "normalize SLDPRT parameter token")?;
-            let (mut text, reservation) = self.ctx.reserve_scoped_string(bytes, "normalize SLDPRT parameter token")?;
+            let (mut text, reservation) = crate::text_admission::reserve_scoped_string(self.ctx, bytes, "normalize SLDPRT parameter token")?;
             text.push_str(prefix);
             text.push_str(value.as_str());
             return Ok(Token::Bare(ParameterTokenText::Owned { value: text, _reservation: reservation }));
@@ -206,7 +206,7 @@ impl<'a, 'ctx, 'arena> ParameterExpressionParser<'a, 'ctx, 'arena> {
                 else { end += rest.chars().next().ok_or(ExpressionFailure::NoValue)?.len_utf8(); }
             }
             if !closed { self.offset = end; return Err(ExpressionFailure::NoValue); }
-            let (mut value, reservation) = self.ctx.reserve_scoped_string(end - start, "retain SLDPRT quoted parameter token")?;
+            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(self.ctx, end - start, "retain SLDPRT quoted parameter token")?;
             self.ctx.charge_work((end - start) as u64, "copy SLDPRT quoted parameter token")?;
             let mut cursor = start;
             while cursor < end {

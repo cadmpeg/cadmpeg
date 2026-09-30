@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Admit formatted native text before each retained fragment copy.
+//! Admit native text storage and byte work before construction.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ScopedReservation};
 use cadmpeg_core::CodecError;
 use std::fmt;
 
@@ -14,8 +14,7 @@ struct RetainedText<'ctx, 'arena> {
 
 impl fmt::Write for RetainedText<'_, '_> {
     fn write_str(&mut self, fragment: &str) -> fmt::Result {
-        let admitted = self.ctx.charge_work(u64_from_index(fragment.len()), self.operation)
-            .and_then(|()| self.ctx.reserve_retained_string(&mut self.text, fragment.len(), self.operation));
+        let admitted = reserve_retained_string(self.ctx, &mut self.text, fragment.len(), self.operation);
         if let Err(error) = admitted {
             self.refusal = Some(error);
             return Err(fmt::Error);
@@ -35,4 +34,23 @@ pub(crate) fn format_retained(
         return Err(output.refusal.unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
     }
     Ok(output.text)
+}
+
+pub(crate) fn reserve_retained_string(
+    ctx: &DecodeContext<'_>,
+    text: &mut String,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(u64_from_index(additional), operation)?;
+    ctx.reserve_retained_string(text, additional, operation)
+}
+
+pub(crate) fn reserve_scoped_string<'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: usize,
+    operation: &'static str,
+) -> Result<(String, ScopedReservation<'ctx>), CodecError> {
+    ctx.charge_work(u64_from_index(bytes), operation)?;
+    ctx.reserve_scoped_string(bytes, operation)
 }

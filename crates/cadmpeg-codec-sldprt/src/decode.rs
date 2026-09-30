@@ -2152,7 +2152,7 @@ fn copy_retained_string(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -2182,7 +2182,7 @@ fn conflicting_display_reference(
         })?;
     }
     let mut message = String::new();
-    ctx.reserve_retained_string(&mut message, bytes, OPERATION)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut message, bytes, OPERATION)?;
     message.push_str(stream);
     message.push_str("::DisplayFace[");
     write!(&mut message, "{table_index}").map_err(|_| {
@@ -2250,7 +2250,7 @@ fn appearance_assignment_loss_message(
         }
     }
     let mut message = String::new();
-    ctx.reserve_retained_string(&mut message, bytes, OPERATION)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut message, bytes, OPERATION)?;
     message.push_str(PREFIX);
     if has_unmatched {
         message.push_str(MISSING_PREFIX);
@@ -3209,7 +3209,7 @@ fn build_geometry_ir(
             let bytes = site.len().checked_add(1).ok_or_else(|| {
                 ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
             })?;
-            ctx.reserve_retained_string(&mut qualified_site, bytes, OPERATION)?;
+            crate::text_admission::reserve_retained_string(ctx, &mut qualified_site, bytes, OPERATION)?;
             qualified_site.push('@');
             qualified_site.push_str(site);
         }
@@ -3426,7 +3426,7 @@ fn build_geometry_ir(
                         )
                     })?;
                 let mut source_entity_id = String::new();
-                ctx.reserve_retained_string(
+                crate::text_admission::reserve_retained_string(ctx, 
                     &mut source_entity_id,
                     source_id_len,
                     "retain SLDPRT DisplayFace source identity",
@@ -5702,7 +5702,7 @@ fn append_swift_pmi_losses(
         classes_len = classes_len.checked_add(addition)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
-    let (mut classes, _reservation) = ctx.reserve_scoped_string(classes_len, OPERATION)?;
+    let (mut classes, _reservation) = crate::text_admission::reserve_scoped_string(ctx, classes_len, OPERATION)?;
     for (index, (class, class_count)) in unsupported.iter().enumerate() {
         if index > 0 {
             classes.push_str(", ");
@@ -5714,7 +5714,7 @@ fn append_swift_pmi_losses(
         })?;
         classes.push(')');
     }
-    let message = crate::retained_text::format_retained(ctx, 
+    let message = crate::text_admission::format_retained(ctx, 
         format_args!(
             "{count} SWIFT semantic annotation(s) have no neutral PMI definition: {classes}."
         ),

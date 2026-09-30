@@ -260,9 +260,9 @@ fn dimensioned_arc_native_geometry(
     };
     let endpoint_pair = if let [first, second] = endpoints.as_slice() {
         charge_dimensioned_carrier_work(ctx, first.id().len(), 4)?;
-        let first = crate::retained_text::format_retained(ctx, format_args!("{}", first.id()), DIMENSIONED_CARRIER_OPERATION)?;
+        let first = crate::text_admission::format_retained(ctx, format_args!("{}", first.id()), DIMENSIONED_CARRIER_OPERATION)?;
         charge_dimensioned_carrier_work(ctx, second.id().len(), 4)?;
-        let second = crate::retained_text::format_retained(ctx, format_args!("{}", second.id()), DIMENSIONED_CARRIER_OPERATION)?;
+        let second = crate::text_admission::format_retained(ctx, format_args!("{}", second.id()), DIMENSIONED_CARRIER_OPERATION)?;
         Some([first, second])
     } else { None };
     let start_radius = (start[0] - center[0]).hypot(start[1] - center[1]);
@@ -484,7 +484,7 @@ fn transformed_dimensioned_arc(
             ctx.charge_work(u64::try_from(endpoints[index].len()).ok().and_then(|len| len.checked_mul(4))
                 .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT dimensioned arc endpoint", u64::MAX - 1, u64::MAX))?,
                 "retain SLDPRT dimensioned arc endpoint")?;
-            let text = crate::retained_text::format_retained(ctx, format_args!("{}", endpoints[index]),
+            let text = crate::text_admission::format_retained(ctx, format_args!("{}", endpoints[index]),
                 "retain SLDPRT dimensioned arc endpoint")?;
             endpoint_refs.push(text);
         }
@@ -751,12 +751,12 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .and_then(|len| u64::try_from(len).ok()).and_then(|work| work.checked_mul(4))
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(text_work, OPERATION)?;
-            let entity_text = crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch-entity#dimension:{lane_key}:{}", relation.offset), OPERATION)?;
+            let entity_text = crate::text_admission::format_retained(ctx, format_args!("sldprt:model:sketch-entity#dimension:{lane_key}:{}", relation.offset), OPERATION)?;
             let Ok(entity_id) = SketchEntityId::mint(entity_text) else { continue; };
-            let sketch_text = crate::retained_text::format_retained(ctx, format_args!("{}", sketch.as_str()), OPERATION)?;
+            let sketch_text = crate::text_admission::format_retained(ctx, format_args!("{}", sketch.as_str()), OPERATION)?;
             let Ok(sketch_id) = cadmpeg_ir::sketches::SketchId::mint(sketch_text) else { continue; };
-            let native_ref = crate::retained_text::format_retained(ctx, format_args!("{}", carrier.marker.id()), OPERATION)?;
-            let geometry_ref = crate::retained_text::format_retained(ctx, format_args!("{}", relation.id), OPERATION)?;
+            let native_ref = crate::text_admission::format_retained(ctx, format_args!("{}", carrier.marker.id()), OPERATION)?;
+            let geometry_ref = crate::text_admission::format_retained(ctx, format_args!("{}", relation.id), OPERATION)?;
             ctx.reserve_collection_vec(entities, 1, OPERATION)?;
             entities.push(SketchEntity::new(entity_id, sketch_id, geometry)
                 .with_construction(construction).with_native_ref(Some(native_ref))
@@ -932,7 +932,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
             }
             let formatted_len = lane_key.len().checked_add(128).ok_or_else(|| ctx.refuse_codec_limit(DIMENSIONED_CARRIER_OPERATION, u64::MAX - 1, u64::MAX))?;
             charge_dimensioned_carrier_work(ctx, formatted_len, 4)?;
-            let entity_id = crate::retained_text::format_retained(ctx, 
+            let entity_id = crate::text_admission::format_retained(ctx, 
                 format_args!(
                     "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}",
                     relation.offset
@@ -956,7 +956,7 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 continue;
             };
             charge_dimensioned_carrier_work(ctx, sketch.as_str().len(), 4)?;
-            let sketch_id = crate::retained_text::format_retained(ctx, 
+            let sketch_id = crate::text_admission::format_retained(ctx, 
                 format_args!("{}", sketch.as_str()),
                 "copy SLDPRT dimensioned point sketch",
             )?;
@@ -964,12 +964,12 @@ pub(crate) fn project_relation_point_dimensioned_circles(
                 continue;
             };
             charge_dimensioned_carrier_work(ctx, marker.id().len(), 4)?;
-            let native_ref = crate::retained_text::format_retained(ctx, 
+            let native_ref = crate::text_admission::format_retained(ctx, 
                 format_args!("{}", marker.id()),
                 "copy SLDPRT dimensioned point marker reference",
             )?;
             charge_dimensioned_carrier_work(ctx, relation.id.len(), 4)?;
-            let geometry_ref = crate::retained_text::format_retained(ctx, 
+            let geometry_ref = crate::text_admission::format_retained(ctx, 
                 format_args!("{}", relation.id),
                 "copy SLDPRT dimensioned point relation reference",
             )?;
@@ -1298,7 +1298,7 @@ fn copy_circle_carrier_entity_id(
     const OPERATION: &str = "copy SLDPRT circle carrier entity identity";
     ctx.charge_work(u64::try_from(id.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), OPERATION)?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), OPERATION)?;
     SketchEntityId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT circle carrier entity identity"))
 }
 
@@ -1340,7 +1340,7 @@ fn charge_marker_circle_sort(ctx: &DecodeContext<'_>, len: usize) -> Result<(), 
 
 fn marker_circle_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
     charge_marker_circle_work(ctx, text.len(), 4)?;
-    crate::retained_text::format_retained(ctx, format_args!("{text}"), MARKER_CIRCLE_OPERATION)
+    crate::text_admission::format_retained(ctx, format_args!("{text}"), MARKER_CIRCLE_OPERATION)
 }
 
 fn charge_marker_circle_format(ctx: &DecodeContext<'_>, key_len: usize) -> Result<(), cadmpeg_core::CodecError> {
@@ -1350,7 +1350,7 @@ fn charge_marker_circle_format(ctx: &DecodeContext<'_>, key_len: usize) -> Resul
 
 fn marker_circle_carrier_reference(ctx: &DecodeContext<'_>, lane_key: &str, offset: usize) -> Result<String, cadmpeg_core::CodecError> {
     charge_marker_circle_format(ctx, lane_key.len())?;
-    crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"), MARKER_CIRCLE_OPERATION)
+    crate::text_admission::format_retained(ctx, format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"), MARKER_CIRCLE_OPERATION)
 }
 
 fn unique_marker_circle_center(
@@ -1560,7 +1560,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         sketch.profiles.retain_uses(ctx, |usage| usage.entity != removed)?;
                         for (index, (parameter, radius)) in radial_dimensions.iter().copied().enumerate() {
                             charge_marker_circle_format(ctx, feature_key.len())?;
-                            let id_text = crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"), OPERATION)?;
+                            let id_text = crate::text_admission::format_retained(ctx, format_args!("sldprt:model:sketch-entity#radial-roster:{feature_key}:{index}"), OPERATION)?;
                             let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
                             let geometry = match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                 center,
@@ -1676,7 +1676,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 sketch.profiles.retain_uses(ctx, |usage| !removed.contains(&usage.entity))?;
                 for (index, geometry) in transformed.into_iter().enumerate() {
                     charge_marker_circle_format(ctx, lane_key.len())?;
-                    let id_text = crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)?;
+                    let id_text = crate::text_admission::format_retained(ctx, format_args!("sldprt:model:sketch-entity#repeated-radial-circle:{lane_key}:{offset}:{index}"), OPERATION)?;
                     let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
                     let native_reference = if index == pairs.len() - 1 { Some(marker_circle_text(ctx, &carrier_ref)?) } else { None };
                     let geometry_reference = parameter.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
@@ -1766,7 +1766,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                         charge_marker_circle_work(ctx, record.0.id.len(), 4)?;
                         let lane_key = record.0.id.rsplit_once('#').map_or(record.0.id.as_str(), |(_, key)| key);
                         charge_marker_circle_format(ctx, lane_key.len())?;
-                        let id_text = crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch-entity#radial-circle:{lane_key}:{}", record.1), OPERATION)?;
+                        let id_text = crate::text_admission::format_retained(ctx, format_args!("sldprt:model:sketch-entity#radial-circle:{lane_key}:{}", record.1), OPERATION)?;
                         let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
                         let native_reference = marker_circle_carrier_reference(ctx, lane_key, record.1)?;
                         let geometry_reference = record.5.native_ref.as_deref().map(|reference| marker_circle_text(ctx, reference)).transpose()?;
@@ -1796,7 +1796,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                 SketchGeometryDefinition::Circle { center: existing, radius: existing_radius }
                     if quantize(existing.get(), QUANTUM) == quantize(center, QUANTUM) && same_dimension_length(existing_radius.get(), radius))) { continue; }
             charge_marker_circle_format(ctx, feature_key.len())?;
-            let id_text = crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch-entity#marker-circle:{feature_key}:{}", parameter.ordinal), OPERATION)?;
+            let id_text = crate::text_admission::format_retained(ctx, format_args!("sldprt:model:sketch-entity#marker-circle:{feature_key}:{}", parameter.ordinal), OPERATION)?;
             let Ok(entity_id) = SketchEntityId::mint(id_text) else { continue; };
             let geometry = match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center, radius: Length::new(radius).ok_or_else(|| cadmpeg_core::CodecError::Malformed("SolidWorks projected length must be finite".into()))?,

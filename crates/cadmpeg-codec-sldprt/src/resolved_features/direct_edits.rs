@@ -277,7 +277,7 @@ pub(crate) fn enrich_history_move_face_translations(
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
-        let direction = crate::retained_text::format_retained(ctx, 
+        let direction = crate::text_admission::format_retained(ctx, 
             format_args!("{},{},{}", first.get().x, first.get().y, first.get().z),
             "format SLDPRT move-face direction",
         )?;
@@ -363,7 +363,7 @@ pub(crate) fn enrich_history_move_body_translations(
         if !properties.contains_key("Translation") {
             ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
         }
-        let translation = crate::retained_text::format_retained(ctx, 
+        let translation = crate::text_admission::format_retained(ctx, 
             format_args!(
                 "{}mm,{}mm,{}mm",
                 first.x * 1000.0,

@@ -646,7 +646,7 @@ fn collect_dimensions(
     ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
         let (mut normalized, _reservation) =
-            ctx.reserve_scoped_string(guid.len(), "normalize SLDPRT PMI candidate GUID")?;
+            crate::text_admission::reserve_scoped_string(ctx, guid.len(), "normalize SLDPRT PMI candidate GUID")?;
         normalized.push_str(guid);
         normalized.make_ascii_lowercase();
         if seen.contains(&normalized) {
@@ -678,7 +678,7 @@ fn collect_dimensions(
                     + ") ".len()
                     + message.len();
                 let mut text = String::new();
-                ctx.reserve_retained_string(&mut text, capacity, "retain SLDPRT PMI malformed note")?;
+                crate::text_admission::reserve_retained_string(ctx, &mut text, capacity, "retain SLDPRT PMI malformed note")?;
                 std::fmt::Write::write_fmt(
                     &mut text,
                     format_args!("PMISemanticDataDB map at offset {offset} (guid {normalized}) {message}"),
@@ -726,7 +726,7 @@ fn copy_pmi_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -802,7 +802,7 @@ fn extract_dimension(
         .get("isReferenceOnly")
         .ok_or_else(|| "DimSemData lacks isReferenceOnly".to_string())?;
     let mut id = String::new();
-    ctx.reserve_retained_string(
+    crate::text_admission::reserve_retained_string(ctx, 
         &mut id,
         "sldprt:pmi:dimension#".len() + guid.len(),
         "retain SLDPRT PMI dimension ID",

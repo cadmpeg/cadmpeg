@@ -22,7 +22,7 @@ fn retained_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), operation)?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -43,7 +43,7 @@ fn retained_format(
     fmt::write(&mut count, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     let mut result = String::new();
-    ctx.reserve_retained_string(&mut result, count.0, operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut result, count.0, operation)?;
     fmt::write(&mut result, args)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     Ok(result)
@@ -230,7 +230,7 @@ fn project_brep(
                             .and_then(|separators| len.checked_add(separators)))
                         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
                         let mut message = String::new();
-                        ctx.reserve_retained_string(&mut message, message_len, operation)?;
+                        crate::text_admission::reserve_retained_string(ctx, &mut message, message_len, operation)?;
                         for (index, record) in edge_refusals.iter().enumerate() {
                             if index != 0 {
                                 message.push_str("; ");

@@ -79,7 +79,7 @@ pub(crate) fn bind_pattern_inputs(
     let mut model_by_native = HashMap::new();
     for (index, feature) in model_features.iter().enumerate() {
         if let Some(native) = feature.native_ref.as_deref() {
-            let native = crate::retained_text::format_retained(ctx, format_args!("{native}"), "retain SLDPRT pattern native identity")?;
+            let native = crate::text_admission::format_retained(ctx, format_args!("{native}"), "retain SLDPRT pattern native identity")?;
             reserve_feature_binding_map(ctx, &mut model_by_native, "index SLDPRT pattern inputs")?;
             model_by_native.insert(native, index);
         }
@@ -978,12 +978,12 @@ pub(crate) fn bind_sweep_adjacent_profiles(
 }
 
 fn copy_feature_binding_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
 fn copy_feature_binding_sketch_id(ctx: &DecodeContext<'_>, id: &SketchId) -> Result<SketchId, cadmpeg_core::CodecError> {
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT feature binding identity")?;
     SketchId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
 
@@ -1628,7 +1628,7 @@ fn copy_binding_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadm
     let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT scalar binding identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT scalar binding identity")?;
-    crate::retained_text::format_retained(ctx, format_args!("{text}"), "retain SLDPRT scalar binding identity")
+    crate::text_admission::format_retained(ctx, format_args!("{text}"), "retain SLDPRT scalar binding identity")
 }
 
 fn reserve_binding_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), cadmpeg_core::CodecError> {

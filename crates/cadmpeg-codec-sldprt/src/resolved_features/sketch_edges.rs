@@ -28,7 +28,7 @@ fn retained_curve_debug(
     fmt::write(&mut count, format_args!("{curve:?}"))
         .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX))?;
     let mut text = String::new();
-    ctx.reserve_retained_string(&mut text, count.0, "retain SLDPRT opaque sketch curve")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut text, count.0, "retain SLDPRT opaque sketch curve")?;
     fmt::write(&mut text, format_args!("{curve:?}"))
         .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve"))?;
     Ok(text)
@@ -40,7 +40,7 @@ fn retained_id_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut text = String::new();
-    ctx.reserve_retained_string(&mut text, value.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut text, value.len(), operation)?;
     text.push_str(value);
     Ok(text)
 }
@@ -119,7 +119,7 @@ pub(super) fn project_endpoint_constraints(
             + digits(face_ordinal)
             + digits(constraints.len());
         let mut id_text = String::new();
-        ctx.reserve_retained_string(&mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
+        crate::text_admission::reserve_retained_string(ctx, &mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
         std::fmt::Write::write_fmt(
             &mut id_text,
             format_args!(

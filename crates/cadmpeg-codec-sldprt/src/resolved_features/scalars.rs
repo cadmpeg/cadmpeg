@@ -49,7 +49,7 @@ pub(crate) fn named_scalars_charged(
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
         let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = crate::retained_text::format_retained(ctx, 
+        let id = crate::text_admission::format_retained(ctx, 
             format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             "retain SLDPRT scalar identity",
         )?;
@@ -77,7 +77,7 @@ fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Codec
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT scalar identity")?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, text.len(), "retain SLDPRT scalar identity")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), "retain SLDPRT scalar identity")?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -160,7 +160,7 @@ fn scalar_operands_charged(
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
         })?;
-        let reference_ref = crate::retained_text::format_retained(ctx, 
+        let reference_ref = crate::text_admission::format_retained(ctx, 
             format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             "retain SLDPRT scalar identity",
         )?;

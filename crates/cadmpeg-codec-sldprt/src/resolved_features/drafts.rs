@@ -453,7 +453,7 @@ pub(super) fn draft_operand_candidates(
             .unwrap_or(lane.native_payload.len());
         if let Some(operands) = draft_operands(ctx, feature, lane, start, end)? {
             let mut id = String::new();
-            ctx.reserve_retained_string(&mut id, feature.id.len(), OPERATION)?;
+            crate::text_admission::reserve_retained_string(ctx, &mut id, feature.id.len(), OPERATION)?;
             id.push_str(&feature.id);
             ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
             candidates.push((id, operands));

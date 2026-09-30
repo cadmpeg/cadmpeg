@@ -87,7 +87,7 @@ pub(super) fn project_pattern(
                 seeds.clear();
                 break;
             };
-            let copied = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), OPERATION)?;
+            let copied = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), OPERATION)?;
             let id = FeatureId::mint(copied).map_err(CodecError::malformed)?;
             ctx.reserve_collection_vec(&mut seeds, 1, OPERATION)?;
             seeds.push(PatternSeed::Feature(id));
@@ -96,7 +96,7 @@ pub(super) fn project_pattern(
     let mut curve_path = if form == Some(NativePatternClass::CurveDriven) {
         feature.properties.get("Path").map(|source| {
             let text = native_by_source.get(source.as_str()).copied().unwrap_or(source);
-            crate::retained_text::format_retained(ctx, format_args!("{text}"), "retain SLDPRT pattern path")
+            crate::text_admission::format_retained(ctx, format_args!("{text}"), "retain SLDPRT pattern path")
                 .map(PathRef::Native)
         }).transpose()?
     } else {

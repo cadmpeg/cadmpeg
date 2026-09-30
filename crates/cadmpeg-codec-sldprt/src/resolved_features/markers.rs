@@ -230,7 +230,7 @@ pub(crate) fn spatial_sketches(
                 native_ref: Some(native_lane_ref),
             });
             for (index, (_, native_ref, geometry)) in projected.into_iter().enumerate() {
-                let entity_id = crate::retained_text::format_retained(ctx, 
+                let entity_id = crate::text_admission::format_retained(ctx, 
                     format_args!("{}:entity:{index}", sketch_id.as_str()),
                     "retain SLDPRT spatial entity identity",
                 )?;
@@ -297,7 +297,7 @@ pub(crate) fn spatial_sketches(
         let mut projected = Vec::new();
         let mut valid_lines = true;
         for (index, vertices) in vertices.chunks_exact(2).enumerate() {
-            let entity_id = crate::retained_text::format_retained(ctx, 
+            let entity_id = crate::text_admission::format_retained(ctx, 
                 format_args!("{}:entity:{index}", sketch_id.as_str()),
                 "retain SLDPRT spatial entity identity",
             )?;
@@ -351,7 +351,7 @@ fn copy_spatial_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, Cod
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT spatial identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT spatial identity")?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT spatial identity")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT spatial identity")?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -365,7 +365,7 @@ fn spatial_sketch_id_charged(
     let value = if let Some(index) = feature_id.find(FEATURE_PREFIX) {
         let (head, tail) = feature_id.split_at(index);
         let suffix = &tail[FEATURE_PREFIX.len()..];
-        crate::retained_text::format_retained(ctx, 
+        crate::text_admission::format_retained(ctx, 
             format_args!("{head}{SKETCH_PREFIX}{suffix}"),
             "retain SLDPRT spatial sketch identity",
         )?
@@ -856,7 +856,7 @@ pub(super) fn admit_sketch_input_entities(
         .enumerate()
         .try_fold(Vec::new(), |mut entities, (ordinal, offset)| {
             let Some(code) = marker_native_code(payload, offset) else {
-                return Err(CodecError::Malformed(crate::retained_text::format_retained(ctx, 
+                return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
                     format_args!("SolidWorks feature-input marker at byte {offset} has no native code"),
                     "report SLDPRT marker native code",
                 )?));
@@ -998,18 +998,18 @@ pub(super) fn admit_sketch_input_entities(
             let ordinal = match u32::try_from(ordinal) {
                 Ok(ordinal) => ordinal,
                 Err(_) => {
-                    return Err(CodecError::Malformed(crate::retained_text::format_retained(ctx, 
+                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
                         format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"),
                         "report SLDPRT marker count",
                     )?));
                 }
             };
-            let id = crate::retained_text::format_retained(ctx, 
+            let id = crate::text_admission::format_retained(ctx, 
                 format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
                 "retain SLDPRT sketch marker identity",
             )?;
             let mut parent_copy = String::new();
-            ctx.reserve_retained_string(
+            crate::text_admission::reserve_retained_string(ctx, 
                 &mut parent_copy,
                 parent.len(),
                 "retain SLDPRT sketch marker parent",
@@ -1028,7 +1028,7 @@ pub(super) fn admit_sketch_input_entities(
             ) {
                 Ok(entity) => entity,
                 Err(error) => {
-                    return Err(CodecError::Malformed(crate::retained_text::format_retained(ctx, 
+                    return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx, 
                         format_args!("SolidWorks feature-input lane {parent} marker at byte {offset}: {error}"),
                         "report SLDPRT marker construction",
                     )?));
@@ -1293,7 +1293,7 @@ pub(super) fn relation_bindings_scoped(
         let ordinal = u32::try_from(bindings.len()).map_err(|_| {
             ctx.refuse_codec_limit("number SLDPRT relation bindings", u64::MAX - 1, u64::MAX)
         })?;
-        let id = crate::retained_text::format_retained(ctx, 
+        let id = crate::text_admission::format_retained(ctx, 
             format_args!("sldprt:feature-input:relation-binding#{lane_key}:{}", class.offset),
             "retain SLDPRT relation binding identity",
         )?;
@@ -1403,7 +1403,7 @@ fn copy_reference_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, C
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT reference identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT reference identity")?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT reference identity")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT reference identity")?;
     copy.push_str(value);
     Ok(copy)
 }

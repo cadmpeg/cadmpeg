@@ -1826,3 +1826,40 @@ fn packed_slot_descriptor_run_is_not_independent_geometry() {
         .iter()
         .all(|entity| entity.kind() == SketchInputKind::from_handle_code(0)));
 }
+
+#[test]
+fn linked_semicircle_refuses_work_at_minimum_admission() {
+    const EPS_SEMICIRCLE_TEST: f64 = 1.0e-9;
+    let (payload, records, entities) = linked_semicircle_fixture();
+    let markers = records.iter().collect::<Vec<_>>();
+    let run = |policy: &DecodePolicy| {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, policy).unwrap();
+        let mut output = entities.clone();
+        resolve_two_center_semicircle_profile(&ctx, &payload, &markers, &mut output, EPS_SEMICIRCLE_TEST)?;
+        Ok::<_, CodecError>(output)
+    };
+    let mut policy = DecodePolicy::service();
+    let expected = run(&policy).unwrap();
+    assert_ne!(expected, entities);
+    let admitted = |policy: &DecodePolicy| match run(policy) {
+        Ok(actual) => { assert_eq!(actual, expected); true }
+        Err(CodecError::ResourceLimit(limit)) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+        Err(error) => panic!("unexpected linked semicircle error: {error}"),
+    };
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        policy.limits.max_work_units = upper;
+        if admitted(&policy) { break; }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        policy.limits.max_work_units = middle;
+        if admitted(&policy) { upper = middle; } else { lower = middle + 1; }
+    }
+    assert!(upper > 0);
+    policy.limits.max_work_units = upper; assert!(admitted(&policy));
+    policy.limits.max_work_units = upper - 1; assert!(!admitted(&policy));
+}

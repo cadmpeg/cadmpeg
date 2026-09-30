@@ -12,7 +12,7 @@ fn retained_text(
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut retained = String::new();
-    ctx.reserve_retained_string(&mut retained, text.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut retained, text.len(), operation)?;
     retained.push_str(text);
     Ok(retained)
 }
@@ -32,7 +32,7 @@ fn record_id(
         .and_then(|length| length.checked_add(digits))
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT feature input record ID", u64::MAX - 1, u64::MAX))?;
     let mut id = String::new();
-    ctx.reserve_retained_string(&mut id, length, "retain SLDPRT feature input record ID")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut id, length, "retain SLDPRT feature input record ID")?;
     std::fmt::Write::write_fmt(
         &mut id,
         format_args!("sldprt:feature-input:{family}#{lane_key}:{offset}"),
@@ -74,7 +74,7 @@ pub(crate) fn object_names(
         }
         if !valid { continue; }
         let mut value = String::new();
-        ctx.reserve_retained_string(&mut value, length, "retain SLDPRT feature input name")?;
+        crate::text_admission::reserve_retained_string(ctx, &mut value, length, "retain SLDPRT feature input name")?;
         for character in std::char::decode_utf16(utf16_units(units)) {
             let Ok(character) = character else { valid = false; break; };
             value.push(character);

@@ -118,7 +118,7 @@ fn project_native_refs<T>(
     for source in value.split(',').map(str::trim).filter(|source| !source.is_empty()) {
         ctx.reserve_collection_vec(&mut references, 1, "project SLDPRT loft references")?;
         let reference = native_by_source.get(source).copied().unwrap_or(source);
-        let reference = crate::retained_text::format_retained(ctx, format_args!("{reference}"), "retain SLDPRT loft reference")?;
+        let reference = crate::text_admission::format_retained(ctx, format_args!("{reference}"), "retain SLDPRT loft reference")?;
         references.push(wrap(reference));
     }
     Ok(references)

@@ -175,7 +175,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        let native_ref = crate::retained_text::format_retained(ctx, 
+        let native_ref = crate::text_admission::format_retained(ctx, 
             format_args!("{native_ref}"),
             "copy SLDPRT semicircle point identity",
         )?;
@@ -322,7 +322,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
             };
             let mut endpoint_refs = Vec::new();
             for endpoint in [start_ref, end_ref] {
-                let endpoint = crate::retained_text::format_retained(ctx, 
+                let endpoint = crate::text_admission::format_retained(ctx, 
                     format_args!("{endpoint}"),
                     "copy SLDPRT semicircle endpoint identity",
                 )?;
@@ -351,7 +351,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     first_entity.construction = false;
     first_entity.endpoint_refs = first_endpoint_refs;
     first_entity.geometry = first_geometry;
-    let sketch_text = crate::retained_text::format_retained(ctx, 
+    let sketch_text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", first_entity.sketch.as_str()),
         "copy SLDPRT semicircle sketch identity",
     )?;
@@ -388,7 +388,7 @@ pub(super) fn resolve_two_center_semicircle_profile(
     .into_iter()
     .enumerate()
     {
-        let id_text = crate::retained_text::format_retained(ctx, 
+        let id_text = crate::text_admission::format_retained(ctx, 
             format_args!("sldprt:model:sketch-entity#linked-semicircle:{sketch_key}:{index}"),
             "format SLDPRT semicircle line identity",
         )?;
@@ -400,14 +400,14 @@ pub(super) fn resolve_two_center_semicircle_profile(
         };
         let mut endpoint_refs = Vec::new();
         for endpoint in [start_ref, end_ref] {
-            let endpoint = crate::retained_text::format_retained(ctx, 
+            let endpoint = crate::text_admission::format_retained(ctx, 
                 format_args!("{endpoint}"),
                 "copy SLDPRT semicircle line endpoint identity",
             )?;
             ctx.reserve_collection_vec(&mut endpoint_refs, 1, "collect SLDPRT semicircle line endpoints")?;
             endpoint_refs.push(endpoint);
         }
-        let sketch_copy = crate::retained_text::format_retained(ctx, 
+        let sketch_copy = crate::text_admission::format_retained(ctx, 
             format_args!("{}", sketch.as_str()),
             "copy SLDPRT semicircle line sketch identity",
         )?;
@@ -791,7 +791,7 @@ pub(super) fn resolve_slot_marker_arcs(
     };
     let mut endpoint_refs = Vec::new();
     for reference in [start_ref, end_ref] {
-        let reference = crate::retained_text::format_retained(ctx, 
+        let reference = crate::text_admission::format_retained(ctx, 
             format_args!("{reference}"),
             "copy SLDPRT slot endpoint identity",
         )?;
@@ -967,7 +967,7 @@ pub(super) fn resolve_connected_marker_arcs(
         let Some(native_ref) = entity.native_ref.as_deref() else {
             continue;
         };
-        let retained_ref = crate::retained_text::format_retained(ctx, 
+        let retained_ref = crate::text_admission::format_retained(ctx, 
             format_args!("{native_ref}"),
             "copy SLDPRT connected arc point identity",
         )?;
@@ -1233,7 +1233,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
         if !entity.construction
             && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Circle { .. })
         {
-            let id_text = crate::retained_text::format_retained(ctx, 
+            let id_text = crate::text_admission::format_retained(ctx, 
                 format_args!("{}", entity.id().as_str()),
                 "copy SLDPRT closed circle identity",
             )?;
@@ -1336,7 +1336,7 @@ fn closed_marker_profiles_with_policy<E: Borrow<SketchEntity>>(
                 profile.clear();
                 break;
             };
-            let id_text = crate::retained_text::format_retained(ctx, 
+            let id_text = crate::text_admission::format_retained(ctx, 
                 format_args!("{}", entities[curve].borrow().id().as_str()),
                 "copy SLDPRT closed curve identity",
             )?;

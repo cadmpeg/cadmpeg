@@ -89,7 +89,7 @@ pub(super) fn project_trim_surface(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<FeatureDefinition, CodecError> {
     let tool = match feature.properties.get("Tool") {
-        None => PathRef::Unresolved(crate::retained_text::format_retained(ctx, 
+        None => PathRef::Unresolved(crate::text_admission::format_retained(ctx, 
             format_args!("{}:tool", feature.id), "retain SLDPRT trim surface tool",
         )?),
         Some(tool) => PathRef::Native(copy_projected_feature_text(

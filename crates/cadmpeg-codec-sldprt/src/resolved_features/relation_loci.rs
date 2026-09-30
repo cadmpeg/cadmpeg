@@ -356,7 +356,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     const OPERATION: &str = "retain SLDPRT relation parameter identity";
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len()).checked_mul(4)
         .and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", parameter.id.as_str()), OPERATION)?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", parameter.id.as_str()), OPERATION)?;
     let parameter_id = cadmpeg_ir::features::ParameterId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
     macro_rules! resolved_or_none {
         ($candidate:expr) => {
@@ -3493,9 +3493,9 @@ pub(super) fn profile_loci_by_marker(
         ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.len()).checked_add(32).and_then(|work| work.checked_mul(4))
             .ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?, RESULT_OPERATION)?;
         let marker = if qualified_point {
-            crate::retained_text::format_retained(ctx, format_args!("{marker}:qualified-point"), RESULT_OPERATION)?
+            crate::text_admission::format_retained(ctx, format_args!("{marker}:qualified-point"), RESULT_OPERATION)?
         } else {
-            crate::retained_text::format_retained(ctx, format_args!("{marker}"), RESULT_OPERATION)?
+            crate::text_admission::format_retained(ctx, format_args!("{marker}"), RESULT_OPERATION)?
         };
         reserve_profile_locus_map_slot(ctx, &mut result, &marker, result_key_byte_bound,
             cadmpeg_core::decode::u64_from_index(marker.len()), RESULT_OPERATION)?;
@@ -3534,13 +3534,13 @@ pub(super) fn profile_loci_by_marker(
                     .and_then(|work| work.checked_mul(8))
                     .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?, ENDPOINT_OPERATION)?;
                 let key = if qualified_key {
-                    crate::retained_text::format_retained(ctx, format_args!("{marker}:qualified-point"), ENDPOINT_OPERATION)?
+                    crate::text_admission::format_retained(ctx, format_args!("{marker}:qualified-point"), ENDPOINT_OPERATION)?
                 } else {
-                    crate::retained_text::format_retained(ctx, format_args!("{marker}"), ENDPOINT_OPERATION)?
+                    crate::text_admission::format_retained(ctx, format_args!("{marker}"), ENDPOINT_OPERATION)?
                 };
                 reserve_profile_locus_set_slot(ctx, &mut endpoint_marker_keys, &key, result_key_byte_bound,
                     cadmpeg_core::decode::u64_from_index(key.len()), ENDPOINT_OPERATION)?;
-                endpoint_marker_keys.insert(crate::retained_text::format_retained(ctx, format_args!("{key}"), ENDPOINT_OPERATION)?);
+                endpoint_marker_keys.insert(crate::text_admission::format_retained(ctx, format_args!("{key}"), ENDPOINT_OPERATION)?);
                 reserve_profile_locus_map_slot(ctx, &mut result, &key, result_key_byte_bound,
                     cadmpeg_core::decode::u64_from_index(key.len()), ENDPOINT_OPERATION)?;
                 append_profile_endpoint_locus(ctx, result.entry(key).or_default(), entity.id(), role,
@@ -3621,9 +3621,9 @@ pub(super) fn profile_loci_by_marker(
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.id().len()).checked_add(32).and_then(|work| work.checked_mul(4))
                     .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
                 let result_key = if qualified_point {
-                    crate::retained_text::format_retained(ctx, format_args!("{}:qualified-point", marker.id()), TRANSFORM_OPERATION)?
+                    crate::text_admission::format_retained(ctx, format_args!("{}:qualified-point", marker.id()), TRANSFORM_OPERATION)?
                 } else {
-                    crate::retained_text::format_retained(ctx, format_args!("{}", marker.id()), TRANSFORM_OPERATION)?
+                    crate::text_admission::format_retained(ctx, format_args!("{}", marker.id()), TRANSFORM_OPERATION)?
                 };
                 ctx.charge_work(result_key_byte_bound.checked_add(cadmpeg_core::decode::u64_from_index(result_key.len()))
                     .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
@@ -3774,7 +3774,7 @@ pub(super) fn profile_loci_by_marker(
             if let Some(entity) = selected {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.id().len()).checked_mul(4).and_then(|work| work.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
-                let key = crate::retained_text::format_retained(ctx, format_args!("{}", marker.id()), PAIR_OPERATION)?;
+                let key = crate::text_admission::format_retained(ctx, format_args!("{}", marker.id()), PAIR_OPERATION)?;
                 reserve_profile_locus_map_slot(ctx, &mut result, &key, result_key_byte_bound,
                     cadmpeg_core::decode::u64_from_index(key.len()), PAIR_OPERATION)?;
                 let mut loci = Vec::new();
@@ -3809,7 +3809,7 @@ pub(super) fn profile_loci_by_marker(
                     .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(String, Vec<SketchLocus>)>()))?))
                 .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
             ctx.reserve_collection_vec(&mut additions, 1, OPERATION)?;
-            let key = crate::retained_text::format_retained(ctx, format_args!("{}", marker.id()), OPERATION)?;
+            let key = crate::text_admission::format_retained(ctx, format_args!("{}", marker.id()), OPERATION)?;
             let mut loci = Vec::new();
             ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
             loci.push(locus);

@@ -27,7 +27,7 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
             push_finding(ctx, &mut findings, Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: crate::retained_text::format_retained(ctx, format_args!("{error}"), "format SLDPRT native finding")?,
+                message: crate::text_admission::format_retained(ctx, format_args!("{error}"), "format SLDPRT native finding")?,
                 entity: Some(copy_finding_id(ctx, &history.id)?),
             })?;
         }
@@ -55,11 +55,11 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
                     crate::records::HistoryContent::Configuration(id) => {
                         reserve_seen_id(ctx, &mut seen_configurations)?;
                         if !configurations.contains(id.as_str()) {
-                            Some(crate::retained_text::format_retained(ctx, format_args!(
+                            Some(crate::text_admission::format_retained(ctx, format_args!(
                                 "SolidWorks history root references missing configuration {id}"
                             ), "format SLDPRT native finding")?)
                         } else if !seen_configurations.insert(id.as_str()) {
-                            Some(crate::retained_text::format_retained(ctx, format_args!(
+                            Some(crate::text_admission::format_retained(ctx, format_args!(
                                 "SolidWorks history root repeats configuration {id}"
                             ), "format SLDPRT native finding")?)
                         } else {
@@ -69,15 +69,15 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
                     crate::records::HistoryContent::Feature(id) => {
                         reserve_seen_id(ctx, &mut seen_features)?;
                         if !all_features.contains(id.as_str()) {
-                            Some(crate::retained_text::format_retained(ctx, format_args!(
+                            Some(crate::text_admission::format_retained(ctx, format_args!(
                                 "SolidWorks history root references missing feature {id}"
                             ), "format SLDPRT native finding")?)
                         } else if !root_features.contains(id.as_str()) {
-                            Some(crate::retained_text::format_retained(ctx, format_args!(
+                            Some(crate::text_admission::format_retained(ctx, format_args!(
                                 "SolidWorks history root references nested feature {id}"
                             ), "format SLDPRT native finding")?)
                         } else if !seen_features.insert(id.as_str()) {
-                            Some(crate::retained_text::format_retained(ctx, format_args!("SolidWorks history root repeats feature {id}"), "format SLDPRT native finding")?)
+                            Some(crate::text_admission::format_retained(ctx, format_args!("SolidWorks history root repeats feature {id}"), "format SLDPRT native finding")?)
                         } else {
                             None
                         }
@@ -97,7 +97,7 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
                 push_finding(ctx, &mut findings, Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
-                    message: crate::retained_text::format_retained(ctx, format_args!("SolidWorks history root omits configuration {missing}"), "format SLDPRT native finding")?,
+                    message: crate::text_admission::format_retained(ctx, format_args!("SolidWorks history root omits configuration {missing}"), "format SLDPRT native finding")?,
                     entity: Some(copy_finding_id(ctx, &history.id)?),
                 })?;
             }
@@ -105,7 +105,7 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
                 push_finding(ctx, &mut findings, Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
-                    message: crate::retained_text::format_retained(ctx, format_args!("SolidWorks history root omits feature {missing}"), "format SLDPRT native finding")?,
+                    message: crate::text_admission::format_retained(ctx, format_args!("SolidWorks history root omits feature {missing}"), "format SLDPRT native finding")?,
                     entity: Some(copy_finding_id(ctx, &history.id)?),
                 })?;
             }
@@ -166,7 +166,7 @@ pub(crate) fn validate_native(ctx: &DecodeContext<'_>, ir: &cadmpeg_ir::CadIr) -
 fn invalid_namespace(ctx: &DecodeContext<'_>, error: cadmpeg_ir::NativeConvertError) -> Result<Vec<Finding>, CodecError> {
     ctx.charge_work(0, "validate SLDPRT native namespace")?;
     let mut findings = Vec::new();
-    let message = crate::retained_text::format_retained(ctx, format_args!("invalid SolidWorks native namespace: {error}"), "format SLDPRT native finding")?;
+    let message = crate::text_admission::format_retained(ctx, format_args!("invalid SolidWorks native namespace: {error}"), "format SLDPRT native finding")?;
     push_finding(ctx, &mut findings, Finding { check: Check::NativeLinks, severity: Severity::Error, message, entity: None })?;
     Ok(findings)
 }
@@ -175,7 +175,7 @@ fn copy_finding_id(ctx: &DecodeContext<'_>, id: &str) -> Result<String, CodecErr
     let copy_work = cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT native finding identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT native finding identity")?;
-    crate::retained_text::format_retained(ctx, format_args!("{id}"), "retain SLDPRT native finding identity")
+    crate::text_admission::format_retained(ctx, format_args!("{id}"), "retain SLDPRT native finding identity")
 }
 
 fn push_finding(ctx: &DecodeContext<'_>, findings: &mut Vec<Finding>, finding: Finding) -> Result<(), CodecError> {

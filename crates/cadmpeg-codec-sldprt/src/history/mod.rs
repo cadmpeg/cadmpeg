@@ -66,7 +66,7 @@ fn copy_history_text(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, source.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, source.len(), operation)?;
     copy.push_str(source);
     Ok(copy)
 }
@@ -93,7 +93,7 @@ fn report_unkeyed_property(
         ctx.refuse_codec_limit("retain SLDPRT history property loss", u64::MAX - 1, u64::MAX)
     })?;
     let mut message = String::new();
-    ctx.reserve_retained_string(
+    crate::text_admission::reserve_retained_string(ctx, 
         &mut message,
         needed,
         "retain SLDPRT history property loss",
