@@ -126,18 +126,30 @@ impl std::io::Write for SerializedByteCount<'_, '_> {
     }
 }
 
+fn count_records(
+    ctx: &DecodeContext<'_>,
+    mut records: impl Iterator,
+    operation: &'static str,
+) -> Result<usize, NativeConvertError> {
+    let scan = records.size_hint().1.unwrap_or(records.size_hint().0);
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(scan), operation)?;
+    let mut count = 0usize;
+    loop {
+        ctx.charge_work(1, operation)?;
+        if records.next().is_none() {
+            return Ok(count);
+        }
+        count = count.checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+}
+
 fn count_copy<'a, T: Serialize + 'a>(
     ctx: &DecodeContext<'_>,
     mut records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<u64, NativeConvertError> {
-    let scan = records.size_hint().1.unwrap_or(records.size_hint().0);
-    ctx.charge_work(
-        u64::try_from(scan)
-            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
-        operation,
-    )?;
-    let count = records.clone().count();
+    let count = count_records(ctx, records.clone(), operation)?;
     ctx.charge_collection_items(
         u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
@@ -178,7 +190,7 @@ pub(super) fn collect_retained_clones<'a, T: CloneCharged + Serialize + 'a>(
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<Vec<T>, NativeConvertError> {
-    let count = records.clone().count();
+    let count = count_records(ctx, records.clone(), operation)?;
     admit_retained_clones(ctx, records.clone(), operation)?;
     let mut result = Vec::new();
     result
@@ -204,7 +216,7 @@ pub(crate) fn collect_temporary_clones<'a, 'ctx, T: CloneCharged + Serialize + '
     records: impl Iterator<Item = &'a T> + Clone,
     operation: &'static str,
 ) -> Result<(Vec<T>, ScopedReservation<'ctx>), NativeConvertError> {
-    let count = records.clone().count();
+    let count = count_records(ctx, records.clone(), operation)?;
     let reservation = admit_temporary_clones(ctx, records.clone(), operation)?;
     let mut result = Vec::new();
     result
