@@ -646,7 +646,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
         } else if page.get(4..8) == Some(CONTINUATION_MARKER) {
             (8, PAGE_SIZE - 8)
         } else if page.get(0..4) == Some(TERMINAL_MARKER) {
-            (8, View::u16_le_at(page, 4)? as usize)
+            (8, usize::from(View::u16_le_at(page, 4)?))
         } else {
             return None;
         };
@@ -2428,13 +2428,13 @@ fn generic_connection_delta(record: &[u8], value_block: usize) -> Option<usize> 
     match record.get(slot) {
         Some(0) => Some(0),
         Some(1) if slot + 6 <= record.len() => {
-            let count = View::u32_le_at(record, slot + 2)? as usize;
+            let count = cadmpeg_core::decode::index_from_u32(View::u32_le_at(record, slot + 2)?);
             if count > 8 {
                 return None;
             }
             let mut position = slot + 6;
             for _ in 0..count {
-                let length = View::u32_le_at(record, position)? as usize;
+                let length = cadmpeg_core::decode::index_from_u32(View::u32_le_at(record, position)?);
                 position += 4;
                 record.get(position..position + length)?;
                 position += length;

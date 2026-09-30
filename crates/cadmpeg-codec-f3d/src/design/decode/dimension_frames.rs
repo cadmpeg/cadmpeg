@@ -835,7 +835,7 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
         return false;
     };
     matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6))
-        && (0..reference_count as usize).all(|ordinal| {
+        && (0..cadmpeg_core::decode::index_from_u32(reference_count)).all(|ordinal| {
             View::u32_le_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0)
         })
         && bytes[terminator_at..].iter().all(|byte| *byte == 0)

@@ -946,7 +946,7 @@ fn build_secondary_layouts(
         }
         let vertex_ir = vertex_ir[vertex]
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
-        layouts[vertex_ir as usize] = Some(
+        layouts[cadmpeg_core::decode::index_from_u32(vertex_ir)] = Some(
             SubdVertexGripLayout::new(direction, wedges)
                 .map_err(|error| malformed(ctx, name, error))?,
         );
@@ -1982,10 +1982,10 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .get(*edge)
             .copied()
             .flatten()
-            .and_then(|edge| edge_vertices.get(edge as usize))
+            .and_then(|edge| edge_vertices.get(cadmpeg_core::decode::index_from_u32(edge)))
             .ok_or_else(|| malformed(ctx, name, "crease edge is out of range"))?;
-        crease_incidence[vertices[0] as usize] += 1;
-        crease_incidence[vertices[1] as usize] += 1;
+        crease_incidence[cadmpeg_core::decode::index_from_u32(vertices[0])] += 1;
+        crease_incidence[cadmpeg_core::decode::index_from_u32(vertices[1])] += 1;
     }
     let mut vertices = Vec::new();
     for index in 0..live_vertices {

@@ -91,7 +91,7 @@ fn references<const N: usize>(bytes: &[u8], at: usize) -> Option<[u32; N]> {
 /// references. The record stores the key, a label, byte `01`, the name
 /// `<key>UnitSystemName`, the `NaFusion` namespace, four zero bytes, and the
 /// counted entry references.
-fn unit_system(bytes: &[u8], at: usize) -> Option<(&str, [u32; UNIT_ENTRY_COUNT as usize])> {
+fn unit_system(bytes: &[u8], at: usize) -> Option<(&str, [u32; cadmpeg_core::decode::index_from_u32(UNIT_ENTRY_COUNT)])> {
     let (key, position) = ascii_at(bytes, at)?;
     let (_label, position) = ascii_at(bytes, position)?;
     (bytes.get(position) == Some(&1)).then_some(())?;
@@ -160,7 +160,7 @@ fn decode_modeling_length_unit(
             .filter_map(|at| at.checked_add(HEADER_LEN))
     };
     for count_at in collection_counts(bytes) {
-        let Some(systems) = references::<{ UNIT_SYSTEM_COUNT as usize }>(bytes, count_at) else {
+        let Some(systems) = references::<{ cadmpeg_core::decode::index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at) else {
             continue;
         };
         for system in systems {

@@ -200,7 +200,7 @@ pub(super) fn validate_edge_continuity_edits(
             )));
         }
         edits.insert(
-            after.record_index as usize,
+            cadmpeg_core::decode::index_from_u32(after.record_index),
             (after.sense, after.continuity.clone()),
         );
     }
@@ -271,7 +271,7 @@ pub(super) fn validate_edge_ownership_edits(
         } else {
             -1
         };
-        edits.insert(after.record_index as usize, owner);
+        edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), owner);
     }
     Ok(edits)
 }
@@ -346,7 +346,7 @@ pub(super) fn validate_vertex_ownership_edits(
                 ))
             })?;
         edits.insert(
-            after.record_index as usize,
+            cadmpeg_core::decode::index_from_u32(after.record_index),
             (edge_record, after.endpoint_index),
         );
     }
@@ -390,7 +390,7 @@ pub(super) fn validate_face_sidedness_edits(
         }
         match (before.containment, after.containment) {
             (Some(_), Some(containment)) => {
-                edits.insert(after.record_index as usize, containment);
+                edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), containment);
             }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
@@ -531,7 +531,7 @@ pub(super) fn validate_tolerant_vertex_edits(
                 tolerance / LEN_TO_MM
             };
             edits.insert(
-                after.record_index as usize,
+                cadmpeg_core::decode::index_from_u32(after.record_index),
                 (
                     stored,
                     after
@@ -607,7 +607,7 @@ pub(super) fn validate_tolerant_edge_edits(
             CodecError::malformed(format_args!("tolerant edge {id} has no tolerance"))
         })?;
         if baseline_edges[after.edge.as_str()].tolerance != Some(tolerance) {
-            edits.insert(after.record_index as usize, tolerance.get() / LEN_TO_MM);
+            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), tolerance.get() / LEN_TO_MM);
         }
     }
     Ok(edits)
@@ -673,7 +673,7 @@ pub(super) fn validate_tolerant_coedge_edits(
             )));
         }
         if after.parameter_range != before.parameter_range {
-            edits.insert(after.record_index as usize, after.parameter_range.get());
+            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), after.parameter_range.get());
         }
     }
     Ok(edits)
@@ -712,7 +712,7 @@ pub(super) fn validate_wire_topology_edits(
             )));
         }
         if after.side != before.side {
-            edits.insert(after.record_index as usize, after.side);
+            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), after.side);
         }
     }
     Ok(edits)
@@ -1906,7 +1906,7 @@ pub(super) fn validate_transform_hint_edits(
         }
         let flags = [after.rotation, after.reflection, after.shear];
         if flags != [before.rotation, before.reflection, before.shear] {
-            edits.insert(after.record_index as usize, flags);
+            edits.insert(cadmpeg_core::decode::index_from_u32(after.record_index), flags);
         }
     }
     Ok(edits)
@@ -1953,7 +1953,7 @@ pub(in crate::writer) fn validate_body_native_key_edits(
                     CodecError::NotImplemented(format!("F3D ASM body key exceeds i64::MAX: {key}"))
                 })
             })?;
-            edits.asm.insert(after.record_index as usize, key);
+            edits.asm.insert(cadmpeg_core::decode::index_from_u32(after.record_index), key);
             let mut joined = Vec::new();
             joined.extend(
                 baseline_body_visibilities
