@@ -466,6 +466,8 @@ fn split_homogeneous_bezier_with(
     let mut next = scratch::filled(rest.len(), [0.0; 4], "IR Bezier split level")?;
     let mut left = scratch::filled(rest.len(), [0.0; 4], "IR Bezier split left")?;
     let mut right = scratch::filled(rest.len(), [0.0; 4], "IR Bezier split right")?;
+    scratch::reserve_exact(&mut left, 1, "IR Bezier split final left point")?;
+    scratch::reserve_exact(&mut right, 1, "IR Bezier split final right point")?;
     let mut remaining = rest.len();
     let mut level = 0;
     while remaining > 0 {
@@ -3288,7 +3290,7 @@ pub fn nurbs_surface_isocurve(
     scratch::reserve_exact(&mut admitted_knots, knots.len(), "IR surface isoline knots")?;
     admitted_knots.extend_from_slice(knots);
     let weights = if rational {
-        let Some(weights) = Homogeneous::weights(&sums) else {
+        let Some(weights) = Homogeneous::weights(&sums)? else {
             return Ok(None);
         };
         Some(weights)

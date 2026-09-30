@@ -3,6 +3,8 @@
 use crate::features::FinitePoint3;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
+use crate::geometry::nurbs::scratch;
+use cadmpeg_core::decode::ResourceLimit;
 
 #[derive(Clone, Copy)]
 pub(super) struct Homogeneous {
@@ -54,55 +56,32 @@ impl Homogeneous {
 
     /// Keep source weights when they remain normal. Otherwise choose one
     /// binary scale for the complete output net, preserving relative weights.
-    pub(super) fn weights(values: &[Self]) -> Option<Vec<f64>> {
-        let weights = values
-            .iter()
-            .map(|value| value.values[3])
-            .collect::<Option<Vec<_>>>()?;
-        let original = weights
-            .iter()
-            .map(|weight| weight.finite().ok().map(FiniteReal::get))
-            .collect::<Option<Vec<_>>>();
-        if original
-            .as_ref()
-            .is_some_and(|values| values.iter().all(|value| value.is_normal()))
-        {
-            return original;
+    pub(super) fn weights(values: &[Self]) -> Result<Option<Vec<f64>>, ResourceLimit> {
+        if values.iter().any(|value| value.values[3].is_none()) { return Ok(None); }
+        let mut output = Vec::new();
+        scratch::reserve_exact(&mut output, values.len(), "IR homogeneous output weights")?;
+        for value in values {
+            let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else { break; };
+            output.push(weight.get());
         }
-        let minimum = weights.iter().map(|weight| weight.exponent()).min()?;
-        let maximum = weights.iter().map(|weight| weight.exponent()).max()?;
+        if output.len() == values.len() && output.iter().all(|value| value.is_normal()) {
+            return Ok(Some(output));
+        }
+        let Some(minimum) = values.iter().filter_map(|value| value.values[3]).map(|weight| weight.exponent()).min() else { return Ok(None); };
+        let Some(maximum) = values.iter().filter_map(|value| value.values[3]).map(|weight| weight.exponent()).max() else { return Ok(None); };
         let normal_range = (maximum - 1023, minimum + 1021);
         let full_range = (maximum - 1024, minimum + 1073);
-        let (lower, upper) = if normal_range.0 <= normal_range.1 {
-            normal_range
-        } else {
-            full_range
-        };
-        if lower > upper {
-            return None;
+        let (lower, upper) = if normal_range.0 <= normal_range.1 { normal_range } else { full_range };
+        if lower > upper { return Ok(None); }
+        // Select the nearest exponent to zero that preserves the complete net.
+        let exponent = if 0 < lower { lower } else if 0 > upper { upper } else { 0 };
+        output.clear();
+        for value in values {
+            let Some(weight) = value.values[3].and_then(|weight| weight.rescale(exponent))
+                .map(FiniteReal::get).filter(|weight| *weight != 0.0) else { return Ok(None); };
+            output.push(weight);
         }
-        // `lower..=upper` states every binary scale that keeps the complete net
-        // inside the `f64` exponent range, and the refusal above states that it
-        // is not empty. Zero is the preferred scale because it keeps the source
-        // weights. A preferred scale outside the admitted interval is not an
-        // error: the nearest admitted scale is then the one that preserves the
-        // relative weights.
-        let exponent = if 0 < lower {
-            lower
-        } else if 0 > upper {
-            upper
-        } else {
-            0
-        };
-        weights
-            .into_iter()
-            .map(|weight| {
-                weight
-                    .rescale(exponent)
-                    .map(FiniteReal::get)
-                    .filter(|weight| *weight != 0.0)
-            })
-            .collect()
+        Ok(Some(output))
     }
 
     /// Subtract the specified weight derivatives, then divide by the base
