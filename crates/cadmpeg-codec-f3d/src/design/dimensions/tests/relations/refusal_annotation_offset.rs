@@ -78,8 +78,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         },
     )
     .unwrap();
-    let frame = DesignDimensionAnnotationFrame::try_new(
-        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+    let frame = crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: format!("{stream}:design-dimension-annotation-frame#14"),
             companion_record_index: Some(15),
             governing_companion_record_index: 15,
@@ -118,8 +117,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             paired_byte_offset: 100,
             owner_reference: 100,
             owner_reference_offset: 120,
-        },
-    )
+        }))
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");

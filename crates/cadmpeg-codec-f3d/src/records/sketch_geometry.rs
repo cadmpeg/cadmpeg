@@ -888,10 +888,7 @@ impl SketchPointCompanion {
         let operation = "index F3D sketch point incident curves";
         let mut unique = std::collections::HashSet::new();
         for curve in &self.incident_curves {
-            ctx.charge_collection_items(1, operation)?;
-            unique
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+            ctx.reserve_set(&mut unique, 1, operation)?;
             if !unique.insert(curve) {
                 return Err(CodecError::Malformed(
                     "sketch point companion.incident_curves must be distinct".into(),
@@ -2145,21 +2142,10 @@ impl SketchNurbsGeometry {
 
     pub(crate) fn knots_copy(
         &self,
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
     ) -> Result<Vec<f64>, CodecError> {
-        let mut knots = Vec::new();
-        if let Some(ctx) = ctx {
-            let operation = "copy F3D sketch NURBS knots";
-            let count = u64::try_from(self.knots.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-            ctx.charge_collection_items(count, operation)?;
-            knots
-                .try_reserve(self.knots.len())
-                .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
-        }
-        knots.extend_from_slice(&self.knots);
-        Ok(knots)
-    }
+        ctx.copy_slice(&self.knots, "copy F3D sketch NURBS knots")
+}
 
     pub(crate) fn knot_count(&self) -> usize {
         self.knots.len()
@@ -2648,7 +2634,7 @@ mod tests {
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .unwrap()
             .0;
-        let error = geometry.knots_copy(Some(&ctx)).unwrap_err();
+        let error = geometry.knots_copy(&ctx).unwrap_err();
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(ref refusal)
             if refusal.operation == "copy F3D sketch NURBS knots")

@@ -228,27 +228,16 @@ impl From<&'static str> for TextureTableError {
     }
 }
 
-fn reserve_texture_index<T: Eq + std::hash::Hash>(
-    ctx: Option<&DecodeContext<'_>>,
-    index: &mut std::collections::HashSet<T>,
-    operation: &'static str,
-) -> Result<(), TextureTableError> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(1, operation)
-            .map_err(TextureTableError::Resource)?;
-        index
-            .try_reserve(1)
-            .map_err(|_| TextureTableError::Resource(ctx.refuse_codec_limit(operation, 0, 1)))?;
-    }
-    Ok(())
-}
+
 
 impl DesignMeshTextureTable {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, String> {
-        Self::new_inner(None, record, resources).map_err(|error| match error {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).map_err(|error| error.to_string())?;
+        Self::new_inner(&ctx, record, resources).map_err(|error| match error {
             TextureTableError::Payload(message) => message,
             TextureTableError::Resource(error) => error.to_string(),
         })
@@ -259,14 +248,14 @@ impl DesignMeshTextureTable {
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {
-        Self::new_inner(Some(ctx), record, resources).map_err(|error| match error {
+        Self::new_inner(ctx, record, resources).map_err(|error| match error {
             TextureTableError::Payload(message) => CodecError::Malformed(message),
             TextureTableError::Resource(error) => error,
         })
     }
 
     fn new_inner(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, TextureTableError> {
@@ -296,12 +285,12 @@ impl DesignMeshTextureTable {
             if guids.contains(&guid) {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
-            reserve_texture_index(ctx, &mut flags, "index F3D texture flag ordinals")?;
-            reserve_texture_index(ctx, &mut filenames, "index F3D texture filename ordinals")?;
-            reserve_texture_index(ctx, &mut guids, "index F3D texture GUIDs")?;
-            flags.insert(resource.ordinal);
-            filenames.insert(resource.filename_ordinal);
-            guids.insert(guid);
+
+
+
+            ctx.insert_hash_set(&mut flags, resource.ordinal, "index F3D texture flag ordinals").map_err(TextureTableError::Resource)?;
+            ctx.insert_hash_set(&mut filenames, resource.filename_ordinal, "index F3D texture filename ordinals").map_err(TextureTableError::Resource)?;
+            ctx.insert_hash_set(&mut guids, guid, "index F3D texture GUIDs").map_err(TextureTableError::Resource)?;
         }
         Ok(Self { record, resources })
     }
@@ -319,11 +308,7 @@ impl DesignMeshTextureTable {
         let operation = "order F3D mesh texture resources";
         let count = u64::try_from(self.resources.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-        ctx.charge_collection_items(count, operation)?;
-        let mut resources = Vec::new();
-        resources
-            .try_reserve(self.resources.len())
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, count))?;
+        let mut resources = ctx.collection_vec(self.resources.len(), operation)?;
         resources.extend(&self.resources);
         let passes = if self.resources.len() < 2 {
             0

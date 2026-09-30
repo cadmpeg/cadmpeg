@@ -771,8 +771,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         },
     )
     .unwrap();
-    let frame = DesignDimensionAnnotationFrame::try_new(
-        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+    let frame = crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             id: format!("{stream}:design-dimension-annotation-frame#14"),
             companion_record_index: Some(15),
             governing_companion_record_index: 15,
@@ -811,8 +810,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             paired_byte_offset: 100,
             owner_reference: 100,
             owner_reference_offset: 120,
-        },
-    )
+        }))
     .unwrap();
     let parameter_id =
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
@@ -847,8 +845,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             && actual_parameter == parameter_id
     ));
 
-    let explicit_frame = DesignDimensionAnnotationFrame::try_new(
-        crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
+    let explicit_frame = crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
             operands: vec![
                 DesignDimensionAnnotationOperand {
                     geometry_record_index: std::num::NonZeroU32::new(0),
@@ -882,8 +879,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             annotation_byte_offset: 126,
             governing_owner_reference_offset: 127,
             ..frame.clone().into_draft()
-        },
-    )
+        }))
     .unwrap();
     let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
         None,

@@ -208,10 +208,7 @@ impl SketchRelationMembers {
                     u64_from_index(offset),
                 )
             })?;
-            ctx.charge_collection_items(1, "admit F3D sketch relation members")?;
-            members
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("admit F3D sketch relation members", 0, 1))?;
+            ctx.reserve_vec(&mut members, 1, "admit F3D sketch relation members")?;
             members.push(SketchRelationMember {
                 reference: SketchRelationReference::Index(record_index),
                 offset,
@@ -229,10 +226,7 @@ impl SketchRelationMembers {
     ) -> Result<(), CodecError> {
         let mut resolved = Vec::new();
         for row in &self.0 {
-            ctx.charge_collection_items(1, "resolve F3D sketch relation members")?;
-            resolved
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("resolve F3D sketch relation members", 0, 1))?;
+            ctx.reserve_vec(&mut resolved, 1, "resolve F3D sketch relation members")?;
             resolved.push(resolve(row.reference.record_index()));
         }
         for (row, operand) in self.0.iter_mut().zip(resolved) {
@@ -292,10 +286,7 @@ impl SketchRelationReturnMembers {
                     u64_from_index(offset),
                 )
             })?;
-            ctx.charge_collection_items(1, "admit F3D sketch relation return members")?;
-            members.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("admit F3D sketch relation return members", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut members, 1, "admit F3D sketch relation return members")?;
             members.push(SketchRelationReturnMember {
                 reference: SketchRelationReference::Index(record_index),
                 offset,
@@ -312,10 +303,7 @@ impl SketchRelationReturnMembers {
     ) -> Result<(), CodecError> {
         let mut resolved = Vec::new();
         for row in &self.0 {
-            ctx.charge_collection_items(1, "resolve F3D sketch relation return members")?;
-            resolved.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("resolve F3D sketch relation return members", 0, 1)
-            })?;
+            ctx.reserve_vec(&mut resolved, 1, "resolve F3D sketch relation return members")?;
             resolved.push(resolve(row.reference.record_index()));
         }
         for (row, operand) in self.0.iter_mut().zip(resolved) {
@@ -455,6 +443,10 @@ impl std::error::Error for SketchRelationPayloadError {}
 enum SketchRelationWireError {
     Payload(SketchRelationPayloadError),
     Resource(CodecError),
+}
+
+impl From<CodecError> for SketchRelationWireError {
+    fn from(error: CodecError) -> Self { Self::Resource(error) }
 }
 
 impl From<SketchRelationPayloadError> for SketchRelationWireError {
@@ -858,52 +850,12 @@ impl SketchRelation {
     }
 }
 
-fn collect_wire_items<T>(
-    ctx: Option<&DecodeContext<'_>>,
-    items: impl IntoIterator<Item = T>,
-    operation: &'static str,
-) -> Result<Vec<T>, SketchRelationWireError> {
-    let Some(ctx) = ctx else {
-        return Ok(items.into_iter().collect());
-    };
-    let mut collected = Vec::new();
-    for item in items {
-        ctx.charge_collection_items(1, operation)
-            .map_err(SketchRelationWireError::Resource)?;
-        collected.try_reserve(1).map_err(|_| {
-            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-        })?;
-        collected.push(item);
-    }
-    Ok(collected)
-}
 
-fn collect_wire_results<T>(
-    ctx: Option<&DecodeContext<'_>>,
-    items: impl IntoIterator<Item = Result<T, SketchRelationPayloadError>>,
-    operation: &'static str,
-) -> Result<Vec<T>, SketchRelationWireError> {
-    let Some(ctx) = ctx else {
-        return items
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into);
-    };
-    let mut collected = Vec::new();
-    for item in items {
-        let item = item?;
-        ctx.charge_collection_items(1, operation)
-            .map_err(SketchRelationWireError::Resource)?;
-        collected.try_reserve(1).map_err(|_| {
-            SketchRelationWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-        })?;
-        collected.push(item);
-    }
-    Ok(collected)
-}
+
+
 
 fn zip_relation_members(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     ordinals: Vec<u32>,
@@ -913,26 +865,16 @@ fn zip_relation_members(
     let offsets = pad_or_check(ctx, "member_offsets", offsets, len)?;
     let resolved = pad_resolved(ctx, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        collect_wire_items(
-            ctx,
-            (0..len).map(|_| None),
-            "admit sketch relation ordinals",
-        )?
+        ctx.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals").map_err(SketchRelationWireError::Resource)?
     } else if ordinals.len() == len {
-        collect_wire_items(
-            ctx,
-            ordinals.into_iter().map(Some),
-            "admit sketch relation ordinals",
-        )?
+        ctx.collect_vec(ordinals.into_iter().map(Some), "admit sketch relation ordinals").map_err(SketchRelationWireError::Resource)?
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
         )
         .into());
     };
-    collect_wire_results(
-        ctx,
-        members
+    ctx.try_collect_vec((members
             .into_iter()
             .zip(offsets)
             .zip(ordinals)
@@ -947,15 +889,13 @@ fn zip_relation_members(
                     offset,
                     relation_ordinal,
                 })
-            }),
-        "admit sketch relation members",
-    )?
+            })).into_iter().map(|item| item.map_err(SketchRelationWireError::Payload)), "admit sketch relation members")?
     .try_into()
     .map_err(Into::into)
 }
 
 fn zip_return_members(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     members: Vec<u32>,
     offsets: Vec<u32>,
     resolved: Vec<SketchRelationOperand>,
@@ -963,9 +903,7 @@ fn zip_return_members(
     let len = members.len();
     let offsets = pad_or_check(ctx, "return_member_offsets", offsets, len)?;
     let resolved = pad_resolved(ctx, "resolved_return_members", resolved, len)?;
-    collect_wire_results(
-        ctx,
-        members
+    ctx.try_collect_vec((members
             .into_iter()
             .zip(offsets)
             .zip(resolved)
@@ -978,29 +916,21 @@ fn zip_return_members(
                     )?,
                     offset,
                 })
-            }),
-        "admit sketch relation return members",
-    )?
+            })).into_iter().map(|item| item.map_err(SketchRelationWireError::Payload)), "admit sketch relation return members")?
     .try_into()
     .map_err(Into::into)
 }
 
 fn pad_or_check(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     name: &str,
     values: Vec<u32>,
     len: usize,
 ) -> Result<Vec<u32>, SketchRelationWireError> {
     if values.is_empty() {
-        match ctx {
-            Some(ctx) => ctx
+        ctx
                 .alloc_filled(len, 0, "pad sketch relation offsets")
-                .map_err(SketchRelationWireError::Resource),
-            None => cadmpeg_core::decode::alloc_filled(len, 0, "pad sketch relation offsets")
-                .map_err(|error| {
-                    SketchRelationWireError::Payload(SketchRelationPayloadError(error.to_string()))
-                }),
-        }
+                .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         Ok(values)
     } else {
@@ -1013,31 +943,17 @@ fn pad_or_check(
 }
 
 fn pad_resolved(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     name: &str,
     values: Vec<SketchRelationOperand>,
     len: usize,
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
-        match ctx {
-            Some(ctx) => ctx
+        ctx
                 .alloc_filled(len, None, "pad sketch relation resolutions")
-                .map_err(SketchRelationWireError::Resource),
-            None => {
-                cadmpeg_core::decode::alloc_filled(len, None, "pad sketch relation resolutions")
-                    .map_err(|error| {
-                        SketchRelationWireError::Payload(SketchRelationPayloadError(
-                            error.to_string(),
-                        ))
-                    })
-            }
-        }
+                .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
-        collect_wire_items(
-            ctx,
-            values.into_iter().map(Some),
-            "admit sketch relation resolutions",
-        )
+        ctx.collect_vec(values.into_iter().map(Some), "admit sketch relation resolutions").map_err(SketchRelationWireError::Resource)
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
@@ -1099,7 +1015,10 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
-        Self::from_wire_with_context(None, wire).map_err(|error| match error {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
+            .map_err(|error| SketchRelationPayloadError(error.to_string()))?;
+        Self::from_wire_with_context(&ctx, wire).map_err(|error| match error {
             SketchRelationWireError::Payload(error) => error,
             SketchRelationWireError::Resource(error) => {
                 SketchRelationPayloadError(error.to_string())
@@ -1113,14 +1032,14 @@ impl SketchRelation {
         ctx: &DecodeContext<'_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_with_context(Some(ctx), wire).map_err(|error| match error {
+        Self::from_wire_with_context(ctx, wire).map_err(|error| match error {
             SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
             SketchRelationWireError::Resource(error) => error,
         })
     }
 
     fn from_wire_with_context(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, SketchRelationWireError> {
         let (derived_kinds, derived_unknown) = constraint_kinds_from_state(wire.state);
@@ -1152,14 +1071,10 @@ impl SketchRelation {
             state_offset: wire.state_offset,
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
-            auxiliary_references: ReferenceRun::located(collect_wire_items(
-                ctx,
-                wire.auxiliary_references
+            auxiliary_references: ReferenceRun::located(ctx.collect_vec(wire.auxiliary_references
                     .into_iter()
                     .zip(wire.auxiliary_reference_offsets)
-                    .map(|(value, offset)| Located { value, offset }),
-                "admit sketch relation auxiliary references",
-            )?),
+                    .map(|(value, offset)| Located { value, offset }), "admit sketch relation auxiliary references").map_err(SketchRelationWireError::Resource)?),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(
                 ctx,

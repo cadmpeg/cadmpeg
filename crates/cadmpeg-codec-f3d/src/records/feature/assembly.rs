@@ -1368,27 +1368,9 @@ impl DesignAssemblyOperandPath {
             return Ok(None);
         }
         let mut occurrences = self.occurrence_guids;
-        let occurrence_count = continuation.occurrence_guids.len();
-        ctx.charge_collection_items(
-            u64::try_from(occurrence_count)
-                .map_err(|_| ctx.refuse_codec_limit("f3d assembly path occurrence count", 0, 1))?,
-            "f3d assembly path appended occurrences",
-        )?;
-        occurrences.try_reserve(occurrence_count).map_err(|_| {
-            ctx.refuse_codec_limit("f3d assembly path appended occurrences allocation", 0, 1)
-        })?;
-        occurrences.extend(continuation.occurrence_guids);
+        ctx.extend_vec(&mut occurrences, continuation.occurrence_guids, "f3d assembly path appended occurrences")?;
         let mut identities = self.identity_guids;
-        let identity_count = continuation.identity_guids.len();
-        ctx.charge_collection_items(
-            u64::try_from(identity_count)
-                .map_err(|_| ctx.refuse_codec_limit("f3d assembly path identity count", 0, 1))?,
-            "f3d assembly path appended identities",
-        )?;
-        identities.try_reserve(identity_count).map_err(|_| {
-            ctx.refuse_codec_limit("f3d assembly path appended identities allocation", 0, 1)
-        })?;
-        identities.extend(continuation.identity_guids);
+        ctx.extend_vec(&mut identities, continuation.identity_guids, "f3d assembly path appended identities")?;
         Ok(Self::try_new(
             self.link,
             self.record_index,

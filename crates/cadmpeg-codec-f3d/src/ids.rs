@@ -479,11 +479,7 @@ pub(crate) fn configuration_entry_id_charged(
             write_escaped_identity_component(formatter, self.0)
         }
     }
-    crate::container::format_retained(
-        ctx,
-        "retain F3D configuration entry ID",
-        format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)),
-    )
+    ctx.format_retained(format_args!("f3d:{}:entry#{}", scope.as_str(), EscapedEntry(entry_name)), "retain F3D configuration entry ID")
 }
 
 /// The neutral configuration key for `variant_name` under `entry_name`, with
@@ -565,10 +561,7 @@ pub(crate) fn neutral_combine_external_body_id_charged(
         .map(|version| identity_key_component_charged(ctx, version.version_urn.value.as_str()))
         .transpose()?
         .unwrap_or_default();
-    crate::container::format_retained(
-        ctx,
-        "retain F3D Combine external body identity",
-        format_args!(
+    ctx.format_retained(format_args!(
             "f3d:feature-input:body#combine-external:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             selector_asset.len(), selector_asset, selector_context.len(), selector_context,
             identity.occurrence_reference(), identity.external_body_reference(),
@@ -576,8 +569,7 @@ pub(crate) fn neutral_combine_external_body_id_charged(
             link_name.len(), link_name, u8::from(identity.external_version().is_some()),
             property_key.len(), property_key,
             u8::from(identity.external_version().is_some()), version_urn.len(), version_urn,
-        ),
-    )
+        ), "retain F3D Combine external body identity")
 }
 
 /// Feature-input-local connector key for one pathless axial assembly selector.
@@ -1094,14 +1086,10 @@ fn history_input_entity_id_charged(
         .split_once('#')
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
         .1;
-    crate::container::format_retained(
-        ctx,
-        "retain F3D history input identity",
-        format_args!(
+    ctx.format_retained(format_args!(
             "f3d:history-input:{kind}#{}:{feature_key}:{previous_state_id}:{slot}",
             feature_key.len(),
-        ),
-    )
+        ), "retain F3D history input identity")
 }
 
 macro_rules! charged_history_input_entity_id {
@@ -1156,14 +1144,10 @@ pub(crate) fn history_input_state_id_charged(
         .split_once('#')
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("F3D feature identity has no key"))?
         .1;
-    let value = crate::container::format_retained(
-        ctx,
-        "retain F3D history input identity",
-        format_args!(
+    let value = ctx.format_retained(format_args!(
             "f3d:history-input:state#{}:{feature_key}:{previous_state_id}",
             feature_key.len()
-        ),
-    )?;
+        ), "retain F3D history input identity")?;
     cadmpeg_ir::ids::FeatureInputTopologyId::mint(value)
         .map_err(cadmpeg_core::CodecError::malformed)
 }

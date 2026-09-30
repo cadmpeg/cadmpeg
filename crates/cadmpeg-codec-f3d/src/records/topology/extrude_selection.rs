@@ -173,14 +173,14 @@ impl DesignExtrudeSelectionGroup {
         ctx: &DecodeContext<'_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_inner(Some(ctx), wire).map_err(|error| match error {
+        Self::from_wire_inner(ctx, wire).map_err(|error| match error {
             ExtrudeSelectionWireError::Payload(message) => CodecError::Malformed(message),
             ExtrudeSelectionWireError::Resource(error) => error,
         })
     }
 
     fn from_wire_inner(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, ExtrudeSelectionWireError> {
         if wire.members.len() != wire.member_offsets.len() {
@@ -192,13 +192,9 @@ impl DesignExtrudeSelectionGroup {
             if unique.contains(member) {
                 return Err("members must be distinct".into());
             }
-            if let Some(ctx) = ctx {
+            {
                 let operation = "index F3D extrude selection members";
-                ctx.charge_collection_items(1, operation)
-                    .map_err(ExtrudeSelectionWireError::Resource)?;
-                unique.try_reserve(1).map_err(|_| {
-                    ExtrudeSelectionWireError::Resource(ctx.refuse_codec_limit(operation, 0, 1))
-                })?;
+                ctx.reserve_set(&mut unique, 1, operation).map_err(ExtrudeSelectionWireError::Resource)?;
             }
             unique.insert(member);
         }
@@ -223,18 +219,7 @@ impl DesignExtrudeSelectionGroup {
             NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
         let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
             .ok_or("opaque_scalar must be finite")?;
-        let mut members = Vec::new();
-        if let Some(ctx) = ctx {
-            let operation = "admit F3D extrude selection members";
-            let count = u64::try_from(wire.members.len()).map_err(|_| {
-                ExtrudeSelectionWireError::Resource(ctx.refuse_codec_limit(operation, 0, u64::MAX))
-            })?;
-            ctx.charge_collection_items(count, operation)
-                .map_err(ExtrudeSelectionWireError::Resource)?;
-            members.try_reserve(wire.members.len()).map_err(|_| {
-                ExtrudeSelectionWireError::Resource(ctx.refuse_codec_limit(operation, 0, count))
-            })?;
-        }
+        let mut members = ctx.collection_vec(wire.members.len(), "admit F3D extrude selection members").map_err(ExtrudeSelectionWireError::Resource)?;
         members.extend(
             wire.members
                 .into_iter()
@@ -262,7 +247,10 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     type Error = String;
 
     fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
-        Self::from_wire_inner(None, wire).map_err(|error| match error {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())
+            .map_err(|error| error.to_string())?;
+        Self::from_wire_inner(&ctx, wire).map_err(|error| match error {
             ExtrudeSelectionWireError::Payload(message) => message,
             ExtrudeSelectionWireError::Resource(error) => error.to_string(),
         })

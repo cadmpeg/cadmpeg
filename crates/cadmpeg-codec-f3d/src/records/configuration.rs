@@ -93,28 +93,7 @@ impl ConfigurationScalar {
                 }
             }
         }
-        struct Length(usize);
-        impl std::fmt::Write for Length {
-            fn write_str(&mut self, value: &str) -> std::fmt::Result {
-                self.0 = self.0.checked_add(value.len()).ok_or(std::fmt::Error)?;
-                Ok(())
-            }
-        }
-        let operation = "project F3D configuration scalar text";
-        let display = ScalarText(self);
-        let args = format_args!("{display}");
-        let mut length = Length(0);
-        std::fmt::write(&mut length, args)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-        let bytes =
-            u64::try_from(length.0).map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-        ctx.charge_retained(bytes, operation)?;
-        let mut text = String::new();
-        text.try_reserve(length.0)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-        std::fmt::write(&mut text, args)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, bytes))?;
-        Ok(text)
+        ctx.format_retained(format_args!("{}", ScalarText(self)), "project F3D configuration scalar text")
     }
 
     fn value(&self) -> Value {
@@ -129,7 +108,7 @@ impl ConfigurationScalar {
 
 impl ConfigurationVariant {
     fn admit(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         entry_name: &str,
         name: &str,
         value: Value,
@@ -154,7 +133,7 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
-                    if let Some(ctx) = ctx {
+                    {
                         ctx.charge_collection_items(1, "admit configuration parameter")?;
                     }
                     admitted.insert(key, value);
@@ -180,11 +159,8 @@ impl ConfigurationVariant {
                     let Value::String(value) = value else {
                         return Err(suppressed_error());
                     };
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "admit suppressed configuration member")?;
-                        suppressed.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("admit suppressed configuration member", 0, 1)
-                        })?;
+                    {
+                        ctx.reserve_vec(&mut suppressed, 1, "admit suppressed configuration member")?;
                     }
                     suppressed.push(value);
                 }
@@ -464,15 +440,18 @@ pub(crate) enum DesignConfigurationKind {
 }
 
 impl DesignConfiguration {
-    /// Admit the entry identity, object payload, and authored variant order.
-    pub(crate) fn try_new(
+pub(crate) fn try_new(
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
         payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
-        Self::try_new_with_context(None, entry_name, kind, variant_order, payload)
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+        Self::try_new_with_context(&ctx, entry_name, kind, variant_order, payload)
     }
+
+
 
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
@@ -481,11 +460,11 @@ impl DesignConfiguration {
         variant_order: Vec<String>,
         payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
-        Self::try_new_with_context(Some(ctx), entry_name, kind, variant_order, payload)
+        Self::try_new_with_context(ctx, entry_name, kind, variant_order, payload)
     }
 
     fn try_new_with_context(
-        ctx: Option<&DecodeContext<'_>>,
+        ctx: &DecodeContext<'_>,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
@@ -550,7 +529,7 @@ impl DesignConfiguration {
                 let mut admitted = BTreeMap::new();
                 for (name, value) in variants {
                     let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
-                    if let Some(ctx) = ctx {
+                    {
                         ctx.charge_collection_items(1, "admit configuration variant")?;
                     }
                     admitted.insert(name, value);
@@ -560,11 +539,8 @@ impl DesignConfiguration {
                 let entries = if !explicit_order && variants.len() <= 1 {
                     let mut entries = Vec::new();
                     for variant in variants {
-                        if let Some(ctx) = ctx {
-                            ctx.charge_collection_items(1, "order configuration variants")?;
-                            entries.try_reserve(1).map_err(|_| {
-                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
-                            })?;
+                        {
+                            ctx.reserve_vec(&mut entries, 1, "order configuration variants")?;
                         }
                         entries.push(variant);
                     }
@@ -573,11 +549,8 @@ impl DesignConfiguration {
                     let mut entries = Vec::new();
                     for name in variant_order {
                         let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
-                        if let Some(ctx) = ctx {
-                            ctx.charge_collection_items(1, "order configuration variants")?;
-                            entries.try_reserve(1).map_err(|_| {
-                                ctx.refuse_codec_limit("order configuration variants", 0, 1)
-                            })?;
+                        {
+                            ctx.reserve_vec(&mut entries, 1, "order configuration variants")?;
                         }
                         entries.push(variant);
                     }

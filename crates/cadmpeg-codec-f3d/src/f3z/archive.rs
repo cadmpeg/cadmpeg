@@ -153,11 +153,7 @@ pub(super) fn classify_members<'a>(
             Ok(member_scan) => member_scan,
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
-                let message = crate::container::format_retained(
-                    ctx,
-                    "retain F3Z unreadable member error",
-                    format_args!("{error}"),
-                )?;
+                let message = ctx.format_retained(format_args!("{error}"), "retain F3Z unreadable member error")?;
                 super::push_loss(
                     ctx,
                     &mut losses,
@@ -178,11 +174,7 @@ pub(super) fn classify_members<'a>(
         let (member_layers, mut member_losses) =
             crate::dialect::classify_layers(ctx, &member_scan)?;
         for loss in &mut member_losses {
-            loss.message = crate::container::format_retained(
-                ctx,
-                "prefix F3Z member classification loss",
-                format_args!("archive member {member_path}: {}", loss.message),
-            )?;
+            loss.message = ctx.format_retained(format_args!("archive member {member_path}: {}", loss.message), "prefix F3Z member classification loss")?;
         }
         super::append_losses(ctx, &mut losses, member_losses)?;
         super::append_losses(
@@ -221,11 +213,7 @@ pub(super) fn merge_member_layers(
     for matched in member.iter() {
         let matched = matched.try_clone_for_decode(ctx)?;
         let instance = match matched.instance() {
-            Some(nested) => crate::container::format_retained(
-                ctx,
-                "retain F3Z dialect layer instance",
-                format_args!("{member_path}/{nested}"),
-            )?,
+            Some(nested) => ctx.format_retained(format_args!("{member_path}/{nested}"), "retain F3Z dialect layer instance")?,
             None => copy_member_name(ctx, member_path, "retain F3Z dialect layer instance")?,
         };
         let matched = matched

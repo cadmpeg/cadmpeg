@@ -56,12 +56,7 @@ fn configuration_admission_checks_wire_and_variant_order() {
 fn configuration_parameter_overrides_require_scalar_values() {
     use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
     let admit = |payload: serde_json::Value| {
-        DesignConfiguration::try_new(
-            "table.dsgcfg".into(),
-            DesignConfigurationKind::Table,
-            vec!["variant".into()],
-            payload.as_object().unwrap().clone(),
-        )
+        crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, "table.dsgcfg".into(), DesignConfigurationKind::Table, vec!["variant".into()], payload.as_object().unwrap().clone()))
     };
     assert!(admit(
         serde_json::json!({"configurations": {"variant": {"parameters": {
@@ -99,7 +94,7 @@ fn configuration_kind_requires_its_exact_entry_extension() {
         ),
     ] {
         let admit = |name: &str| {
-            DesignConfiguration::try_new(name.into(), kind, Vec::new(), serde_json::Map::new())
+            crate::test_support::with_decode_context(|ctx| DesignConfiguration::try_new_charged(ctx, name.into(), kind, Vec::new(), serde_json::Map::new()))
         };
         let record = admit(valid).unwrap();
         let wire = serde_json::to_value(&record).unwrap();

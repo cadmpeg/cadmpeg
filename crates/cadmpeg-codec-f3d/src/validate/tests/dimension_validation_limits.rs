@@ -56,7 +56,7 @@ fn pair(has_first: bool) -> DesignDimensionLocusPair {
 }
 
 fn annotation() -> DesignDimensionAnnotationFrame {
-    DesignDimensionAnnotationFrame::try_new(DesignDimensionAnnotationFrameDraft {
+    crate::test_support::with_decode_context(|ctx| DesignDimensionAnnotationFrame::try_new_charged(ctx, DesignDimensionAnnotationFrameDraft {
         id: "f3d:native:annotation#0".into(),
         companion_record_index: None,
         governing_companion_record_index: 2,
@@ -91,7 +91,7 @@ fn annotation() -> DesignDimensionAnnotationFrame {
         paired_byte_offset: 400,
         owner_reference: 5,
         owner_reference_offset: 420,
-    })
+    }))
     .unwrap()
 }
 
