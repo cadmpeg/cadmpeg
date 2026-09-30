@@ -9,7 +9,7 @@ const SMALL_SORT_LEN: usize = 20;
 const VISITED: usize = 1 << (usize::BITS - 1);
 
 pub(super) fn sort_by<T>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     values: &mut [T],
     mut compare: impl FnMut(&T, &T) -> Ordering,
 ) -> Result<(), CodecError> {
@@ -21,10 +21,7 @@ pub(super) fn sort_by<T>(
         }
         return Ok(());
     }
-    let Some(ctx) = ctx else {
-        values.sort_by(compare);
-        return Ok(());
-    };
+
     if std::mem::size_of::<T>() == 0 {
         return Ok(());
     }
@@ -36,15 +33,13 @@ pub(super) fn sort_by<T>(
         .checked_mul(u64::from(count.ilog2()) + 1)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d stable sort work", 0, 1))?;
     ctx.charge_work(work, "f3d stable sort work")?;
-    ctx.charge_collection_items(u64_from_index(count), "f3d stable sort permutation")?;
+
     let bytes = count
         .checked_mul(std::mem::size_of::<usize>())
         .ok_or_else(|| ctx.refuse_codec_limit("f3d stable sort scratch", 0, 1))?;
     let _scratch = ctx.reserve_scoped(u64_from_index(bytes), "f3d stable sort scratch")?;
     let mut permutation = Vec::new();
-    permutation
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d stable sort permutation", 0, 1))?;
+    ctx.reserve_vec(&mut permutation, count, "f3d stable sort permutation")?;
     permutation.extend(0..count);
     permutation.sort_unstable_by(|left, right| {
         compare(&values[*left], &values[*right]).then_with(|| left.cmp(right))
@@ -78,7 +73,7 @@ pub(super) fn sort_by<T>(
 }
 
 pub(super) fn sort_by_key<T, K: Ord>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     values: &mut [T],
     mut key: impl FnMut(&T) -> K,
 ) -> Result<(), CodecError> {

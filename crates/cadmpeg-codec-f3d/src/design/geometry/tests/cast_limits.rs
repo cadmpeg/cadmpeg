@@ -35,7 +35,7 @@ fn rectangle_profiles(offset: f64, transpose: bool) -> usize {
             )
         })
         .collect::<Vec<_>>();
-    super::closed_sketch_profiles(None, &sketch, &entities, 1.0)
+    crate::test_support::with_decode_context(|decode_ctx| super::closed_sketch_profiles(decode_ctx, &sketch, &entities, 1.0))
         .expect("profile computation has no resource refusal")
         .len()
 }

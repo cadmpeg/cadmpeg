@@ -33,8 +33,7 @@ fn sketch_indexed_vectors_refuse_outer_and_inner_limits() {
             let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
             assert!(
                 matches!(
-                    crate::design::geometry::push_geometry_index(Some(&ctx), &mut index, 1, 2,
-                        index_operation, value_operation),
+                    (&ctx).push_hash_group(&mut index, 1, 2, index_operation, value_operation),
                     Err(CodecError::ResourceLimit(failure))
                         if failure.dimension == ResourceDimension::CollectionItems
                             && failure.operation == operation
@@ -72,7 +71,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
         let mut items = Vec::new();
         assert!(
             matches!(
-                crate::design::geometry::push_geometry_item(Some(&ctx), &mut items, 1, operation),
+                (&ctx).push_vec(&mut items, 1, operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -86,8 +85,7 @@ fn closed_sketch_profile_collections_refuse_matching_limits() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut seen = std::collections::HashSet::new();
     assert!(matches!(
-        crate::design::geometry::insert_geometry_set(Some(&ctx), &mut seen, 1,
-            "f3d closed sketch component seen"),
+        (&ctx).insert_hash_set(&mut seen, 1, "f3d closed sketch component seen"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d closed sketch component seen"
@@ -109,8 +107,7 @@ fn closed_sketch_profile_id_copies_refuse_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                crate::design::geometry::copy_geometry_id::<SketchEntityId>(Some(&ctx),
-                    "synthetic:test:id#edge", operation),
+                SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
@@ -133,7 +130,7 @@ macro_rules! geometry_collection_refusal_test {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                crate::design::geometry::push_geometry_item(Some(&ctx), &mut items, 1, $operation),
+                (&ctx).push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == $operation
@@ -163,8 +160,7 @@ fn branched_profile_component_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        crate::design::geometry::insert_geometry_set(Some(&ctx), &mut items, 1,
-            "f3d branched profile component edge"),
+        (&ctx).insert_hash_set(&mut items, 1, "f3d branched profile component edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile component edge"
     ));
@@ -178,8 +174,7 @@ fn branched_profile_visited_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        crate::design::geometry::insert_geometry_set(Some(&ctx), &mut items, 1,
-            "f3d branched profile visited half-edge"),
+        (&ctx).insert_hash_set(&mut items, 1, "f3d branched profile visited half-edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile visited half-edge"
     ));
@@ -193,8 +188,7 @@ fn branched_profile_outgoing_node_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
-        crate::design::geometry::push_geometry_index(Some(&ctx), &mut index, 1, 2,
-            "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        (&ctx).push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile outgoing node"
     ));
@@ -208,8 +202,7 @@ fn branched_profile_outgoing_edge_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut index = std::collections::HashMap::<usize, Vec<usize>>::new();
     assert!(matches!(
-        crate::design::geometry::push_geometry_index(Some(&ctx), &mut index, 1, 2,
-            "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
+        (&ctx).push_hash_group(&mut index, 1, 2, "f3d branched profile outgoing node", "f3d branched profile outgoing edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile outgoing edge"
     ));
@@ -223,8 +216,7 @@ fn branched_profile_next_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashMap::new();
     assert!(matches!(
-        crate::design::geometry::insert_geometry_map(Some(&ctx), &mut items, 1, 2,
-            "f3d branched profile next half-edge"),
+        (&ctx).insert_hash_map(&mut items, 1, 2, "f3d branched profile next half-edge").map(|_| ()),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile next half-edge"
     ));
@@ -237,8 +229,7 @@ fn branched_profile_entity_id_refuses_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::geometry::copy_geometry_id::<SketchEntityId>(Some(&ctx),
-            "synthetic:test:id#edge", "f3d branched profile entity id"),
+        SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, "f3d branched profile entity id"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d branched profile entity id"
     ));
@@ -273,8 +264,7 @@ fn tangent_profile_used_edge_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut items = std::collections::HashSet::new();
     assert!(matches!(
-        crate::design::geometry::insert_geometry_set(Some(&ctx), &mut items, 1,
-            "f3d tangent profile used edge"),
+        (&ctx).insert_hash_set(&mut items, 1, "f3d tangent profile used edge"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d tangent profile used edge"
     ));
@@ -287,8 +277,7 @@ fn tangent_profile_entity_id_refuses_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::geometry::copy_geometry_id::<SketchEntityId>(Some(&ctx),
-            "synthetic:test:id#edge", "f3d tangent profile entity id"),
+        SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, "f3d tangent profile entity id"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d tangent profile entity id"
     ));
@@ -325,7 +314,7 @@ fn line_profile_vertex_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::geometry::line_profile_vertices(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        crate::design::geometry::line_profile_vertices(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d line profile vertex"
     ));
@@ -339,7 +328,7 @@ fn circular_arc_profile_segment_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::geometry::circular_arc_profile_segments(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+        crate::design::geometry::circular_arc_profile_segments(&profile, &entities, PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d circular arc profile segment"
     ));
@@ -354,7 +343,7 @@ fn certified_profile_tubes_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::certified_profile_loop(&profile, &entities,
-            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+            PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d certified profile tubes"
     ));
@@ -377,7 +366,7 @@ fn arrangement_split_endpoints_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::arrangement_split_parameters(&line, [0.0, 1.0], &[],
-            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+            PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement split endpoints"
     ));
@@ -392,7 +381,7 @@ fn arrangement_split_parameter_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::arrangement_split_parameters(&line, [0.0, 1.0],
-            &[Point2::new(1.0, 0.0)], PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+            &[Point2::new(1.0, 0.0)], PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement split parameter"
     ));
@@ -407,7 +396,7 @@ fn profile_use_polyline_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::geometry::profile_use_polyline(&entities[0], [0.0, 1.0], false,
-            PROFILE_LIMIT_TEST_TOLERANCE, Some(&ctx)),
+            PROFILE_LIMIT_TEST_TOLERANCE, &ctx),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.operation == "f3d profile use polyline"
     ));
@@ -420,7 +409,7 @@ fn certified_loop_containment_uses_existing_tube_vertices() {
         Point2::new(2.0, 0.0),
         Point2::new(0.0, 2.0),
     ];
-    let loop_ = crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, None)
+    let loop_ = crate::test_support::with_decode_context(|decode_ctx| crate::design::geometry::CertifiedProfileLoop::from_vertices(&vertices, decode_ctx))
         .unwrap()
         .unwrap();
     assert!(loop_.contains_point(Point2::new(0.25, 0.25)));

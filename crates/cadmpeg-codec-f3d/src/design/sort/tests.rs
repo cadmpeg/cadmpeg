@@ -10,7 +10,7 @@ fn stable_sort_permutation_refuses_collection_limit() {
     policy.limits.max_collection_items = 32;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut values = [0; 33];
-    assert!(matches!(sort_by(Some(&ctx), &mut values, Ord::cmp),
+    assert!(matches!(sort_by(&ctx, &mut values, Ord::cmp),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d stable sort permutation"));
 }
@@ -23,7 +23,7 @@ fn stable_sort_scratch_refuses_materialized_limit() {
         u64::try_from(33 * std::mem::size_of::<usize>() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut values = [0; 33];
-    assert!(matches!(sort_by(Some(&ctx), &mut values, Ord::cmp),
+    assert!(matches!(sort_by(&ctx, &mut values, Ord::cmp),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::MaterializedBytes
             && failure.operation == "f3d stable sort scratch"));
 }
@@ -35,7 +35,7 @@ fn stable_sort_refuses_work_limit() {
     policy.limits.max_work_units = 33 * 6 - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut values = [0; 33];
-    assert!(matches!(sort_by(Some(&ctx), &mut values, Ord::cmp),
+    assert!(matches!(sort_by(&ctx, &mut values, Ord::cmp),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::WorkUnits
             && failure.operation == "f3d stable sort work"));
 }
@@ -56,7 +56,7 @@ fn stable_sort_matches_equal_key_order_without_cloning() {
         let mut expected: Vec<_> = values.iter().map(|item| (item.key, item.ordinal)).collect();
         expected.sort_by_key(|(key, _)| *key);
         crate::design::test_support::with_test_decode_context(|ctx| {
-            sort_by(Some(ctx), &mut values, |left, right| {
+            sort_by(ctx, &mut values, |left, right| {
                 left.key.cmp(&right.key)
             })
         })
@@ -79,7 +79,7 @@ fn stable_key_sort_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut values = [0; 21];
     assert!(
-        matches!(super::sort_by_key(Some(&ctx), &mut values, |value| *value),
+        matches!(super::sort_by_key(&ctx, &mut values, |value| *value),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d stable sort permutation")
     );

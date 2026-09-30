@@ -13,7 +13,7 @@ fn configuration_identifier_refuses_retained_limit() {
     policy.limits.max_retained_bytes = u64::try_from(expected.as_str().len()).unwrap() - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(neutral_configuration_id(Some(&ctx), entry, name), Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "f3d configuration identifier")
+        matches!(neutral_configuration_id(&ctx, entry, name), Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "f3d configuration identifier")
     );
 }
 
@@ -26,7 +26,7 @@ fn configuration_identifier_preserves_encoded_bytes() {
             let policy = DecodePolicy::default();
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert_eq!(
-                neutral_configuration_id(Some(&ctx), entry, name).unwrap(),
+                neutral_configuration_id(&ctx, entry, name).unwrap(),
                 expected
             );
         }
@@ -47,7 +47,7 @@ fn projected_configuration_identifier_refuses_retained_limit() {
     policy.limits.max_retained_bytes = name_bytes + u64::try_from(id.as_str().len()).unwrap() - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::configurations::project_configurations(Some(&ctx), &[table]), Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "f3d configuration identifier")
+        matches!(crate::design::configurations::project_configurations(&ctx, &[table]), Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes && failure.operation == "f3d configuration identifier")
     );
 }
 
@@ -103,7 +103,7 @@ fn neutral_feature_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_feature_id(&scope),
         "f3d feature identifier",
-        |ctx| super::neutral_feature_id(Some(ctx), &scope),
+        |ctx| super::neutral_feature_id(ctx, &scope),
     );
 }
 
@@ -113,7 +113,7 @@ fn neutral_component_insert_occurrence_id_refuses_before_allocation_and_preserve
     assert_identity_budget(
         &crate::ids::neutral_component_insert_occurrence_id(&scope),
         "f3d component insert occurrence identifier",
-        |ctx| super::neutral_component_insert_occurrence_id(Some(ctx), &scope),
+        |ctx| super::neutral_component_insert_occurrence_id(ctx, &scope),
     );
 }
 
@@ -123,7 +123,7 @@ fn neutral_assembly_joint_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::test_support::with_decode_context(|ctx| crate::ids::neutral_assembly_joint_id(ctx, &scope)).expect("joint identifier"),
         "f3d assembly joint identifier",
-        |ctx| super::neutral_assembly_joint_id(Some(ctx), &scope),
+        |ctx| super::neutral_assembly_joint_id(ctx, &scope),
     );
 }
 
@@ -133,7 +133,7 @@ fn neutral_sketch_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_sketch_id(&placement),
         "f3d sketch identifier",
-        |ctx| super::neutral_sketch_id(Some(ctx), &placement),
+        |ctx| super::neutral_sketch_id(ctx, &placement),
     );
 }
 
@@ -143,7 +143,7 @@ fn neutral_spatial_sketch_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_spatial_sketch_id(&placement),
         "f3d spatial sketch identifier",
-        |ctx| super::neutral_spatial_sketch_id(Some(ctx), &placement),
+        |ctx| super::neutral_spatial_sketch_id(ctx, &placement),
     );
 }
 
@@ -163,7 +163,7 @@ fn neutral_parameter_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_parameter_id(&parameter),
         "f3d parameter identifier",
-        |ctx| super::neutral_parameter_id(Some(ctx), &parameter),
+        |ctx| super::neutral_parameter_id(ctx, &parameter),
     );
 }
 
@@ -173,7 +173,7 @@ fn neutral_sketch_point_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_sketch_point_id(&sketch, u64::MAX),
         "f3d sketch point identifier",
-        |ctx| super::neutral_sketch_point_id(Some(ctx), &sketch, u64::MAX),
+        |ctx| super::neutral_sketch_point_id(ctx, &sketch, u64::MAX),
     );
 }
 
@@ -183,7 +183,7 @@ fn neutral_sketch_record_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_sketch_record_id(&sketch, u32::MAX),
         "f3d sketch record identifier",
-        |ctx| super::neutral_sketch_record_id(Some(ctx), &sketch, u32::MAX),
+        |ctx| super::neutral_sketch_record_id(ctx, &sketch, u32::MAX),
     );
 }
 
@@ -193,7 +193,7 @@ fn neutral_sketch_text_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_sketch_text_id(&sketch, u64::MAX),
         "f3d sketch text identifier",
-        |ctx| super::neutral_sketch_text_id(Some(ctx), &sketch, u64::MAX),
+        |ctx| super::neutral_sketch_text_id(ctx, &sketch, u64::MAX),
     );
 }
 
@@ -203,7 +203,7 @@ fn neutral_sketch_curve_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::neutral_sketch_curve_id(&sketch, u64::MAX, u64::MAX),
         "f3d sketch curve identifier",
-        |ctx| super::neutral_sketch_curve_id(Some(ctx), &sketch, u64::MAX, u64::MAX),
+        |ctx| super::neutral_sketch_curve_id(ctx, &sketch, u64::MAX, u64::MAX),
     );
 }
 
@@ -214,7 +214,7 @@ fn neutral_spatial_sketch_point_id_refuses_before_allocation_and_preserves_bytes
     assert_identity_budget(
         &crate::ids::neutral_spatial_sketch_point_id(&sketch, u64::MAX),
         "f3d spatial sketch point identifier",
-        |ctx| super::neutral_spatial_sketch_point_id(Some(ctx), &sketch, u64::MAX),
+        |ctx| super::neutral_spatial_sketch_point_id(ctx, &sketch, u64::MAX),
     );
 }
 
@@ -225,7 +225,7 @@ fn neutral_spatial_sketch_record_id_refuses_before_allocation_and_preserves_byte
     assert_identity_budget(
         &crate::ids::neutral_spatial_sketch_record_id(&sketch, u32::MAX),
         "f3d spatial sketch record identifier",
-        |ctx| super::neutral_spatial_sketch_record_id(Some(ctx), &sketch, u32::MAX),
+        |ctx| super::neutral_spatial_sketch_record_id(ctx, &sketch, u32::MAX),
     );
 }
 
@@ -236,7 +236,7 @@ fn neutral_spatial_sketch_surface_id_refuses_before_allocation_and_preserves_byt
     assert_identity_budget(
         &crate::ids::neutral_spatial_sketch_surface_id(&sketch, u64::MAX),
         "f3d spatial sketch surface identifier",
-        |ctx| super::neutral_spatial_sketch_surface_id(Some(ctx), &sketch, u64::MAX),
+        |ctx| super::neutral_spatial_sketch_surface_id(ctx, &sketch, u64::MAX),
     );
 }
 
@@ -247,7 +247,7 @@ fn neutral_spatial_sketch_curve_id_refuses_before_allocation_and_preserves_bytes
     assert_identity_budget(
         &crate::ids::neutral_spatial_sketch_curve_id(&sketch, u64::MAX, u64::MAX),
         "f3d spatial sketch curve identifier",
-        |ctx| super::neutral_spatial_sketch_curve_id(Some(ctx), &sketch, u64::MAX, u64::MAX),
+        |ctx| super::neutral_spatial_sketch_curve_id(ctx, &sketch, u64::MAX, u64::MAX),
     );
 }
 
@@ -257,7 +257,7 @@ fn neutral_sketch_constraint_id_refuses_before_allocation_and_preserves_bytes() 
     assert_identity_budget(
         &crate::ids::neutral_sketch_constraint_id(native, u32::MAX),
         "f3d sketch constraint identifier",
-        |ctx| super::neutral_sketch_constraint_id(Some(ctx), native, u32::MAX),
+        |ctx| super::neutral_sketch_constraint_id(ctx, native, u32::MAX),
     );
 }
 
@@ -268,7 +268,7 @@ fn neutral_dimension_constraint_id_refuses_before_allocation_and_preserves_bytes
     assert_identity_budget(
         &crate::ids::neutral_dimension_constraint_id(&parameter, "a:#% \u{2003}ç"),
         "f3d dimension constraint identifier",
-        |ctx| super::neutral_dimension_constraint_id(Some(ctx), &parameter, "a:#% \u{2003}ç"),
+        |ctx| super::neutral_dimension_constraint_id(ctx, &parameter, "a:#% \u{2003}ç"),
     );
 }
 
@@ -281,7 +281,7 @@ fn configuration_entry_id_refuses_before_allocation_and_preserves_bytes() {
             &cadmpeg_ir::identity_component!("configuration"),
         ),
         "f3d configuration native identifier",
-        |ctx| super::configuration_entry_id(Some(ctx), entry),
+        |ctx| super::configuration_entry_id(ctx, entry),
     );
 }
 
@@ -291,7 +291,7 @@ fn history_input_prefix_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::history_input_prefix(&key, i64::MIN),
         "f3d history input prefix",
-        |ctx| super::history_input_prefix(Some(ctx), key.as_str(), i64::MIN),
+        |ctx| super::history_input_prefix(ctx, key.as_str(), i64::MIN),
     );
 }
 
@@ -301,7 +301,7 @@ fn feature_input_topology_id_refuses_before_allocation_and_preserves_bytes() {
     assert_identity_budget(
         &crate::ids::feature_input_topology_id(&feature, i64::MIN),
         "f3d feature input topology identifier",
-        |ctx| super::feature_input_topology_id(Some(ctx), &feature, i64::MIN),
+        |ctx| super::feature_input_topology_id(ctx, &feature, i64::MIN),
     );
 }
 
@@ -312,12 +312,7 @@ fn history_input_edge_id_refuses_before_allocation_and_preserves_bytes() {
         &crate::ids::history_input_edge_id(&prefix, i64::MIN),
         "f3d historical edge identifier",
         |ctx| {
-            super::history_input_edge_id(
-                Some(ctx),
-                &prefix,
-                i64::MIN,
-                "f3d historical edge identifier",
-            )
+            super::history_input_edge_id(ctx, &prefix, i64::MIN, "f3d historical edge identifier")
         },
     );
 }
@@ -329,12 +324,7 @@ fn history_input_face_id_refuses_before_allocation_and_preserves_bytes() {
         &crate::ids::history_input_face_id(&prefix, i64::MIN),
         "f3d historical face identifier",
         |ctx| {
-            super::history_input_face_id(
-                Some(ctx),
-                &prefix,
-                i64::MIN,
-                "f3d historical face identifier",
-            )
+            super::history_input_face_id(ctx, &prefix, i64::MIN, "f3d historical face identifier")
         },
     );
 }
@@ -346,12 +336,7 @@ fn history_input_vertex_id_refuses_before_allocation_and_preserves_bytes() {
         &crate::ids::history_input_vertex_id(&prefix, i64::MIN),
         "f3d historical vertex identifier",
         |ctx| {
-            super::history_input_vertex_id(
-                Some(ctx),
-                &prefix,
-                i64::MIN,
-                "f3d historical vertex identifier",
-            )
+            super::history_input_vertex_id(ctx, &prefix, i64::MIN, "f3d historical vertex identifier")
         },
     );
 }

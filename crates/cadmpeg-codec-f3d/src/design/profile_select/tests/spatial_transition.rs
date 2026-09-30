@@ -59,7 +59,7 @@ fn spatial_profile_polygon_points_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         spatial_polyline_profile_containing_points(
-            &sketch, &entities, &[Point3::new(0.5, 0.5, 0.0)], 0.01, Some(&ctx)),
+            &sketch, &entities, &[Point3::new(0.5, 0.5, 0.0)], 0.01, &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d spatial profile polygon point"
     ));
@@ -210,7 +210,7 @@ fn spatial_transition_does_not_select_a_translated_equal_length_profile() {
     };
 
     assert_eq!(
-        transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6, None)
+        crate::test_support::with_decode_context(|decode_ctx| transition_spatial_profile_selection(&sketch, &entities, &[history], 2, 1, 1.0e-6, decode_ctx))
             .unwrap(),
         None
     );
@@ -281,7 +281,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
     ];
 
     assert_eq!(
-        spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6, None)
+        crate::test_support::with_decode_context(|decode_ctx| spatial_polyline_profile_containing_points(&sketch, &entities, &points, 1.0e-6, decode_ctx))
             .unwrap(),
         None
     );
@@ -290,13 +290,7 @@ fn spatial_transition_withholds_when_any_profile_boundary_is_nonlinear() {
         ..sketch
     };
     assert_eq!(
-        spatial_polyline_profile_containing_points(
-            &polyline_only,
-            &entities,
-            &points,
-            1.0e-6,
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| spatial_polyline_profile_containing_points(&polyline_only, &entities, &points, 1.0e-6, decode_ctx))
         .unwrap(),
         Some(0)
     );

@@ -21,7 +21,7 @@ fn circle_angle_ordering_refuses_sort_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::geometry::arrangement_circle_angles(&points,
-        Point2::new(0.0, 0.0), PositiveLength::new(1.0).unwrap(), EPS_CIRCLE, Some(&ctx)),
+        Point2::new(0.0, 0.0), PositiveLength::new(1.0).unwrap(), EPS_CIRCLE, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d stable sort permutation")
     );

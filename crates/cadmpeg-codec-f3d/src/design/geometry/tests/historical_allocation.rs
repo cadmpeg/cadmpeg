@@ -125,7 +125,7 @@ fn assert_historical_refusal(kind: AsmHistoricalEntityKind, id: i64, operation: 
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::historical_entity_positions(kind, id, &topology, Some(&ctx)) {
+        match super::super::historical_entity_positions(kind, id, &topology, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected historical refusal at {operation}: {other:?}"),
@@ -224,7 +224,7 @@ fn historical_face_point_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::profile_select::historical_face_points(10, &topology, Some(&ctx)),
+        crate::design::profile_select::historical_face_points(10, &topology, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d historical face point"
     ));
 }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::super::{copy_bound_path, copy_bound_profile, insert_profile_map};
+use super::super::{copy_bound_path, copy_bound_profile};
 use super::*;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -34,7 +34,7 @@ fn assert_refusal(
 fn loft_profile_index_refuses_collection_limit() {
     assert_refusal("f3d loft resolved profile index", false, |ctx| {
         let mut map = HashMap::new();
-        insert_profile_map(ctx, &mut map, "group", 1, "f3d loft resolved profile index")
+        (ctx).insert_hash_map(&mut map, "group", 1, "f3d loft resolved profile index").map(|_| ())
     });
 }
 
@@ -42,7 +42,7 @@ fn loft_profile_index_refuses_collection_limit() {
 fn loft_path_index_refuses_collection_limit() {
     assert_refusal("f3d loft resolved path index", false, |ctx| {
         let mut map = HashMap::new();
-        insert_profile_map(ctx, &mut map, "group", 1, "f3d loft resolved path index")
+        (ctx).insert_hash_map(&mut map, "group", 1, "f3d loft resolved path index").map(|_| ())
     });
 }
 
@@ -50,7 +50,7 @@ fn loft_path_index_refuses_collection_limit() {
 fn loft_header_index_refuses_collection_limit() {
     assert_refusal("f3d loft header index", false, |ctx| {
         let mut map = HashMap::new();
-        insert_profile_map(ctx, &mut map, ("stream", 1), 1, "f3d loft header index")
+        (ctx).insert_hash_map(&mut map, ("stream", 1), 1, "f3d loft header index").map(|_| ())
     });
 }
 

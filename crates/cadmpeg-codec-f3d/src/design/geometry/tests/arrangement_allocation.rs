@@ -22,7 +22,7 @@ macro_rules! arrangement_item_refusal {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                super::super::push_geometry_item(Some(&ctx), &mut items, 1, $operation),
+                (&ctx).push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == $operation
@@ -62,8 +62,7 @@ macro_rules! arrangement_id_refusal {
             policy.limits.max_retained_bytes = 0;
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             assert!(matches!(
-                super::super::copy_geometry_id::<SketchEntityId>(Some(&ctx),
-                    "synthetic:test:id#edge", $operation),
+                SketchEntityId::mint("synthetic:test:id#edge").expect("test identity").try_clone_for_decode(&ctx, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.operation == $operation
             ));
@@ -91,7 +90,7 @@ fn node_refuses_limit() {
     let mut nodes = Vec::new();
     assert!(matches!(
         super::super::arrangement_node(&mut nodes, Point2::new(0.0, 0.0),
-            0.0, Some(&ctx)),
+            0.0, &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement node"
     ));
@@ -102,7 +101,7 @@ fn pending_node_refuses_limit() {
     let (arena, policy) = context_with_collection_limit(1);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::super::arrangement_has_alternate_path(&[], 0, 0, 0, 1, Some(&ctx)),
+        super::super::arrangement_has_alternate_path(&[], 0, 0, 0, 1, &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement pending nodes"
     ));
@@ -115,7 +114,7 @@ fn circle_angle_refuses_limit() {
     assert!(matches!(
         super::super::arrangement_circle_angles(
             &[Point2::new(1.0, 0.0)], Point2::new(0.0, 0.0),
-            positive_radius(1.0), 0.0, Some(&ctx)),
+            positive_radius(1.0), 0.0, &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement circle angle"
     ));
@@ -127,7 +126,7 @@ fn outgoing_entry_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut outgoing = Vec::new();
     assert!(matches!(
-        super::super::push_arrangement_outgoing(&mut outgoing, (0, false, 0.0), Some(&ctx)),
+        ctx.push_vec(&mut outgoing, (0, false, 0.0), "f3d arrangement outgoing entry"),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement outgoing entry"
     ));
@@ -145,7 +144,7 @@ fn boundary_entity_id_refuses_retained_limit() {
         reversed: false,
     };
     assert!(matches!(
-        super::super::copy_arrangement_boundary(Some(&ctx), &boundary),
+        super::super::copy_arrangement_boundary(&ctx, &boundary),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement boundary entity id"
     ));
@@ -161,7 +160,7 @@ fn selected_boundary_refuses_limit() {
         reversed: false,
     };
     assert!(matches!(
-        super::super::copy_arrangement_boundary_run(Some(&ctx), &[boundary]),
+        super::super::copy_arrangement_boundary_run(&ctx, &[boundary]),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d arrangement selected boundary"
     ));
@@ -174,13 +173,7 @@ fn arrangement_admitted_route_keeps_two_faces() {
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let budget = super::local_arrangement_budget();
-    let faces = super::sketch_arrangement_faces(
-        &sketch,
-        &entities,
-        ARRANGEMENT_FACE_TEST_TOLERANCE,
-        &budget,
-        Some(&ctx),
-    )
+    let faces = super::sketch_arrangement_faces(&sketch, &entities, ARRANGEMENT_FACE_TEST_TOLERANCE, &budget, &ctx)
     .unwrap()
     .unwrap();
     assert_eq!(faces.len(), 2);
