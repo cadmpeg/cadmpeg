@@ -941,3 +941,18 @@ fn configuration_source_index_allocation_rejects_exhaustion() {
 }
 
 mod projections;
+
+#[test]
+fn decoded_curve_carrier_copy_refuses_work_limit() {
+    let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
+    let options = DecodeOptions::default();
+    let decoded = SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap();
+    assert!(!decoded.ir().model.curves.is_empty());
+    work_refusal_with_options(&source, options, "copy Parasolid NURBS curve");
+}
+
+#[test]
+fn decoded_curve_carrier_copy_refuses_collection_limit() {
+    let source = sldprt_with_body(&crate::test_support::parasolid::nurbs_sketch_body(true));
+    collection_refusal_at(&source, "copy Parasolid curve poles");
+}

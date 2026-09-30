@@ -1057,3 +1057,4 @@ fn the_ir_scalar_mints_name_no_native_sentinel() {
 cadmpeg_core::named_optional_field!(deserialize_v_lower, f64, "v_lower");
 mod nesting_bound;
 mod support_mapping;
+mod charged_curves;
