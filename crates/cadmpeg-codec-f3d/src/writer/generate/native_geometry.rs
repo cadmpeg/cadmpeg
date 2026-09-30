@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native record writers for surfaces, curves, and pcurves.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
+
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::{CadIr, Model};
 use cadmpeg_ir::geometry::{
@@ -4589,11 +4591,11 @@ fn native_conic_interval_curve(
             "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
         )
     };
-    let spans = cadmpeg_core::convert::truncate_f64_to_usize(span_count).ok_or_else(too_large)?;
+    let spans = truncate_f64_to_usize(span_count).ok_or_else(too_large)?;
     let doubled = spans.checked_mul(2).ok_or_else(too_large)?;
     let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
     let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
-    let step = delta / cadmpeg_core::convert::f64_from_index(spans).ok_or_else(too_large)?;
+    let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     let mut knots = Vec::new();
@@ -4616,7 +4618,7 @@ fn native_conic_interval_curve(
         )
     };
     for span in 0..spans {
-        let start = parameter_range[0] + step * cadmpeg_core::convert::f64_from_index(span).ok_or_else(too_large)?;
+        let start = parameter_range[0] + step * f64_from_index(span).ok_or_else(too_large)?;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let weight = (step * 0.5).cos();
@@ -4652,6 +4654,7 @@ mod native_interval_curve_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_GENERATED_CURVE: f64 = 1.0e-12;
+    const MAX_INDEX_FLOAT: f64 = if usize::BITS == 64 { 18_446_744_073_709_551_616.0 } else { 4_294_967_295.0 };
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4793,9 +4796,9 @@ mod native_interval_curve_tests {
             ([0.0, std::f64::consts::PI], true),
             ([-f64::MAX, f64::MAX], false),
             ([0.0, f64::MAX], false),
-            ([0.0, usize::MAX as f64], false),
-            ([0.0, (usize::MAX as f64) * 0.75], false),
-            ([0.0, (usize::MAX as f64) * 0.125], false),
+            ([0.0, MAX_INDEX_FLOAT], false),
+            ([0.0, (MAX_INDEX_FLOAT) * 0.75], false),
+            ([0.0, (MAX_INDEX_FLOAT) * 0.125], false),
         ] {
             let procedural = &mut target.model.procedural_surfaces[0];
             let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {

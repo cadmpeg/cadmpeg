@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::compact_feature_reference;
 use super::exact_legacy_mirror_scope_count;
 use super::exact_legacy_mirror_scope_tolerance;
@@ -38,7 +40,7 @@ fn compact_reference_fixture() -> (Vec<u8>, DesignRecordHeader, usize, u32) {
         id: String::new(),
         record_index,
         class_tag: crate::records::references::DesignClassTag::try_from("320".to_owned()).unwrap(),
-        byte_offset: start as u64,
+        byte_offset: u64_from_index(start),
     };
 
     (bytes, header, identity, reference)
@@ -54,7 +56,7 @@ fn compact_mirror_reference_uses_the_identity_record_lane() {
             &header
         )
         .unwrap(),
-        Some((reference, (identity + 21) as u64))
+        Some((reference, u64_from_index(identity + 21)))
     );
     bytes[identity + 20] = 1;
     assert_eq!(
@@ -93,7 +95,7 @@ fn compact_mirror_reference_refuses_guid_text_limits() {
             &header
         )
         .unwrap(),
-        Some((reference, (identity + 21) as u64))
+        Some((reference, u64_from_index(identity + 21)))
     );
 }
 

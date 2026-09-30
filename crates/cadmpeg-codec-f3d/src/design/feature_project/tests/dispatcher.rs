@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::feature_project::project_parameter_design;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::ids::neutral_sketch_id;
@@ -562,7 +564,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     .enumerate()
                     .map(|(index, value)| crate::records::identity::Located {
                         value,
-                        offset: index as u64 * 11,
+                        offset: u64_from_index(index) * 11,
                     })
                     .collect(),
                 lost_edge_references: Vec::new(),

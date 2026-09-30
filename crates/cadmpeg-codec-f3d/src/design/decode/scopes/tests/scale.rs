@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::scopes::direct_face::exact_scale_operation;
 use crate::records::feature::scope::DesignParameterScope;
 use std::collections::HashMap;
@@ -25,7 +27,7 @@ fn legacy_scale_resolves_explicit_point_data_center() {
         assert_eq!(operation.center_record_index, 105);
         assert_eq!(
             operation.center_position.map(|center| center.offset),
-            Some(position_at as u64)
+            Some(u64_from_index(position_at))
         );
         assert_eq!(operation.uniform_factor_offset, 21);
         assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
@@ -55,7 +57,7 @@ fn modern_localized_scale_resolves_explicit_point_data_center() {
     assert_eq!(operation.center_record_index, 105);
     assert_eq!(
         operation.center_position.map(|center| center.offset),
-        Some(position_at as u64)
+        Some(u64_from_index(position_at))
     );
     assert_eq!(operation.uniform_factor_offset, 25);
     assert!((operation.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
@@ -122,7 +124,7 @@ fn legacy_scale_fixture(extra_reference: bool) -> (Vec<u8>, DesignParameterScope
     );
     scope
         .try_edit(|draft| {
-            draft.frame_length = frame_length as u64;
+            draft.frame_length = u64_from_index(frame_length);
             draft.reference_members =
                 crate::records::identity::ReferenceRun::unlocated(reference_members);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;

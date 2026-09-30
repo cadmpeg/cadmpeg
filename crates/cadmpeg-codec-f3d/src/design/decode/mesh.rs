@@ -259,7 +259,7 @@ struct MeshTextureTableRecord {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MeshWrapperRecord {
-    identity: DesignMeshFixedRecord<{ cadmpeg_core::decode::u64_from_index(body_wrapper::LEN) }>,
+    identity: DesignMeshFixedRecord<{ u64_from_index(body_wrapper::LEN) }>,
     body_record_index: u32,
 }
 
@@ -2008,6 +2008,8 @@ pub(crate) fn decode_mesh_bodies(
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     mod placement;
     use super::{
         parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
@@ -2336,12 +2338,12 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
         push_reference(&mut bytes, texture_table_record_index);
         push_indexed_header(&mut bytes, base_class_tag, record_index);
         bytes.extend_from_slice(&[0; 9]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
@@ -2358,12 +2360,12 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(flags.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(flags.len()).expect("fixture value fits u32")).to_le_bytes());
         for (guid, value) in flags {
             lp_ascii(&mut bytes, guid);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        bytes.extend_from_slice(&(filenames.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(filenames.len()).expect("fixture value fits u32")).to_le_bytes());
         for (guid, target) in filenames {
             lp_ascii(&mut bytes, guid);
             push_reference(&mut bytes, *target);
@@ -2445,7 +2447,7 @@ mod tests {
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(body_record_indices.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
@@ -3109,8 +3111,8 @@ mod tests {
         };
         let second_reference = usize::try_from(
             table.identity.byte_offset()
-                + texture_table::LEN as u64
-                + table.flags.len() as u64 * 44
+                + u64_from_index(texture_table::LEN)
+                + u64_from_index(table.flags.len()) * 44
                 + 4
                 + u64::from(second.ordinal) * 51
                 + 40,
@@ -3385,7 +3387,7 @@ mod tests {
         let stream = crate::ids::native_scope("Synthetic/BulkStream.dat");
         for (limit, operation) in [
             (0, "f3d mesh feature ID prefix"),
-            (stream.len() as u64, "f3d mesh feature ID suffix"),
+            (u64_from_index(stream.len()), "f3d mesh feature ID suffix"),
         ] {
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -3533,7 +3535,7 @@ mod tests {
         );
         assert_eq!(
             parsed.node.transform().map(|located| located.offset),
-            Some(placed_scene_node::TRANSFORM as u64)
+            Some(u64_from_index(placed_scene_node::TRANSFORM))
         );
         let bounds = parsed.node.bounds().expect("placed bounds");
         assert_eq!(bounds.maximum(), [4.0, 5.0, 6.0]);
@@ -3673,7 +3675,7 @@ mod tests {
         assert_eq!(owner.collection_record_index, EXPECTED_COLLECTION);
         assert_eq!(
             owner.owner.backlink_offset(),
-            collection_owner_v17::COLLECTION_BACKLINK as u64
+            u64_from_index(collection_owner_v17::COLLECTION_BACKLINK)
         );
     }
 
@@ -3768,7 +3770,7 @@ mod tests {
             texture_ids: None,
             attributes: Vec::new(),
         };
-        let native_scope_bytes = crate::ids::native_scope("mesh.paramesh").len() as u64;
+        let native_scope_bytes = u64_from_index(crate::ids::native_scope("mesh.paramesh").len());
         for (collection_limit, retained_limit, dimension, operation) in [
             (
                 0,

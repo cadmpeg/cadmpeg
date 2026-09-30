@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity-selection operands, their candidates and the loft legacy body carrier.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::body_recipe::AsmHistoricalEntityKind;
 use super::edge_identity::deserialize_resolved_edge_slot;
 use super::fillet::HistoricalBinding;
@@ -179,10 +181,10 @@ impl DesignEntitySelectionOperand {
             Some(secondary)
                 if draft.class_tag.as_str() == "338"
                     && draft.identity_record_offset.checked_add(
-                        cadmpeg_core::decode::u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX),
+                        u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX),
                     ) == Some(draft.primary_identity_offset)
                     && draft.identity_record_offset.checked_add(
-                        cadmpeg_core::decode::u64_from_index(crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID),
+                        u64_from_index(crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID),
                     ) == Some(secondary.identity.offset)
                     && secondary.curve_identity.is_none() =>
             {
@@ -856,7 +858,7 @@ impl EntitySelectionFrame {
             Self::Primary { .. } => 21,
             Self::Pair { .. } => 29,
             Self::SketchCurve { .. } => {
-                cadmpeg_core::decode::u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX)
+                u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX)
             }
         }
     }
@@ -864,7 +866,7 @@ impl EntitySelectionFrame {
         match self {
             Self::Primary { .. } => 29,
             Self::Pair { .. } => 45,
-            Self::SketchCurve { .. } => cadmpeg_core::decode::u64_from_index(crate::layout::class_338_sketch_curve_identity::LEN),
+            Self::SketchCurve { .. } => u64_from_index(crate::layout::class_338_sketch_curve_identity::LEN),
         }
     }
     fn secondary(self, offset: u64) -> Option<DesignSecondaryIdentity<Located<u64>>> {
@@ -884,7 +886,7 @@ impl EntitySelectionFrame {
                 identity: Located {
                     value: secondary,
                     offset: offset
-                        + cadmpeg_core::decode::u64_from_index(crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID),
+                        + u64_from_index(crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID),
                 },
                 curve_identity: None,
             }),

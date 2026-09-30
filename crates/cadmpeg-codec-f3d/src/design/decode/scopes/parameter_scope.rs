@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::assembly_alignment::exact_assembly_alignment;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
@@ -142,7 +144,7 @@ pub(crate) fn decode_parameter_scopes(
                 if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
                 {
                     let entity_reference_offset =
-                        scope.byte_offset().saturating_add(cadmpeg_core::decode::u64_from_index(relative_offset));
+                        scope.byte_offset().saturating_add(u64_from_index(relative_offset));
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)
@@ -634,7 +636,7 @@ pub(crate) fn admit_history_bound_scope_variants(
     drop(groups);
     let retained_count = admitted.iter().filter(|selected| **selected).count();
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(retained_count),
+        u64_from_index(retained_count),
         "f3d scope admission retained output",
     )?;
     let mut retained = Vec::new();
@@ -690,11 +692,11 @@ fn equivalent_scope_variant_payload(
         .bytes
         .checked_add(right_count.bytes)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
-    let work = cadmpeg_core::decode::u64_from_index(serialized)
+    let work = u64_from_index(serialized)
         .checked_mul(2)
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant comparison work", 0, 1))?;
     ctx.charge_work(work, "f3d scope variant comparison")?;
-    let materialized = cadmpeg_core::decode::u64_from_index(serialized)
+    let materialized = u64_from_index(serialized)
         .checked_mul(16)
         .and_then(|bytes| bytes.checked_add(2048))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d scope variant JSON size", 0, 1))?;
@@ -1036,7 +1038,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             return None;
         }
         if let Err(error) = ctx.charge_retained(
-            cadmpeg_core::decode::u64_from_index(kind_text.len()),
+            u64_from_index(kind_text.len()),
             "f3d Design scope kind storage",
         ) {
             return Some(Err(error));
@@ -1077,7 +1079,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             }
             let first = count_at.checked_add(4)?;
             if let Err(error) = ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
+                u64_from_index(count),
                 "f3d Design scope reference members",
             ) {
                 return Some(Err(error));
@@ -1091,7 +1093,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 )));
             }
             if let Err(error) = ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
+                u64_from_index(count),
                 "f3d Design scope reference offsets",
             ) {
                 return Some(Err(error));
@@ -1261,7 +1263,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             None
         };
         if let Err(error) = ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(reference_members.len()),
+            u64_from_index(reference_members.len()),
             "f3d Design scope located references",
         ) {
             return Some(Err(error));
@@ -1313,7 +1315,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,
-            paired_byte_offset: cadmpeg_core::decode::u64_from_index(paired_at),
+            paired_byte_offset: u64_from_index(paired_at),
         })
         .ok()?;
         if let Some(prologue) = extrude_prologue {

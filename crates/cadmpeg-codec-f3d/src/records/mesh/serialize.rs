@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Borrowed native wire for the complete Design mesh feature graph.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::{
     DesignMeshBody, DesignMeshCollection, DesignMeshFeature, DesignMeshFixedRecord,
     DesignMeshRecordIdentity, DesignMeshSceneBoundsWire, DesignMeshSceneNodeForm, DesignMeshScope,
@@ -38,7 +40,7 @@ impl<'a> RecordRef<'a> {
     }
 
     fn scope_base(scope: &'a DesignMeshScope) -> Self {
-        let frame_length = cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
+        let frame_length = u64_from_index(crate::layout::paramesh_feature_scope_base::LEN);
         Self {
             class_tag: scope.base_class_tag.as_str(),
             record_index: scope.record.record_index.get(),
@@ -48,7 +50,7 @@ impl<'a> RecordRef<'a> {
     }
 
     fn collection_base(collection: &'a DesignMeshCollection) -> Self {
-        let prefix = cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
         Self {
             class_tag: collection.base_class_tag.as_str(),
             record_index: collection.record.record_index.get(),
@@ -176,7 +178,7 @@ impl Serialize for TextureRef<'_> {
         }
         let resource = self.resource;
         let flags_start = self.table.record.byte_offset()
-            + cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN);
+            + u64_from_index(crate::layout::paramesh_texture_table_prefix::LEN);
         let filenames_start = self.table.filename_count_offset() + 4;
         let flags_guid_offset =
             flags_start + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(resource.ordinal) + 4;
@@ -250,10 +252,10 @@ impl Serialize for DesignMeshFeature {
             textures: TextureRows<'a>,
         }
         let scope_start = self.scope.record().byte_offset()
-            + cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
+            + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
         let collection_start = self.collection.record().byte_offset()
-            + cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
-            + cadmpeg_core::decode::u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
+            + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+            + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
         let body_count = u32::try_from(self.bodies.len())
             .map_err(|_| serde::ser::Error::custom("mesh body count exceeds u32"))?;
         Wire {

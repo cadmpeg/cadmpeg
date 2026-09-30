@@ -1599,7 +1599,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             .enumerate()
             .map(|(ordinal, edge_slot)| {
                 crate::records::topology::historical_context::DesignHistoricalLoopCoedge {
-                    coedge_slot: ordinal as i64,
+                    coedge_slot: i64::try_from(ordinal).expect("fixture value fits i64"),
                     edge_slot: *edge_slot,
                 }
             })

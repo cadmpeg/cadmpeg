@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The record header every design entity carries: module and base-type tags, segment types and the feature timeline.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::identity::{DesignEntityId, Located, NativeRecordId, ReferenceRun};
 use super::mesh::DesignRelaxedGuidText;
 use super::references::DesignClassTag;
@@ -387,12 +389,12 @@ impl DesignTimelineFrame {
             .enumerate()
             .map(|(index, item)| Located {
                 value: item.value,
-                offset: byte_offset + 35 + cadmpeg_core::decode::u64_from_index(index) * 11,
+                offset: byte_offset + 35 + u64_from_index(index) * 11,
             })
             .collect::<Vec<_>>();
         Self::new(
             byte_offset,
-            34 + cadmpeg_core::decode::u64_from_index(items.len()) * 11,
+            34 + u64_from_index(items.len()) * 11,
             byte_offset + 20,
             byte_offset + 30,
             items,

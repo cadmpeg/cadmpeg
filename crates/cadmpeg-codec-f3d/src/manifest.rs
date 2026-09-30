@@ -2,6 +2,8 @@
 //! Parse the document and asset manifests that assign archive folders to
 //! Fusion assets.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -200,11 +202,11 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
             ));
         }
         self.ctx
-            .charge_retained(cadmpeg_core::decode::u64_from_index(raw.len()), "retain F3D manifest ASCII")?;
+            .charge_retained(u64_from_index(raw.len()), "retain F3D manifest ASCII")?;
         let mut value = String::new();
         value.try_reserve(raw.len()).map_err(|_| {
             self.ctx
-                .refuse_codec_limit("retain F3D manifest ASCII", 0, cadmpeg_core::decode::u64_from_index(raw.len()))
+                .refuse_codec_limit("retain F3D manifest ASCII", 0, u64_from_index(raw.len()))
         })?;
         let text = std::str::from_utf8(raw)
             .map_err(|_| parse_malformed(self.ctx, field, "contains a non-printable ASCII byte"))?;
@@ -240,7 +242,7 @@ impl<'a, 'ctx, 'arena> Cursor<'a, 'ctx, 'arena> {
             std::iter::from_fn(move || view.u16_le())
         };
         self.ctx
-            .charge_work(cadmpeg_core::decode::u64_from_index(needed), "decode F3D manifest UTF-16")?;
+            .charge_work(u64_from_index(needed), "decode F3D manifest UTF-16")?;
         let mut utf8_len = 0usize;
         for decoded in char::decode_utf16(units()) {
             let character = decoded
@@ -542,11 +544,11 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             .len()
             .checked_add("[Active]".len())
             .ok_or_else(|| ctx.refuse_codec_limit("name F3D active asset", 0, u64::MAX))?;
-        let _active_budget = ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(active_len), "name F3D active asset")?;
+        let _active_budget = ctx.reserve_scoped(u64_from_index(active_len), "name F3D active asset")?;
         let mut active = String::new();
         active
             .try_reserve(active_len)
-            .map_err(|_| ctx.refuse_codec_limit("name F3D active asset", 0, cadmpeg_core::decode::u64_from_index(active_len)))?;
+            .map_err(|_| ctx.refuse_codec_limit("name F3D active asset", 0, u64_from_index(active_len)))?;
         active.push_str(base);
         active.push_str("[Active]");
         let mut folder_matches = [base.as_str(), active.as_str()]
@@ -581,10 +583,10 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
             .checked_add("/Manifest.dat".len())
             .ok_or_else(|| ctx.refuse_codec_limit("name F3D asset manifest", 0, u64::MAX))?;
         let _manifest_name_budget =
-            ctx.reserve_scoped(cadmpeg_core::decode::u64_from_index(manifest_name_len), "name F3D asset manifest")?;
+            ctx.reserve_scoped(u64_from_index(manifest_name_len), "name F3D asset manifest")?;
         let mut manifest_name = String::new();
         manifest_name.try_reserve(manifest_name_len).map_err(|_| {
-            ctx.refuse_codec_limit("name F3D asset manifest", 0, cadmpeg_core::decode::u64_from_index(manifest_name_len))
+            ctx.refuse_codec_limit("name F3D asset manifest", 0, u64_from_index(manifest_name_len))
         })?;
         manifest_name.push_str(folder);
         manifest_name.push_str("/Manifest.dat");

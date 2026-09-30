@@ -10,6 +10,8 @@
 //! expose unique or legacy carrier sets for metadata reporting; model decode
 //! uses the typed Design body-map catalog.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
 use std::collections::BTreeMap;
@@ -180,12 +182,12 @@ pub(crate) fn read_entry_bounded(
             cadmpeg_core::decode::refuse_local_limit(
                 "F3D entry allocation",
                 MAX_INFLATED_ENTRY_BYTES,
-                cadmpeg_core::decode::u64_from_index(bytes.len().saturating_add(read)),
+                u64_from_index(bytes.len().saturating_add(read)),
             )
         })?;
         bytes.extend_from_slice(&chunk[..read]);
     }
-    if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_INFLATED_ENTRY_BYTES {
+    if u64_from_index(bytes.len()) > MAX_INFLATED_ENTRY_BYTES {
         return Err(CodecError::malformed(format_args!(
             "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
         )));
@@ -940,6 +942,8 @@ fn asm_magic_label(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use super::is_f3d_name;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
     use std::collections::BTreeMap;
@@ -1006,7 +1010,7 @@ mod tests {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
         let mut name_bytes = 0_u64;
         for index in 0..archive.len() {
-            name_bytes += archive.by_index(index).unwrap().name().len() as u64;
+            name_bytes += u64_from_index(archive.by_index(index).unwrap().name().len());
         }
         policy.limits.max_retained_bytes = name_bytes * 4;
         let arena = DecodeArena::new();
@@ -1100,10 +1104,10 @@ mod tests {
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = super::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = ("Design".len()
+        limited_policy.limits.max_retained_bytes = u64_from_index("Design".len()
             + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
             + "FusionDesignSegmentType".len()
-            + "Fusion".len()) as u64;
+            + "Fusion".len());
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let Err(error) = scan.parsed_metastream(&limited, name) else {
             panic!("MetaStream cache name must refuse");

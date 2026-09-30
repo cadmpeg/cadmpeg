@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode `TSplines.BlobParts/*.tsm` Form control cages.
 
+use cadmpeg_core::decode::{index_from_u32};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -946,7 +948,7 @@ fn build_secondary_layouts(
         }
         let vertex_ir = vertex_ir[vertex]
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
-        layouts[cadmpeg_core::decode::index_from_u32(vertex_ir)] = Some(
+        layouts[index_from_u32(vertex_ir)] = Some(
             SubdVertexGripLayout::new(direction, wedges)
                 .map_err(|error| malformed(ctx, name, error))?,
         );
@@ -1984,10 +1986,10 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .get(*edge)
             .copied()
             .flatten()
-            .and_then(|edge| edge_vertices.get(cadmpeg_core::decode::index_from_u32(edge)))
+            .and_then(|edge| edge_vertices.get(index_from_u32(edge)))
             .ok_or_else(|| malformed(ctx, name, "crease edge is out of range"))?;
-        crease_incidence[cadmpeg_core::decode::index_from_u32(vertices[0])] += 1;
-        crease_incidence[cadmpeg_core::decode::index_from_u32(vertices[1])] += 1;
+        crease_incidence[index_from_u32(vertices[0])] += 1;
+        crease_incidence[index_from_u32(vertices[1])] += 1;
     }
     let mut vertices = Vec::new();
     for index in 0..live_vertices {

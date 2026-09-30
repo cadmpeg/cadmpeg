@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fusion ACT entity table and change-version channel groups.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -449,7 +451,7 @@ fn decode_table(
             &mut entries,
             TableEntry {
                 record_index,
-                row: ActTableRow::new(cadmpeg_core::decode::u64_from_index(index_offset)).map_err(CodecError::malformed)?,
+                row: ActTableRow::new(u64_from_index(index_offset)).map_err(CodecError::malformed)?,
                 entity_id,
             },
             "collect F3D ACT table entries",
@@ -468,7 +470,7 @@ fn decode_table(
             &mut guids,
             ActGuid::new(
                 crate::ids::native_scoped_id_charged(ctx, stream, "act-guid", byte_offset)?,
-                cadmpeg_core::decode::u64_from_index(byte_offset),
+                u64_from_index(byte_offset),
                 ordinal,
                 guid,
             )
@@ -504,7 +506,7 @@ fn decode_table(
                     byte_offset,
                 )?,
                 u32::try_from(ordinal).map_err(|_| malformed("table-reference ordinal"))?,
-                cadmpeg_core::decode::u64_from_index(byte_offset),
+                u64_from_index(byte_offset),
                 target_record,
             )
             .map_err(CodecError::malformed)?,
@@ -553,7 +555,7 @@ fn decode_table(
                     byte_offset,
                 )?,
                 u32::try_from(ordinal).map_err(|_| malformed("channel-registry ordinal"))?,
-                cadmpeg_core::decode::u64_from_index(byte_offset),
+                u64_from_index(byte_offset),
                 name,
                 guid,
             )
@@ -631,8 +633,8 @@ fn merge_entities(
             continue;
         };
         let channel_group = ActChannelGroup::try_new(
-            cadmpeg_core::decode::u64_from_index(group.record_index_offset),
-            group.entity_id.as_ref().map(|id| cadmpeg_core::decode::u64_from_index(id.offset)),
+            u64_from_index(group.record_index_offset),
+            group.entity_id.as_ref().map(|id| u64_from_index(id.offset)),
             group.class_tag,
             group.channels,
             group.class_tail,
@@ -707,7 +709,7 @@ fn decode_channel_group(
             copy_string_charged(ctx, &name, "retain F3D ACT channel name")?,
             Located {
                 value: guid.try_into().map_err(CodecError::malformed)?,
-                offset: cadmpeg_core::decode::u64_from_index(after_name + 4),
+                offset: u64_from_index(after_name + 4),
             },
             "index F3D ACT channels",
         )?
@@ -741,7 +743,7 @@ fn decode_channel_group(
         Some(
             ActClassTail::new(
                 ctx.copy_retained(remainder, "retain F3D ACT class tail")?,
-                cadmpeg_core::decode::u64_from_index(end),
+                u64_from_index(end),
             )
             .map_err(CodecError::malformed)?,
         )
@@ -819,10 +821,10 @@ fn decode_component_link(
         return Ok(Some(ComponentLink::NonRoot));
     }
     let layout = crate::records::act::ActRootLayout::new(
-        cadmpeg_core::decode::u64_from_index(frame.start),
+        u64_from_index(frame.start),
         entity_id,
         display_name,
-        cadmpeg_core::decode::u64_from_index(components_marker - cursor),
+        u64_from_index(components_marker - cursor),
     )
     .ok();
     let layout = some!(layout);
@@ -879,6 +881,8 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use super::{decode_channel_group, merge_entities, ChannelGroup, RecordFrame, TableEntry};
     use crate::records::act::ActTableRow;
     use crate::records::identity::Located;
@@ -1090,6 +1094,6 @@ mod tests {
         .expect("class tail follows the complete channel grammar");
         let tail = group.class_tail.as_ref().unwrap();
         assert_eq!(tail.bytes(), class_tail);
-        assert_eq!(tail.offset(), tail_at as u64);
+        assert_eq!(tail.offset(), u64_from_index(tail_at));
     }
 }

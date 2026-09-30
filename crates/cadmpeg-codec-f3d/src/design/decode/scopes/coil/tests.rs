@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use cadmpeg_test_support::bytes::{put_u32, put_u64};
 
 use super::exact_coil_placement;
@@ -364,7 +366,7 @@ fn compact_coil_face_selection_fixture() -> (Vec<u8>, DesignParameterScope, Vec<
         .unwrap();
     let recipes = vec![ConstructionRecipe {
         id: format!("{stream}:construction-recipe#{recipe_byte_offset}"),
-        byte_offset: recipe_byte_offset as u64,
+        byte_offset: u64_from_index(recipe_byte_offset),
         kind: ConstructionRecipeKind::Face,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
@@ -435,7 +437,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
         );
         assert_eq!(
             placement.explicit_transform.map(|matrix| matrix.offset),
-            expected_offset.map(|offset| (transform_start + offset) as u64)
+            expected_offset.map(|offset| u64_from_index(transform_start + offset))
         );
         assert_eq!(
             *placement.transform(),
@@ -481,7 +483,7 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     );
     assert_eq!(
         placement.explicit_transform.map(|matrix| matrix.offset),
-        Some((transform_start + coil_modern_matrix::MATRIX) as u64)
+        Some(u64_from_index(transform_start + coil_modern_matrix::MATRIX))
     );
 }
 
@@ -559,7 +561,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     );
     assert_eq!(
         placement.transform_record_byte_offset,
-        transform_start as u64
+        u64_from_index(transform_start)
     );
 }
 
@@ -583,7 +585,7 @@ fn legacy_coil_placement_accepts_identity_frame() {
     );
     assert_eq!(
         placement.transform_record_byte_offset,
-        transform_start as u64
+        u64_from_index(transform_start)
     );
     assert_eq!(
         *placement.transform(),
@@ -660,7 +662,7 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
     assert_eq!(placement.transform_record_index, 200);
     assert_eq!(
         placement.transform_record_byte_offset,
-        transform_start as u64
+        u64_from_index(transform_start)
     );
 }
 
@@ -898,7 +900,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
     bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
     let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -1001,7 +1003,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
     bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
     let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(references.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -1074,7 +1076,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
                 bytes[77 + ordinal * 8..85 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
             }
         }
-        bytes.extend_from_slice(&(reference_members.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&(u32::try_from(reference_members.len()).expect("fixture value fits u32")).to_le_bytes());
         for reference in reference_members {
             bytes.push(1);
             bytes.extend_from_slice(&reference.to_le_bytes());

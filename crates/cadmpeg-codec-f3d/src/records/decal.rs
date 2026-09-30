@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decal assets and images, the canvas records beside them, and the record header they share.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::{identity::Located, references::DesignClassTag};
 use serde::{Deserialize, Serialize};
 const DESIGN_DECAL_FIT_TO_FACES_CODE: u8 = 0x60;
@@ -92,8 +94,8 @@ impl DesignDecalAsset {
         }
         let units = u32::try_from(name.encode_utf16().count())
             .map_err(|_| "asset_name UTF-16 count must fit u32")?;
-        let length = cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
-            + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
+        let length = u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
+            + u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
             + 2 * u64::from(units);
         byte_offset
             .checked_add(length)
@@ -116,11 +118,11 @@ impl DesignDecalAsset {
         &self.name
     }
     pub(crate) const fn primary_frame_length() -> u64 {
-        cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
+        u64_from_index(crate::layout::design_decal_image_asset_record::LEN)
     }
     pub(crate) fn name_frame_length(&self) -> u64 {
-        cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
-            + 2 * cadmpeg_core::decode::u64_from_index(self.name.encode_utf16().count())
+        u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
+            + 2 * u64_from_index(self.name.encode_utf16().count())
     }
     fn name_record_index(&self) -> u32 {
         self.record_index + 1
@@ -130,11 +132,11 @@ impl DesignDecalAsset {
     }
     fn entity_reference_offset(&self) -> u64 {
         self.byte_offset
-            + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE)
+            + u64_from_index(crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE)
             + 1
     }
     fn name_offset(&self) -> u64 {
-        self.name_byte_offset() + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
+        self.name_byte_offset() + u64_from_index(crate::layout::design_decal_image_name_prefix::LEN)
     }
 }
 
@@ -183,7 +185,7 @@ impl DesignDecalImage {
     ) -> Result<Self, String> {
         scope
             .offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_scope_prefix::LEN))
+            .checked_add(u64_from_index(crate::layout::design_decal_scope_prefix::LEN))
             .ok_or("asset_reference_offset must belong to a complete Decal scope prefix")?;
         Ok(Self {
             id,
@@ -200,14 +202,14 @@ impl DesignDecalImage {
         self.scope.offset
     }
     fn asset_reference_offset(&self) -> u64 {
-        self.scope.offset + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1
+        self.scope.offset + u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1
     }
     fn mapping_mode_offset(&self) -> u64 {
-        self.scope.offset + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_scope_prefix::MAPPING_MODE)
+        self.scope.offset + u64_from_index(crate::layout::design_decal_scope_prefix::MAPPING_MODE)
     }
     fn target_group_reference_offset(&self) -> u64 {
         self.scope.offset
-            + cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE)
+            + u64_from_index(crate::layout::design_decal_scope_prefix::TARGET_GROUP_REFERENCE)
             + 1
     }
 }
@@ -311,7 +313,7 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
         let scope_offset = wire
             .asset_reference_offset
-            .checked_sub(cadmpeg_core::decode::u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1)
+            .checked_sub(u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1)
             .ok_or("asset_reference_offset precedes the Decal scope prefix")?;
         let asset = DesignDecalAsset::new(
             [wire.asset_class_tag, wire.name_class_tag],

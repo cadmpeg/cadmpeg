@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::sketch::{
     copy_entity_module_text, decode_headers_for_indices_from_stream, entity_meta_scope,
     extend_sketch_stream, insert_charged_u32, insert_entity_module, insert_legacy_candidate,
@@ -164,7 +166,7 @@ fn scoped_native_scope_key_refuses_materialized_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     let expected = crate::ids::native_scope("a:b");
-    policy.limits.max_materialized_bytes = expected.len() as u64 - 1;
+    policy.limits.max_materialized_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         native_scope_scoped(&ctx, "a:b"),
@@ -172,7 +174,7 @@ fn scoped_native_scope_key_refuses_materialized_limit() {
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
 
-    policy.limits.max_materialized_bytes = expected.len() as u64;
+    policy.limits.max_materialized_bytes = u64_from_index(expected.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (_reservation, actual) = native_scope_scoped(&ctx, "a:b").unwrap();
     assert_eq!(actual, expected);
@@ -301,14 +303,14 @@ fn entity_header_meta_scope_and_module_refuse_byte_limits() {
     let mut policy = DecodePolicy::default();
     let bulk_scope = crate::ids::native_scope("a/BulkStream.dat");
     let expected = crate::ids::native_scope("a/MetaStream.dat");
-    policy.limits.max_materialized_bytes = expected.len() as u64 - 1;
+    policy.limits.max_materialized_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         entity_meta_scope(&ctx, &bulk_scope),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::MaterializedBytes
     ));
-    policy.limits.max_materialized_bytes = expected.len() as u64;
+    policy.limits.max_materialized_bytes = u64_from_index(expected.len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let (_reservation, actual) = entity_meta_scope(&ctx, &bulk_scope).unwrap().unwrap();
     assert_eq!(actual, expected);

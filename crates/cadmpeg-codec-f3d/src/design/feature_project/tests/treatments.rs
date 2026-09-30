@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::feature_project::project_parameter_design;
@@ -445,7 +447,7 @@ fn localized_fillet_group(
             .enumerate()
             .map(|(index, value)| Located {
                 value,
-                offset: 1026 + u64::from(ordinal) * 200 + index as u64 * 11,
+                offset: 1026 + u64::from(ordinal) * 200 + u64_from_index(index) * 11,
             })
             .collect(),
         lost_edge_references: Vec::new(),
@@ -1099,7 +1101,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 .enumerate()
                 .map(|(index, value)| Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )

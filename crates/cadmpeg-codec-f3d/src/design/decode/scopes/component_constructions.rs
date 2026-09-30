@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::design::decode::sketch::next_indexed_record_offset;
@@ -43,7 +45,7 @@ pub(super) fn exact_derived_instance_construction(
     if scope.kind() != scope::DesignFeatureKind::DerivedInstance
         || scope.class_tag.as_str() != "279"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length() != cadmpeg_core::decode::u64_from_index(derived_instance_279_261::LEN)
+        || scope.frame_length() != u64_from_index(derived_instance_279_261::LEN)
         || scope.reference_members().len() != 1
     {
         return None;
@@ -118,7 +120,7 @@ pub(super) fn exact_derived_instance_construction(
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.class_tag.as_str() == "380"
             && occurrence.record_index == carrier_record_index
-            && occurrence.byte_offset() < cadmpeg_core::decode::u64_from_index(relation_at)
+            && occurrence.byte_offset() < u64_from_index(relation_at)
             && occurrence.transform().map(|frame| frame.value) == Some(transform)
     });
     let carrier = candidates.next()?;
@@ -436,7 +438,7 @@ pub(super) fn exact_component_insert_construction(
                         Err(error) => return Some(Err(error)),
                     };
                     if let Err(error) = ctx.charge_collection_items(
-                        cadmpeg_core::decode::u64_from_index(legacy.len()),
+                        u64_from_index(legacy.len()),
                         "f3d component insert merged placements",
                     ) {
                         return Some(Err(error));
@@ -669,7 +671,7 @@ fn direct_utf16_role_until_tail(
     };
     let count = (end - start) / 2;
     ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(count),
+        u64_from_index(count),
         "f3d component carrier role text",
     )?;
     let mut role = String::new();
@@ -1020,7 +1022,7 @@ pub(super) fn exact_copy_paste_component_operation(
     let mut copied_candidates = occurrences.iter().filter(|occurrence| {
         native_stream(&occurrence.id) == Some(stream)
             && occurrence.record_index == copied_occurrence_record_index
-            && occurrence.byte_offset() < cadmpeg_core::decode::u64_from_index(relation_at)
+            && occurrence.byte_offset() < u64_from_index(relation_at)
             && occurrence.transform().map(|frame| frame.value) == Some(copied_transform)
     });
     let copied = copied_candidates.next()?;

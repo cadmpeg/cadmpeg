@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::operands::bind_edge_operand_candidates;
 use crate::design::decode::operands::bind_face_operand_candidates;
 use crate::design::decode::operands::face_recipe_program_kind;
@@ -268,7 +270,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     };
     let recipe = ConstructionRecipe {
         id: "f3d:Design/BulkStream.dat:construction-recipe#60".into(),
-        byte_offset: recipe_name_at as u64,
+        byte_offset: u64_from_index(recipe_name_at),
         kind: ConstructionRecipeKind::Edge,
         design: None,
         recipe_index: 7,
@@ -297,7 +299,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.recipe_record_byte_offset(), recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
     assert_eq!(edge_operand.resolved_edge_slot, None);
-    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&105u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
     work_point_scope
         .try_edit(|draft| {
@@ -317,7 +319,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("WorkPoint edge recipe operand");
     assert_eq!(work_point_operand.next_record_index, 105);
-    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&107u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
     sweep_scope
         .try_edit(|draft| {
@@ -337,7 +339,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("Sweep edge recipe operand");
     assert_eq!(sweep_operand.next_record_index, 107);
-    bytes[next_at as usize + 7..next_at as usize + 11].copy_from_slice(&160u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&160u32.to_le_bytes());
     assert_eq!(
         parse_edge_operand(
             &bytes,
@@ -663,7 +665,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -805,7 +807,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -831,7 +833,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     ));
     assert_eq!(
         edge_operand.recipe_program_offset,
-        recipe_name_at as u64 + 16
+        u64_from_index(recipe_name_at) + 16
     );
     assert_eq!(edge_operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
     assert!(edge_operand.recipe_structure.is_none());
@@ -1159,7 +1161,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1338,7 +1340,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         },
         selector: None,
     });
-    face_recipe.byte_offset = face_recipe_name_at as u64;
+    face_recipe.byte_offset = u64_from_index(face_recipe_name_at);
     face_recipe.record_index =
         face_recipe
             .record_index
@@ -1367,7 +1369,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert!(operand.resolved_face_slots.is_empty());
     assert_eq!(
         operand.recipe_program_offset,
-        face_recipe_name_at as u64 + 24
+        u64_from_index(face_recipe_name_at) + 24
     );
     assert_eq!(operand.recipe_program[0..3], [0, -1, 4]);
     let face_program_at = face_recipe_name_at + 24;
@@ -1394,19 +1396,19 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .map(|node| node.byte_offset)
             .collect::<Vec<_>>(),
         [
-            face_recipe_name_at as u64 + 36,
-            face_recipe_name_at as u64 + 52,
-            face_recipe_name_at as u64 + 68,
+            u64_from_index(face_recipe_name_at) + 36,
+            u64_from_index(face_recipe_name_at) + 52,
+            u64_from_index(face_recipe_name_at) + 68,
         ]
     );
     assert_eq!(operand.recipe_nodes.len(), 3);
     assert_eq!(
         operand.recipe_nodes[0].byte_offset,
-        face_recipe_name_at as u64 + 36
+        u64_from_index(face_recipe_name_at) + 36
     );
     assert_eq!(
         operand.recipe_nodes[0].end_byte_offset,
-        face_recipe_name_at as u64 + 52
+        u64_from_index(face_recipe_name_at) + 52
     );
     assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
     assert_eq!(operand.next_record_index, 104);
@@ -1467,7 +1469,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     }
     header(&mut compact_bytes, *b"306", 104);
     let mut compact_recipe = face_recipe.clone();
-    compact_recipe.byte_offset = compact_name_at as u64;
+    compact_recipe.byte_offset = u64_from_index(compact_name_at);
     compact_recipe.record_index =
         compact_recipe
             .record_index
@@ -1805,7 +1807,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )

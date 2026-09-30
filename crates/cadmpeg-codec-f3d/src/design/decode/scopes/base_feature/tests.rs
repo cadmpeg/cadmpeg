@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::exact_base_feature_construction;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
@@ -12,24 +14,24 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
     let frame_length = 262 + 52 * body_count;
     let mut bytes = vec![0u8; frame_length];
     bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+    bytes[20..24].copy_from_slice(&(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
     let mut cursor = 24;
     for ordinal in 0..body_count {
         bytes[cursor] = 1;
-        bytes[cursor + 1..cursor + 9].copy_from_slice(&(101 + ordinal as u64).to_le_bytes());
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&(101 + u64_from_index(ordinal)).to_le_bytes());
         cursor += 15;
     }
     for ordinal in 0..body_count {
         bytes[cursor] = 1;
-        bytes[cursor + 1..cursor + 9].copy_from_slice(&(201 + ordinal as u64).to_le_bytes());
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&(201 + u64_from_index(ordinal)).to_le_bytes());
         cursor += 15;
     }
     bytes[cursor] = 1;
-    bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+    bytes[cursor + 7..cursor + 11].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
     cursor += 11;
     for ordinal in 0..body_count {
         bytes[cursor] = 1;
-        bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + ordinal as u32).to_le_bytes());
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
         cursor += 11;
     }
     bytes[cursor] = 0;
@@ -37,11 +39,11 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
     bytes[cursor] = 1;
     bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
     cursor += 11;
-    bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+    bytes[cursor..cursor + 4].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
     cursor += 4;
     for ordinal in 0..body_count {
         bytes[cursor] = 1;
-        bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
+        bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
         cursor += 11;
     }
     let mut scope = DesignParameterScope::empty(
@@ -53,12 +55,12 @@ fn result_body_frame() -> (Vec<u8>, DesignParameterScope) {
     scope.paired_class_tag = DesignClassTag::try_from("262".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = frame_length as u64;
-            draft.kind_offset = (frame_length - 102) as u64;
-            draft.paired_byte_offset = frame_length as u64;
+            draft.frame_length = u64_from_index(frame_length);
+            draft.kind_offset = u64_from_index(frame_length - 102);
+            draft.paired_byte_offset = u64_from_index(frame_length);
             draft.reference_members = ReferenceRun::unlocated(vec![301]);
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })

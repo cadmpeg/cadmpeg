@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact fixed extrude, fillet and chamfer parameter scopes.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
@@ -233,7 +235,7 @@ pub(super) fn exact_fixed_fillet_parameters(
         lanes.len() / 2
     };
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(group_count),
+        u64_from_index(group_count),
         "f3d fixed Fillet groups",
     )?;
     groups
@@ -257,7 +259,7 @@ pub(super) fn exact_fixed_fillet_parameters(
     } else {
         let intermediate_count = (lanes.len() - 3) / 2;
         ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(intermediate_count),
+            u64_from_index(intermediate_count),
             "f3d fixed Fillet intermediate rows",
         )?;
         let mut intermediate = Vec::new();

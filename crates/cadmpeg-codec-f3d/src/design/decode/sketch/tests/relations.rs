@@ -68,13 +68,14 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
             .collect::<Vec<_>>(),
         [3, 1, 0]
     );
+    let empty_members: [u32; 0] = [];
     assert_eq!(
         parsed
             .auxiliary_references
             .iter()
             .map(|row| row.value)
             .collect::<Vec<_>>(),
-        [] as [u32; 0]
+        empty_members
     );
     assert_eq!(parsed.owner_reference, 1041);
     assert_eq!(parsed.state, 4);

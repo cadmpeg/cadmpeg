@@ -131,11 +131,11 @@ pub(crate) fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8],
             if signature != b"PK\x01\x02" || offset + 46 > archive.len() {
                 return None;
             }
-            let name_length = u16::from_le_bytes(
+            let name_length = usize::from(u16::from_le_bytes(
                 archive[offset + 28..offset + 30]
                     .try_into()
                     .expect("central name-length field"),
-            ) as usize;
+            ));
             (archive.get(offset + 46..offset + 46 + name_length) == Some(target)).then_some(offset)
         })
         .expect("generated ZIP central-directory entry");

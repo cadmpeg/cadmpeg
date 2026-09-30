@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::decode::sketch::parse_sketch_placement_candidates;
 use crate::design::sketch_project::project_sketch_design;
@@ -117,7 +119,7 @@ fn sketch_placement_candidate_refuses_collection_and_entity_id_limits() {
     ));
 
     policy.limits.max_collection_items = 1;
-    policy.limits.max_retained_bytes = entity_id.as_str().len() as u64 - 1;
+    policy.limits.max_retained_bytes = u64_from_index(entity_id.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         parse_sketch_placement_candidates(&ctx, &bytes, 177, &entity_id, 185, &records),
@@ -207,7 +209,7 @@ fn sketch_placement_decodes_compact_identity_and_explicit_affine_frame() {
             1773,
         );
         assert_eq!(legacy.len(), 1);
-        assert_eq!(legacy[0].frame_length(), length as u64);
+        assert_eq!(legacy[0].frame_length(), u64_from_index(length));
         assert_eq!(*legacy[0].transform(), transform);
         assert_eq!(legacy[0].transform_offset(), Some(48));
     }
@@ -470,8 +472,8 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     })
     .expect("feature-owned sketch placement");
     assert_eq!(placement.record_index, 200);
-    assert_eq!(placement.byte_offset(), head_at as u64);
-    assert_eq!(placement.paired_byte_offset(), paired_at as u64);
+    assert_eq!(placement.byte_offset(), u64_from_index(head_at));
+    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired_at));
     assert_eq!(
         *placement.transform(),
         crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows()
@@ -546,7 +548,7 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
     );
     assert_eq!(
         members.iter().map(|row| row.offset).collect::<Vec<_>>(),
-        [(paired_at + 46) as u64, (paired_at + 57) as u64]
+        [u64_from_index(paired_at + 46), u64_from_index(paired_at + 57)]
     );
 }
 
@@ -1256,12 +1258,12 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&[0; 41]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     let mut member_offsets = Vec::new();
-    member_offsets.push((bytes.len() + 1) as u64);
+    member_offsets.push(u64_from_index(bytes.len() + 1));
     bytes.push(1);
     bytes.extend_from_slice(&99u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 6]);
     for member in [20u32, 21] {
-        member_offsets.push((bytes.len() + 1) as u64);
+        member_offsets.push(u64_from_index(bytes.len() + 1));
         bytes.push(1);
         bytes.extend_from_slice(&member.to_le_bytes());
         bytes.extend_from_slice(&[0; 6]);

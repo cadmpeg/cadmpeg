@@ -6,6 +6,8 @@
     clippy::uninlined_format_args
 )]
 
+use cadmpeg_core::decode::{index_from_u32};
+
 use super::{
     distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers,
     form_cage_surface, form_cage_surfaces, form_class_325_cage_objects,
@@ -513,7 +515,7 @@ fn serializers_preserve_primary_frame_order() {
     ];
     let mut chunks = Vec::new();
     for (ordinal, (name, surface)) in names.iter().zip([8304u64, 8307]).enumerate() {
-        let record = 8305 + ordinal as u32 * 2;
+        let record = 8305 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
         let mut serializer = indexed_frame(b"315", record, 132);
         serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
         for (name_ordinal, code_unit) in name.encode_utf16().enumerate() {
@@ -703,18 +705,18 @@ fn reads_class_325_cage_table_entries() {
     let mut table = indexed_frame(b"325", scope_record, 1850);
     table[20] = 1;
     table[26] = 1;
-    table[27..35].copy_from_slice(&(owner_record as u64).to_le_bytes());
+    table[27..35].copy_from_slice(&(u64::from(owner_record)).to_le_bytes());
     table[37..41].copy_from_slice(&32u32.to_le_bytes());
     let mut object_records = Vec::new();
     for ordinal in 0..32u32 {
         let object_record = 1_000 + ordinal * 2;
         let companion_record = 2_000 + ordinal * 2;
-        let entry = 41 + ordinal as usize * 30;
+        let entry = 41 + index_from_u32(ordinal) * 30;
         table[entry] = 1;
-        table[entry + 1..entry + 9].copy_from_slice(&(object_record as u64).to_le_bytes());
-        table[entry + 11..entry + 19].copy_from_slice(&(307u64 + ordinal as u64).to_le_bytes());
+        table[entry + 1..entry + 9].copy_from_slice(&(u64::from(object_record)).to_le_bytes());
+        table[entry + 11..entry + 19].copy_from_slice(&(307u64 + u64::from(ordinal)).to_le_bytes());
         table[entry + 19] = 1;
-        table[entry + 20..entry + 28].copy_from_slice(&(companion_record as u64).to_le_bytes());
+        table[entry + 20..entry + 28].copy_from_slice(&(u64::from(companion_record)).to_le_bytes());
         object_records.extend([
             indexed_frame(b"289", object_record, 15),
             indexed_frame(b"258", object_record, 15),
@@ -850,7 +852,7 @@ fn duplicate_surface_serializers_stay_ambiguous() {
     let entry_name = "TSpline.00000000-0000-0000-0000-000000000000.tsm";
     let mut chunks = Vec::new();
     for (ordinal, surface) in [8304u64, 8307, 8304, 8304].into_iter().enumerate() {
-        let record = 8400 + ordinal as u32 * 2;
+        let record = 8400 + u32::try_from(ordinal).expect("fixture value fits u32") * 2;
         let mut serializer = indexed_frame(b"315", record, 132);
         serializer[21..25].copy_from_slice(&48u32.to_le_bytes());
         for (name_ordinal, code_unit) in entry_name.encode_utf16().enumerate() {

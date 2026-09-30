@@ -835,7 +835,7 @@ fn recipe_reference_suffix(bytes: &[u8]) -> bool {
         return false;
     };
     matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6))
-        && (0..cadmpeg_core::decode::index_from_u32(reference_count)).all(|ordinal| {
+        && (0..index_from_u32(reference_count)).all(|ordinal| {
             View::u32_le_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0)
         })
         && bytes[terminator_at..].iter().all(|byte| *byte == 0)
@@ -1328,31 +1328,31 @@ fn parse_dimension_locus_pair(
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
-        byte_offset: cadmpeg_core::decode::u64_from_index(start),
+        byte_offset: u64_from_index(start),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         opaque_index: Some(crate::records::identity::Located {
             value: View::u32_le_at(bytes, start + 35)?,
-            offset: cadmpeg_core::decode::u64_from_index(start + 35),
+            offset: u64_from_index(start + 35),
         }),
         loci: [
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(first_geometry_record_index)?),
-                geometry_reference_offset: cadmpeg_core::decode::u64_from_index(start + 40),
+                geometry_reference_offset: u64_from_index(start + 40),
                 role: View::u32_le_at(bytes, start + 50)?,
-                role_offset: cadmpeg_core::decode::u64_from_index(start + 50),
+                role_offset: u64_from_index(start + 50),
             },
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(second_geometry_record_index)?),
-                geometry_reference_offset: cadmpeg_core::decode::u64_from_index(start + 55),
+                geometry_reference_offset: u64_from_index(start + 55),
                 role: View::u32_le_at(bytes, start + 65)?,
-                role_offset: cadmpeg_core::decode::u64_from_index(start + 65),
+                role_offset: u64_from_index(start + 65),
             },
         ],
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
             .ok()?,
-        paired_byte_offset: cadmpeg_core::decode::u64_from_index(paired_byte_offset),
+        paired_byte_offset: u64_from_index(paired_byte_offset),
     })
     .ok()
 }
@@ -1532,7 +1532,7 @@ fn parse_dimension_null_locus_pair(
         id: String::new(),
         companion_record_index,
         governing_companion_record_index: companion_record_index,
-        byte_offset: cadmpeg_core::decode::u64_from_index(start),
+        byte_offset: u64_from_index(start),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
@@ -1540,20 +1540,20 @@ fn parse_dimension_null_locus_pair(
         loci: [
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: None,
-                geometry_reference_offset: cadmpeg_core::decode::u64_from_index(start + 25),
+                geometry_reference_offset: u64_from_index(start + 25),
                 role: View::u32_le_at(bytes, start + 35)?,
-                role_offset: cadmpeg_core::decode::u64_from_index(start + 35),
+                role_offset: u64_from_index(start + 35),
             },
             crate::records::dimensions::DesignDimensionAnnotationOperand {
                 geometry_record_index: Some(NonZeroU32::new(geometry_record_index)?),
-                geometry_reference_offset: cadmpeg_core::decode::u64_from_index(start + 40),
+                geometry_reference_offset: u64_from_index(start + 40),
                 role: View::u32_le_at(bytes, start + 50)?,
-                role_offset: cadmpeg_core::decode::u64_from_index(start + 50),
+                role_offset: u64_from_index(start + 50),
             },
         ],
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
             .ok()?,
-        paired_byte_offset: cadmpeg_core::decode::u64_from_index(paired_byte_offset),
+        paired_byte_offset: u64_from_index(paired_byte_offset),
     })
     .ok()
 }
@@ -1704,7 +1704,7 @@ pub(crate) fn decode_dimension_annotation_frames(
                     &sketch_entities,
                 ) {
                     let mut frame = parsed?;
-                    if frame.paired_byte_offset() >= cadmpeg_core::decode::u64_from_index(end) {
+                    if frame.paired_byte_offset() >= u64_from_index(end) {
                         position = at.saturating_add(1);
                         continue;
                     }
@@ -1800,9 +1800,9 @@ fn parse_dimension_annotation_frame(
         }
         operands.push(DesignDimensionAnnotationOperand {
             geometry_record_index,
-            geometry_reference_offset: cadmpeg_core::decode::u64_from_index(position + 1),
+            geometry_reference_offset: u64_from_index(position + 1),
             role: View::u32_le_at(bytes, position + 11)?,
-            role_offset: cadmpeg_core::decode::u64_from_index(position + 11),
+            role_offset: u64_from_index(position + 11),
         });
         position = position.checked_add(15)?;
     }
@@ -1886,7 +1886,7 @@ fn parse_dimension_annotation_frame(
             }
             return_members.push(crate::records::identity::Located {
                 value: reference,
-                offset: cadmpeg_core::decode::u64_from_index(cursor + 1),
+                offset: u64_from_index(cursor + 1),
             });
             cursor += 11;
         }
@@ -1948,22 +1948,22 @@ fn parse_dimension_annotation_frame(
         id: String::new(),
         companion_record_index,
         governing_companion_record_index,
-        byte_offset: cadmpeg_core::decode::u64_from_index(start),
+        byte_offset: u64_from_index(start),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
         entity_genesis,
         annotation_bytes,
-        annotation_byte_offset: cadmpeg_core::decode::u64_from_index(annotation_byte_offset),
+        annotation_byte_offset: u64_from_index(annotation_byte_offset),
         governing_owner_record_index,
-        governing_owner_reference_offset: cadmpeg_core::decode::u64_from_index(tail + 1),
+        governing_owner_reference_offset: u64_from_index(tail + 1),
         return_members,
         paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
             .ok()?,
-        paired_byte_offset: cadmpeg_core::decode::u64_from_index(paired_byte_offset),
+        paired_byte_offset: u64_from_index(paired_byte_offset),
         owner_reference,
-        owner_reference_offset: cadmpeg_core::decode::u64_from_index(paired_byte_offset + 20),
+        owner_reference_offset: u64_from_index(paired_byte_offset + 20),
     };
     match DesignDimensionAnnotationFrame::try_new_charged(ctx, draft) {
         Ok(frame) => Some(Ok(frame)),
@@ -2525,9 +2525,9 @@ fn parse_dimension_locus_group(
         }
         geometry.push((
             geometry_record_index,
-            cadmpeg_core::decode::u64_from_index(position + 1),
+            u64_from_index(position + 1),
             View::u32_le_at(bytes, position + 11)?,
-            cadmpeg_core::decode::u64_from_index(position + 11),
+            u64_from_index(position + 11),
         ));
         position = position.checked_add(15)?;
     }
@@ -2541,12 +2541,12 @@ fn parse_dimension_locus_group(
     if !sketch_entities.contains(&owner_reference) {
         return None;
     }
-    let owner_reference_offset = cadmpeg_core::decode::u64_from_index(position + 2);
+    let owner_reference_offset = u64_from_index(position + 2);
     let owner_role = View::u32_le_at(bytes, position + 12)?;
-    let owner_role_offset = cadmpeg_core::decode::u64_from_index(position + 12);
+    let owner_role_offset = u64_from_index(position + 12);
     position = position.checked_add(16)?;
     let state = View::u32_le_at(bytes, position)?;
-    let state_offset = cadmpeg_core::decode::u64_from_index(position);
+    let state_offset = u64_from_index(position);
     let return_count = usize::try_from(View::u32_le_at(bytes, position + 4)?).ok()?;
     if return_count != count {
         return None;
@@ -2583,7 +2583,7 @@ fn parse_dimension_locus_group(
             role_offset,
             returned: crate::records::identity::Located {
                 value: record_index,
-                offset: cadmpeg_core::decode::u64_from_index(position + 1),
+                offset: u64_from_index(position + 1),
             },
         });
         position = position.checked_add(11)?;
@@ -2600,7 +2600,7 @@ fn parse_dimension_locus_group(
     Some(Ok(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
-        byte_offset: cadmpeg_core::decode::u64_from_index(start),
+        byte_offset: u64_from_index(start),
         class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
         record_index,
         frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
@@ -2613,7 +2613,7 @@ fn parse_dimension_locus_group(
         state_offset,
         next_class_tag: crate::design::decode::text::class_tag_from_view(next_class_tag).ok()?,
         next_record_index: View::u32_le_at(bytes, next_after_tag)?,
-        next_byte_offset: cadmpeg_core::decode::u64_from_index(next_byte_offset),
+        next_byte_offset: u64_from_index(next_byte_offset),
     }))
 }
 

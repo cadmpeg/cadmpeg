@@ -10,6 +10,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::history::{
     active_brep_face_matches_source, bind_historical_entity_versions,
     bind_profile_face_group_cardinality, bind_snapshot_revision_ids,
@@ -993,10 +995,10 @@ fn snapshot_ordinals_bind_the_sorted_revision_interval() {
                 .map(|(index, old_ref)| AsmEntityChange {
                     id: format!("change-{index}"),
                     parent: board_id.clone(),
-                    byte_offset: index as u64,
+                    byte_offset: u64_from_index(index),
                     kind: AsmEntityChangeKind::Update {
                         old: old_ref,
-                        new: index as i64,
+                        new: i64::try_from(index).expect("fixture value fits i64"),
                     },
                 })
                 .collect(),
@@ -1042,7 +1044,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
         AsmDeltaState {
             id: state_id.clone(),
             parent: "history".into(),
-            byte_offset: node_index as u64,
+            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
             state_id: 10 - node_index,
             version_flag: 1,
             state_flag: 0,
@@ -1054,7 +1056,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
             bulletin_boards: vec![AsmBulletinBoard {
                 id: board_id.clone(),
                 parent: state_id.clone(),
-                byte_offset: node_index as u64,
+                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
                 owner_ref: 0,
                 number: 2,
                 changes: inserted
@@ -1063,7 +1065,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                     .map(|(index, new_ref)| AsmEntityChange {
                         id: format!("change-{node_index}-{index}"),
                         parent: board_id.clone(),
-                        byte_offset: index as u64,
+                        byte_offset: u64_from_index(index),
                         kind: AsmEntityChangeKind::Insert { new: *new_ref },
                     })
                     .collect(),
@@ -1072,7 +1074,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
                 id: format!("record-{node_index}"),
                 parent: state_id,
                 revision_id: None,
-                byte_offset: node_index as u64,
+                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
                 framing: crate::history_records::AsmHistoryRecordFraming::Framed {
                     index: 0,
                     name: "End-of-ASM-History-Section".into(),
@@ -1404,7 +1406,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         AsmDeltaState {
             id: format!("state-{node_index}"),
             parent: "history".into(),
-            byte_offset: node_index as u64,
+            byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
             state_id: 10 - node_index,
             version_flag: 1,
             state_flag: 0,
@@ -1416,13 +1418,13 @@ fn reverse_history_builds_complete_entity_version_maps() {
             bulletin_boards: vec![AsmBulletinBoard {
                 id: board_id.clone(),
                 parent: format!("state-{node_index}"),
-                byte_offset: node_index as u64,
+                byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
                 owner_ref: 0,
                 number: 2,
                 changes: vec![AsmEntityChange {
                     id: format!("change-{node_index}"),
                     parent: board_id,
-                    byte_offset: node_index as u64,
+                    byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
                     kind: match (old_ref, new_ref) {
                         (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
                         (None, Some(new)) => AsmEntityChangeKind::Insert { new },
@@ -1450,7 +1452,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
             revision_id: Some(revision_id),
             byte_offset: 0,
             framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                index: revision_id as u64 - 3,
+                index: u64::try_from(revision_id).expect("fixture reference is nonnegative") - 3,
                 name: "edge".into(),
                 entity_references: Vec::new(),
             },
@@ -1685,7 +1687,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
     let group = |record_index, scope_reference_ordinal, members: Vec<u32>| {
         let member_offsets = (0..members.len())
-            .map(|index| index as u64 * 11)
+            .map(|index| u64_from_index(index) * 11)
             .collect::<Vec<_>>();
         serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
             "id": format!(
@@ -1781,7 +1783,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             draft.reference_members = {
                 let reference_values: Vec<u32> = vec![100, 110, 111, 120, 121];
                 let reference_offsets = (0..reference_values.len())
-                    .map(|ordinal| 14 + 11 * ordinal as u64)
+                    .map(|ordinal| 14 + 11 * u64_from_index(ordinal))
                     .collect();
                 crate::records::identity::ReferenceRun::from_columns(
                     reference_values,

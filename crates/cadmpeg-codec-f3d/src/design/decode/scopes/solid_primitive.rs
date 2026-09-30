@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse solid primitive construction frames and their parameter owners.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
@@ -73,7 +75,7 @@ pub(super) fn exact_solid_primitive(
         }
         Some((
             crate::records::sketch_placement::SketchPlacementMatrix::try_from(transform).ok()?,
-            cadmpeg_core::decode::u64_from_index(matrix_at),
+            u64_from_index(matrix_at),
         ))
     };
     match scope.kind_name() {
@@ -96,7 +98,7 @@ pub(super) fn exact_solid_primitive(
                     diameter_record_index,
                     diameter_offset,
                     operation,
-                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }
@@ -129,7 +131,7 @@ pub(super) fn exact_solid_primitive(
                     minor_diameter_record_index,
                     minor_diameter_offset,
                     operation,
-                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }
@@ -163,7 +165,7 @@ pub(super) fn exact_solid_primitive(
                     offset_y_record_index: offset_y.record_index(),
                     offset_y_offset: offset_y.evaluated_value_offset(),
                     operation,
-                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }
@@ -188,7 +190,7 @@ pub(super) fn exact_solid_primitive(
                     diameter_offset: diameter.evaluated_value_offset(),
                     transform: cylinder_transform,
                     operation,
-                    operation_offset: cadmpeg_core::decode::u64_from_index(operation_offset),
+                    operation_offset: u64_from_index(operation_offset),
                 },
             ))
         }

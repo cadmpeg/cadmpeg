@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;
 use crate::layout::work_plane_legacy_class_256_matrix_frame as work_plane_class_256;
@@ -95,7 +97,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(
             decoded.transform_offset,
-            work_plane_class_256::MATRIX as u64
+            u64_from_index(work_plane_class_256::MATRIX)
         );
         assert_eq!(decoded.reference, None);
     }
@@ -206,7 +208,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
         )
         .expect("opaque-prefix WorkPlane frame");
         assert_eq!(decoded.transform, transform.try_into().unwrap());
-        assert_eq!(decoded.transform_offset, matrix as u64);
+        assert_eq!(decoded.transform_offset, u64_from_index(matrix));
         assert_eq!(decoded.reference, None);
     }
 

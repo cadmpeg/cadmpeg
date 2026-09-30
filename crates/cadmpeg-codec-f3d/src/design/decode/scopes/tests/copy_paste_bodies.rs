@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{u64_from_index};
+
 #[test]
 fn generated_copy_paste_bodies_scope_matches_operation_layout() {
     let (bytes, _) =
@@ -188,7 +190,7 @@ fn design_scope_kind_scan_refuses_temporary_and_retained_limits() {
     .into_iter()
     .find(|header| header.record_index == 1_400)
     .unwrap();
-    let kind_len = "CopyPasteBodies".len() as u64;
+    let kind_len = u64_from_index("CopyPasteBodies".len());
     for (materialized_cap, retained_cap, dimension, operation) in [
         (
             Some(0),

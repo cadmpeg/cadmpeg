@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ACT registry records: tables, channels, entities and the root component and layout.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -897,7 +899,7 @@ impl ActRegistryChannel {
         let id = NativeRecordId::try_new(id, "act-registry-channel", byte_offset)?;
         validate_act_channel_name(&name)?;
         byte_offset
-            .checked_add(8 + cadmpeg_core::decode::u64_from_index(name.len()))
+            .checked_add(8 + u64_from_index(name.len()))
             .ok_or("ACT registry offset overflow")?;
         Ok(Self {
             id,
@@ -917,7 +919,7 @@ impl ActRegistryChannel {
         self.byte_offset + 4
     }
     pub(crate) fn guid_offset(&self) -> u64 {
-        self.byte_offset + 8 + cadmpeg_core::decode::u64_from_index(self.name.len())
+        self.byte_offset + 8 + u64_from_index(self.name.len())
     }
 }
 
@@ -1285,7 +1287,7 @@ impl ActRootLayout {
         self.byte_offset + 36
     }
     fn tracked_entity_record_offset(&self) -> u64 {
-        self.entity_id_offset() + cadmpeg_core::decode::u64_from_index(self.entity_id.encode_utf16().count()) * 2 + 1
+        self.entity_id_offset() + u64_from_index(self.entity_id.encode_utf16().count()) * 2 + 1
     }
     pub(crate) fn registry_flag_offset(&self) -> u64 {
         self.tracked_entity_record_offset() + 10
@@ -1295,7 +1297,7 @@ impl ActRootLayout {
     }
     pub(crate) fn components_root_record_offset(&self) -> u64 {
         self.display_name_offset()
-            + cadmpeg_core::decode::u64_from_index(self.display_name.encode_utf16().count()) * 2
+            + u64_from_index(self.display_name.encode_utf16().count()) * 2
             + self.padding
             + 1
     }

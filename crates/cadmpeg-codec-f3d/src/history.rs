@@ -9,6 +9,8 @@
 //! history records while retaining source bytes for records without typed
 //! semantics.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 pub(crate) mod selection;
 
 use crate::bytes::int_at;
@@ -250,7 +252,7 @@ pub(crate) fn decode(
         states.push(AsmDeltaState {
             id: state_record_id,
             parent,
-            byte_offset: cadmpeg_core::decode::u64_from_index(offset),
+            byte_offset: u64_from_index(offset),
             state_id,
             version_flag,
             state_flag,
@@ -283,7 +285,7 @@ pub(crate) fn decode(
     let offset = history_offset;
     Ok(Some(AsmHistory {
         id: history_id,
-        byte_offset: cadmpeg_core::decode::u64_from_index(offset),
+        byte_offset: u64_from_index(offset),
         preamble,
         record_table_binding_budget_exceeded,
         states,
@@ -604,10 +606,10 @@ fn admit_complete_table_binding_budget(
     mut table_lengths: impl ExactSizeIterator<Item = usize>,
     limits: &cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let state_count = cadmpeg_core::decode::u64_from_index(table_lengths.len());
+    let state_count = u64_from_index(table_lengths.len());
     ctx.charge_work(state_count, "check F3D complete history topology")?;
     let entries = table_lengths.try_fold(0_u64, |total, length| {
-        total.checked_add(cadmpeg_core::decode::u64_from_index(length))
+        total.checked_add(u64_from_index(length))
     });
     let bytes = entries
         .and_then(|entries| entries.checked_mul(HISTORY_TOPOLOGY_CACHE_BYTES_PER_ENTRY))
@@ -9620,7 +9622,7 @@ fn decode_bulletin_boards(
             changes.push(AsmEntityChange {
                 id: change_id,
                 parent,
-                byte_offset: cadmpeg_core::decode::u64_from_index(change_offset),
+                byte_offset: u64_from_index(change_offset),
                 kind,
             });
         }
@@ -9632,7 +9634,7 @@ fn decode_bulletin_boards(
         boards.push(AsmBulletinBoard {
             id: board_id,
             parent,
-            byte_offset: cadmpeg_core::decode::u64_from_index(board_offset),
+            byte_offset: u64_from_index(board_offset),
             owner_ref,
             number,
             changes,
@@ -9728,9 +9730,9 @@ fn decode_history_records(
                     id,
                     parent,
                     revision_id: None,
-                    byte_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                    byte_offset: u64_from_index(record.offset),
                     framing: crate::history_records::AsmHistoryRecordFraming::Framed {
-                        index: cadmpeg_core::decode::u64_from_index(record.index),
+                        index: u64_from_index(record.index),
                         name: record.name,
                         entity_references,
                     },
@@ -9757,7 +9759,7 @@ fn decode_history_records(
                 id,
                 parent,
                 revision_id: None,
-                byte_offset: cadmpeg_core::decode::u64_from_index(start),
+                byte_offset: u64_from_index(start),
                 framing: crate::history_records::AsmHistoryRecordFraming::Opaque { error },
                 raw_bytes,
             }])

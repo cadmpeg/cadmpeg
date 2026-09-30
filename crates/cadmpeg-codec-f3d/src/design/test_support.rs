@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared helpers for design-owner unit tests.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use crate::design::decode::parameters::design_parameter_discriminator;
 use crate::test_support::lp_utf16;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -128,7 +130,7 @@ pub(super) fn primary_record(
 ) -> crate::metastream::RecordIndexEntry {
     crate::metastream::RecordIndexEntry {
         entity_id,
-        bulk_offset: bulk_offset as u64,
+        bulk_offset: u64_from_index(bulk_offset),
     }
 }
 

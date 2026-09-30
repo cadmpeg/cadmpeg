@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
+use cadmpeg_core::decode::{u64_from_index};
+
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -151,7 +153,7 @@ pub(super) fn browser_node_records(
             record_index,
             guid,
             entity_suffix,
-            hidden_offset: cadmpeg_core::decode::u64_from_index(frame.start + after_guid),
+            hidden_offset: u64_from_index(frame.start + after_guid),
             hidden: hidden == 1,
         });
     }
@@ -217,7 +219,7 @@ pub(crate) fn body_presentations(
                 entity_suffix,
                 BodyPresentationOwner::Named {
                     entity_id,
-                    entity_id_offset: cadmpeg_core::decode::u64_from_index(entity_id_offset),
+                    entity_id_offset: u64_from_index(entity_id_offset),
                 },
                 presentation_material(
                     ctx,
@@ -277,7 +279,7 @@ pub(crate) fn body_presentations(
             ctx.refuse_codec_limit("f3d body presentation records allocation", 0, 1)
         })?;
         out.push(BodyPresentation {
-            byte_offset: cadmpeg_core::decode::u64_from_index(frame.start),
+            byte_offset: u64_from_index(frame.start),
             entity_suffix,
             owner,
             browser_node,
@@ -462,12 +464,12 @@ fn presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: cadmpeg_core::decode::u64_from_index(token_at + 4),
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: cadmpeg_core::decode::u64_from_index(visual_at + 4),
+            visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: visual_preset.map(|(at, value)| crate::records::identity::Located {
                 value,
-                offset: cadmpeg_core::decode::u64_from_index(at + 4),
+                offset: u64_from_index(at + 4),
             }),
         });
     }
@@ -574,9 +576,9 @@ fn bare_presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: cadmpeg_core::decode::u64_from_index(token_at + 4),
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: cadmpeg_core::decode::u64_from_index(visual_at + 4),
+            visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: None,
         });
     }
@@ -695,6 +697,8 @@ fn preceding_lp_utf16(
 
 #[cfg(test)]
 mod tests {
+use cadmpeg_core::decode::{u64_from_index};
+
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
         body_presentations as body_presentations_with_context,
@@ -1000,7 +1004,7 @@ mod tests {
                     && limit.operation == "f3d body presentation records"
         ));
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = (node_guid.len() - 1) as u64;
+        policy.limits.max_retained_bytes = u64_from_index(node_guid.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let nodes = browser_node_records(&bytes, &meta).unwrap();
         let error = super::copy_browser_node(&ctx, &nodes[0]).err().unwrap();
