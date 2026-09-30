@@ -70,13 +70,13 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         .iter()
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("classless direct point carrier");
     assert_eq!(carrier.marker.id(), "center");
     assert_eq!(carrier.construction, Some(false));
@@ -197,13 +197,13 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         entity_index: 1,
         entity_ref: Some("center".into()),
     };
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &center,
         5.0,
-    )
+    ).unwrap()
     .expect("center identity survives a mismatched pair radius");
     assert_eq!(carrier.marker.id(), "center");
 
@@ -212,13 +212,13 @@ fn native_point_identity_rejects_a_declared_radial_marker() {
         entity_ref: Some("radial".into()),
         ..center
     };
-    assert!(dimensioned_relation_carrier(
+    assert!(dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &radial,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -319,13 +319,13 @@ fn native_radial_identity_selects_one_of_equal_radius_pairs() {
         entity_ref: Some("radial-one".into()),
     };
 
-    let carrier = dimensioned_relation_carrier(
+    let carrier = dimensioned_relation_carrier(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         &markers,
         "feature",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("the radial identity selects its declared center");
     assert_eq!(carrier.marker.id(), "center-one");
     assert_eq!(carrier.center(), [0.010, 0.020]);

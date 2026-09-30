@@ -216,3 +216,27 @@ fn point_dimension_projection_refuses_retained_limit() {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes
     ));
 }
+
+#[test]
+fn point_dimension_projection_refuses_work_limit() {
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
+    project_relation_point_dimensioned_circles(
+        &service, &mut entities, std::slice::from_ref(&feature), std::slice::from_ref(&parameter), std::slice::from_ref(&lane),
+    ).unwrap();
+    assert_eq!(entities.len(), 2);
+    assert!(matches!(entities[1].geometry.definition(),
+        SketchGeometryDefinition::Circle { center, radius }
+            if *center == Point2::new(1.0, 2.0) && radius.get() == 2.0));
+
+    let (feature, parameter, lane, mut entities) = explicit_point_circle_input();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_relation_point_dimensioned_circles(
+        &limited, &mut entities, std::slice::from_ref(&feature), std::slice::from_ref(&parameter), std::slice::from_ref(&lane),
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+}

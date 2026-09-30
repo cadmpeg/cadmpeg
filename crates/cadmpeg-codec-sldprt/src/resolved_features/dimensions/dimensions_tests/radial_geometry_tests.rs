@@ -45,7 +45,7 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
     };
 
     assert!(matches!(
-        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0),
+        dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane), &center, 3.0).unwrap(),
         Some(DimensionedCurveNative::Circle { center: [u, v] })
             if [u, v] == [0.1, 0.2]
     ));
@@ -57,11 +57,11 @@ fn arc_dimension_center_requires_one_matching_radial_witness() {
         SketchInputKind::ConstrainedPoint,
         Some([0.1, 0.203]),
     ));
-    assert!(dimensioned_arc_native_geometry(
+    assert!(dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_lane),
         &ambiguous_lane.sketch_entities[0],
         3.0
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -126,7 +126,7 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
     };
 
     let Some(DimensionedCurveNative::Arc(arc)) =
-        dimensioned_arc_native_geometry(std::slice::from_ref(&lane), &center, 3.0)
+        dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&lane), &center, 3.0).unwrap()
     else {
         panic!("two endpoints should define a bounded arc");
     };
@@ -141,11 +141,11 @@ fn arc_dimension_uses_two_endpoint_markers_for_a_bounded_arc() {
         sketch_entities: vec![center, lane.sketch_entities[1].clone(), invalid_end],
         ..lane
     };
-    assert!(dimensioned_arc_native_geometry(
+    assert!(dimensioned_arc_native_geometry(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&invalid_lane),
         &invalid_lane.sketch_entities[0],
         3.0
-    )
+    ).unwrap()
     .is_none());
 }
 
