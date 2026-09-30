@@ -57,7 +57,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         }
         let exact_count = |value: f64| {
             (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
-                .then_some(value as u32)
+                .then(|| cadmpeg_core::convert::truncate_f64_to_u32(value)).flatten()
         };
         let u_count_value = exact_count(u_count.evaluated_value().get())?;
         let v_count_value = exact_count(v_count.evaluated_value().get())?;
@@ -229,7 +229,7 @@ fn exact_rectangular_pattern_instances(
                 run.push(*first);
                 let mut unique = true;
                 for (ordinal, record_candidates) in candidates[1..count - 1].iter().enumerate() {
-                    let fraction = (ordinal + 1) as f64 / (count - 1) as f64;
+                    let fraction = cadmpeg_core::convert::f64_from_index(ordinal + 1)? / cadmpeg_core::convert::f64_from_index(count - 1)?;
                     let mut matches = record_candidates.iter().filter(|candidate| {
                         same_transform_basis(&first.0, &candidate.0)
                             && translation_delta(&first.0, &candidate.0)
@@ -488,7 +488,7 @@ pub(super) fn exact_circular_pattern_construction_with_owners(
                 return None;
             }
             Some((
-                owner.evaluated_value().get() as u32,
+                cadmpeg_core::convert::truncate_f64_to_u32(owner.evaluated_value().get())?,
                 owner.record_index(),
                 owner.evaluated_value_offset(),
             ))

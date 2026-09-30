@@ -1085,10 +1085,10 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
         .then(|| {
             Color::new(
-                values[0] as f32,
-                values[1] as f32,
-                values[2] as f32,
-                values[3] as f32,
+                cadmpeg_core::convert::f32_from_f64(values[0])?,
+                cadmpeg_core::convert::f32_from_f64(values[1])?,
+                cadmpeg_core::convert::f32_from_f64(values[2])?,
+                cadmpeg_core::convert::f32_from_f64(values[3])?,
             )
         })
         .flatten()

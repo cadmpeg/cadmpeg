@@ -4589,14 +4589,11 @@ fn native_conic_interval_curve(
             "source-less F3D conic interval exceeds addressable NURBS cardinality".into(),
         )
     };
-    if !span_count.is_finite() || span_count >= usize::MAX as f64 {
-        return Err(too_large());
-    }
-    let spans = span_count as usize;
+    let spans = cadmpeg_core::convert::truncate_f64_to_usize(span_count).ok_or_else(too_large)?;
     let doubled = spans.checked_mul(2).ok_or_else(too_large)?;
     let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
     let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
-    let step = delta / spans as f64;
+    let step = delta / cadmpeg_core::convert::f64_from_index(spans).ok_or_else(too_large)?;
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     let mut knots = Vec::new();
@@ -4619,7 +4616,7 @@ fn native_conic_interval_curve(
         )
     };
     for span in 0..spans {
-        let start = parameter_range[0] + step * span as f64;
+        let start = parameter_range[0] + step * cadmpeg_core::convert::f64_from_index(span).ok_or_else(too_large)?;
         let end = start + step;
         let middle = (start + end) * 0.5;
         let weight = (step * 0.5).cos();

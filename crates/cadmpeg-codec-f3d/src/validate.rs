@@ -2557,7 +2557,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
                         && instances.frames().enumerate().all(|(ordinal, frame)| {
                             let transform = &frame.transform.value;
-                            let fraction = ordinal as f64 / (count - 1) as f64;
+                            let (Some(ordinal), Some(divisor)) = (cadmpeg_core::convert::f64_from_index(ordinal), cadmpeg_core::convert::f64_from_index(count - 1)) else {
+                                return false;
+                            };
+                            let fraction = ordinal / divisor;
                             (0..3).all(|axis| {
                                 (transform[axis][3] - first[axis][3] - delta[axis] * fraction).abs()
                                     <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
