@@ -290,7 +290,7 @@ fn compact_coil_spiral_placement_fixture() -> (Vec<u8>, DesignParameterScope, us
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent = Some(
+        slot.get_or_insert_with(Default::default).extent = Some(
             crate::records::identity::MaybeRecordedValue::Unlocated(DesignCoilExtent::Spiral),
         );
     }
@@ -673,7 +673,7 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent =
+        slot.get_or_insert_with(Default::default).extent =
             Some(crate::records::identity::MaybeRecordedValue::Unlocated(
                 DesignCoilExtent::RevolutionsHeight,
             ));

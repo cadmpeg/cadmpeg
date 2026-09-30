@@ -327,23 +327,25 @@ pub(crate) struct HistoricalBinding {
 
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct OptionalHistoricalBindingWire {
     #[serde(default, deserialize_with = "deserialize_historical_entity_kind")]
-    historical_entity_kind: Option<AsmHistoricalEntityKind>,
+    #[serde(rename = "historical_entity_kind")]
+    entity_kind: Option<AsmHistoricalEntityKind>,
     #[serde(default, deserialize_with = "deserialize_historical_entity_ref")]
-    historical_entity_ref: Option<i64>,
+    #[serde(rename = "historical_entity_ref")]
+    entity_ref: Option<i64>,
     #[serde(default)]
-    historical_state_ids: Vec<i64>,
+    #[serde(rename = "historical_state_ids")]
+    state_ids: Vec<i64>,
 }
 
 pub(super) fn deserialize_historical_binding<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<HistoricalBinding>, D::Error> {
     let wire = OptionalHistoricalBindingWire::deserialize(deserializer)?;
-    match (wire.historical_entity_kind, wire.historical_entity_ref) {
-        (None, None) if wire.historical_state_ids.is_empty() => Ok(None),
-        (Some(kind), Some(entity_ref)) => Ok(Some(HistoricalBinding { kind, entity_ref, state_ids: wire.historical_state_ids })),
+    match (wire.entity_kind, wire.entity_ref) {
+        (None, None) if wire.state_ids.is_empty() => Ok(None),
+        (Some(kind), Some(entity_ref)) => Ok(Some(HistoricalBinding { kind, entity_ref, state_ids: wire.state_ids })),
         _ => Err(serde::de::Error::custom("historical_entity_kind and historical_entity_ref are required together for historical_state_ids")),
     }
 }

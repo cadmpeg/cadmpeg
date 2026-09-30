@@ -48,7 +48,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSides {
                     edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 383,
+                        wrapper: 383,
                         group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
@@ -301,7 +301,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         &mut multi_shape
     {
         edges.push(crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-            wrapper_record_index: edges[0].wrapper_record_index,
+            wrapper: edges[0].wrapper,
             group_record_index: 415_u32.try_into().unwrap(),
             aggregate_operand_record_index: 420,
         });
@@ -564,7 +564,7 @@ fn edge_flange_to_object_fixture(
                     crate::records::feature::sheet_metal::DesignEdgeFlangeShape::TwoSidesPerEdge {
                         edges: vec![crate::records::feature::sheet_metal::DesignFlangeEdgeWidth {
                             edge: crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                                wrapper_record_index: 383,
+                                wrapper: 383,
                                 group_record_index: 385_u32.try_into().unwrap(),
                                 aggregate_operand_record_index: 407,
                             },
@@ -575,7 +575,7 @@ fn edge_flange_to_object_fixture(
                 } else {
                     crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
                         edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 383,
+                        wrapper: 383,
                         group_record_index: 385_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 407,
                     }],
@@ -912,7 +912,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::Symmetric {
                     edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: 318,
+                        wrapper: 318,
                         group_record_index: 320_u32.try_into().unwrap(),
                         aggregate_operand_record_index: 339,
                     }],

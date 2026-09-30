@@ -635,8 +635,8 @@ impl Serialize for DesignEdgeOperand {
             recipe_state_id: Option<i64>,
             #[serde(skip_serializing_if = "Option::is_none")]
             resolved_edge_slot: Option<i64>,
-            #[serde(flatten, serialize_with = "serialize_edge_resolved_axis")]
-            resolved_axis: Option<DesignAxis>,
+            #[serde(flatten)]
+            resolved_axis: EdgeResolvedAxisWire,
             next_record_index: u32,
             next_byte_offset: u64,
         }
@@ -679,7 +679,7 @@ impl Serialize for DesignEdgeOperand {
             recipe_selectors: &self.recipe_selectors,
             recipe_state_id: self.recipe_state_id,
             resolved_edge_slot: self.resolved_edge_slot,
-            resolved_axis: self.resolved_axis,
+            resolved_axis: EdgeResolvedAxisWire::from_axis(self.resolved_axis.as_ref()),
             next_record_index: self.next_record_index,
             next_byte_offset: self.next_byte_offset,
         }
@@ -829,7 +829,8 @@ impl DesignEdgeOperand {
 }
 
 /// Unadmitted `DesignEdgeOperand` fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(crate) struct DesignEdgeOperandDraft {
     /// Globally unique deterministic identifier for this native operand.
     pub(crate) id: String,
@@ -1047,7 +1048,17 @@ struct EdgeResolvedAxisWire {
     resolved_axis_direction: Option<FiniteVector3>,
 }
 
+impl EdgeResolvedAxisWire {
+    fn from_axis(axis: Option<&DesignAxis>) -> Self {
+        Self {
+            resolved_axis_origin: axis.map(|axis| axis.origin),
+            resolved_axis_direction: axis.map(|axis| FiniteVector3::from(axis.direction)),
+        }
+    }
+}
+
 // The wire adapter receives the optional field by reference, including its absence.
+#[cfg(test)]
 #[allow(clippy::ref_option)]
 fn serialize_edge_resolved_axis<S: serde::Serializer>(
     axis: &Option<DesignAxis>,

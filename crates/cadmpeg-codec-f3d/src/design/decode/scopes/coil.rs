@@ -787,7 +787,7 @@ pub(super) fn bind_coil_extent_from_parameters(
         if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
         | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
         {
-            slot.get_or_insert_with(Default::default).coil_extent = Some(
+            slot.get_or_insert_with(Default::default).extent = Some(
                 crate::records::identity::MaybeRecordedValue::Unlocated(extent),
             );
         }

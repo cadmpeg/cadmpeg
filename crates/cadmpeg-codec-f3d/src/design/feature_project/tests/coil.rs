@@ -60,7 +60,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_operation =
+        slot.get_or_insert_with(Default::default).operation =
             Some(crate::records::identity::RecordedValue {
                 value: DesignExtrudeOperation::NewBody,
                 offset: 62,
@@ -70,7 +70,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_extent =
+        slot.get_or_insert_with(Default::default).extent =
             Some(crate::records::identity::MaybeRecordedValue::Unlocated(
                 DesignCoilExtent::RevolutionsHeight,
             ));
@@ -79,7 +79,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_section = Some(
+        slot.get_or_insert_with(Default::default).section = Some(
             crate::records::identity::MaybeRecordedValue::Unlocated(DesignCoilSection::Circular),
         );
     }
@@ -90,7 +90,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default)
-                .coil_section_placement =
+                .section_placement =
                 value.map(crate::records::identity::MaybeRecordedValue::Unlocated);
         }
     }
@@ -100,7 +100,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
         | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
             scope.payload_mut()
         {
-            slot.get_or_insert_with(Default::default).coil_clockwise =
+            slot.get_or_insert_with(Default::default).clockwise =
                 value.map(crate::records::identity::MaybeRecordedValue::Unlocated);
         }
     }
@@ -108,7 +108,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.get_or_insert_with(Default::default).coil_transform = Some(DesignCoilTransform {
+        slot.get_or_insert_with(Default::default).transform = Some(DesignCoilTransform {
             transform: [
                 [1.0, 0.0, 0.0, 1.25],
                 [0.0, 1.0, 0.0, -2.5],
@@ -203,7 +203,7 @@ fn coil_native_placement_id_refuses_retained_limit() {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.as_mut().unwrap().coil_transform = None;
+        slot.as_mut().unwrap().transform = None;
     }
     let owned = owned_parameters(&parameters);
     let definition = crate::test_support::with_decode_context(|decode_ctx| {
@@ -272,7 +272,7 @@ fn coil_boolean_target_group_id_refuses_retained_limit() {
     | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
         scope.payload_mut()
     {
-        slot.as_mut().unwrap().coil_operation = Some(crate::records::identity::RecordedValue {
+        slot.as_mut().unwrap().operation = Some(crate::records::identity::RecordedValue {
             value: DesignExtrudeOperation::Join,
             offset: 62,
         });

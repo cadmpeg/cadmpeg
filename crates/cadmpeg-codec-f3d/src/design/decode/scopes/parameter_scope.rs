@@ -220,7 +220,7 @@ pub(crate) fn decode_parameter_scopes(
                 if let scope::DesignScopePayloadMut::SpirePrimitive(slot)
                 | scope::DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut()
                 {
-                    slot.get_or_insert_with(Default::default).coil_placement = Some(placement);
+                    slot.get_or_insert_with(Default::default).placement = Some(placement);
                 }
             }
             if let Some(construction) =
@@ -1181,16 +1181,16 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         };
         let coil = if family == Some(DesignFeatureFamily::Coil) {
             Some(coil::DesignCoilScope {
-                coil_operation: coil_discriminators.as_ref().map(|fields| {
+                operation: coil_discriminators.as_ref().map(|fields| {
                     crate::records::identity::RecordedValue {
                         value: fields.operation,
                         offset: fields.operation_offset,
                     }
                 }),
-                coil_extent: coil_discriminators
+                extent: coil_discriminators
                     .as_ref()
                     .and_then(|fields| fields.extent),
-                coil_section: coil_discriminators.as_ref().map(|fields| {
+                section: coil_discriminators.as_ref().map(|fields| {
                     match fields.section_offset {
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
@@ -1203,7 +1203,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         }
                     }
                 }),
-                coil_section_placement: coil_discriminators.as_ref().map(|fields| {
+                section_placement: coil_discriminators.as_ref().map(|fields| {
                     match fields.section_placement_offset {
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
@@ -1216,7 +1216,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         ),
                     }
                 }),
-                coil_clockwise: coil_discriminators.as_ref().map(|fields| {
+                clockwise: coil_discriminators.as_ref().map(|fields| {
                     match fields.clockwise_offset {
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
@@ -1229,8 +1229,8 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         ),
                     }
                 }),
-                coil_placement: None,
-                coil_transform,
+                placement: None,
+                transform: coil_transform,
             })
         } else {
             None

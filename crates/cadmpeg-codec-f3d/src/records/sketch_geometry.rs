@@ -913,8 +913,7 @@ struct SketchPointCompanionWire {
 }
 
 // Serde requires `skip_serializing_if` predicates to borrow the field.
-#[allow(clippy::trivially_copy_pass_by_ref)]
-fn sketch_point_flags_are_zero(flags: &[u8; 8]) -> bool {
+fn sketch_point_flags_are_zero(flags: &[u8]) -> bool {
     flags.iter().all(|flag| *flag == 0)
 }
 

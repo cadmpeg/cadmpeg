@@ -2092,7 +2092,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         .edges()
                         .flat_map(|edge| {
                             [
-                                edge.wrapper_record_index,
+                                edge.wrapper,
                                 edge.group_record_index.get(),
                                 edge.operand_record_index(),
                                 edge.aggregate_operand_record_index,

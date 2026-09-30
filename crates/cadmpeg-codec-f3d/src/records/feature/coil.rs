@@ -358,15 +358,14 @@ pub(crate) struct DesignCoilTransform {
 #[derive(Debug, PartialEq, Default, Deserialize)]
 #[serde(try_from = "DesignCoilScopeWire")]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 pub(crate) struct DesignCoilScope {
-    pub(crate) coil_operation: Option<RecordedValue<DesignExtrudeOperation>>,
-    pub(crate) coil_extent: Option<MaybeRecordedValue<DesignCoilExtent>>,
-    pub(crate) coil_section: Option<MaybeRecordedValue<DesignCoilSection>>,
-    pub(crate) coil_section_placement: Option<MaybeRecordedValue<DesignCoilSectionPlacement>>,
-    pub(crate) coil_clockwise: Option<MaybeRecordedValue<bool>>,
-    pub(crate) coil_placement: Option<DesignCoilPlacement>,
-    pub(crate) coil_transform: Option<DesignCoilTransform>,
+    pub(crate) operation: Option<RecordedValue<DesignExtrudeOperation>>,
+    pub(crate) extent: Option<MaybeRecordedValue<DesignCoilExtent>>,
+    pub(crate) section: Option<MaybeRecordedValue<DesignCoilSection>>,
+    pub(crate) section_placement: Option<MaybeRecordedValue<DesignCoilSectionPlacement>>,
+    pub(crate) clockwise: Option<MaybeRecordedValue<bool>>,
+    pub(crate) placement: Option<DesignCoilPlacement>,
+    pub(crate) transform: Option<DesignCoilTransform>,
 }
 
 #[cfg(test)]
@@ -379,13 +378,13 @@ impl Clone for DesignCoilScope {
         #[cfg(test)]
         COIL_SCOPE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
-            coil_operation: self.coil_operation,
-            coil_extent: self.coil_extent,
-            coil_section: self.coil_section,
-            coil_section_placement: self.coil_section_placement,
-            coil_clockwise: self.coil_clockwise,
-            coil_placement: self.coil_placement.clone(),
-            coil_transform: self.coil_transform.clone(),
+            operation: self.operation,
+            extent: self.extent,
+            section: self.section,
+            section_placement: self.section_placement,
+            clockwise: self.clockwise,
+            placement: self.placement.clone(),
+            transform: self.transform.clone(),
         }
     }
 }
@@ -433,18 +432,18 @@ struct DesignCoilScopeRef<'a> {
 impl Serialize for DesignCoilScope {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         DesignCoilScopeRef {
-            operation: self.coil_operation.map(|field| field.value),
-            operation_offset: self.coil_operation.map(|field| field.offset),
-            extent: self.coil_extent.map(|field| field.value()),
-            extent_offset: self.coil_extent.and_then(|field| field.offset()),
-            section: self.coil_section.map(|field| field.value()),
-            section_offset: self.coil_section.and_then(|field| field.offset()),
-            section_placement: self.coil_section_placement.map(|field| field.value()),
-            section_placement_offset: self.coil_section_placement.and_then(|field| field.offset()),
-            clockwise: self.coil_clockwise.map(|field| field.value()),
-            clockwise_offset: self.coil_clockwise.and_then(|field| field.offset()),
-            placement: self.coil_placement.as_ref(),
-            transform: self.coil_transform.as_ref(),
+            operation: self.operation.map(|field| field.value),
+            operation_offset: self.operation.map(|field| field.offset),
+            extent: self.extent.map(|field| field.value()),
+            extent_offset: self.extent.and_then(|field| field.offset()),
+            section: self.section.map(|field| field.value()),
+            section_offset: self.section.and_then(|field| field.offset()),
+            section_placement: self.section_placement.map(|field| field.value()),
+            section_placement_offset: self.section_placement.and_then(|field| field.offset()),
+            clockwise: self.clockwise.map(|field| field.value()),
+            clockwise_offset: self.clockwise.and_then(|field| field.offset()),
+            placement: self.placement.as_ref(),
+            transform: self.transform.as_ref(),
         }
         .serialize(serializer)
     }
@@ -453,7 +452,6 @@ impl Serialize for DesignCoilScope {
 /// Coil-specific records carried by a Coil parameter scope.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 struct DesignCoilScopeWire {
     /// Coil result operation from the fixed scope prologue.
     #[serde(
@@ -461,117 +459,129 @@ struct DesignCoilScopeWire {
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_operation"
     )]
-    coil_operation: Option<DesignExtrudeOperation>,
+    #[serde(rename = "coil_operation")]
+    operation: Option<DesignExtrudeOperation>,
     /// Byte offset of the Coil operation enum.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_operation_offset"
     )]
-    coil_operation_offset: Option<u64>,
+    #[serde(rename = "coil_operation_offset")]
+    operation_offset: Option<u64>,
     /// Coil driving-dimension mode.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_extent"
     )]
-    coil_extent: Option<DesignCoilExtent>,
+    #[serde(rename = "coil_extent")]
+    extent: Option<DesignCoilExtent>,
     /// Byte offset of the Coil mode enum, when the form stores one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_extent_offset"
     )]
-    coil_extent_offset: Option<u64>,
+    #[serde(rename = "coil_extent_offset")]
+    extent_offset: Option<u64>,
     /// Generated Coil section family.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_section"
     )]
-    coil_section: Option<DesignCoilSection>,
+    #[serde(rename = "coil_section")]
+    section: Option<DesignCoilSection>,
     /// Byte offset of the Coil section enum, when the form stores one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_section_offset"
     )]
-    coil_section_offset: Option<u64>,
+    #[serde(rename = "coil_section_offset")]
+    section_offset: Option<u64>,
     /// Radial placement of the generated Coil section.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_section_placement"
     )]
-    coil_section_placement: Option<DesignCoilSectionPlacement>,
+    #[serde(rename = "coil_section_placement")]
+    section_placement: Option<DesignCoilSectionPlacement>,
     /// Byte offset of the Coil section-placement enum, when the form stores one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_section_placement_offset"
     )]
-    coil_section_placement_offset: Option<u64>,
+    #[serde(rename = "coil_section_placement_offset")]
+    section_placement_offset: Option<u64>,
     /// Whether Coil angular travel is clockwise.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_clockwise"
     )]
-    coil_clockwise: Option<bool>,
+    #[serde(rename = "coil_clockwise")]
+    clockwise: Option<bool>,
     /// Byte offset of the Coil direction enum, when the form stores one.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_clockwise_offset"
     )]
-    coil_clockwise_offset: Option<u64>,
+    #[serde(rename = "coil_clockwise_offset")]
+    clockwise_offset: Option<u64>,
     /// Exact placement construction carried by a compact Coil scope.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_placement"
     )]
-    coil_placement: Option<DesignCoilPlacement>,
+    #[serde(rename = "coil_placement")]
+    placement: Option<DesignCoilPlacement>,
     /// Direct rigid placement carried by the long ten-reference Coil form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_coil_transform"
     )]
-    coil_transform: Option<DesignCoilTransform>,
+    #[serde(rename = "coil_transform")]
+    transform: Option<DesignCoilTransform>,
 }
 
 impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
     type Error = String;
     fn try_from(wire: DesignCoilScopeWire) -> Result<Self, Self::Error> {
         Ok(Self {
-            coil_operation: RecordedValue::from_wire(
-                wire.coil_operation,
-                wire.coil_operation_offset,
+            operation: RecordedValue::from_wire(
+                wire.operation,
+                wire.operation_offset,
                 "coil_operation",
             )?,
-            coil_extent: MaybeRecordedValue::from_wire(
-                wire.coil_extent,
-                wire.coil_extent_offset,
+            extent: MaybeRecordedValue::from_wire(
+                wire.extent,
+                wire.extent_offset,
                 "coil_extent",
             )?,
-            coil_section: MaybeRecordedValue::from_wire(
-                wire.coil_section,
-                wire.coil_section_offset,
+            section: MaybeRecordedValue::from_wire(
+                wire.section,
+                wire.section_offset,
                 "coil_section",
             )?,
-            coil_section_placement: MaybeRecordedValue::from_wire(
-                wire.coil_section_placement,
-                wire.coil_section_placement_offset,
+            section_placement: MaybeRecordedValue::from_wire(
+                wire.section_placement,
+                wire.section_placement_offset,
                 "coil_section_placement",
             )?,
-            coil_clockwise: MaybeRecordedValue::from_wire(
-                wire.coil_clockwise,
-                wire.coil_clockwise_offset,
+            clockwise: MaybeRecordedValue::from_wire(
+                wire.clockwise,
+                wire.clockwise_offset,
                 "coil_clockwise",
             )?,
-            coil_placement: wire.coil_placement,
-            coil_transform: wire.coil_transform,
+            placement: wire.placement,
+            transform: wire.transform,
         })
     }
 }
@@ -580,20 +590,20 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
 impl From<DesignCoilScope> for DesignCoilScopeWire {
     fn from(value: DesignCoilScope) -> Self {
         Self {
-            coil_operation: value.coil_operation.map(|field| field.value),
-            coil_operation_offset: value.coil_operation.map(|field| field.offset),
-            coil_extent: value.coil_extent.map(|field| field.value()),
-            coil_extent_offset: value.coil_extent.and_then(|field| field.offset()),
-            coil_section: value.coil_section.map(|field| field.value()),
-            coil_section_offset: value.coil_section.and_then(|field| field.offset()),
-            coil_section_placement: value.coil_section_placement.map(|field| field.value()),
-            coil_section_placement_offset: value
-                .coil_section_placement
+            operation: value.operation.map(|field| field.value),
+            operation_offset: value.operation.map(|field| field.offset),
+            extent: value.extent.map(|field| field.value()),
+            extent_offset: value.extent.and_then(|field| field.offset()),
+            section: value.section.map(|field| field.value()),
+            section_offset: value.section.and_then(|field| field.offset()),
+            section_placement: value.section_placement.map(|field| field.value()),
+            section_placement_offset: value
+                .section_placement
                 .and_then(|field| field.offset()),
-            coil_clockwise: value.coil_clockwise.map(|field| field.value()),
-            coil_clockwise_offset: value.coil_clockwise.and_then(|field| field.offset()),
-            coil_placement: value.coil_placement,
-            coil_transform: value.coil_transform,
+            clockwise: value.clockwise.map(|field| field.value()),
+            clockwise_offset: value.clockwise.and_then(|field| field.offset()),
+            placement: value.placement,
+            transform: value.transform,
         }
     }
 }

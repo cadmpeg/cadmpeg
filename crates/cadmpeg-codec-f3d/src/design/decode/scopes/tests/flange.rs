@@ -107,7 +107,7 @@ fn edge_flange_scope_resolves_every_role_from_its_marked_slot() {
             .selection
             .shape()
             .edges()
-            .map(|edge| edge.wrapper_record_index)
+            .map(|edge| edge.wrapper)
             .collect::<Vec<_>>(),
         [201]
     );
@@ -247,7 +247,7 @@ fn legacy_edge_flange_scope_reads_both_classed_single_edge_forms() {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.wrapper_record_index)
+                .map(|edge| edge.wrapper)
                 .collect::<Vec<_>>(),
             [201]
         );
@@ -322,7 +322,7 @@ fn legacy_edge_flange_scope_reads_classed_full_edge_multi_edge_forms() {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.wrapper_record_index)
+                .map(|edge| edge.wrapper)
                 .collect::<Vec<_>>(),
             [201, 210]
         );
@@ -398,7 +398,7 @@ fn legacy_edge_flange_scope_reads_class364_per_edge_width_form() {
             .selection
             .shape()
             .edges()
-            .map(|edge| edge.wrapper_record_index)
+            .map(|edge| edge.wrapper)
             .collect::<Vec<_>>(),
         [201, 213]
     );
@@ -475,7 +475,7 @@ fn legacy_edge_flange_scope_reads_class325_two_sided_per_edge_form() {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.wrapper_record_index)
+                .map(|edge| edge.wrapper)
                 .collect::<Vec<_>>(),
             [201, 213]
         );
@@ -560,7 +560,7 @@ fn legacy_edge_flange_scope_reads_class286_single_edge_form() {
             .selection
             .shape()
             .edges()
-            .map(|edge| edge.wrapper_record_index)
+            .map(|edge| edge.wrapper)
             .collect::<Vec<_>>(),
         [201]
     );
@@ -643,7 +643,7 @@ fn legacy_edge_flange_scope_reads_class286_extended_two_sided_per_edge_form() {
             .selection
             .shape()
             .edges()
-            .map(|edge| edge.wrapper_record_index)
+            .map(|edge| edge.wrapper)
             .collect::<Vec<_>>(),
         [201, 213]
     );
