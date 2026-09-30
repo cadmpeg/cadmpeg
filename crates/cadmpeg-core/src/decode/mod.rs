@@ -12,6 +12,7 @@ mod policy;
 mod probe;
 mod space;
 mod view;
+pub mod work_scratch;
 
 #[cfg(test)]
 mod tests;
