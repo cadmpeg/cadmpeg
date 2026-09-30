@@ -361,42 +361,42 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
     ));
 
     assert!(matches!(
-        linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]),
+        linear_pcurve_carrier(&plane, [[1.0, 2.0], [3.0, 4.0]]).expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(matches!(
-        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]),
+        linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [1.0, 4.0]]).expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(
-        matches!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 2.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == 2.0
         })
     );
     assert!(matches!(
-        linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]),
+        linear_pcurve_carrier(&cone, [[1.0, 2.0], [1.0, 4.0]]).expect("evaluation resources"),
         Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(_)))
     ));
     assert!(
-        matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
+        matches!(linear_pcurve_carrier(&cone, [[1.0, 2.0], [2.0, 2.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)))
                 if {
                     let major_radius = ellipse_curve.major_radius().get();
         let minor_radius = ellipse_curve.minor_radius().get();
                     major_radius > minor_radius
                 })
     );
-    assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).is_none());
+    assert!(linear_pcurve_carrier(&cylinder, [[1.0, 2.0], [2.0, 4.0]]).expect("evaluation resources").is_none());
     assert!(
-        matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 2.0], [1.0, 4.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == 2.0
         })
     );
     assert!(
-        matches!(linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(linear_pcurve_carrier(&sphere, [[1.0, 0.25], [2.0, 0.25]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             (radius - 2.0 * 0.25_f64.cos()).abs() <= EPS_LATITUDE_RADIUS
@@ -414,14 +414,14 @@ fn maps_linear_pcurves_to_exact_analytic_carriers() {
         .expect("valid TorusSurface fixture"),
     ));
     assert!(
-        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [0.5, 1.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == 1.0
         })
     );
     assert!(
-        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
+        matches!(linear_pcurve_carrier(&torus, [[0.5, 0.0], [1.0, 0.0]]).expect("evaluation resources"), Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)))
         if {
             let radius = circle_curve.radius().get();
             radius == 4.0
