@@ -38,7 +38,7 @@ const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
 const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
 const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
-mod evaluation;
+pub(crate) mod evaluation;
 mod attrib;
 mod blend;
 pub(crate) mod entity;

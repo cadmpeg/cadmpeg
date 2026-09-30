@@ -74,7 +74,7 @@ fn numerical_0922_small_domain_keeps_fit_samples() {
     }
 }
 
-use cadmpeg_ir::eval::{curve_point, pcurve_uv};
+use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::analytic::{CircleCurve, SphereSurface};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::topology::{EdgeCarrier, FaceLoops, LoopBoundary, LoopRing};

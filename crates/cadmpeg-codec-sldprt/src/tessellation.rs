@@ -996,7 +996,7 @@ pub(crate) fn assign_unique_surface_owners(
             for point in mesh.vertices() {
                 ctx.charge_work(1, "test SLDPRT tessellation vertex")?;
                 let Some(local) = candidate.inverse.apply_point(point.get()) else { fits = false; break; };
-                let Some(measure) = surface_measure(surface, local.get(), Some(tolerance))? else { fits = false; break; };
+                let Some(measure) = surface_measure(ctx, surface, local.get(), Some(tolerance))? else { fits = false; break; };
                 if measure.residual > tolerance {
                     fits = false;
                     break;
@@ -1086,7 +1086,7 @@ fn approximate_surface_owner(
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
                 let local_point = candidate.inverse.apply_point(point.get())?.get();
-                let measure = match surface_measure(candidate.surface.solved()?, local_point, None) {
+                let measure = match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
                     Ok(Some(measure)) => measure,
                     Ok(None) => return None,
                     Err(limit) => return Some(Err(limit)),
@@ -1166,13 +1166,14 @@ fn approximate_trimmed_surface_owner(
             let mut max_residual = 0.0_f64;
             for point in mesh.vertices() {
                 let measure = match surface_measure(
+                    ctx,
                     candidate.surface.solved()?,
                     candidate.inverse.apply_point(point.get())?.get(),
                     None,
                 ) {
                     Ok(Some(measure)) => measure,
                     Ok(None) => return None,
-                    Err(limit) => return Some(Err(cadmpeg_core::CodecError::from(limit))),
+                    Err(limit) => return Some(Err(limit)),
                 };
                 max_residual = max_residual.max(measure.residual);
             }
@@ -3024,16 +3025,15 @@ struct SurfaceMeasure {
 }
 
 fn surface_measure(
+    ctx: &DecodeContext<'_>,
     surface: &SolvedSurfaceGeometry,
     point: Point3,
     fit_tolerance: Option<f64>,
-) -> Result<Option<SurfaceMeasure>, cadmpeg_core::decode::ResourceLimit> {
+) -> Result<Option<SurfaceMeasure>, cadmpeg_core::CodecError> {
     if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
         let Some(tolerance) = fit_tolerance else { return Ok(None); };
-        let Some(parameters) = cadmpeg_ir::eval::nurbs_surface_parameter_near_point(nurbs, point, None)? else { return Ok(None); };
-        let Some(partials) = cadmpeg_ir::eval::finite_or_refusal(
-            cadmpeg_ir::eval::nurbs_surface_partials(nurbs, parameters.u, parameters.v),
-        )? else { return Ok(None); };
+        let Some(parameters) = crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)? else { return Ok(None); };
+        let Some(partials) = crate::brep::evaluation::nurbs_surface_partials(ctx, nurbs, parameters.u, parameters.v)? else { return Ok(None); };
         let residual = point.distance(partials.point.get());
         if residual > tolerance {
             return Ok(None);
@@ -3045,11 +3045,13 @@ fn surface_measure(
         .filter(|measure| measure.residual.is_finite()));
     }
     if let SolvedSurfaceGeometry::Transformed(placed) = surface {
+        let _depth = ctx.enter_nested("measure SLDPRT placed surface")?;
         let transform = placed.transform();
         if transform.is_proper_rigid() {
             let Some(inverse) = transform.try_inverse_affine().ok() else { return Ok(None); };
             let Some(local_point) = inverse.apply_point(point) else { return Ok(None); };
             let Some(mut measure) = surface_measure(
+                ctx,
                 placed.basis(),
                 local_point.get(),
                 fit_tolerance,
