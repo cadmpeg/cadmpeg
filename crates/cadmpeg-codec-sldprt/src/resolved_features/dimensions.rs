@@ -237,7 +237,7 @@ fn dimensioned_arc_native_geometry(
         }
         markers_by_id.insert(candidate.id(), candidate);
     }
-    let endpoints = marker_curve_endpoint_markers(&lane.native_payload, marker, &markers_by_id, &object_markers);
+    let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, marker, &markers_by_id, &object_markers)?;
     let inline = usize::try_from(marker.offset()).ok().and_then(|offset| inline_arc_coordinates(&lane.native_payload, offset))
         .map(|coordinates| coordinates.map(cadmpeg_ir::units::FiniteVector::get));
     let [center, start, end] = if let Some(coordinates) = inline { coordinates }

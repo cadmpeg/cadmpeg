@@ -1578,7 +1578,7 @@ fn bind_resolved_curve_vertices(
             index_from_u64(curve.offset()).is_some_and(|offset| marker_is_selected_construction_line(&lane.native_payload, offset))
         }) {
             ctx.charge_work(u64_from_index(markers.len()), "scan SLDPRT selected curve endpoints")?;
-            for marker in marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers)
+            for marker in marker_curve_endpoint_markers(ctx, &lane.native_payload, curve, &markers_by_id, &markers)?
                 .into_iter().filter(|marker| marker.coordinates_m.is_some()) {
                 reserve_binding_set(ctx, &mut selected)?;
                 selected.insert(copy_binding_text(ctx, marker.id())?);
@@ -1602,7 +1602,7 @@ fn bind_resolved_curve_vertices(
         let mut resolved_endpoints = HashSet::new();
         for curve in markers.iter().copied().filter(|marker| matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)) {
             ctx.charge_work(u64_from_index(markers.len()), "resolve SLDPRT curve endpoints")?;
-            let endpoints = marker_curve_endpoint_markers(&lane.native_payload, curve, &markers_by_id, &markers);
+            let endpoints = marker_curve_endpoint_markers(ctx, &lane.native_payload, curve, &markers_by_id, &markers)?;
             if endpoints.len() == 2 {
                 reserve_binding_set(ctx, &mut resolved_curves)?;
                 resolved_curves.insert(copy_binding_text(ctx, curve.id())?);

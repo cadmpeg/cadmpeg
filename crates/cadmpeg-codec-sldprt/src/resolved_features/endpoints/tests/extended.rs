@@ -536,7 +536,7 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&payload, &linked_curve, &markers_by_id, &markers)
+        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &linked_curve, &markers_by_id, &markers).unwrap()
             .iter()
             .map(|endpoint| endpoint.id())
             .collect::<Vec<_>>(),

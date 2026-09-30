@@ -2,6 +2,7 @@
 
 use super::curves::compact_bounded_curve_tangent;
 use super::endpoints::{
+    collect_endpoint_markers, copy_endpoint_markers, sort_endpoint_markers,
     compact_indexed_curve_endpoint_indices, compact_indexed_curve_record_end,
     compact_legacy_code_one_line_endpoint_indices, extended_compact_indexed_curve_endpoint_indices,
     extended_direct_object_line_endpoint_ids, extended_shifted_construction_line_endpoint_indices,
@@ -29,7 +30,8 @@ use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
 };
 use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink};
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_core::nonblank_literal;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -1818,11 +1820,34 @@ fn relation_owner_curve_entities(
     entities
 }
 
+fn charge_typed_endpoint_work(ctx: &DecodeContext<'_>, len: usize, factor: u64, operation: &'static str) -> Result<(), CodecError> {
+    let work = u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(factor))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
+
 pub(super) fn line_endpoint_markers<'a>(
-    line: &SketchInputEntity,
+    ctx: &DecodeContext<'_>, line: &SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
-) -> Vec<&'a SketchInputEntity> {
-    let mut endpoints = line
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT linked line endpoints";
+    for link in line.links() {
+        charge_typed_endpoint_work(ctx, link.entity_ref.len(), 8, OPERATION)?;
+        if let Some(marker) = markers_by_id.get(link.entity_ref.as_str()) {
+            charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+            charge_typed_endpoint_work(ctx, line.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+        }
+    }
+    for marker in markers_by_id.values() {
+        charge_typed_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+        charge_typed_endpoint_work(ctx, line.feature_ref.as_deref().map_or(0, str::len), 8, OPERATION)?;
+        charge_typed_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?;
+        for link in marker.links() {
+            charge_typed_endpoint_work(ctx, link.entity_ref.len(), 4, OPERATION)?;
+            charge_typed_endpoint_work(ctx, line.id().len(), 4, OPERATION)?;
+        }
+    }
+    let candidates = line
         .links()
         .iter()
         .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
@@ -1839,25 +1864,33 @@ pub(super) fn line_endpoint_markers<'a>(
                     endpoint.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 )
-        })
-        .collect::<Vec<_>>();
-    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset());
+        });
+    let mut endpoints = Vec::new();
+    for endpoint in candidates {
+        if endpoints.len() == endpoints.capacity() { charge_typed_endpoint_work(ctx, endpoints.len(), 4, OPERATION)?; }
+        ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
+        endpoints.push(endpoint);
+    }
+    sort_endpoint_markers(ctx, &mut endpoints, OPERATION)?;
+    for endpoint in &endpoints { charge_typed_endpoint_work(ctx, endpoint.id().len(), 4, OPERATION)?; }
     endpoints.dedup_by_key(|endpoint| endpoint.id());
-    endpoints
+    Ok(endpoints)
 }
 
 pub(super) fn marker_curve_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &'a SketchInputEntity,
     markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT marker curve endpoints";
+    ctx.charge_work(1024, OPERATION)?;
     if let Some(endpoints) = extended_direct_object_line_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
-    let endpoints = line_endpoint_markers(curve, markers_by_id);
+    let endpoints = line_endpoint_markers(ctx, curve, markers_by_id)?;
     if endpoints.len() == 2 {
-        return endpoints;
+        return Ok(endpoints);
     }
     let shifted = usize::try_from(curve.offset()).ok().and_then(|offset| {
         extended_shifted_construction_line_endpoint_indices(payload, offset)
@@ -1865,13 +1898,9 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
     });
     if let Some((offset, indices)) = shifted {
         let endpoints = if payload.get(offset + 72..offset + 76) == Some(&[0; 4]) {
-            let mut owned = markers
-                .iter()
-                .copied()
-                .filter(|marker| marker.feature_ref == curve.feature_ref)
-                .collect::<Vec<_>>();
-            owned.sort_unstable_by_key(|marker| marker.offset());
-            indices
+            let mut owned = collect_endpoint_markers(ctx, markers.iter().copied(), curve, |_| true, OPERATION)?;
+            sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+            let selected = indices
                 .into_iter()
                 .filter_map(|index| {
                     let index = usize::try_from(index).ok()?.checked_sub(1)?;
@@ -1885,8 +1914,13 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
                                     | SketchInputKind::Arc
                             )
                     })
-                })
-                .collect::<Vec<_>>()
+                });
+            let mut endpoints = Vec::new();
+            for endpoint in selected {
+                ctx.reserve_collection_vec(&mut endpoints, 1, OPERATION)?;
+                endpoints.push(endpoint);
+            }
+            endpoints
         } else {
             super::endpoints::coordinate_roster_curve_endpoint_markers_at(
                 payload,
@@ -1896,28 +1930,28 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             )
         };
         if endpoints.len() == 2 {
-            return endpoints;
+            return Ok(endpoints);
         }
     }
     if let Some(endpoints) = compact_legacy_object_line_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = extended_wide_selected_axis_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = inline_arc_endpoint_markers(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) =
         compact_legacy_142_profile_curve_endpoint_markers(payload, curve, markers)
     {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = one_based_point_roster_line_endpoint_markers(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = legacy_point_roster_line_endpoint_markers(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     let endpoints = roster_curve_endpoint_markers(payload, curve, markers);
     if endpoints.len() == 2 {
@@ -1926,30 +1960,30 @@ pub(super) fn marker_curve_endpoint_markers<'a>(
             if legacy_marker104_arc_center(payload, curve, markers, roster).is_none()
                 && legacy_marker104_arc_center(payload, curve, markers, direct).is_some()
             {
-                return direct.to_vec();
+                return copy_endpoint_markers(ctx, &direct);
             }
         }
-        return endpoints;
+        return Ok(endpoints);
     }
     if let Some(endpoints) = legacy_marker104_arc_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = current_coordinate_linked_line_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = coordinate_centered_line_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     if let Some(endpoints) = legacy_terminal_profile_indexed_endpoints(payload, curve, markers) {
-        return endpoints.to_vec();
+        return copy_endpoint_markers(ctx, &endpoints);
     }
     let endpoints = consecutive_legacy_profile_line_endpoints(payload, curve, markers);
     if endpoints.len() == 2 {
-        return endpoints;
+        return Ok(endpoints);
     }
-    coordinate_profile_line_endpoints(payload, curve, markers_by_id)
-        .map(|endpoints| endpoints.to_vec())
-        .unwrap_or(endpoints)
+    if let Some(pair) = coordinate_profile_line_endpoints(payload, curve, markers_by_id) {
+        copy_endpoint_markers(ctx, &pair)
+    } else { Ok(endpoints) }
 }
 
 fn coordinate_profile_line_endpoints<'a>(

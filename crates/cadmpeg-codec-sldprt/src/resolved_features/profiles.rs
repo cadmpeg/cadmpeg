@@ -1393,12 +1393,12 @@ pub(crate) fn project_marker_backed_sketches(
                                 })
                                 .ok().ok_or(MarkerGeometryFailure::Absent)?
                             } else {
-                                let endpoints = output_curve_endpoint_markers(
+                                let endpoints = output_curve_endpoint_markers(ctx,
                                     &lane.native_payload,
                                     marker,
                                     &markers_by_id,
                                     &object_markers,
-                                );
+                                )?;
                                 if let [start_marker, end_marker] = endpoints.as_slice() {
                                     let (Some(start), Some(end)) =
                                         (project(start_marker), project(end_marker))
@@ -1440,8 +1440,8 @@ pub(crate) fn project_marker_backed_sketches(
                                         };
                                         endpoints = implicit_coordinate_roster_curve_endpoints(&lane.native_payload, marker, &object_markers, inferred);
                                     }
-                                    endpoints.or_else(|| implicit_profile_chain_closure_endpoints(&lane.native_payload, marker, &object_markers))
-                                        .or_else(|| compact_legacy_142_profile_curve_endpoints(&lane.native_payload, index_from_u64(marker.offset())?)
+                                    if endpoints.is_none() { endpoints = implicit_profile_chain_closure_endpoints(ctx, &lane.native_payload, marker, &object_markers)?; }
+                                    endpoints.or_else(|| compact_legacy_142_profile_curve_endpoints(&lane.native_payload, index_from_u64(marker.offset())?)
                                             .map(|endpoints| endpoints.map(cadmpeg_ir::units::FiniteVector::get)))
                                 }
                                 {
@@ -1464,12 +1464,12 @@ pub(crate) fn project_marker_backed_sketches(
                             }
                         }
                         SketchInputKind::Arc => {
-                            let endpoints = marker_curve_endpoint_markers(
+                            let endpoints = marker_curve_endpoint_markers(ctx,
                                 &lane.native_payload,
                                 marker,
                                 &markers_by_id,
                                 &object_markers,
-                            );
+                            )?;
                             let mut circle_geometry = equal_index_coordinate_roster_full_circle(ctx, &lane.native_payload, marker, &object_markers)?;
                             if circle_geometry.is_none() { circle_geometry = compact_profile_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
                             if circle_geometry.is_none() { circle_geometry = coordinate_roster_full_circle(ctx, &lane.native_payload, marker, &object_markers)?; }
@@ -1762,12 +1762,12 @@ pub(crate) fn project_marker_backed_sketches(
                 if let Some((geometry, construction)) = entity {
                     let mut endpoint_refs = Vec::new();
                     if matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc) {
-                        let endpoints = output_curve_endpoint_markers(
+                        let endpoints = output_curve_endpoint_markers(ctx,
                             &lane.native_payload,
                             marker,
                             &markers_by_id,
                             &object_markers,
-                        );
+                        )?;
                         for endpoint in endpoints {
                             let reference = ctx.format_retained(
                                 format_args!("{}", endpoint.id()),

@@ -620,7 +620,7 @@ fn construction_line_endpoints_accept_reverse_incidence() {
     ]);
 
     assert_eq!(
-        line_endpoint_markers(&line, &markers),
+        line_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &line, &markers).unwrap(),
         vec![&first, &second]
     );
 }
