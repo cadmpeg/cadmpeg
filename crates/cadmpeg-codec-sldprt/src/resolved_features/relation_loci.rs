@@ -334,14 +334,16 @@ pub(super) fn relation_constraint_is_inactive(
 }
 
 pub(super) fn typed_relation_definition(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchConstraintDefinitionInput> {
+) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
     typed_relation_definition_with_profile_axis(
+        ctx,
         relation,
         parameter,
         sketch,
@@ -353,6 +355,7 @@ pub(super) fn typed_relation_definition(
 }
 
 pub(super) fn typed_relation_definition_with_profile_axis(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
     sketch: &SketchId,
@@ -360,13 +363,18 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
-) -> Option<SketchConstraintDefinitionInput> {
+) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
-    let parameter = parameter?;
-    let parameter_id = parameter.id.clone();
+    let Some(parameter) = parameter else { return Ok(None); };
+    const OPERATION: &str = "retain SLDPRT relation parameter identity";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len()).checked_mul(4)
+        .and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    let text = ctx.format_retained(format_args!("{}", parameter.id.as_str()), OPERATION)?;
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
+    let definition = (|| {
     let profile_axis = match relation.family {
         PointPointHorizontalDistance => Some(profile_axis.unwrap_or(ProfileAxis::U)),
         PointPointVerticalDistance => Some(profile_axis.unwrap_or(ProfileAxis::V)),
@@ -1200,6 +1208,8 @@ let partner = unique_profile_line_angle_entity(
             }
         }
     }
+    })();
+    Ok(definition)
 }
 
 fn solver_line_entity(

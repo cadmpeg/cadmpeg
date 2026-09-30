@@ -305,19 +305,19 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     Ok(())
 }
 
-fn assert_owned_loci_refusal(dimension: ResourceDimension) {
+fn assert_owned_loci_refusal(dimension: ResourceDimension, project: impl Fn(&DecodePolicy) -> Result<(), CodecError>) {
     let set_limit = |policy: &mut DecodePolicy, limit: u64| match dimension {
         ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
         ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
         ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
         _ => panic!("unexpected owned locus budget dimension"),
     };
-    project_owned_loci_with_policy(&DecodePolicy::service()).unwrap();
+    project(&DecodePolicy::service()).unwrap();
     let mut upper = 1u64;
     loop {
         let mut policy = DecodePolicy::service();
         set_limit(&mut policy, upper);
-        match project_owned_loci_with_policy(&policy) {
+        match project(&policy) {
             Ok(()) => break,
             Err(CodecError::ResourceLimit(limit)) => assert_eq!(limit.dimension, dimension),
             Err(error) => panic!("unexpected projection error: {error}"),
@@ -329,7 +329,7 @@ fn assert_owned_loci_refusal(dimension: ResourceDimension) {
         let middle = lower + (upper - lower) / 2;
         let mut policy = DecodePolicy::service();
         set_limit(&mut policy, middle);
-        match project_owned_loci_with_policy(&policy) {
+        match project(&policy) {
             Ok(()) => upper = middle,
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, dimension);
@@ -341,22 +341,59 @@ fn assert_owned_loci_refusal(dimension: ResourceDimension) {
     assert!(upper > 0);
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy, upper);
-    project_owned_loci_with_policy(&policy).unwrap();
+    project(&policy).unwrap();
     set_limit(&mut policy, upper - 1);
-    assert!(matches!(project_owned_loci_with_policy(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
 }
 
 #[test]
 fn planar_relation_owned_loci_refuse_collection_limit() {
-    assert_owned_loci_refusal(ResourceDimension::CollectionItems);
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems, project_owned_loci_with_policy);
 }
 
 #[test]
 fn planar_relation_owned_loci_refuse_retained_limit() {
-    assert_owned_loci_refusal(ResourceDimension::RetainedBytes);
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes, project_owned_loci_with_policy);
 }
 
 #[test]
 fn planar_relation_owned_loci_refuse_work_limit() {
-    assert_owned_loci_refusal(ResourceDimension::WorkUnits);
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_owned_loci_with_policy);
+}
+
+fn project_dimensional_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DesignParameter, DimensionDisplay, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition};
+    let (sketch, feature, lane) = planar_fixture();
+    let entity = SketchEntity::new(SketchEntityId::mint("synthetic:test:id#dimension-circle").unwrap(), sketch.id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0), radius: cadmpeg_ir::scalar::Length::new(1.0).unwrap(),
+        }).unwrap()).with_geometry_ref(Some("relation".into()));
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#dimension").unwrap(), owner: None, ordinal: 0,
+        name: "D1".into(), expression: "2mm".into(), display: Some(DimensionDisplay::Diameter),
+        value: Some(ParameterValue::Length(cadmpeg_ir::scalar::Length::new(2.0).unwrap())),
+        dependencies: DistinctMembers::default(), properties: BTreeMap::new(), pmi: None, native_ref: Some("scalar".into()),
+    };
+    let expected = SketchConstraintDefinitionInput::Diameter { entity: entity.id().clone(), parameter: parameter.id.clone() };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut constraints = Vec::new();
+    project_relation_bindings(&ctx, &mut constraints, &[sketch], &[feature], &[entity], &[parameter], &[lane])?;
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].definition.kind(), &expected);
+    Ok(())
+}
+
+#[test]
+fn planar_dimensional_relation_refuses_collection_limit() {
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems, project_dimensional_with_policy);
+}
+#[test]
+fn planar_dimensional_relation_refuses_retained_limit() {
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes, project_dimensional_with_policy);
+}
+#[test]
+fn planar_dimensional_relation_refuses_work_limit() {
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_dimensional_with_policy);
 }

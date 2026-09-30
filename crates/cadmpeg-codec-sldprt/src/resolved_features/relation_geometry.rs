@@ -2740,8 +2740,9 @@ pub(crate) fn project_relation_bindings(
                             .get(relation.feature_ref.as_str())
                             .map(Vec::as_slice),
                     )?
-                    .and_then(|profile_axis| {
+                    .map(|profile_axis| {
                         typed_relation_definition_with_profile_axis(
+                            ctx,
                             relation,
                             parameter,
                             sketch,
@@ -2750,16 +2751,17 @@ pub(crate) fn project_relation_bindings(
                             &loci_by_marker,
                             Some(profile_axis),
                         )
-                    })
+                    }).transpose()?.flatten()
                 }
                 _ => typed_relation_definition(
+                    ctx,
                     relation,
                     parameter,
                     sketch,
                     sketch_entities,
                     &markers_by_id,
                     &loci_by_marker,
-                ),
+                )?,
             };
             let typed_definition = typed_definition.filter(|definition| {
                 !(reference_parameter

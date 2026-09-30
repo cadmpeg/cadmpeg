@@ -1824,14 +1824,14 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         std::slice::from_ref(&lane),
     ).expect("transform resource admission");
     for (index, relation) in relations.iter().enumerate() {
-        let definition = typed_relation_definition(
+        let definition = typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             relation,
             Some(&parameters[index]),
             &sketch,
             &entities,
             &markers,
             &loci,
-        );
+        ).unwrap();
         let second = match definition {
             Some(
                 SketchConstraintDefinitionInput::DistanceLoci { second, .. }
