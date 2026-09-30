@@ -8605,7 +8605,7 @@ mod tests {
         assert_eq!(table(2, 5).missing_rows(), 0);
         assert!(!table(2, 5).is_complete());
 
-        assert_eq!(table(u32::MAX, 1).missing_rows(), u32::MAX as usize - 1);
+        assert_eq!(table(u32::MAX, 1).missing_rows(), usize::try_from(u32::MAX).expect("fixture index fits usize") - 1);
     }
 
     #[test]

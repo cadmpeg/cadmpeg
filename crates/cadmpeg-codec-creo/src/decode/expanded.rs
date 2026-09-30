@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn native_surface_replay_id_refuses_retained_limit() {
-        let limit = "creo:allfeatur:surface_replay#4:0:0:7".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:allfeatur:surface_replay#4:0:0:7".len()) - 1;
         let error = with_replay_limits(limit, 1, 1, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -534,7 +534,7 @@ mod tests {
 
     #[test]
     fn native_double_xar_id_refuses_retained_limit() {
-        let limit = "creo:Body:double_xar#0:0".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:Body:double_xar#0:0".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = double_xar_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn native_scalar_array_id_refuses_retained_limit() {
-        let limit = "creo:solid_primdata:scalar_array#pts:0".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:solid_primdata:scalar_array#pts:0".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -607,7 +607,7 @@ mod tests {
 
     #[test]
     fn native_fc05_circle_id_refuses_retained_limit() {
-        let limit = "creo:curve:fc05_circle#20".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:curve:fc05_circle#20".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -644,7 +644,7 @@ mod tests {
 
     #[test]
     fn native_fc05_cap_pair_id_refuses_retained_limit() {
-        let limit = "creo:surface:fc05_cylinder_cap_pair#10".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:surface:fc05_cylinder_cap_pair#10".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))

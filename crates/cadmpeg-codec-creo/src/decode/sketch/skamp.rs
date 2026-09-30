@@ -744,7 +744,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let mut definition =
             point_definition(2, vec![line(10, Some(0)), line(20, None)], Vec::new());
@@ -1035,7 +1035,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let definition = point_definition(
             4,
@@ -1105,7 +1105,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let mut definition =
             point_definition(3, vec![line(10, [1, 2]), line(11, [3, 4])], Vec::new());
@@ -1282,7 +1282,7 @@ mod tests {
                 radius2_ref: None,
                 external_id,
                 body: Vec::new(),
-                offset: external_id as usize,
+                offset: usize::try_from(external_id).expect("fixture index fits usize"),
             }
         };
         let definition = point_definition(
@@ -1424,7 +1424,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let saved_section = crate::feature::definitions::FeatureSavedSection {
             entities: vec![crate::feature::definitions::FeatureSavedEntity::Line(

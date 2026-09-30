@@ -70,12 +70,12 @@ pub(crate) fn allfeatur_row(
         feature_id, header[0], header[1], 0x00, 0x10, 0x01, 0x80, 0x80, 0x00, 0xe4, 0xe3, 0xf6,
     ];
     if schema_class < 0x80 {
-        row.push(schema_class as u8);
+        row.push(u8::try_from(schema_class).expect("fixture value fits u8"));
     } else {
         assert!(schema_class <= 0x3fff);
         row.extend_from_slice(&[
-            0x80 | ((schema_class >> 8) as u8),
-            (schema_class & 0xff) as u8,
+            0x80 | (u8::try_from(schema_class >> 8).expect("fixture value fits u8")),
+            u8::try_from(schema_class & 0xff).expect("fixture value fits u8"),
         ]);
     }
     row.push(0xe1);
@@ -190,7 +190,7 @@ pub(crate) fn unix_compress_literals(payload: &[u8]) -> Vec<u8> {
     for (index, value) in payload.iter().copied().enumerate() {
         for bit in 0..9 {
             let offset = index * 9 + bit;
-            packed[offset / 8] |= (((u16::from(value) >> bit) & 1) as u8) << (offset % 8);
+            packed[offset / 8] |= (u8::try_from((u16::from(value) >> bit) & 1).expect("fixture value fits u8")) << (offset % 8);
         }
     }
     stream.extend_from_slice(&packed);
@@ -265,7 +265,10 @@ pub(crate) fn fixture_offset(id: &str) -> usize {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     id.hash(&mut hash);
-    hash.finish() as usize
+    let word = hash.finish();
+    #[cfg(target_pointer_width = "32")]
+    let word = word & u64::from(u32::MAX);
+    usize::try_from(word).expect("fixture offset word fits pointer width")
 }
 
 /// Legacy object record placed at [`fixture_offset`] of `id`.

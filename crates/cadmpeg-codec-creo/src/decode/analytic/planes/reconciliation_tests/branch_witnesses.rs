@@ -289,7 +289,7 @@ fn stored_frame_branch_scan(with_pcurve: bool) -> crate::container::ContainerSca
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.local_systems.extend([
@@ -791,7 +791,7 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features

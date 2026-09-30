@@ -531,7 +531,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = identity.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = super::analytic_curve_branches(&ctx, &geometry, "procedural")
             .expect_err("copy exceeds retained limit");
@@ -540,7 +540,7 @@ mod tests {
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo analytic curve branch geometry")
         );
-        policy.limits.max_retained_bytes = identity.len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(identity.len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let branches = super::analytic_curve_branches(&ctx, &geometry, "procedural")
             .expect("exact cap admits branch");
@@ -1080,7 +1080,7 @@ mod tests {
         assert_eq!(service.len(), 1);
         assert!(service[0].message.contains("row 41"));
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = service[0].message.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
         let error = boundary_loss_with_limits(policy).expect_err("message exceeds retained cap");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)

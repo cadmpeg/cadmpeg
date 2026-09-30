@@ -28,7 +28,7 @@ fn dimension_row_identity_refuses_before_formatting() {
     let sketch = layout_key();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "creo:featdefs:parameter#917:3:2".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:featdefs:parameter#917:3:2".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_dimension_parameter_row_id_admitted(&ctx, &sketch, 3, Some(1))
         .expect_err("dimension row ID exceeds retained cap");
@@ -125,7 +125,7 @@ fn dimension_transfer_refuses_staging_and_tree_nodes() {
     ];
     for (cap, operation) in operations.into_iter().enumerate() {
         let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap as u64;
+        policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let mut ir = ir.clone();
         let error = transfer_feature_dimensions(
@@ -316,7 +316,7 @@ fn dimension_property_refuses_before_key_copy() {
 fn dimension_property_refuses_before_value_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "external_id".len() as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("external_id".len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let mut properties = BTreeMap::new();
@@ -407,7 +407,7 @@ fn planned_dimension_ids_refuse_before_tree_node_and_identity_copy() {
         });
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "creo:model:sketch#917".len() as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:sketch#917".len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = planned_feature_dimension_parameter_ids(&ctx, &scan)
         .expect_err("parameter identity exceeds remaining retained cap");

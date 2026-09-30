@@ -573,7 +573,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         &result.source_fidelity().annotations,
         record.id(),
         "creo:MdlRefInfo",
-        scan.references.circles[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.references.circles[0].offset),
         "reference_circle_record",
         Exactness::Derived,
     );
@@ -697,7 +697,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         &result.source_fidelity().annotations,
         record.id(),
         "creo:MdlRefInfo",
-        scan.references.ellipses[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.references.ellipses[0].offset),
         "reference_ellipse_carrier",
         Exactness::Derived,
     );

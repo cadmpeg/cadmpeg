@@ -63,7 +63,7 @@ fn regeneration_edge_refuses_each_storage_boundary() {
         ),
         (
             1,
-            child.as_str().len() as u64,
+            cadmpeg_core::decode::u64_from_index(child.as_str().len()),
             ResourceDimension::RetainedBytes,
             "creo regeneration parent identity",
         ),

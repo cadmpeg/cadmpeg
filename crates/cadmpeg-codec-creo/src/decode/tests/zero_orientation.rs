@@ -210,7 +210,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                         mode: None,
                         vertices,
                         kind: crate::feature::definitions::TrimEntityKind::Line,
-                        offset: external_id as usize,
+                        offset: usize::try_from(external_id).expect("fixture index fits usize"),
                     },
                 )
                 .collect(),
@@ -289,7 +289,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                     radius2_ref: None,
                     external_id,
                     body: Vec::new(),
-                    offset: external_id as usize,
+                    offset: usize::try_from(external_id).expect("fixture index fits usize"),
                 },
             )
             .collect::<Vec<_>>())
@@ -326,7 +326,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                     mode: None,
                     vertices,
                     kind: crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 3 },
-                    offset: external_id as usize,
+                    offset: usize::try_from(external_id).expect("fixture index fits usize"),
                 },
             )
             .collect(),
@@ -349,7 +349,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 radius2_ref: None,
                 external_id,
                 body: Vec::new(),
-                offset: external_id as usize,
+                offset: usize::try_from(external_id).expect("fixture index fits usize"),
             })
             .collect::<Vec<_>>())
         .into_iter()
@@ -390,7 +390,7 @@ fn profile_chain_follows_trim_vertex_incidence() {
                 radius2_ref: None,
                 external_id,
                 body: Vec::new(),
-                offset: external_id as usize,
+                offset: usize::try_from(external_id).expect("fixture index fits usize"),
             },
         )
         .collect::<Vec<_>>())
@@ -586,7 +586,7 @@ fn full_turn_revolution_uses_the_unique_generated_carrier_axis() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     let mut ir = CadIr::empty();
@@ -1140,7 +1140,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                     bspline_basis(
                         ctx,
                         index,
-                        nurbs.degree() as usize,
+                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
                         parameter,
                         nurbs.knots(),
                         nurbs.control_points().len(),
@@ -1165,7 +1165,7 @@ fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
                     bspline_basis_derivative(
                         ctx,
                         index,
-                        nurbs.degree() as usize,
+                        usize::try_from(nurbs.degree()).expect("fixture index fits usize"),
                         parameter,
                         nurbs.knots(),
                         nurbs.control_points().len(),
@@ -1384,8 +1384,8 @@ fn tensor_product_collocation_preserves_position_and_derivative_order() {
     for u in 0..4 {
         for v in 0..4 {
             let point = &nurbs.poles().into_iter().nth(u * 4 + v).expect("pole");
-            let expected_u = u as f64 / 3.0;
-            let expected_v = v as f64 / 3.0;
+            let expected_u = cadmpeg_core::convert::f64_from_index(u).expect("fixture index is exact in f64") / 3.0;
+            let expected_v = cadmpeg_core::convert::f64_from_index(v).expect("fixture index is exact in f64") / 3.0;
             assert!((point.x - expected_u).abs() < 1.0e-12);
             assert!((point.y - expected_v).abs() < 1.0e-12);
             assert!((point.z - expected_u - 2.0 * expected_v).abs() < 1.0e-12);

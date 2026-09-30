@@ -695,7 +695,7 @@ mod tests {
         ] {
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = limit as u64;
+            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(limit);
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
             let error = super::copy_circular_pcurve(&ctx, &geometry).expect_err("copy refused");
             assert!(matches!(error, CodecError::ResourceLimit(resource)

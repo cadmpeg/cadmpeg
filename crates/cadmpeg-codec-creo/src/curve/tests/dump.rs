@@ -140,7 +140,7 @@ fn decode_preserves_counted_curve_expression_programs() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:DEPDB_DATA",
-        scan.curves.expressions[0].expression_offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.curves.expressions[0].expression_offset),
         "curve_expression_program",
         Exactness::ByteExact,
     );
@@ -165,7 +165,7 @@ fn decode_preserves_curve_expression_source_section() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:FeatDefs",
-        scan.curves.expressions[0].expression_offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.curves.expressions[0].expression_offset),
         "curve_expression_program",
         Exactness::ByteExact,
     );

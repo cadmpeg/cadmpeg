@@ -296,9 +296,9 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
         references: Vec::new(),
         opaque_spans: Vec::new(),
         reference_geometry: [0, 0],
-        offset: curve_id as usize,
-        body_offset: curve_id as usize,
-        suffix_offset: curve_id as usize,
+        offset: usize::try_from(curve_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
+        suffix_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
     }
 }
 

@@ -1157,7 +1157,7 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
             .as_array()
             .expect("saved line body")
             .iter()
-            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
             .collect::<Vec<_>>();
         assert_eq!(&body, expected);
     }
@@ -1226,7 +1226,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
             .as_array()
             .expect("saved entity body")
             .iter()
-            .map(|byte| byte.as_u64().expect("byte") as u8)
+            .map(|byte| u8::try_from(byte.as_u64().expect("byte")).expect("fixture value fits u8"))
             .collect::<Vec<_>>();
         assert_eq!(&body, expected);
     }

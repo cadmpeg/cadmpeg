@@ -241,6 +241,6 @@ pub(super) fn opaque(external_id: u32) -> crate::feature::definitions::FeatureOp
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     }
 }

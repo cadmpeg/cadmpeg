@@ -502,8 +502,8 @@ fn positional_datum_table_replays_the_named_stream_schema() {
         root_schema_class: Some(crate::feature::schema::SchemaClass::Protrusion),
         stream_offset,
         body: body.try_into().expect("row body"),
-        body_offset: feature_id as usize * 100,
-        offset: feature_id as usize * 100 - 2,
+        body_offset: usize::try_from(feature_id).expect("fixture index fits usize") * 100,
+        offset: usize::try_from(feature_id).expect("fixture index fits usize") * 100 - 2,
     };
     let rows = [
         row(
@@ -660,7 +660,7 @@ fn entity_graph_requires_the_solid_features_root() {
     assert_eq!(entities[0].name, "Sld_Features");
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].source_entity_id, Some(1));
-    assert!((references[0].target_entity_id as usize) < entities.len());
+    assert!((usize::try_from(references[0].target_entity_id).expect("fixture index fits usize")) < entities.len());
 }
 
 #[test]

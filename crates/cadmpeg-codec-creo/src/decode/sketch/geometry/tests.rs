@@ -32,7 +32,7 @@ fn saved_profile_fixture() -> (SketchId, Vec<(u32, SketchGeometry)>) {
     .enumerate()
     {
         geometries.push((
-            10 + index as u32,
+            10 + u32::try_from(index).expect("fixture value fits u32"),
             SketchGeometry::try_from(SketchGeometryDefinition::Line {
                 start: Point2::new(start[0], start[1]),
                 end: Point2::new(end[0], end[1]),

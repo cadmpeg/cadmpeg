@@ -20,7 +20,7 @@ fn one_fc05_cap_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.outlines.push(crate::surface::OutlinePlane {
@@ -128,7 +128,7 @@ fn fc05_cap_curve_identity_refuses_retained_limit() {
 #[test]
 fn fc05_cap_curve_source_object_refuses_retained_limit() {
     let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
-    let error = transfer_with_retained_limit((curve_id.as_str().len() + 84 - 1) as u64, false)
+    let error = transfer_with_retained_limit(cadmpeg_core::decode::u64_from_index(curve_id.as_str().len() + 84 - 1), false)
         .expect_err("curve source ID exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -138,7 +138,7 @@ fn fc05_cap_curve_source_object_refuses_retained_limit() {
 #[test]
 fn fc05_axis_cylinder_identity_refuses_retained_limit() {
     let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
-    let error = transfer_with_retained_limit(curve_id.as_str().len() as u64, true)
+    let error = transfer_with_retained_limit(cadmpeg_core::decode::u64_from_index(curve_id.as_str().len()), true)
         .expect_err("axis cylinder identity exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -150,7 +150,7 @@ fn fc05_axis_cylinder_source_object_refuses_retained_limit() {
     let curve_id = CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 7);
     let surface_id = SurfaceId::compose(&crate::identity::VISIBGEOM_SURFACE, 2);
     let limit = curve_id.as_str().len() + surface_id.as_str().len() + 91 - 1;
-    let error = transfer_with_retained_limit(limit as u64, true)
+    let error = transfer_with_retained_limit(cadmpeg_core::decode::u64_from_index(limit), true)
         .expect_err("axis cylinder source ID exceeds retained limit");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes

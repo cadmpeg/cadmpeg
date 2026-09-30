@@ -624,7 +624,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let expected_offset =
-        container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset as u64;
+        cadmpeg_core::decode::u64_from_index(container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset);
     let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())

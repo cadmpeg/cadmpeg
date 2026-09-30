@@ -115,7 +115,7 @@ fn pending_replay(external_ids: &[u32]) -> FeatureDefinition {
         trim_entities: None,
         trim_vertices: None,
         order_table: Some(FeatureOrderTable {
-            declared_count: external_ids.len() as u32,
+            declared_count: u32::try_from(external_ids.len()).expect("fixture value fits u32"),
             has_prototype: false,
             entity_ref: Some(1),
             rows: external_ids
@@ -123,7 +123,7 @@ fn pending_replay(external_ids: &[u32]) -> FeatureDefinition {
                 .enumerate()
                 .map(|(index, external_id)| FeatureOrderRow {
                     external_id: *external_id,
-                    internal_id: index as u32 + 1,
+                    internal_id: u32::try_from(index).expect("fixture value fits u32") + 1,
                     bitmask: 0,
                     offset: index,
                 })
@@ -145,7 +145,7 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
         owner_feature_id: None,
     };
     definition.trim_entities = Some(FeatureTrimEntityTable {
-        declared_count: Some(external_ids.len() as u32),
+        declared_count: Some(u32::try_from(external_ids.len()).expect("fixture value fits u32")),
         entity_ref: Some(1),
         entry_ref: None,
         buckets: Vec::new(),
@@ -156,7 +156,7 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
                 external_id: *external_id,
                 kind: TrimEntityKind::Line,
                 mode: Some(0),
-                vertices: [index as u32, index as u32 + 1],
+                vertices: [u32::try_from(index).expect("fixture value fits u32"), u32::try_from(index).expect("fixture value fits u32") + 1],
                 offset: index,
             })
             .collect(),
@@ -193,7 +193,7 @@ fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable 
             .iter()
             .enumerate()
             .map(|(index, source_id)| FeatureEntityTableEntry {
-                entity_id: index as u32 + 1,
+                entity_id: u32::try_from(index).expect("fixture value fits u32") + 1,
                 payload: crate::feature::entity::entry_payload(200, Some(*source_id), None, None),
                 prefixed: true,
                 offset: index,

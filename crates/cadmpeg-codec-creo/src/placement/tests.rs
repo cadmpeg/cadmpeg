@@ -1044,7 +1044,7 @@ fn resolves_section_frame_from_two_generated_arc_cylinders() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1251,7 +1251,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1325,7 +1325,7 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
         } else {
             cadmpeg_ir::units::UnitVector3::X_AXIS
         },
-        offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     let outlines = [
         outline(13, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
@@ -1340,8 +1340,8 @@ fn resolves_section_frame_from_complete_generated_planar_prism() {
 
         entity_id,
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
     let tables = [FeatureEntityTable::new(
         10,

@@ -158,7 +158,7 @@ fn knit_generated_native_copy_refuses_retained_limit() {
     let local = "surface#98";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (native.len() + producer.len() * 2 + local.len()) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(native.len() + producer.len() * 2 + local.len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = knit_surface_feature_definition(&ctx, &scan, 416)
@@ -235,7 +235,7 @@ fn generated_surface_feature_id_refuses_retained_limit() {
 fn generated_surface_local_id_refuses_retained_limit() {
     generated_face_reference_error(
         None,
-        Some("creo:model:feature#17".len() as u64),
+        Some(cadmpeg_core::decode::u64_from_index("creo:model:feature#17".len())),
         "creo generated surface local IDs",
     );
 }
@@ -340,7 +340,7 @@ fn feature_result_topology_id_refuses_retained_limit() {
     topology_limit_error(
         true,
         None,
-        Some("surface#201".len() as u64),
+        Some(cadmpeg_core::decode::u64_from_index("surface#201".len())),
         "creo feature result topology ID",
     );
 }
@@ -350,7 +350,7 @@ fn feature_result_owner_id_refuses_retained_limit() {
     topology_limit_error(
         true,
         None,
-        Some(("surface#201".len() + "creo:model:feature-result-topology#17".len()) as u64),
+        Some(cadmpeg_core::decode::u64_from_index("surface#201".len() + "creo:model:feature-result-topology#17".len())),
         "creo feature result owner ID",
     );
 }
@@ -592,7 +592,7 @@ fn thicken_offset_limit_error(limit: u64, operation: &'static str) {
         reversed,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let rows = [row(11, true), row(201, false)];
     let arena = DecodeArena::new();
@@ -632,8 +632,8 @@ fn feature_surface_transitions_reject_duplicate_output_roster_entry() {
 
             entity_id,
             prefixed: true,
-            offset: entity_id as usize,
-            end_offset: entity_id as usize,
+            offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+            end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
     let mut table = crate::feature::entity::FeatureEntityTable::new(
         17,
@@ -689,8 +689,8 @@ fn transition_limit_error(limit: u64, operation: &'static str, dependency_route:
             ),
             entity_id,
             prefixed: true,
-            offset: entity_id as usize,
-            end_offset: entity_id as usize,
+            offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+            end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
     let table = crate::feature::entity::FeatureEntityTable::new(
         17,
@@ -707,7 +707,7 @@ fn transition_limit_error(limit: u64, operation: &'static str, dependency_route:
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let rows = [row(11, 3), row(201, 17)];
     let arena = DecodeArena::new();
