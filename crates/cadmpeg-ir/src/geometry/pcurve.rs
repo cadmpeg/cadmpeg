@@ -1539,12 +1539,31 @@ impl<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>> PolarNurbsPoles<P, S>
     ///
     /// Refuses a pole with a non-finite radial coordinate or axial value.
     fn admit(self) -> Result<PolarNurbsPoles<FinitePoint2, FiniteReal>, NurbsError> {
-        self.try_map_poles(|radial, axial| {
-            radial
-                .admit()
-                .zip(axial.admit())
-                .ok_or_else(|| NurbsError::Structure("poles contain a non-finite value".into()))
-        })
+        let admit = |radial: P, axial: S| {
+            radial.admit().zip(axial.admit()).ok_or_else(|| {
+                NurbsError::Structure("poles contain a non-finite value".into())
+            })
+        };
+        match self {
+            Self::Polynomial { poles } => {
+                let mut output = Vec::new();
+                super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR admitted polynomial polar poles")?;
+                for pole in poles {
+                    let (radial, axial) = admit(pole.radial, pole.axial)?;
+                    output.push(PolarNurbsPole { radial, axial });
+                }
+                Ok(PolarNurbsPoles::Polynomial { poles: output })
+            }
+            Self::Rational { poles } => {
+                let mut output = Vec::new();
+                super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR admitted rational polar poles")?;
+                for pole in poles {
+                    let (radial, axial) = admit(pole.radial, pole.axial)?;
+                    output.push(WeightedPolarNurbsPole { radial, axial, weight: pole.weight });
+                }
+                Ok(PolarNurbsPoles::Rational { poles: output })
+            }
+        }
     }
 }
 
@@ -1576,20 +1595,16 @@ impl<P, S> PolarNurbsPoles<P, S> {
             return Ok(Self::Polynomial { poles });
         };
         require_weight_lane("polar poles", poles.len(), weights.len())?;
-        Ok(Self::Rational {
-            poles: poles
-                .into_iter()
-                .zip(weights)
-                .enumerate()
-                .map(|(index, (pole, weight))| {
-                    Ok(WeightedPolarNurbsPole {
-                        radial: pole.radial,
-                        axial: pole.axial,
-                        weight: admit_weight("polar poles", index, weight)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, NurbsError>>()?,
-        })
+        let mut output = Vec::new();
+        super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR pair polar pole weights")?;
+        for (index, (pole, weight)) in poles.into_iter().zip(weights).enumerate() {
+            output.push(WeightedPolarNurbsPole {
+                radial: pole.radial,
+                axial: pole.axial,
+                weight: admit_weight("polar poles", index, weight)?,
+            });
+        }
+        Ok(Self::Rational { poles: output })
     }
 
     /// Pair a pole lane with an admitted weight lane. The weight type states
@@ -1607,17 +1622,12 @@ impl<P, S> PolarNurbsPoles<P, S> {
             return Ok(Self::Polynomial { poles });
         };
         require_weight_lane("polar poles", poles.len(), weights.len())?;
-        Ok(Self::Rational {
-            poles: poles
-                .into_iter()
-                .zip(weights)
-                .map(|(pole, weight)| WeightedPolarNurbsPole {
-                    radial: pole.radial,
-                    axial: pole.axial,
-                    weight,
-                })
-                .collect(),
-        })
+        let mut output = Vec::new();
+        super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR pair checked polar pole weights")?;
+        for (pole, weight) in poles.into_iter().zip(weights) {
+            output.push(WeightedPolarNurbsPole { radial: pole.radial, axial: pole.axial, weight });
+        }
+        Ok(Self::Rational { poles: output })
     }
 
     /// Count poles.

@@ -3629,6 +3629,14 @@ fn derive_cylindrical_pcurves(
                 } else {
                     None
                 };
+                let admitted_poles = cadmpeg_core::decode::u64_from_index(poles.len());
+                let copied_poles = admitted_poles.checked_mul(if weights.is_some() { 2 } else { 1 })
+                    .ok_or_else(|| ctx.refuse_codec_limit("admit cylindrical polar poles", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_collection_items(copied_poles, "admit cylindrical polar poles")?;
+                let admission_work = copied_poles.checked_mul(32)
+                    .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(knots.len())))
+                    .ok_or_else(|| ctx.refuse_codec_limit("admit cylindrical polar poles", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(admission_work, "admit cylindrical polar poles")?;
                 let polar = match PolarPcurveNurbs::from_checked_lanes(
                     nurbs.degree(),
                     knots,
@@ -3637,6 +3645,7 @@ fn derive_cylindrical_pcurves(
                     nurbs.periodic(),
                 ) {
                     Ok(polar) => polar,
+                    Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => return Err(limit.into()),
                     Err(error) => {
                         let note = crate::loss::spline_lane_refusal(
                             ctx, format_args!("cylindrical pcurve for edge {}: {error}", edge.id),
@@ -5796,6 +5805,7 @@ fn nurbs_curve_sample_parameters(
     {
         return Ok(None);
     }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(curve.knots().len()), "scan NURBS curve knot windows")?;
     let mut parameters = vec![range[0], range[1]];
     for span in curve.knots().windows(2) {
         let start = span[0].max(range[0]);
