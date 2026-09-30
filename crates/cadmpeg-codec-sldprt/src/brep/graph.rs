@@ -3550,7 +3550,10 @@ fn derive_cylindrical_pcurves(
                         dot(relative, cross),
                     )
                 };
-                ctx.charge_work(nurbs.pole_count() as u64, "project Parasolid cylinder poles")?;
+                let work = nurbs.pole_count().checked_add(nurbs.knots().len())
+                    .and_then(|count| count.checked_mul(1024))
+                    .ok_or_else(|| ctx.refuse_codec_limit("project Parasolid cylinder poles", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "project Parasolid cylinder poles")?;
                 let mut radial_control_points = Vec::new();
                 ctx.reserve_collection_vec(&mut radial_control_points, nurbs.pole_count(), "collect Parasolid cylinder radial poles")?;
                 let curve_weights = match nurbs.pole_rows() {
