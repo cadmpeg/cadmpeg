@@ -422,3 +422,36 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
         ])
     );
 }
+
+#[test]
+fn direct_parasolid_decode_route_refuses_work_at_minimum_admission() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
+    payload.extend(parasolid_with_body("deltas body", "SCH_SW_33103_11000", &world_point(60, [2.0, 0.0, 0.0])));
+    let mut source = crate::test_support::container::outer_header();
+    source.extend(crate::test_support::container::make_block(0x20, "Contents/Config-0-Partition", &payload));
+    let mut options = DecodeOptions { policy: DecodePolicy::service(), ..DecodeOptions::default() };
+    let expected = crate::SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap().ir().clone();
+    assert!(!expected.model.bodies.is_empty());
+    let admitted = |options: &DecodeOptions| match crate::SldprtCodec.decode(&mut Cursor::new(&source), options) {
+        Ok(actual) => { assert_eq!(actual.ir(), &expected); true }
+        Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+        Err(error) => panic!("unexpected direct Parasolid decode error: {error}"),
+    };
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        options.policy.limits.max_work_units = upper;
+        if admitted(&options) { break; }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        options.policy.limits.max_work_units = middle;
+        if admitted(&options) { upper = middle; } else { lower = middle + 1; }
+    }
+    assert!(upper > 0);
+    options.policy.limits.max_work_units = upper; assert!(admitted(&options));
+    options.policy.limits.max_work_units = upper - 1; assert!(!admitted(&options));
+}
