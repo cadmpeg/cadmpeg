@@ -5143,20 +5143,25 @@ pub(crate) fn remove_dimension_frame_relations(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct DimensionLocusInputs<'a> {
+    pub(crate) placements: &'a [DesignSketchPlacement],
+    pub(crate) owners: &'a [DesignParameterOwner],
+    pub(crate) pairs: &'a [DesignDimensionLocusPair],
+    pub(crate) groups: &'a [DesignDimensionLocusGroup],
+    pub(crate) annotation_frames: &'a [DesignDimensionAnnotationFrame],
+    pub(crate) null_pairs: &'a [DesignDimensionLocusPair],
+}
+
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn bind_dimension_loci<'a>(
     ctx: &DecodeContext<'_>,
-    placements: &[DesignSketchPlacement],
-    owners: &[DesignParameterOwner],
-    pairs: &'a [DesignDimensionLocusPair],
-    groups: &'a [DesignDimensionLocusGroup],
-    annotation_frames: &'a [DesignDimensionAnnotationFrame],
-    null_pairs: &'a [DesignDimensionLocusPair],
+    input: DimensionLocusInputs<'a>,
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
 ) -> Result<(), CodecError> {
+    let DimensionLocusInputs { placements, owners, pairs, groups, annotation_frames, null_pairs } = input;
     let mut placements_by_scope = HashMap::new();
     for placement in placements {
         if let (Some(scope), Some(record_index), Ok(owner)) = (

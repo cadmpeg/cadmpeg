@@ -565,7 +565,11 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     let edges = [first_edge.clone(), repeated_edge.clone()];
 
     assert!(matches!(
-        crate::test_support::with_decode_context(|decode_ctx| resolved_edge_treatment_group_with_corners(&selection_group, std::slice::from_ref(&selection_group), &edges, &[], &corners, std::slice::from_ref(&history), Some(7), &feature_id, None, decode_ctx)).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| resolved_edge_treatment_group_with_corners(
+&selection_group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&selection_group), operands: &edges, identity_operands: &[], vertex_operands: &corners, histories: std::slice::from_ref(&history), previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: None },
+decode_ctx,
+)).unwrap(),
         cadmpeg_ir::features::EdgeSelection::Historical { edges, .. }
             if edges.len() == 1 && edges[0].as_str().ends_with(":17")
     ));
@@ -574,17 +578,10 @@ fn treatment_corner_context_admits_only_edge_endpoints_and_collapses_recipe_repe
     assert!(matches!(
         crate::test_support::with_decode_context(|decode_ctx| {
             resolved_edge_treatment_group_with_corners(
-                &selection_group,
-                std::slice::from_ref(&selection_group),
-                &[first_edge, repeated_edge],
-                &[],
-                &invalid_corners,
-                std::slice::from_ref(&history),
-                Some(7),
-                &feature_id,
-                None,
-                decode_ctx,
-            )
+&selection_group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&selection_group), operands: &[first_edge, repeated_edge], identity_operands: &[], vertex_operands: &invalid_corners, histories: std::slice::from_ref(&history), previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: None },
+decode_ctx,
+)
         })
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)

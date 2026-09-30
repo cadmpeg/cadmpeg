@@ -180,17 +180,10 @@ fn assert_identity_transition_refusal(operation: &'static str) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match resolved_edge_treatment_group_with_corners(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            std::slice::from_ref(&operand),
-            &[],
-            &[],
-            Some(7),
-            &feature_id,
-            None,
-            &ctx,
-        ) {
+&group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&group), operands: &[], identity_operands: std::slice::from_ref(&operand), vertex_operands: &[], histories: &[], previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: None },
+&ctx,
+) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),
@@ -333,17 +326,10 @@ fn assert_identity_historical_refusal(
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match resolved_edge_treatment_group_with_corners(
-            &group,
-            std::slice::from_ref(&group),
-            &[],
-            std::slice::from_ref(&operand),
-            &[],
-            &[],
-            Some(7),
-            &feature_id,
-            radius,
-            &ctx,
-        ) {
+&group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&group), operands: &[], identity_operands: std::slice::from_ref(&operand), vertex_operands: &[], histories: &[], previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: radius },
+&ctx,
+) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected {operation} refusal: {other:?}"),

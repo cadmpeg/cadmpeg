@@ -451,19 +451,30 @@ fn validate_design_type(
             .is_some_and(|base| base.eq_ignore_ascii_case(expected_base_type_guid))
 }
 
-#[allow(clippy::too_many_arguments)]
-fn nested_record_identity(
-    record: &[u8],
+#[derive(Clone, Copy)]
+struct MeshRecordType<'a> {
+    type_guid: &'a str,
+    base_type_guid: &'a str,
+    version: u32,
+    module: &'a str,
+}
+
+#[derive(Clone, Copy)]
+struct NestedMeshRecordFrame {
     frame_start: usize,
     at: usize,
     end: usize,
     record_index: u32,
+}
+
+fn nested_record_identity(
+    record: &[u8],
+    frame: NestedMeshRecordFrame,
     meta: &crate::metastream::MetaStream,
-    expected_type_guid: &str,
-    expected_base_type_guid: &str,
-    expected_version: u32,
-    expected_module: &str,
+    input: MeshRecordType<'_>,
 ) -> Option<DesignMeshRecordIdentity> {
+    let NestedMeshRecordFrame { frame_start, at, end, record_index } = frame;
+    let MeshRecordType { type_guid: expected_type_guid, base_type_guid: expected_base_type_guid, version: expected_version, module: expected_module } = input;
     let class_tag = indexed_class_tag(record, at)?;
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
         .then_some(())?;
@@ -671,17 +682,11 @@ fn parse_mesh_collection_record(
         let texture_table_record_index =
             exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
         let base_record = nested_record_identity(
-            record,
-            frame.start,
-            mesh_collection::LEN,
-            record.len(),
-            identity.record_index(),
-            meta,
-            MESH_COLLECTION_BASE_TYPE_GUID,
-            MESH_COLLECTION_BASE_BASE_TYPE_GUID,
-            MESH_COLLECTION_BASE_TYPE_VERSION,
-            COMMON_DATA_MODULE,
-        )?;
+record,
+crate::design::decode::mesh::NestedMeshRecordFrame { frame_start: frame.start, at: mesh_collection::LEN, end: record.len(), record_index: identity.record_index() },
+meta,
+crate::design::decode::mesh::MeshRecordType { type_guid: MESH_COLLECTION_BASE_TYPE_GUID, base_type_guid: MESH_COLLECTION_BASE_BASE_TYPE_GUID, version: MESH_COLLECTION_BASE_TYPE_VERSION, module: COMMON_DATA_MODULE },
+)?;
         (record.get(
             mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
                 ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
@@ -1042,17 +1047,11 @@ fn parse_mesh_scope_record(
             && paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len()))
         .then_some(())?;
         let base_record = nested_record_identity(
-            record,
-            frame.start,
-            paired_relative,
-            record.len(),
-            identity.record_index(),
-            meta,
-            MESH_SCOPE_BASE_RECORD_TYPE_GUID,
-            MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
-            MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
-            DATA_MODEL_MODULE,
-        )?;
+record,
+crate::design::decode::mesh::NestedMeshRecordFrame { frame_start: frame.start, at: paired_relative, end: record.len(), record_index: identity.record_index() },
+meta,
+crate::design::decode::mesh::MeshRecordType { type_guid: MESH_SCOPE_BASE_RECORD_TYPE_GUID, base_type_guid: MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID, version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION, module: DATA_MODEL_MODULE },
+)?;
         (record.get(
             paired_relative + feature_scope_base::ZERO_RUN_8
                 ..paired_relative + feature_scope_base::SCOPE_OWNER_REFERENCE,

@@ -714,18 +714,11 @@ fn native_procedural_surface_definition(
                 .map(cadmpeg_ir::geometry::LoftBridgeToken::to_raw)
                 .collect::<Vec<_>>();
             encode_native_loft(
-                bytes,
-                target,
-                procedural,
-                &sections,
-                revision_form.as_ref(),
-                &parameters,
-                closures,
-                singularities,
-                *mode,
-                &bridge,
-                Some(solved_cache),
-            )?;
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::LoftSurfaceRecord { sections: &sections, revision_form: revision_form.as_ref(), parameters: &parameters, closures, singularities, mode: *mode, bridge: &bridge, solved_cache: Some(solved_cache) },
+)?;
         }
         ProceduralSurfaceDefinition::CompoundLoft(definition_payload) => {
             let construction = definition_payload.construction();
@@ -789,14 +782,11 @@ fn native_procedural_surface_definition(
                 definition_payload.native(),
             ) {
                 (profile, spine, Some(construction)) => encode_native_sweep_surface(
-                    bytes,
-                    target,
-                    procedural,
-                    profile,
-                    spine,
-                    &construction.to_raw(),
-                    Some(solved_cache),
-                )?,
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::SweepSurfaceRecord { profile, spine, construction: &construction.to_raw(), solved_cache: Some(solved_cache) },
+)?,
                 _ => {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D sweep surface {} lacks its native construction graph",
@@ -1195,28 +1185,23 @@ fn native_procedural_surface_definition(
                 .revision_form()
                 .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
             encode_native_extrusion(
-                bytes,
-                target,
-                procedural,
-                directrix,
-                parameter_interval
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::ExtrusionSurfaceRecord { directrix, parameter_interval: parameter_interval
                     .ok_or_else(|| {
                         CodecError::Malformed(
                             "source-less F3D extrusion lacks its native interval".into(),
                         )
                     })?
-                    .get(),
-                direction.get(),
-                native_position
+                    .get(), direction: direction.get(), native_position: native_position
                     .ok_or_else(|| {
                         CodecError::Malformed(
                             "source-less F3D extrusion lacks its native position".into(),
                         )
                     })?
-                    .get(),
-                revision_form.as_ref(),
-                Some(solved_cache),
-            )?;
+                    .get(), revision_form: revision_form.as_ref(), solved_cache: Some(solved_cache) },
+)?;
         }
         ProceduralSurfaceDefinition::Blend(definition_payload) => {
             let supports = definition_payload.supports();
@@ -1234,15 +1219,11 @@ fn native_procedural_surface_definition(
                 )?;
             } else {
                 encode_native_rolling_ball(
-                    bytes,
-                    target,
-                    procedural,
-                    supports,
-                    spine.as_ref(),
-                    radius,
-                    cross_section,
-                    solved_cache,
-                )?;
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::RollingBallSurfaceRecord { supports, spine: spine.as_ref(), radius, cross_section, solved_cache },
+)?;
             }
         }
         ProceduralSurfaceDefinition::Helix { .. } => {
@@ -1976,28 +1957,23 @@ fn native_cacheless_procedural_surface_definition(
             .revision_form()
             .map(cadmpeg_ir::geometry::RevisionSurfaceForm::to_raw);
         encode_native_extrusion(
-            bytes,
-            target,
-            procedural,
-            directrix,
-            parameter_interval
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::ExtrusionSurfaceRecord { directrix, parameter_interval: parameter_interval
                 .ok_or_else(|| {
                     CodecError::Malformed(
                         "source-less F3D extrusion lacks its native interval".into(),
                     )
                 })?
-                .get(),
-            direction.get(),
-            native_position
+                .get(), direction: direction.get(), native_position: native_position
                 .ok_or_else(|| {
                     CodecError::Malformed(
                         "source-less F3D extrusion lacks its native position".into(),
                     )
                 })?
-                .get(),
-            revision_form.as_ref(),
-            None,
-        )?;
+                .get(), revision_form: revision_form.as_ref(), solved_cache: None },
+)?;
         return Ok(true);
     }
     if let ProceduralSurfaceDefinition::Helix { construction } = procedural.definition() {
@@ -2190,14 +2166,11 @@ fn native_cacheless_procedural_surface_definition(
                 .is_some_and(|form| form.cache.parameterization().is_some())
             {
                 encode_native_sweep_surface(
-                    bytes,
-                    target,
-                    procedural,
-                    profile,
-                    spine,
-                    &construction.to_raw(),
-                    None,
-                )?;
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::SweepSurfaceRecord { profile, spine, construction: &construction.to_raw(), solved_cache: None },
+)?;
                 return Ok(true);
             }
         }
@@ -2233,23 +2206,16 @@ fn native_cacheless_procedural_surface_definition(
         ) {
             if form.cache.parameterization().is_some() {
                 encode_native_loft(
-                    bytes,
-                    target,
-                    procedural,
-                    &sections
+bytes,
+target,
+procedural,
+crate::writer::generate::native_geometry::LoftSurfaceRecord { sections: &sections
                         .each_ref()
-                        .map(cadmpeg_ir::geometry::LoftSection::to_raw),
-                    Some(&form.to_raw()),
-                    &parameters.to_raw(),
-                    closures,
-                    singularities,
-                    *mode,
-                    &bridge
+                        .map(cadmpeg_ir::geometry::LoftSection::to_raw), revision_form: Some(&form.to_raw()), parameters: &parameters.to_raw(), closures, singularities, mode: *mode, bridge: &bridge
                         .iter()
                         .map(cadmpeg_ir::geometry::LoftBridgeToken::to_raw)
-                        .collect::<Vec<_>>(),
-                    None,
-                )?;
+                        .collect::<Vec<_>>(), solved_cache: None },
+)?;
                 return Ok(true);
             }
         }
@@ -2726,16 +2692,21 @@ fn encode_native_net_surface(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct SweepSurfaceRecord<'a> {
+    profile: &'a cadmpeg_ir::ids::CurveId,
+    spine: &'a cadmpeg_ir::ids::CurveId,
+    construction: &'a cadmpeg_ir::geometry::SweepSurfaceConstruction,
+    solved_cache: Option<&'a NurbsSurface>,
+}
+
 fn encode_native_sweep_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
-    profile: &cadmpeg_ir::ids::CurveId,
-    spine: &cadmpeg_ir::ids::CurveId,
-    construction: &cadmpeg_ir::geometry::SweepSurfaceConstruction,
-    solved_cache: Option<&NurbsSurface>,
+    input: SweepSurfaceRecord<'_>,
 ) -> Result<(), CodecError> {
+    let SweepSurfaceRecord { profile, spine, construction, solved_cache } = input;
     use cadmpeg_ir::geometry::SweepSurfaceLayout;
     let cache_fit_tolerance = procedural.cache_fit_tolerance();
     if let Some(form) = &construction.cache.form() {
@@ -3229,20 +3200,25 @@ fn encode_native_sweep_surface(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct LoftSurfaceRecord<'a> {
+    sections: &'a [cadmpeg_ir::geometry::LoftSection; 2],
+    revision_form: Option<&'a cadmpeg_ir::geometry::LoftRevisionForm>,
+    parameters: &'a cadmpeg_ir::geometry::SplineSurfaceParameters,
+    closures: &'a [i64; 2],
+    singularities: &'a [i64; 2],
+    mode: i64,
+    bridge: &'a [cadmpeg_ir::geometry::LoftBridgeToken],
+    solved_cache: Option<&'a NurbsSurface>,
+}
+
 fn encode_native_loft(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
-    sections: &[cadmpeg_ir::geometry::LoftSection; 2],
-    revision_form: Option<&cadmpeg_ir::geometry::LoftRevisionForm>,
-    parameters: &cadmpeg_ir::geometry::SplineSurfaceParameters,
-    closures: &[i64; 2],
-    singularities: &[i64; 2],
-    mode: i64,
-    bridge: &[cadmpeg_ir::geometry::LoftBridgeToken],
-    solved_cache: Option<&NurbsSurface>,
+    input: LoftSurfaceRecord<'_>,
 ) -> Result<(), CodecError> {
+    let LoftSurfaceRecord { sections, revision_form, parameters, closures, singularities, mode, bridge, solved_cache } = input;
     if let Some(form) = revision_form {
         let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionRanges { intervals } =
             parameters
@@ -3318,18 +3294,23 @@ fn encode_native_loft(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct ExtrusionSurfaceRecord<'a> {
+    directrix: &'a cadmpeg_ir::ids::CurveId,
+    parameter_interval: [f64; 2],
+    direction: Vector3,
+    native_position: cadmpeg_ir::math::Point3,
+    revision_form: Option<&'a cadmpeg_ir::geometry::RevisionSurfaceForm>,
+    solved_cache: Option<&'a NurbsSurface>,
+}
+
 fn encode_native_extrusion(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
-    directrix: &cadmpeg_ir::ids::CurveId,
-    parameter_interval: [f64; 2],
-    direction: Vector3,
-    native_position: cadmpeg_ir::math::Point3,
-    revision_form: Option<&cadmpeg_ir::geometry::RevisionSurfaceForm>,
-    solved_cache: Option<&NurbsSurface>,
+    input: ExtrusionSurfaceRecord<'_>,
 ) -> Result<(), CodecError> {
+    let ExtrusionSurfaceRecord { directrix, parameter_interval, direction, native_position, revision_form, solved_cache } = input;
     let directrix = target
         .model
         .curves
@@ -4317,17 +4298,22 @@ fn encode_complete_native_rolling_ball(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct RollingBallSurfaceRecord<'a> {
+    supports: &'a [Option<cadmpeg_ir::geometry::BlendSupport>; 2],
+    spine: Option<&'a cadmpeg_ir::ids::CurveId>,
+    radius: &'a BlendRadiusLaw,
+    cross_section: &'a cadmpeg_ir::geometry::BlendCrossSection,
+    solved_cache: &'a NurbsSurface,
+}
+
 fn encode_native_rolling_ball(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
-    supports: &[Option<cadmpeg_ir::geometry::BlendSupport>; 2],
-    spine: Option<&cadmpeg_ir::ids::CurveId>,
-    radius: &BlendRadiusLaw,
-    cross_section: &cadmpeg_ir::geometry::BlendCrossSection,
-    solved_cache: &NurbsSurface,
+    input: RollingBallSurfaceRecord<'_>,
 ) -> Result<(), CodecError> {
+    let RollingBallSurfaceRecord { supports, spine, radius, cross_section, solved_cache } = input;
     if *cross_section != cadmpeg_ir::geometry::BlendCrossSection::Circular {
         return Err(CodecError::NotImplemented(
             "source-less rb_blend_spl_sur requires a circular cross-section".into(),

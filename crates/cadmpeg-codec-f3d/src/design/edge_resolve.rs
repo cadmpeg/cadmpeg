@@ -398,33 +398,31 @@ pub(super) fn resolved_edge_treatment_group(
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     crate::test_support::with_decode_context(|decode_ctx| {
         resolved_edge_treatment_group_with_corners(
-            group,
-            groups,
-            operands,
-            identity_operands,
-            &[],
-            &[],
-            previous_state_id,
-            feature_id,
-            treatment_radius,
-            decode_ctx,
-        )
+group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands: &[], histories: &[], previous_state_id, feature_id, treatment_radius },
+decode_ctx,
+)
     })
 }
 
-#[allow(clippy::too_many_arguments)] // The arguments are distinct native operand arenas and resolution context.
+#[derive(Clone, Copy)]
+pub(crate) struct EdgeTreatmentInputs<'a> {
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) operands: &'a [DesignEdgeOperand],
+    pub(crate) identity_operands: &'a [DesignEdgeIdentityOperand],
+    pub(crate) vertex_operands: &'a [DesignEdgeTreatmentVertexOperand],
+    pub(crate) histories: &'a [crate::history_records::AsmHistory],
+    pub(crate) previous_state_id: Option<i64>,
+    pub(crate) feature_id: &'a cadmpeg_ir::features::FeatureId,
+    pub(crate) treatment_radius: Option<f64>,
+}
+
 pub(super) fn resolved_edge_treatment_group_with_corners(
     group: &DesignConstructionOperandGroup,
-    groups: &[DesignConstructionOperandGroup],
-    operands: &[DesignEdgeOperand],
-    identity_operands: &[DesignEdgeIdentityOperand],
-    vertex_operands: &[DesignEdgeTreatmentVertexOperand],
-    histories: &[crate::history_records::AsmHistory],
-    previous_state_id: Option<i64>,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    treatment_radius: Option<f64>,
+    input: EdgeTreatmentInputs<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
+    let EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands, histories, previous_state_id, feature_id, treatment_radius } = input;
     use cadmpeg_ir::features::EdgeSelection;
 
     let stream = native_stream(&group.id);
@@ -2864,17 +2862,10 @@ pub(super) fn project_fixed_fillet_with_corners(
             | RadiusSpec::Unresolved { .. } => None,
         };
         let edges = resolved_edge_treatment_group_with_corners(
-            edge_group,
-            construction_groups,
-            edge_operands,
-            edge_identity_operands,
-            vertex_operands,
-            histories,
-            scope.previous_history_state_id(),
-            &crate::design::identity::neutral_feature_id(ctx, scope)?,
-            edge_radius,
-            ctx,
-        )?;
+edge_group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: construction_groups, operands: edge_operands, identity_operands: edge_identity_operands, vertex_operands, histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: edge_radius },
+ctx,
+)?;
         ctx.push_vec(
             &mut groups,
             FilletGroup {

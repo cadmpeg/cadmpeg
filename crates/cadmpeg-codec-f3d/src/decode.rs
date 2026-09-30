@@ -2600,16 +2600,11 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.design_dimension_null_locus_pairs,
         )?;
         crate::design::dimensions::bind_dimension_loci(
-            ctx,
-            &self.native.design_sketch_placements,
-            &self.native.design_parameter_owners,
-            &self.native.design_dimension_locus_pairs,
-            &self.native.design_dimension_locus_groups,
-            &self.native.design_dimension_annotation_frames,
-            &self.native.design_dimension_null_locus_pairs,
-            &mut self.native.sketch_points,
-            &mut self.native.sketch_curve_identities,
-        )?;
+ctx,
+crate::design::dimensions::DimensionLocusInputs { placements: &self.native.design_sketch_placements, owners: &self.native.design_parameter_owners, pairs: &self.native.design_dimension_locus_pairs, groups: &self.native.design_dimension_locus_groups, annotation_frames: &self.native.design_dimension_annotation_frames, null_pairs: &self.native.design_dimension_null_locus_pairs },
+&mut self.native.sketch_points,
+&mut self.native.sketch_curve_identities,
+)?;
         self.native.design_body_members =
             crate::design::decode::body::decode_body_members(ctx, scan)?;
         if matches!(path, SessionPath::Bodyless) {
@@ -2743,16 +2738,11 @@ impl<'a> F3dDecodeSession<'a> {
             },
         )?;
         crate::history::bind_feature_face_selections(
-            self.ctx,
-            &mut self.ir.model.features,
-            &mut self.ir.model.feature_input_topologies,
-            &self.native.design_parameter_scopes,
-            &self.native.design_construction_operand_groups,
-            &self.native.design_face_operands,
-            &self.native.design_entity_selection_operands,
-            &self.native.design_body_recipe_operands,
-            &self.native.asm_histories,
-        )?;
+self.ctx,
+&mut self.ir.model.features,
+&mut self.ir.model.feature_input_topologies,
+crate::history::FeatureFaceSelectionInputs { scopes: &self.native.design_parameter_scopes, groups: &self.native.design_construction_operand_groups, operands: &self.native.design_face_operands, entity_operands: &self.native.design_entity_selection_operands, body_recipe_operands: &self.native.design_body_recipe_operands, histories: &self.native.asm_histories },
+)?;
         crate::history::bind_feature_path_selections(
             self.ctx,
             &mut self.ir.model.features,
