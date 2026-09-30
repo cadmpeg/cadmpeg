@@ -999,23 +999,23 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
     implicit_radial = implicit_radial.with_test_identity(implicit_radial.object_index(), Some(2));
     implicit_radial = implicit_radial.with_test_position(implicit_radial.ordinal(), 200);
     implicit_lane.sketch_entities = vec![implicit_center, implicit_radial];
-    let (resolved, radius) = implicit_circle_marker(
+    let (resolved, radius) = implicit_circle_marker(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&implicit_lane),
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
-    )
+    ).unwrap()
     .expect("implicit circle pair");
     assert_eq!(resolved.id(), "implicit-center");
     assert!((radius - 5.0).abs() < 1.0e-12);
-    assert!(implicit_circle_marker(
+    assert!(implicit_circle_marker(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&implicit_lane),
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_8AB6),
         0,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 
@@ -1065,13 +1065,13 @@ fn implicit_circle_uses_its_solver_relation_in_a_mixed_point_roster() {
     };
 
     let lanes = [lane];
-    let (resolved, radius) = implicit_circle_marker(
+    let (resolved, radius) = implicit_circle_marker(&cadmpeg_test_support::service_decode_context(),
         &lanes,
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
-    )
+    ).unwrap()
     .expect("solver-owned implicit circle");
 
     assert_eq!(resolved.id(), "center");
@@ -1110,13 +1110,13 @@ fn implicit_circle_uses_unique_terminal_radial_point() {
     };
     let lanes = [lane];
 
-    let (resolved, radius) = implicit_circle_marker(
+    let (resolved, radius) = implicit_circle_marker(&cadmpeg_test_support::service_decode_context(),
         &lanes,
         "feature-native",
         FeatureInputOperandKind::Native(NativeOperandTag::TAG_83FE),
         0,
         5.0,
-    )
+    ).unwrap()
     .expect("unique terminal radial pair");
 
     assert_eq!(resolved.id(), "center");
@@ -1173,12 +1173,12 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
         sketch_entities: vec![center, radial],
     };
 
-    let (resolved, radius) = declared_entity_handle_circular_marker(
+    let (resolved, radius) = declared_entity_handle_circular_marker(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         "feature-native",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .expect("declared entity-handle circle");
 
     assert_eq!(resolved.id(), "center");
@@ -1187,22 +1187,22 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     for kind in [SketchInputKind::LineOrCircle, SketchInputKind::Arc] {
         let mut lane = lane.clone();
         lane.sketch_entities[0].reclassify(kind);
-        assert!(declared_entity_handle_circular_marker(
+        assert!(declared_entity_handle_circular_marker(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&lane),
             "feature-native",
             &operand,
             5.0,
-        )
+        ).unwrap()
         .is_some());
     }
     let mut invalid_radial = lane.clone();
     invalid_radial.sketch_entities[1].reclassify(SketchInputKind::Arc);
-    assert!(declared_entity_handle_circular_marker(
+    assert!(declared_entity_handle_circular_marker(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&invalid_radial),
         "feature-native",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 
     let mut ambiguous = lane;
@@ -1215,12 +1215,12 @@ fn declared_entity_handle_uses_one_linked_center_radial_pair() {
     ambiguous
         .sketch_entities
         .extend([second_center, second_radial]);
-    assert!(declared_entity_handle_circular_marker(
+    assert!(declared_entity_handle_circular_marker(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous),
         "feature-native",
         &operand,
         5.0,
-    )
+    ).unwrap()
     .is_none());
 }
 

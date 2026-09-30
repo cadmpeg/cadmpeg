@@ -61,7 +61,7 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
     };
 
     assert_eq!(
-        direct_point_dimension_center(std::slice::from_ref(&lane), "feature", &operand, 5.0)
+        direct_point_dimension_center(&cadmpeg_test_support::service_decode_context(),std::slice::from_ref(&lane), "feature", &operand, 5.0).unwrap()
             .map(crate::records::SketchInputEntity::id),
         Some("center")
     );
@@ -85,12 +85,12 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         entity_index: 1,
         ..operand.clone()
     };
-    assert!(direct_point_dimension_center(
+    assert!(direct_point_dimension_center(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&lane),
         "feature",
         &mismatched,
         5.0
-    )
+    ).unwrap()
     .is_none());
 
     let mut nonmatching_pair_lane = lane.clone();
@@ -103,12 +103,12 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         ..operand.clone()
     };
     assert_eq!(
-        direct_point_dimension_center(
+        direct_point_dimension_center(&cadmpeg_test_support::service_decode_context(),
             std::slice::from_ref(&nonmatching_pair_lane),
             "feature",
             &nonmatching_pair,
             5.0,
-        )
+        ).unwrap()
         .map(crate::records::SketchInputEntity::id),
         Some("radial")
     );
@@ -122,12 +122,12 @@ fn classless_point_identity_requires_exact_reference_and_center_role() {
         entity_ref: Some("radial".into()),
         ..operand
     };
-    assert!(direct_point_dimension_center(
+    assert!(direct_point_dimension_center(&cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&radial_lane),
         "feature",
         &radial,
         5.0
-    )
+    ).unwrap()
     .is_none());
 }
 

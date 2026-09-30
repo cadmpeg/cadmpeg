@@ -262,11 +262,12 @@ fn declared_entity_handle_circular_carriers(
                 None => continue,
             };
             let Some((center, encoded_radius)) = declared_entity_handle_circular_marker(
+                ctx,
                 lanes,
                 relation.feature_ref.as_str(),
                 operand,
                 radius,
-            ) else {
+            )? else {
                 continue;
             };
             let Some(coordinates) = center.coordinates_m else {
