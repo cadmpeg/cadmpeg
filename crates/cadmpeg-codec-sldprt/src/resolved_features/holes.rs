@@ -259,7 +259,7 @@ pub(crate) fn enrich_history_hole_constructions(
             if !profile_claim_ranks.contains_key(profile) {
                 ctx.charge_collection_items(1, OPERATION)?;
                 profile_claim_ranks.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
+                let copy = crate::retained_text::format_retained(ctx, format_args!("{profile}"), OPERATION)?;
                 profile_claim_ranks.insert(copy, (0, 0));
             }
             if let Some(entry) = profile_claim_ranks.get_mut(profile) {
@@ -312,7 +312,7 @@ pub(crate) fn enrich_history_hole_constructions(
             if !interval_claim_counts.contains_key(profile) {
                 ctx.charge_collection_items(1, OPERATION)?;
                 interval_claim_counts.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-                let copy = ctx.format_retained(format_args!("{profile}"), OPERATION)?;
+                let copy = crate::retained_text::format_retained(ctx, format_args!("{profile}"), OPERATION)?;
                 interval_claim_counts.insert(copy, 0);
             }
             if let Some(count) = interval_claim_counts.get_mut(profile) {
@@ -332,11 +332,11 @@ pub(crate) fn enrich_history_hole_constructions(
 fn copy_hole_profile_source(ctx: &DecodeContext<'_>, profile: &crate::records::Feature) -> Result<String, CodecError> {
     const OPERATION: &str = "copy SLDPRT hole profile ownership";
     match profile.source_id {
-        Some(FeatureSource::Reserved) => ctx.format_retained(format_args!("-1"), OPERATION),
-        Some(FeatureSource::Id(source)) => ctx.format_retained(format_args!("{}", source.value()), OPERATION),
+        Some(FeatureSource::Reserved) => crate::retained_text::format_retained(ctx, format_args!("-1"), OPERATION),
+        Some(FeatureSource::Id(source)) => crate::retained_text::format_retained(ctx, format_args!("{}", source.value()), OPERATION),
         None => {
             ctx.charge_work(u64_from_index(profile.id.len()), OPERATION)?;
-            ctx.format_retained(format_args!("{}", profile.id), OPERATION)
+            crate::retained_text::format_retained(ctx, format_args!("{}", profile.id), OPERATION)
         }
     }
 }
@@ -511,7 +511,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
                     ctx.charge_collection_items(1, OPERATION)?;
                     candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                     ctx.charge_work(u64_from_index(thread.id.len()), OPERATION)?;
-                    let identity = ctx.format_retained(format_args!("{}", thread.id), OPERATION)?;
+                    let identity = crate::retained_text::format_retained(ctx, format_args!("{}", thread.id), OPERATION)?;
                     candidates.insert(identity, Some(diameter));
                 }
             }
@@ -521,7 +521,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters(
             if feature.parameters.contains_key("D2") { continue; }
             let Some(Some(diameter)) = candidates.get(&feature.id) else { continue; };
             let Some(diameter) = cadmpeg_ir::scalar::Length::new(*diameter) else { continue; };
-            let value = ctx.format_retained(format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(diameter)), OPERATION)?;
+            let value = crate::retained_text::format_retained(ctx, format_args!("<MOD-DIAM>{}", crate::history::literals::LengthLiteral(diameter)), OPERATION)?;
             ctx.charge_collection_items(1, OPERATION)?;
             feature.parameters.insert(cadmpeg_core::nonblank_literal!("D2"), value);
         }
@@ -555,7 +555,7 @@ pub(crate) fn enrich_history_cosmetic_thread_diameters_without_hole_construction
         if feature.parameters.contains_key("D2") { continue; }
         let Some(diameter) = fallback_parameters.get(feature.id.as_str()) else { continue; };
         ctx.charge_work(u64_from_index(diameter.len()), OPERATION)?;
-        let value = ctx.format_retained(format_args!("{diameter}"), OPERATION)?;
+        let value = crate::retained_text::format_retained(ctx, format_args!("{diameter}"), OPERATION)?;
         ctx.charge_collection_items(1, OPERATION)?;
         feature.parameters.insert(cadmpeg_core::nonblank_literal!("D2"), value);
     }
@@ -1121,8 +1121,8 @@ pub(crate) fn project_profiled_hole_constructions(
                 }
                 ctx.charge_work(u64_from_index(native.len()).checked_add(u64_from_index(sketch.as_str().len()))
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-                let native = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-                let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+                let native = crate::retained_text::format_retained(ctx, format_args!("{native}"), OPERATION)?;
+                let sketch = SketchId::mint(crate::retained_text::format_retained(ctx, format_args!("{sketch}"), OPERATION)?)
                     .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
                 model_sketches.insert(native, sketch);
             }
@@ -1298,10 +1298,10 @@ pub(crate) fn project_hole_position_sketches(
             .checked_add(u64_from_index(sketch.as_str().len()))
             .and_then(|count| count.checked_add(u64_from_index(feature.id.as_str().len())))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
-        let native_key = ctx.format_retained(format_args!("{native}"), OPERATION)?;
-        let feature_id = cadmpeg_ir::features::FeatureId::mint(ctx.format_retained(format_args!("{}", feature.id), OPERATION)?)
+        let native_key = crate::retained_text::format_retained(ctx, format_args!("{native}"), OPERATION)?;
+        let feature_id = cadmpeg_ir::features::FeatureId::mint(crate::retained_text::format_retained(ctx, format_args!("{}", feature.id), OPERATION)?)
             .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
-        let sketch_id = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), OPERATION)?)
+        let sketch_id = SketchId::mint(crate::retained_text::format_retained(ctx, format_args!("{sketch}"), OPERATION)?)
             .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketch_features.insert(native_key, (feature_id, sketch_id));
     }
@@ -1511,7 +1511,7 @@ pub(crate) fn project_hole_position_sketches(
             ctx.charge_work(u64_from_index(feature.dependencies.len()), OPERATION)?;
             if !feature.dependencies.contains(dependency) {
                 ctx.charge_work(u64_from_index(dependency.as_str().len()), OPERATION)?;
-                let dependency = cadmpeg_ir::features::FeatureId::mint(ctx.format_retained(format_args!("{dependency}"), OPERATION)?)
+                let dependency = cadmpeg_ir::features::FeatureId::mint(crate::retained_text::format_retained(ctx, format_args!("{dependency}"), OPERATION)?)
                     .map_err(|_| CodecError::malformed("invalid admitted SLDPRT feature identity"))?;
                 feature.dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
             }
@@ -3025,8 +3025,8 @@ pub(crate) fn project_hole_axes(
             ctx.charge_collection_items(1, INDEX_OPERATION)?;
             model_sketches.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let native = ctx.format_retained(format_args!("{native}"), INDEX_OPERATION)?;
-        let sketch = SketchId::mint(ctx.format_retained(format_args!("{sketch}"), INDEX_OPERATION)?)
+        let native = crate::retained_text::format_retained(ctx, format_args!("{native}"), INDEX_OPERATION)?;
+        let sketch = SketchId::mint(crate::retained_text::format_retained(ctx, format_args!("{sketch}"), INDEX_OPERATION)?)
             .map_err(|_| CodecError::malformed("invalid admitted SLDPRT sketch identity"))?;
         model_sketches.insert(native, sketch);
     }
@@ -3633,7 +3633,7 @@ pub(crate) fn project_bore_backed_position_sketches(
     }
     let copy_text = |text: &str| -> Result<String, CodecError> {
         ctx.charge_work(u64_from_index(text.len()), OPERATION)?;
-        ctx.format_retained(format_args!("{text}"), OPERATION)
+        crate::retained_text::format_retained(ctx, format_args!("{text}"), OPERATION)
     };
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
@@ -3703,13 +3703,13 @@ pub(crate) fn project_bore_backed_position_sketches(
         if owning_lanes.any(|candidate| candidate.id != lane.id) { continue; }
         ctx.charge_work(u64_from_index(lane.id.len()), OPERATION)?;
         let lane_key = lane.id.rsplit_once('#').map_or(lane.id.as_str(), |(_, key)| key);
-        let Ok(sketch_id) = SketchId::mint(ctx.format_retained(format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal), OPERATION)?) else { continue; };
+        let Ok(sketch_id) = SketchId::mint(crate::retained_text::format_retained(ctx, format_args!("sldprt:model:sketch#bore:{lane_key}:{}", position.ordinal), OPERATION)?) else { continue; };
         let v_axis = normal.cross(u_axis);
         let mut projected_entities = Vec::new();
         let mut admitted_geometry = true;
         for (ordinal, (point, _)) in axes.enumerate() {
             ctx.charge_work(u64_from_index(sketch_id.as_str().len()), OPERATION)?;
-            let Ok(entity_id) = SketchEntityId::mint(ctx.format_retained(format_args!("{}:entity:{ordinal}", sketch_id.as_str()), OPERATION)?) else {
+            let Ok(entity_id) = SketchEntityId::mint(crate::retained_text::format_retained(ctx, format_args!("{}:entity:{ordinal}", sketch_id.as_str()), OPERATION)?) else {
                 admitted_geometry = false; break;
             };
             let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);

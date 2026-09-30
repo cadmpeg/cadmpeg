@@ -636,9 +636,9 @@ pub(crate) fn project_configuration_sketch_states(
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
                 let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
-                    ctx.format_retained(format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?
+                    crate::retained_text::format_retained(ctx, format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?
                 } else {
-                    ctx.format_retained(format_args!("{id}"), OPERATION)?
+                    crate::retained_text::format_retained(ctx, format_args!("{id}"), OPERATION)?
                 };
                 let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
                     continue;
@@ -670,7 +670,7 @@ pub(crate) fn project_configuration_sketch_states(
                 let work = base_sketch.as_str().len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
                     .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-                let text = ctx.format_retained(format_args!("{base_sketch}"), OPERATION)?;
+                let text = crate::retained_text::format_retained(ctx, format_args!("{base_sketch}"), OPERATION)?;
                 let copied = cadmpeg_ir::sketches::SpatialSketchId::mint(text)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
@@ -1208,7 +1208,7 @@ fn copy_configuration_feature_id(
     let work = id.as_str().len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
-    FeatureId::mint(ctx.format_retained(format_args!("{}", id.as_str()), operation)?)
+    FeatureId::mint(crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), operation)?)
         .map_err(cadmpeg_core::CodecError::malformed)
 }
 

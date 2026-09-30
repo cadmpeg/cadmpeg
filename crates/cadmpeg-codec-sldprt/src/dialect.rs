@@ -139,7 +139,7 @@ impl LayerClassification {
             losses.push(loss);
         }
         for loss in &self.losses {
-            let message = ctx.format_retained(
+            let message = crate::retained_text::format_retained(ctx, 
                 format_args!("{}", loss.message),
                 "copy SLDPRT dialect collision loss",
             )?;
@@ -173,16 +173,16 @@ pub(crate) fn classify_layers(
             // A nameless section states its absence by omission: the site
             // key and the stream offset already separate two of them.
             let carrier = match section.name() {
-                Some(name) => ctx.format_retained(
+                Some(name) => crate::retained_text::format_retained(ctx, 
                     format_args!("{site_prefix}@{site_ordinal}:{name}+{}", stream.offset),
                     "retain SLDPRT Parasolid carrier",
                 )?,
-                None => ctx.format_retained(
+                None => crate::retained_text::format_retained(ctx, 
                     format_args!("{site_prefix}@{site_ordinal}+{}", stream.offset),
                     "retain SLDPRT Parasolid carrier",
                 )?,
             };
-            let schema = ctx.format_retained(
+            let schema = crate::retained_text::format_retained(ctx, 
                 format_args!("{}", stream.header.schema.value()),
                 "retain SLDPRT Parasolid schema",
             )?;
@@ -280,7 +280,7 @@ impl SldprtDialect {
     ) -> Result<DialectMatch, CodecError> {
         let mut declared = BTreeMap::new();
         if let Some(value) = sw_version {
-            let value = ctx.format_retained(
+            let value = crate::retained_text::format_retained(ctx, 
                 format_args!("{value}"),
                 "retain SLDPRT dialect declaration",
             )?;
@@ -321,7 +321,7 @@ fn dialect_loss(
         Admission::Admitted | Admission::Refused => Ok(None),
         Admission::Unverified { .. } | Admission::Residual => {
             if let Some(message) = cadmpeg_parasolid::unverified_message(matched) {
-                let message = ctx.format_retained(
+                let message = crate::retained_text::format_retained(ctx, 
                     format_args!("{message}"),
                     "retain SLDPRT kernel dialect loss",
                 )?;
@@ -331,7 +331,7 @@ fn dialect_loss(
                 return Ok(None);
             }
             let message = match matched.declared().get(DECLARED_SW_VERSION) {
-                Some(value) => ctx.format_retained(
+                Some(value) => crate::retained_text::format_retained(ctx, 
                     format_args!(
                         "the swSolidWorks swVersion declaration {value:?} does not read as a version \
                          above zero, so no declared identity was verified. The document is read on \
@@ -343,7 +343,7 @@ fn dialect_loss(
                     ),
                     "retain SLDPRT source dialect loss",
                 )?,
-                None => ctx.format_retained(
+                None => crate::retained_text::format_retained(ctx, 
                     format_args!(
                         "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on \
                          the `{}` residual path without substituting a declared dialect grammar: the \

@@ -880,7 +880,7 @@ fn push_revolution_vote<T>(
     }
     ctx.charge_collection_items(1, operation)?;
     votes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    let id = ctx.format_retained(format_args!("{id}"), "retain SLDPRT revolution vote ID")?;
+    let id = crate::retained_text::format_retained(ctx, format_args!("{id}"), "retain SLDPRT revolution vote ID")?;
     let mut values = Vec::new();
     ctx.reserve_collection_vec(&mut values, 1, operation)?;
     values.push(value);
@@ -906,7 +906,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             name_counts.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("index SLDPRT revolution feature names", u64::MAX - 1, u64::MAX)
             })?;
-            let name = ctx.format_retained(format_args!("{}", feature.name), "retain SLDPRT revolution feature name")?;
+            let name = crate::retained_text::format_retained(ctx, format_args!("{}", feature.name), "retain SLDPRT revolution feature name")?;
             name_counts.insert(name, 1);
         }
     }
@@ -961,7 +961,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 profile_source_owner.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit("index SLDPRT revolution profile owners", u64::MAX - 1, u64::MAX)
                 })?;
-                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT revolution profile owner")?;
+                let id = crate::retained_text::format_retained(ctx, format_args!("{}", feature.id), "retain SLDPRT revolution profile owner")?;
                 profile_source_owner.insert(id, history_index);
             }
         }
@@ -1040,7 +1040,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                             .is_some_and(|sources| sources.contains(first))
                     {
                         ctx.charge_collection_items(1, "insert SLDPRT revolution profile property")?;
-                        let value = ctx.format_retained(format_args!("{first}"), "retain SLDPRT revolution profile property")?;
+                        let value = crate::retained_text::format_retained(ctx, format_args!("{first}"), "retain SLDPRT revolution profile property")?;
                         feature.properties.insert(
                             cadmpeg_core::nonblank_literal!("Profile"),
                             value,
@@ -1062,11 +1062,11 @@ pub(crate) fn enrich_history_revolution_inputs(
             && !feature.properties.contains_key("AxisDirection")
         {
             ctx.charge_collection_items(2, "insert SLDPRT revolution axis properties")?;
-            let origin = ctx.format_retained(
+            let origin = crate::retained_text::format_retained(ctx, 
                 format_args!("{}mm,{}mm,{}mm", first.0.get().x, first.0.get().y, first.0.get().z),
                 "retain SLDPRT revolution axis origin",
             )?;
-            let direction = ctx.format_retained(
+            let direction = crate::retained_text::format_retained(ctx, 
                 format_args!("{},{},{}", first.1.as_raw().x, first.1.as_raw().y, first.1.as_raw().z),
                 "retain SLDPRT revolution axis direction",
             )?;

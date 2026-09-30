@@ -54,7 +54,7 @@ pub(super) fn feature_intervals(
             }
             if let Some(name) = feature_object_name(feature, lane) {
                 ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT feature intervals")?;
-                let id = ctx.format_retained(format_args!("{}", feature.id), "retain SLDPRT feature interval identity")?;
+                let id = crate::retained_text::format_retained(ctx, format_args!("{}", feature.id), "retain SLDPRT feature interval identity")?;
                 starts.push((name.offset, id));
             }
         }
@@ -435,7 +435,7 @@ pub(super) fn relation_instances(
         let ordinal = u32::try_from(ordinal).map_err(|_| ctx.refuse_codec_limit("number SLDPRT relation instances", u64::MAX - 1, u64::MAX))?;
         ctx.reserve_collection_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"), "retain SLDPRT relation instance identity")?,
+            id: crate::retained_text::format_retained(ctx, format_args!("sldprt:feature-input:relation-instance#{lane_key}:{offset}"), "retain SLDPRT relation instance identity")?,
             parent: copy_relation_text(ctx, &lane.id)?,
             ordinal,
             offset,
@@ -477,7 +477,7 @@ pub(super) fn relation_instances(
         claimed_scalar_refs.insert(binding.scalar_ref.as_str());
         ctx.reserve_collection_vec(&mut instances, 1, "collect SLDPRT relation instances")?;
         instances.push(FeatureInputRelationInstance {
-            id: ctx.format_retained(format_args!(
+            id: crate::retained_text::format_retained(ctx, format_args!(
                 "sldprt:feature-input:relation-instance#{lane_key}:{}",
                 scalar.offset
             ), "retain SLDPRT relation instance identity")?,
@@ -505,7 +505,7 @@ fn copy_relation_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, Cod
     let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT relation record identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT relation record identity")?;
-    ctx.format_retained(format_args!("{text}"), "retain SLDPRT relation record identity")
+    crate::retained_text::format_retained(ctx, format_args!("{text}"), "retain SLDPRT relation record identity")
 }
 
 fn reserve_relation_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>) -> Result<(), CodecError> {
