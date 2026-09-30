@@ -139,6 +139,10 @@ fn general_curve_component_profile_requires_a_complete_reference_record() {
 
 #[test]
 fn component_reference_curve_accepts_count_minus_one_with_instance_separator() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 24;
     let mut payload = vec![0; 180];
     payload[marker - 12..marker - 8].copy_from_slice(&5u32.to_le_bytes());
@@ -160,7 +164,7 @@ fn component_reference_curve_accepts_count_minus_one_with_instance_separator() {
     payload[cursor + 8..cursor + 12].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
 
     let components =
-        component_reference_curve_path_at(&payload, marker).expect("required invariant");
+        component_reference_curve_path_at(&ctx, &payload, marker).unwrap().expect("required invariant");
     assert_eq!(components.len(), 4);
     assert_eq!(components[0].instance, Some(0x8c20));
     assert!(components
@@ -168,13 +172,17 @@ fn component_reference_curve_accepts_count_minus_one_with_instance_separator() {
         .all(|component| component.local_id == Some(1)));
 
     payload[cursor + 8] ^= 1;
-    assert_eq!(component_reference_curve_path_at(&payload, marker), None);
+    assert_eq!(component_reference_curve_path_at(&ctx, &payload, marker).unwrap(), None);
 }
 
 #[test]
 fn component_reference_curve_refuses_out_of_range_markers() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     for marker in [0, 7, usize::MAX] {
-        assert_eq!(component_reference_curve_path_at(&[0; 32], marker), None);
+        assert_eq!(component_reference_curve_path_at(&ctx, &[0; 32], marker).unwrap(), None);
     }
 }
 
