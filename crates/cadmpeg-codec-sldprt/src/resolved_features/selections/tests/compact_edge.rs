@@ -275,6 +275,10 @@ fn compact_body_selection_requires_the_complete_trailer() {
 
 #[test]
 fn compact_edge_selection_is_count_delimited_and_signature_typed() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = Vec::new();
     payload.extend(3u32.to_le_bytes());
     payload.extend([0x00, 0x02, 0x00, 0x00, 0, 0, 0, 0]);
@@ -293,13 +297,17 @@ fn compact_edge_selection_is_count_delimited_and_signature_typed() {
             payload.extend([0; 8]);
         }
     }
-    assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 12).unwrap(), Some(vec![4, 0, 5]));
     payload[12 + 18 + 28 + 4] ^= 1;
-    assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 12).unwrap(), Some(vec![4, 0, 5]));
 }
 
 #[test]
 fn compact_edge_selection_accepts_object_terminated_u16_paths() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; marker + 18];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -310,35 +318,43 @@ fn compact_edge_selection_accepts_object_terminated_u16_paths() {
     payload.extend([0xe2, 0x80, 0, 0]);
 
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![526, 531, 531, 531])
     );
 
     payload[marker + 18 + 8 + 7] = 1;
-    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
     payload[marker + 18 + 8 + 7] = 0;
     payload[marker + 18 + 8 + 8] = 0xff;
     payload[marker + 18 + 8 + 9] = 0xff;
-    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
 }
 
 #[test]
 fn compact_edge_selection_rejects_unbounded_counts_and_short_headers() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0; 40];
     payload[..4].copy_from_slice(&u32::MAX.to_le_bytes());
     payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
     payload[12..28].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-    assert_eq!(compact_edge_selection_at(&payload, 12), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 12).unwrap(), None);
     assert_eq!(compact_edge_component_path_at(&payload, 12), None);
 
     payload[..16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
-    assert_eq!(compact_edge_selection_at(&payload, 0), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, 0).unwrap(), None);
     assert_eq!(compact_edge_component_path_at(&payload, 0), None);
     assert_eq!(compact_surface_selection_at(&payload, 0), None);
 }
 
 #[test]
 fn compact_edge_selection_accepts_heterogeneous_component_paths() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 120];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -354,7 +370,7 @@ fn compact_edge_selection_accepts_heterogeneous_component_paths() {
     payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
     payload[second + 16..second + 20].copy_from_slice(&3u32.to_le_bytes());
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![2, 3])
     );
     assert_eq!(
@@ -380,13 +396,17 @@ fn compact_edge_selection_accepts_heterogeneous_component_paths() {
     payload[third + 4..third + 16].copy_from_slice(&[3; 12]);
     payload[third + 16..third + 20].copy_from_slice(&4u32.to_le_bytes());
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![2, 3, 4])
     );
 }
 
 #[test]
 fn compact_edge_selection_accepts_root_and_zero_run_separators() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 180];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -410,13 +430,17 @@ fn compact_edge_selection_accepts_root_and_zero_run_separators() {
     entry(&mut payload, fourth, 0x8102, 0);
 
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![1, 10, 1, 0])
     );
 }
 
 #[test]
 fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -437,12 +461,16 @@ fn compact_edge_selection_with_wide_and_identifierless_entries_is_withheld() {
     let fourth = third + 28;
     entry(&mut payload, fourth, 0x8141, 0);
 
-    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
     assert_eq!(compact_edge_component_path_at(&payload, marker), None);
 }
 
 #[test]
 fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 120];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -458,11 +486,15 @@ fn compact_edge_selection_with_ambiguous_entry_widths_is_withheld() {
     payload[second + 20..second + 24].copy_from_slice(&5u32.to_le_bytes());
 
     assert_eq!(compact_edge_component_path_at(&payload, marker), None);
-    assert_eq!(compact_edge_selection_at(&payload, marker), None);
+    assert_eq!(compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(), None);
 }
 
 #[test]
 fn compact_edge_selection_accepts_ordinal_and_zero_separator() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
@@ -484,13 +516,17 @@ fn compact_edge_selection_accepts_ordinal_and_zero_separator() {
     entry(&mut payload, third, 0x8385, 12);
 
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![1, 12, 12])
     );
 }
 
 #[test]
 fn compact_edge_selection_accepts_zero_and_state_separator() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 128];
     payload[..4].copy_from_slice(&2u32.to_le_bytes());
@@ -510,13 +546,17 @@ fn compact_edge_selection_accepts_zero_and_state_separator() {
     entry(&mut payload, second, 2);
 
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![3, 2])
     );
 }
 
 #[test]
 fn compact_edge_selection_preserves_an_idless_path_entry() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -544,7 +584,7 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
     entry(&mut payload, fourth, 0x80f8, 130, Some(0));
 
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![4, 4, 0])
     );
     let components = compact_edge_component_path_at(&payload, marker).unwrap();
@@ -733,6 +773,10 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
 
 #[test]
 fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 160];
     payload[..4].copy_from_slice(&4u32.to_le_bytes());
@@ -755,7 +799,7 @@ fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
         0x90, 0x5f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ]);
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![32, 34, 1])
     );
     assert_eq!(
@@ -766,6 +810,10 @@ fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
 
 #[test]
 fn compact_reference_list_preserves_reference_and_hop_boundaries() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = Vec::new();
     payload.extend(2u32.to_le_bytes());
@@ -796,7 +844,7 @@ fn compact_reference_list_preserves_reference_and_hop_boundaries() {
     assert_eq!(references[1][0].instance, Some(0x8083));
     assert_eq!(references[1][0].local_id, Some(0));
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![12, 0])
     );
     assert_eq!(
