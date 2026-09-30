@@ -1416,7 +1416,7 @@ pub(crate) fn reference_cells_charged(
             });
         }
     }
-    cells.sort_by_key(|cell| cell.offset);
+    ctx.stable_sort_by(&mut cells, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort SLDPRT reference cells")?;
     cells.dedup_by_key(|cell| cell.offset);
     for (ordinal, cell) in cells.iter_mut().enumerate() {
         cell.ordinal = u32::try_from(ordinal).map_err(|_| {

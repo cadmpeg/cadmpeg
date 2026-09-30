@@ -602,7 +602,7 @@ pub(crate) fn dimensions(
             &mut seen,
         )?;
     }
-    records.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(&mut records, |left, right| left.id.cmp(&right.id), |record| record.id.as_str().len(), "sort SLDPRT PMI records")?;
     Ok(records)
 }
 
@@ -629,7 +629,7 @@ pub(crate) fn parse_payload(
         &mut records,
         &mut seen,
     )?;
-    records.sort_by(|left, right| left.id.cmp(&right.id));
+    ctx.stable_sort_by(&mut records, |left, right| left.id.cmp(&right.id), |record| record.id.as_str().len(), "sort SLDPRT PMI records")?;
     Ok(records)
 }
 

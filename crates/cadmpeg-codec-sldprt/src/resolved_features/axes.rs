@@ -787,19 +787,7 @@ fn revolution_line_reference_inputs(
         }
     }
     let mut candidates = selected;
-    candidates.sort_by_key(|(source, origin, direction)| {
-        (
-            *source,
-            [
-                origin.x.to_bits(),
-                origin.y.to_bits(),
-                origin.z.to_bits(),
-                direction.as_raw().x.to_bits(),
-                direction.as_raw().y.to_bits(),
-                direction.as_raw().z.to_bits(),
-            ],
-        )
-    });
+    ctx.stable_sort_by(&mut candidates, |left, right| (left.0, [left.1.x.to_bits(), left.1.y.to_bits(), left.1.z.to_bits(), left.2.as_raw().x.to_bits(), left.2.as_raw().y.to_bits(), left.2.as_raw().z.to_bits()]).cmp(&(right.0, [right.1.x.to_bits(), right.1.y.to_bits(), right.1.z.to_bits(), right.2.as_raw().x.to_bits(), right.2.as_raw().y.to_bits(), right.2.as_raw().z.to_bits()])), |_| 0, "sort SLDPRT revolution line references")?;
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
         return Ok(None);
@@ -1228,16 +1216,7 @@ pub(crate) fn bind_profile_revolution_axes(
                 candidates.push(axis);
             }
         }
-        candidates.sort_by_key(|axis| {
-            [
-                axis.origin.x.to_bits(),
-                axis.origin.y.to_bits(),
-                axis.origin.z.to_bits(),
-                axis.direction.x.to_bits(),
-                axis.direction.y.to_bits(),
-                axis.direction.z.to_bits(),
-            ]
-        });
+        ctx.stable_sort_by(&mut candidates, |left, right| [left.origin.x.to_bits(), left.origin.y.to_bits(), left.origin.z.to_bits(), left.direction.x.to_bits(), left.direction.y.to_bits(), left.direction.z.to_bits()].cmp(&[right.origin.x.to_bits(), right.origin.y.to_bits(), right.origin.z.to_bits(), right.direction.x.to_bits(), right.direction.y.to_bits(), right.direction.z.to_bits()]), |_| 0, "sort SLDPRT revolution axis candidates")?;
         candidates.dedup();
         if let [axis] = candidates.as_slice() {
             ctx.reserve_collection_vec(&mut assignments, 1, "collect SLDPRT revolution axis assignments")?;
@@ -1609,11 +1588,9 @@ fn profile_roster_origin_axis_endpoints(
         ctx.reserve_collection_vec(&mut candidates_sorted, 1, "collect SLDPRT origin axis candidates")?;
         candidates_sorted.push(candidate);
     }
-    candidates_sorted.sort_by(|left, right| {
-        left[1][0]
-            .total_cmp(&right[1][0])
-            .then(left[1][1].total_cmp(&right[1][1]))
-    });
+    ctx.stable_sort_by(&mut candidates_sorted, |left, right| {
+        left[1][0].total_cmp(&right[1][0]).then(left[1][1].total_cmp(&right[1][1]))
+    }, |_| 0, "sort SLDPRT origin axis candidates")?;
     let mut lines = Vec::<[[f64; 2]; 2]>::new();
     for candidate in candidates_sorted {
         let [u, v] = [candidate[1][0] - origin_u, candidate[1][1] - origin_v];
