@@ -3627,6 +3627,42 @@ fn append_profile_endpoint_locus(
     Ok(())
 }
 
+fn append_transformed_profile_locus(
+    ctx: &DecodeContext<'_>,
+    loci: &mut Vec<SketchLocus>,
+    role: super::transforms::SketchLocusRole,
+    entity: &SketchEntityId,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(loci.len()).checked_add(1)
+        .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>())))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    ctx.reserve_collection_vec(loci, 1, operation)?;
+    loci.push(role.copy_locus(ctx, entity, operation)?);
+    Ok(())
+}
+
+fn sort_profile_loci(
+    ctx: &DecodeContext<'_>,
+    loci: &mut Vec<SketchLocus>,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const COMPARE_WORK_FACTOR: u64 = 64;
+    let count = cadmpeg_core::decode::u64_from_index(loci.len());
+    ctx.charge_work(count, operation)?;
+    let max_identity_bytes = loci.iter().fold(0u64, |bytes, locus| {
+        bytes.max(cadmpeg_core::decode::u64_from_index(locus_key(locus).0.len()))
+    });
+    let levels = u64::from(u64::BITS - count.leading_zeros()) + 1;
+    ctx.charge_work(count.checked_mul(levels).and_then(|work| work.checked_mul(COMPARE_WORK_FACTOR))
+        .and_then(|work| work.checked_mul(max_identity_bytes.checked_mul(2)?.checked_add(1)?))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    // Equal sort keys identify equal locus values.
+    loci.sort_unstable_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    loci.dedup();
+    Ok(())
+}
+
 fn collect_profile_locus_set<K>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = K>,
@@ -3921,114 +3957,107 @@ pub(super) fn profile_loci_by_marker(
                     .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>())))
                     .ok_or_else(|| ctx.refuse_codec_limit(GROUP_OPERATION, u64::MAX - 1, u64::MAX))?, GROUP_OPERATION)?;
                 ctx.reserve_collection_vec(bucket, 1, GROUP_OPERATION)?;
-                let role = match locus {
-                    SketchLocus::Entity(_) => super::transforms::SketchLocusRole::Entity,
-                    SketchLocus::Start(_) => super::transforms::SketchLocusRole::Start,
-                    SketchLocus::End(_) => super::transforms::SketchLocusRole::End,
-                    SketchLocus::Center(_) => super::transforms::SketchLocusRole::Center,
-                };
-                bucket.push(role.copy_locus(ctx, locus_entity(locus), GROUP_OPERATION)?);
+                bucket.push(super::transforms::SketchLocusRole::of_locus(locus)
+                    .copy_locus(ctx, locus_entity(locus), GROUP_OPERATION)?);
             }
             for marker in markers {
+                const TRANSFORM_OPERATION: &str = "resolve SLDPRT transformed marker loci";
+                ctx.charge_work(qualified_marker_bytes.checked_add(cadmpeg_core::decode::u64_from_index(marker.id().len()))
+                    .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
                 let qualified_point = qualified_point_markers.contains(marker.id());
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.id().len()).checked_add(32).and_then(|work| work.checked_mul(4))
+                    .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
                 let result_key = if qualified_point {
-                    qualified_point_marker_key(marker.id())
+                    ctx.format_retained(format_args!("{}:qualified-point", marker.id()), TRANSFORM_OPERATION)?
                 } else {
-                    marker.id().to_string()
+                    ctx.format_retained(format_args!("{}", marker.id()), TRANSFORM_OPERATION)?
                 };
-                if result.contains_key(&result_key) {
-                    continue;
-                }
-                if qualified_point && sketch.as_str().contains("sketch#compact:") {
-                    continue;
-                }
-                let Some([u, v]) = marker
-                    .coordinates_m
-                    .map(cadmpeg_ir::units::FiniteVector::get)
-                else {
-                    continue;
-                };
-                let primary_geometry_locus = usize::try_from(marker.offset())
-                    .ok()
+                ctx.charge_work(result_key_byte_bound.checked_add(cadmpeg_core::decode::u64_from_index(result_key.len()))
+                    .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                if result.contains_key(&result_key) { continue; }
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch.as_str().len()), TRANSFORM_OPERATION)?;
+                if qualified_point && sketch.as_str().contains("sketch#compact:") { continue; }
+                let Some([u, v]) = marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get) else { continue; };
+                ctx.charge_work(64, TRANSFORM_OPERATION)?;
+                let primary_geometry_locus = usize::try_from(marker.offset()).ok()
                     .is_some_and(|offset| marker_is_geometry_locus(&lane.native_payload, offset));
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                let translated_points = transforms
-                    .iter()
-                    .filter_map(|transform| transform.apply(point))
-                    .collect::<HashSet<_>>();
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(transforms.len()).checked_mul(64)
+                    .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                let translated_points = collect_profile_locus_set(ctx,
+                    transforms.iter().filter_map(|transform| transform.apply(point)),
+                    |_| 64, TRANSFORM_OPERATION)?;
                 let mut marker_loci = Vec::new();
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(translated_points.len())
                     .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Vec<SketchLocus>>()))
                     .ok_or_else(|| ctx.refuse_codec_limit("collect SLDPRT transformed marker loci", u64::MAX - 1, u64::MAX))?, "collect SLDPRT transformed marker loci")?;
                 ctx.reserve_collection_vec(&mut marker_loci, translated_points.len(), "collect SLDPRT transformed marker loci")?;
                 for translated in translated_points {
-                        let mut translated_loci = loci_by_point
-                            .get(&GridPoint::from(translated))
-                            .into_iter()
-                            .flatten()
-                            .filter(|locus| {
-                                geometry_by_entity.get(locus_entity(locus)).is_some_and(
-                                    |geometry| marker_accepts_locus(marker.kind(), geometry),
-                                )
-                            })
-                            .map(|locus| {
-                                if !qualified_point
-                                    && matches!(
-                                        marker.kind(),
-                                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                    )
-                                {
-                                    SketchLocus::Entity(locus_entity(locus).clone())
-                                } else {
-                                    locus.clone()
-                                }
-                            })
-                            .collect::<Vec<_>>();
-                        if translated_loci.is_empty() && marker.kind() == SketchInputKind::LineOrCircle
-                        {
-                            translated_loci.extend(
-                                line_midpoints.get(sketch).into_iter().flatten().filter_map(
-                                    |(point, locus)| {
-                                        (quantize(*point, QUANTUM) == translated)
-                                            .then_some(locus.clone())
-                                    },
-                                ),
-                            );
+                    ctx.charge_work(point_key_bytes.checked_add(64).and_then(|bytes| bytes.checked_mul(4))
+                        .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                    let mut translated_loci = Vec::new();
+                    for locus in loci_by_point.get(&GridPoint::from(translated)).into_iter().flatten() {
+                        ctx.charge_work(source_entity_bytes.checked_add(cadmpeg_core::decode::u64_from_index(locus_entity(locus).as_str().len()))
+                            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(64))
+                            .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                        if !geometry_by_entity.get(locus_entity(locus)).is_some_and(|geometry| marker_accepts_locus(marker.kind(), geometry)) { continue; }
+                        let role = if !qualified_point && matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc) {
+                            super::transforms::SketchLocusRole::Entity
+                        } else {
+                            super::transforms::SketchLocusRole::of_locus(locus)
+                        };
+                        append_transformed_profile_locus(ctx, &mut translated_loci, role, locus_entity(locus), TRANSFORM_OPERATION)?;
+                    }
+                    if translated_loci.is_empty() && marker.kind() == SketchInputKind::LineOrCircle {
+                        ctx.charge_work(sketch_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(sketch.as_str().len()))
+                            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                        for (point, locus) in line_midpoints.get(sketch).into_iter().flatten() {
+                            ctx.charge_work(64, TRANSFORM_OPERATION)?;
+                            if quantize(*point, QUANTUM) == translated {
+                                append_transformed_profile_locus(ctx, &mut translated_loci,
+                                    super::transforms::SketchLocusRole::of_locus(locus), locus_entity(locus), TRANSFORM_OPERATION)?;
+                            }
                         }
-                        if translated_loci.is_empty()
-                            && primary_geometry_locus
-                            && marker.kind() == SketchInputKind::LineOrCircle
-                        {
-                            translated_loci.extend(sketch_entities.iter().filter_map(|entity| {
-                                if entity.sketch != **sketch {
-                                    return None;
-                                }
-                                let SketchGeometryDefinition::Line { start, end } =
-                                    entity.geometry.definition()
-                                else {
-                                    return None;
-                                };
-                                point_on_quantized_segment(
-                                    translated,
-                                    quantize(start.get(), QUANTUM),
-                                    quantize(end.get(), QUANTUM),
-                                )
-                                .then(|| SketchLocus::Entity(entity.id().clone()))
-                            }));
+                    }
+                    if translated_loci.is_empty() && primary_geometry_locus && marker.kind() == SketchInputKind::LineOrCircle {
+                        ctx.charge_work(sketch_key_bytes.checked_mul(2)
+                            .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                        for entity in sketch_entities {
+                            ctx.charge_work(256, TRANSFORM_OPERATION)?;
+                            if entity.sketch != **sketch { continue; }
+                            let SketchGeometryDefinition::Line { start, end } = entity.geometry.definition() else { continue; };
+                            if point_on_quantized_segment(translated, quantize(start.get(), QUANTUM), quantize(end.get(), QUANTUM)) {
+                                append_transformed_profile_locus(ctx, &mut translated_loci,
+                                    super::transforms::SketchLocusRole::Entity, entity.id(), TRANSFORM_OPERATION)?;
+                            }
                         }
-                        translated_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-                        translated_loci.dedup();
-                        if qualified_point {
-                            canonicalize_physical_loci(ctx, &mut translated_loci, sketch_entities, QUANTUM)?;
-                        }
-                        if !translated_loci.is_empty() { marker_loci.push(translated_loci); }
+                    }
+                    sort_profile_loci(ctx, &mut translated_loci, TRANSFORM_OPERATION)?;
+                    if qualified_point { canonicalize_physical_loci(ctx, &mut translated_loci, sketch_entities, QUANTUM)?; }
+                    if !translated_loci.is_empty() { marker_loci.push(translated_loci); }
                 }
-                let Some(first) = marker_loci.first() else {
-                    continue;
-                };
-                if !marker_loci.is_empty() && marker_loci.iter().all(|candidate| candidate == first)
-                {
-                    result.insert(result_key, first.clone());
+                let Some(first) = marker_loci.first() else { continue; };
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker_loci.len()), TRANSFORM_OPERATION)?;
+                let mut comparison_work = 0u64;
+                for candidate in &marker_loci {
+                    ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidate.len()), TRANSFORM_OPERATION)?;
+                    for locus in candidate {
+                        comparison_work = comparison_work.checked_add(cadmpeg_core::decode::u64_from_index(locus_key(locus).0.len()))
+                            .and_then(|work| work.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?;
+                    }
+                }
+                ctx.charge_work(comparison_work.checked_mul(2)
+                    .ok_or_else(|| ctx.refuse_codec_limit(TRANSFORM_OPERATION, u64::MAX - 1, u64::MAX))?, TRANSFORM_OPERATION)?;
+                if marker_loci.iter().all(|candidate| candidate == first) {
+                    if let Some(loci) = marker_loci.into_iter().next() {
+                        reserve_profile_locus_map_slot(ctx, &mut result, &result_key, result_key_byte_bound,
+                            cadmpeg_core::decode::u64_from_index(result_key.len()), TRANSFORM_OPERATION)?;
+                        result.insert(result_key, loci);
+                    }
                 }
             }
         }

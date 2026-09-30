@@ -704,6 +704,15 @@ pub(super) enum SketchLocusRole {
 }
 
 impl SketchLocusRole {
+    pub(super) const fn of_locus(locus: &SketchLocus) -> Self {
+        match locus {
+            SketchLocus::Entity(_) => Self::Entity,
+            SketchLocus::Start(_) => Self::Start,
+            SketchLocus::End(_) => Self::End,
+            SketchLocus::Center(_) => Self::Center,
+        }
+    }
+
     pub(super) fn copy_locus(
         self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -724,11 +733,7 @@ impl SketchLocusRole {
     }
 
     pub(super) fn matches(self, locus: &SketchLocus) -> bool {
-        matches!((self, locus),
-            (Self::Entity, SketchLocus::Entity(_))
-            | (Self::Start, SketchLocus::Start(_))
-            | (Self::End, SketchLocus::End(_))
-            | (Self::Center, SketchLocus::Center(_)))
+        self == Self::of_locus(locus)
     }
 }
 

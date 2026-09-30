@@ -275,6 +275,10 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     lane.relation_instances[0].feature_ref = "unowned-feature".into();
     markers[0].feature_ref = Some("feature".into());
     markers[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 0.0]);
+    let mut translated = SketchInputEntity::new("translated-point", "lane", 0, 0, SketchInputKind::Point);
+    translated.feature_ref = Some("feature".into());
+    translated.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.0]);
+    markers.push(translated);
     lane.sketch_entities = markers;
     let (mut owner_sketch, mut owner, _) = planar_fixture();
     owner_sketch.id = sketch.clone();
