@@ -107,7 +107,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        project_mirror(None, &body_scope, &body_groups, &[], &[])
+        crate::test_support::with_decode_context(|decode_ctx| project_mirror(decode_ctx, &body_scope, &body_groups, &[], &[]))
             .unwrap()
             .expect("body mirror")
     else {
@@ -129,7 +129,7 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        project_mirror(None, &face_scope, &face_groups, &[], &[])
+        crate::test_support::with_decode_context(|decode_ctx| project_mirror(decode_ctx, &face_scope, &face_groups, &[], &[]))
             .unwrap()
             .expect("face mirror")
     else {
@@ -157,7 +157,7 @@ fn assert_mirror_seed_refusal(role: DesignOperandRole, operation: &'static str) 
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
-            project_mirror(Some(&ctx), &scope, &groups, &[], &[]),
+            project_mirror(&ctx, &scope, &groups, &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation

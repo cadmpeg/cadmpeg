@@ -131,7 +131,7 @@ fn assert_chamfer_collection_refusal(limit: u64, operation: &str) {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
         matches!(crate::design::feature_project::project_chamfer(&scope, &[(0, &parameter)],
-        &inputs, Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+        &inputs, &ctx), Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::CollectionItems && failure.operation == operation)
     );
 }

@@ -190,7 +190,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         component_naming_spaces: &[],
         histories: &[],
     };
-    let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
+    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
         .unwrap()
         .expect("typed EdgeFlange definition");
 
@@ -291,7 +291,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let offset_definition =
-        crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, decode_ctx))
             .unwrap()
             .expect("typed signed-offset EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
@@ -369,7 +369,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let multi_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx))
             .unwrap()
             .expect("typed multi-edge EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { edges, .. }) =
@@ -454,7 +454,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let per_edge_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, decode_ctx))
             .unwrap()
             .expect("equal per-edge symmetric widths project to one neutral width");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
@@ -491,7 +491,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     assert!(
-        crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, decode_ctx))
             .unwrap()
             .is_none(),
         "distinct per-edge widths must remain source-native"
@@ -556,7 +556,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
         histories: &[],
     };
     let two_sided_definition =
-        crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, decode_ctx))
             .unwrap()
             .expect("independent two-sided per-edge widths project to a typed neutral law");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { width, .. }) =
@@ -583,7 +583,7 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
 }
 
 fn edge_flange_to_object_fixture(
-    ctx: Option<&cadmpeg_core::decode::DecodeContext<'_>>,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     include_target_scope: bool,
     two_sided_width: bool,
 ) -> Result<
@@ -863,7 +863,7 @@ fn edge_flange_scope_projects_a_to_object_height_to_a_work_plane() {
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
-    let (definition, target_scope) = edge_flange_to_object_fixture(None, true, false)
+    let (definition, target_scope) = crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, true, false))
         .unwrap()
         .expect("typed to-object EdgeFlange definition");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange { height, .. }) =
@@ -889,7 +889,7 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
         FeatureDefinition, FeatureOperation, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
     };
 
-    let (definition, _) = edge_flange_to_object_fixture(None, false, false)
+    let (definition, _) = crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, false, false))
         .unwrap()
         .expect("unresolved to-object EdgeFlange");
     let FeatureDefinition::Operation(FeatureOperation::SheetMetalEdgeFlange {
@@ -907,7 +907,7 @@ fn edge_flange_native_height_target_id_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(native.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(Some(&ctx), false, false);
+    let result = edge_flange_to_object_fixture(&ctx, false, false);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == "f3d EdgeFlange native height target id"
@@ -921,14 +921,14 @@ fn edge_flange_two_sided_edge_width_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
-    assert!(edge_flange_to_object_fixture(None, true, true)
+    assert!(crate::test_support::with_decode_context(|decode_ctx| edge_flange_to_object_fixture(decode_ctx, true, true))
         .unwrap()
         .is_some());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = edge_flange_to_object_fixture(Some(&ctx), true, true);
+    let result = edge_flange_to_object_fixture(&ctx, true, true);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == "f3d EdgeFlange two-sided edge width"
@@ -1009,7 +1009,7 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
         histories: &[],
     };
     assert!(
-        crate::design::feature_project::project_edge_flange(&scope, &inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
             .unwrap()
             .is_none()
     );
@@ -1047,7 +1047,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
     };
     let uniform_continuity = |scope: &DesignParameterScope| {
         cadmpeg_ir::features::NonEmptyMembers::try_from(
-            crate::design::feature_project::surface_patch_boundary_continuities(None, scope)
+            crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, scope))
                 .unwrap(),
         )
         .ok()
@@ -1074,7 +1074,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         boundary(DesignPatchContinuity::Connected),
     ]);
     assert_eq!(
-        crate::design::feature_project::surface_patch_boundary_continuities(None, &mixed).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &mixed)).unwrap(),
         vec![SurfaceContinuity::Tangent, SurfaceContinuity::Contact]
     );
     assert!(uniform_continuity(&mixed).is_none());
@@ -1086,10 +1086,7 @@ fn surface_patch_continuity_needs_every_boundary_to_agree() {
         .is_none()
     );
     assert!(
-        crate::design::feature_project::surface_patch_boundary_continuities(
-            None,
-            &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))])
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::surface_patch_boundary_continuities(decode_ctx, &scope_with(vec![boundary(DesignPatchContinuity::Unknown(9))])))
         .unwrap()
         .is_empty()
     );
@@ -1208,13 +1205,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     };
     let shifted_groups = [group(100, 1, 101), group(110, 4, 111), group(120, 7, 121)];
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &scope,
-            &shifted_groups,
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &shifted_groups, &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1232,13 +1223,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let error = crate::design::feature_project::project_surface_patch(
-        Some(&ctx),
-        &scope,
-        &shifted_groups,
-        &[],
-        &[],
-    )
+    let error = crate::design::feature_project::project_surface_patch(&ctx, &scope, &shifted_groups, &[], &[])
     .expect_err("ten occupancy slots exceed the remaining collection limit");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
@@ -1265,13 +1250,7 @@ fn surface_patch_reference_occupancy_reports_limit_and_preserves_boundary_endpoi
     }
     let endpoint_groups = [group(100, 0, 101), group(110, 3, 111), group(120, 6, 121)];
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &scope,
-            &endpoint_groups,
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &scope, &endpoint_groups, &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             ref continuity,
             ..
@@ -1452,7 +1431,7 @@ fn hem_scope_projects_each_decoded_owner_layout() {
             component_naming_spaces: &[],
             histories: &[],
         };
-        crate::design::feature_project::project_hem(&scope, &inputs, None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx))
             .unwrap()
             .expect("typed Hem definition")
     };
@@ -1579,7 +1558,7 @@ fn surface_patch_continuities_refuse_collection_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::feature_project::surface_patch_boundary_continuities(Some(&ctx), &scope),
+        matches!(crate::design::feature_project::surface_patch_boundary_continuities(&ctx, &scope),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::CollectionItems
             && failure.operation == "f3d surface-patch continuity")
     );

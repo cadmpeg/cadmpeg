@@ -40,7 +40,7 @@ fn sweep_input() -> (
 }
 
 fn project(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -50,7 +50,7 @@ fn project(
 fn assert_sweep_limit(operation: &'static str, dimension: ResourceDimension) {
     let (scope, groups) = sweep_input();
     assert!(matches!(
-        project(None, &scope, &groups).unwrap().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups)).unwrap().unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
     ));
     for limit in 0..256 {
@@ -62,7 +62,7 @@ fn assert_sweep_limit(operation: &'static str, dimension: ResourceDimension) {
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project(Some(&ctx), &scope, &groups),
+        if matches!(project(&ctx, &scope, &groups),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ) {
@@ -101,13 +101,13 @@ fn sweep_body_group_refuses_collection_limit() {
     let mut body = profile_group(102, 2);
     body.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     let groups = [profile, path, body];
-    assert!(project(None, &scope, &groups).unwrap().is_none());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups)).unwrap().is_none());
     for limit in 0..32 {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project(Some(&ctx), &scope, &groups),
+        if matches!(project(&ctx, &scope, &groups),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == "f3d Sweep body group"
@@ -208,15 +208,7 @@ fn guide_surface_input() -> (
 fn assert_guide_surface_limit(operation: &'static str, dimension: ResourceDimension) {
     let (scope, groups, selection) = guide_surface_input();
     assert!(matches!(
-        project_fixed_sweep(
-            &scope,
-            &groups,
-            &[],
-            &[],
-            std::slice::from_ref(&selection),
-            &[],
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| project_fixed_sweep(&scope, &groups, &[], &[], std::slice::from_ref(&selection), &[], decode_ctx))
         .unwrap()
         .unwrap(),
         FeatureDefinition::Operation(FeatureOperation::Sweep {
@@ -235,8 +227,7 @@ fn assert_guide_surface_limit(operation: &'static str, dimension: ResourceDimens
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project_fixed_sweep(&scope, &groups, &[], &[],
-            std::slice::from_ref(&selection), &[], Some(&ctx)),
+        if matches!(project_fixed_sweep(&scope, &groups, &[], &[], std::slice::from_ref(&selection), &[], &ctx),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ) {

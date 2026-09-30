@@ -71,16 +71,16 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
 fn assert_retained_refusal(
     operation: &'static str,
     project: impl for<'a> Fn(
-        Option<&'a DecodeContext<'a>>,
+        &'a DecodeContext<'a>,
     ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError>,
 ) {
-    assert!(project(None).unwrap().is_some());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx)).unwrap().is_some());
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+        matches!(project(&ctx), Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == operation)
     );
@@ -191,7 +191,7 @@ fn assert_direct_face_refusal(
             _ => panic!("unsupported direct-face limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::super::direct_face_selection(Some(&ctx), &scope, &operands);
+        let result = super::super::direct_face_selection(&ctx, &scope, &operands);
         if matches!(result, Err(CodecError::ResourceLimit(ref failure))
             if failure.operation == operation && failure.dimension == dimension)
         {

@@ -147,14 +147,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
     )
     .unwrap();
 
-    let definition = crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .expect("exact legacy Pipe reference form");
     assert!(matches!(
@@ -189,14 +182,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    let hollow_definition = crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None,
-    )
+    let hollow_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .expect("exact hollow circular Pipe reference form");
     assert!(matches!(
@@ -239,14 +225,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &too_thick_parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &too_thick_parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .is_none());
 
@@ -286,14 +265,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .is_none());
 
@@ -314,14 +286,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
         crate::records::references::DesignClassTag::try_from("475".to_owned()).unwrap();
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .is_some());
 
@@ -351,14 +316,7 @@ fn legacy_pipe_projects_only_the_exact_path_reference_form() {
             })
             .unwrap();
     }
-    assert!(crate::design::feature_project::project_fixed_pipe(
-        &scope,
-        &parameter_refs,
-        std::slice::from_ref(&path_group),
-        &[],
-        &[],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_pipe(&scope, &parameter_refs, std::slice::from_ref(&path_group), &[], &[], decode_ctx))
     .unwrap()
     .is_some());
 }
@@ -434,7 +392,7 @@ fn legacy_pipe_claimed_records_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::legacy_pipe_references_complete(
-            Some(&ctx), &scope, &group, [10, 11, 12, 13],
+            &ctx, &scope, &group, [10, 11, 12, 13],
         ),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d Pipe claimed record"
@@ -454,7 +412,7 @@ fn legacy_pipe_reference_records_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::legacy_pipe_references_complete(
-            Some(&ctx), &scope, &group, [10, 11, 12, 13],
+            &ctx, &scope, &group, [10, 11, 12, 13],
         ),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d Pipe reference record"

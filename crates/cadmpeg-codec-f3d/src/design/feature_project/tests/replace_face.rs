@@ -85,9 +85,7 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
     let (scope, group, operand) = body_recipe_limit_fixture();
     let operands = [operand];
     assert!(matches!(
-        crate::design::face_resolve::resolved_body_recipe_selection(
-            None, &scope, &group, &operands
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::face_resolve::resolved_body_recipe_selection(decode_ctx, &scope, &group, &operands))
         .unwrap(),
         Some(FaceSelection::Historical { .. })
     ));
@@ -96,8 +94,7 @@ fn assert_body_recipe_collection_limit(operation: &'static str) {
         policy.limits.max_collection_items = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::face_resolve::resolved_body_recipe_selection(
-            Some(&ctx), &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
+        if matches!(crate::design::face_resolve::resolved_body_recipe_selection(&ctx, &scope, &group, &operands), Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation)
         {
@@ -280,13 +277,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
         })
         .unwrap();
 
-    let definition = project_replace_face(
-        None,
-        &scope,
-        &[replacement_group.clone(), target_group.clone()],
-        std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement),
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[replacement_group.clone(), target_group.clone()], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
     .unwrap()
     .expect("typed ReplaceFace");
     assert!(matches!(
@@ -302,13 +293,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             && native.as_str() == target_group.id
             && replacement_native.as_str() == replacement_group.id)));
 
-    let reversed = project_replace_face(
-        None,
-        &scope,
-        &[target_group.clone(), replacement_group.clone()],
-        std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement),
-    )
+    let reversed = crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[target_group.clone(), replacement_group.clone()], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
     .unwrap();
     assert!(matches!(
         reversed,
@@ -316,17 +301,11 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             FeatureOperation::ReplaceFace { .. }
         ))
     ));
-    assert!(project_replace_face(
-        None,
-        &scope,
-        &[
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &scope, &[
             replacement_group.clone(),
             target_group.clone(),
             target_group.clone()
-        ],
-        std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement),
-    )
+        ], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
     .unwrap()
     .is_none());
 
@@ -338,13 +317,7 @@ fn replace_face_projects_role_order_and_historical_inputs() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(project_replace_face(
-        None,
-        &invalid_scope,
-        &[replacement_group, target_group],
-        std::slice::from_ref(&target),
-        std::slice::from_ref(&replacement),
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project_replace_face(decode_ctx, &invalid_scope, &[replacement_group, target_group], std::slice::from_ref(&target), std::slice::from_ref(&replacement)))
     .unwrap()
     .is_none());
 }
@@ -423,12 +396,7 @@ fn surface_trim_fixture() -> (
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
     let (scope, target_group, tool_group, body) = surface_trim_fixture();
-    let definition = project_surface_trim(
-        None,
-        &scope,
-        &[target_group.clone(), tool_group.clone()],
-        std::slice::from_ref(&body),
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_surface_trim(decode_ctx, &scope, &[target_group.clone(), tool_group.clone()], std::slice::from_ref(&body)))
     .unwrap()
     .expect("typed SurfaceTrim");
     assert!(matches!(
@@ -457,9 +425,7 @@ fn surface_trim_tool_group_id_refuses_retained_limit() {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
-            project_surface_trim(Some(&ctx), &scope,
-                &[target_group.clone(), tool_group.clone()],
-                std::slice::from_ref(&body)),
+            project_surface_trim(&ctx, &scope, &[target_group.clone(), tool_group.clone()], std::slice::from_ref(&body)),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d SurfaceTrim tool group id"
@@ -554,12 +520,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     )
     .unwrap();
 
-    bind_surface_trim_cell_selections(
-        None,
-        std::slice::from_mut(&mut feature),
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&operation),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_surface_trim_cell_selections(decode_ctx, std::slice::from_mut(&mut feature), std::slice::from_ref(&scope), std::slice::from_ref(&operation)))
     .unwrap();
 
     assert!(matches!(
@@ -650,12 +611,7 @@ fn surface_trim_selected_cells_refuse_collection_limit() {
     )
     .unwrap();
     let mut unchanged = [feature.clone()];
-    bind_surface_trim_cell_selections(
-        None,
-        &mut unchanged,
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&operation),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_surface_trim_cell_selections(decode_ctx, &mut unchanged, std::slice::from_ref(&scope), std::slice::from_ref(&operation)))
     .unwrap();
     assert!(matches!(
         unchanged[0].evaluation.definition(),
@@ -670,7 +626,7 @@ fn surface_trim_selected_cells_refuse_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut refused = [feature];
     assert!(
-        matches!(bind_surface_trim_cell_selections(Some(&ctx), &mut refused,
+        matches!(bind_surface_trim_cell_selections(&ctx, &mut refused,
         std::slice::from_ref(&scope), std::slice::from_ref(&operation)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems

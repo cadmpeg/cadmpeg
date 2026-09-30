@@ -130,7 +130,7 @@ fn surface_offset_boundary_id_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::project_surface_offset(
-            Some(&ctx), &scope, &operation, &[], &[],
+            &ctx, &scope, &operation, &[], &[],
         ),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d surface offset boundary id"

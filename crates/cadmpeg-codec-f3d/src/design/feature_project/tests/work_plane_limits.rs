@@ -54,7 +54,7 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
     }
     let transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.into();
     assert!(matches!(
-        super::super::project_work_plane(None, &plane, transform).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| super::super::project_work_plane(decode_ctx, &plane, transform)).unwrap(),
         FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { .. })
     ));
     let mut policy = DecodePolicy::default();
@@ -71,7 +71,7 @@ fn work_plane_vertex_recipe_id_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(super::super::project_work_plane(Some(&ctx), &plane, transform),
+        matches!(super::super::project_work_plane(&ctx, &plane, transform),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d WorkPlane vertex recipe id")

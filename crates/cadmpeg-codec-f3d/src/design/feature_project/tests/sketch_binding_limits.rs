@@ -58,7 +58,7 @@ fn assert_refusal(operation: &'static str, retained: bool) {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut features = fixture();
-        let result = bind_sketch_feature_geometry(Some(&ctx), &mut features, &[], &[], &[], &[]);
+        let result = bind_sketch_feature_geometry(&ctx, &mut features, &[], &[], &[], &[]);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -203,14 +203,7 @@ fn assert_spatial_refusal(operation: &'static str, retained: bool) {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let (mut features, scope, placement, spatial) = spatial_fixture();
-        let result = bind_sketch_feature_geometry(
-            Some(&ctx),
-            &mut features,
-            std::slice::from_ref(&scope),
-            std::slice::from_ref(&placement),
-            &[],
-            std::slice::from_ref(&spatial),
-        );
+        let result = bind_sketch_feature_geometry(&ctx, &mut features, std::slice::from_ref(&scope), std::slice::from_ref(&placement), &[], std::slice::from_ref(&spatial));
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -249,25 +242,13 @@ fn extrude_spatial_selection_ref_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::design::feature_project::copy_feature_record_ref(
-        Some(&ctx),
-        stream,
-        42,
-        ":design-record-header#",
-        "f3d extrude spatial selection ref",
-    )
+    let error = &ctx.format_retained(format_args!("{}{}{}", stream, ":design-record-header#", 42), "f3d extrude spatial selection ref")
     .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d extrude spatial selection ref"));
     assert_eq!(
-        crate::design::feature_project::copy_feature_record_ref(
-            None,
-            stream,
-            42,
-            ":design-record-header#",
-            "f3d extrude spatial selection ref",
-        )
+        crate::test_support::with_decode_context(|decode_ctx| decode_ctx.format_retained(format_args!("{}{}{}", stream, ":design-record-header#", 42), "f3d extrude spatial selection ref"))
         .unwrap(),
         expected
     );

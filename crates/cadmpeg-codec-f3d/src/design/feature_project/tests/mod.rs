@@ -64,9 +64,7 @@ fn project_single_scope_with_context(
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    crate::design::feature_project::project_parameter_design_with_edge_identities(
-        Some(ctx),
-        &crate::design::feature_project::ProjectInputs {
+    crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: std::slice::from_ref(scope),
@@ -85,8 +83,7 @@ fn project_single_scope_with_context(
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        })
 }
 
 #[test]

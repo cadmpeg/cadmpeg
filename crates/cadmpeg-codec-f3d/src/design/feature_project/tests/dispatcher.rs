@@ -473,9 +473,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     )
     .unwrap();
     let scopes = vec![predecessor, point];
-    let (features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -494,8 +492,7 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("authored WorkPoint timeline");
     let predecessor = features
         .iter()
@@ -952,27 +949,19 @@ fn loft_path_preserves_complete_historical_edge_selection() {
     let edge =
         HistoricalEdgeId::mint("f3d:history-input:edge#7:feature:41:17").expect("identity grammar");
     assert_eq!(
-        crate::design::feature_project::loft_path_from_edge_selection(
-            None,
-            "group",
-            EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
-                .unwrap(),
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::loft_path_from_edge_selection(decode_ctx, "group", EdgeSelection::historical(state.clone(), vec![edge.clone()], "selection".into())
+                .unwrap()))
         .unwrap(),
         PathRef::historical_edges(state.clone(), vec![edge.clone()], "selection".into()).unwrap()
     );
     assert_eq!(
-        crate::design::feature_project::loft_path_from_edge_selection(
-            None,
-            "group",
-            EdgeSelection::historical_partial(
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::loft_path_from_edge_selection(decode_ctx, "group", EdgeSelection::historical_partial(
                 state,
                 vec![edge],
                 vec!["operand".into()],
                 "selection".into()
             )
-            .unwrap(),
-        )
+            .unwrap()))
         .unwrap(),
         PathRef::Native("group".into())
     );
@@ -990,7 +979,7 @@ fn loft_native_path_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
         crate::design::feature_project::loft_path_from_edge_selection(
-            Some(&ctx), "group", EdgeSelection::Unresolved,
+            &ctx, "group", EdgeSelection::Unresolved,
         ),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d loft native path"
@@ -1015,7 +1004,7 @@ fn empty_surface_patch_path_refuses_native_copy_limit() {
     assert!(matches!(
         crate::design::feature_project::resolved_surface_patch_path(
             &[], &[], &[], &[], &scope,
-            crate::design::feature_project::SurfacePatchRecipe::Direct, Some(&ctx),
+            crate::design::feature_project::SurfacePatchRecipe::Direct, &ctx,
         ),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d surface patch native path"
@@ -1171,7 +1160,7 @@ fn thread_face_group_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_thread_face_selection(Some(&ctx), &scope, &[150], &[group], &[]),
+        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d Thread face group"
                 && failure.dimension == ResourceDimension::CollectionItems
@@ -1189,7 +1178,7 @@ fn thread_face_native_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_thread_face_selection(Some(&ctx), &scope, &[150], &[group], &[]),
+        crate::design::feature_project::project_thread_face_selection(&ctx, &scope, &[150], &[group], &[]),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d Thread face native id"
                 && failure.dimension == ResourceDimension::RetainedBytes
@@ -1215,7 +1204,7 @@ fn merged_direct_edge_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &selections),
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d merged direct edge"
                 && failure.dimension == ResourceDimension::CollectionItems
@@ -1241,7 +1230,7 @@ fn merged_direct_edge_id_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &selections),
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &selections),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d merged direct edge id"
                 && failure.dimension == ResourceDimension::RetainedBytes
@@ -1270,7 +1259,7 @@ fn merged_historical_edge_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::feature_project::merge_edge_selections(Some(&ctx), &scope, &[selection]),
+        crate::design::feature_project::merge_edge_selections(&ctx, &scope, &[selection]),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d merged historical edge"
                 && failure.dimension == ResourceDimension::CollectionItems
@@ -1294,7 +1283,7 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
         EdgeSelection::Edges(vec![second.clone()]),
     ];
     assert_eq!(
-        crate::design::feature_project::merge_edge_selections(None, &scope, &selections)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &selections))
             .expect("unlimited merge"),
         EdgeSelection::Resolved {
             edges: vec![first.clone(), second],
@@ -1306,7 +1295,7 @@ fn merged_direct_edges_keep_source_order_and_native_fallback() {
         EdgeSelection::Edges(vec![first]),
     ];
     assert_eq!(
-        crate::design::feature_project::merge_edge_selections(None, &scope, &duplicate)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::merge_edge_selections(decode_ctx, &scope, &duplicate))
             .expect("unlimited duplicate scan"),
         EdgeSelection::Native(scope.id)
     );

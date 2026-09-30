@@ -79,7 +79,7 @@ fn revolve_native_profile_id_refuses_retained_limit() {
         "next_byte_offset": 160
     }))
     .unwrap();
-    let project = |ctx| {
+    let project = |ctx: &DecodeContext<'_>| {
         super::super::project_fixed_revolve_with_entities(
             ctx,
             &scope,
@@ -90,13 +90,13 @@ fn revolve_native_profile_id_refuses_retained_limit() {
             (&[], &[]),
         )
     };
-    assert!(project(None).unwrap().is_some());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx)).unwrap().is_some());
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(project(Some(&ctx)), Err(CodecError::ResourceLimit(failure))
+        matches!(project(&ctx), Err(CodecError::ResourceLimit(failure))
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d Revolve native profile id")
     );

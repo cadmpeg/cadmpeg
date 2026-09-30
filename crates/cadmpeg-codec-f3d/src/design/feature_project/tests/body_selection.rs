@@ -40,12 +40,7 @@ fn assert_selection_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = design_body_selection(
-            Some(&ctx),
-            &scope,
-            [20].into_iter(),
-            std::slice::from_ref(&binding),
-        );
+        let result = design_body_selection(&ctx, &scope, [20].into_iter(), std::slice::from_ref(&binding));
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -88,14 +83,14 @@ fn body_selection_missing_binding_native_id_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = design_body_selection(Some(&ctx), &scope, [20].into_iter(), &[]).unwrap_err();
+    let error = design_body_selection(&ctx, &scope, [20].into_iter(), &[]).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d body selection native id"));
 }
 
 fn project_copied_body(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
     binding: &DesignBodyBinding,
 ) -> Result<Vec<cadmpeg_ir::features::Feature>, CodecError> {
@@ -193,7 +188,7 @@ fn assert_copied_body_output_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_copied_body(Some(&ctx), &scope, &binding) {
+        match project_copied_body(&ctx, &scope, &binding) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension
@@ -226,7 +221,7 @@ fn copied_body_output_id_refuses_retained_limit() {
 #[test]
 fn copied_body_output_preserves_resolved_body() {
     let (scope, binding) = copied_body_fixture();
-    let features = project_copied_body(None, &scope, &binding).unwrap();
+    let features = crate::test_support::with_decode_context(|decode_ctx| project_copied_body(decode_ctx, &scope, &binding)).unwrap();
     assert_eq!(features.len(), 1);
     assert_eq!(
         features[0].evaluation.outputs().as_slice(),
