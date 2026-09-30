@@ -398,10 +398,19 @@ pub(super) fn resolved_edge_treatment_group(
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     crate::test_support::with_decode_context(|decode_ctx| {
         resolved_edge_treatment_group_with_corners(
-group,
-crate::design::edge_resolve::EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands: &[], histories: &[], previous_state_id, feature_id, treatment_radius },
-decode_ctx,
-)
+            group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups,
+                operands,
+                identity_operands,
+                vertex_operands: &[],
+                histories: &[],
+                previous_state_id,
+                feature_id,
+                treatment_radius,
+            },
+            decode_ctx,
+        )
     })
 }
 
@@ -423,7 +432,16 @@ pub(super) fn resolved_edge_treatment_group_with_corners(
     ctx: &DecodeContext<'_>,
 ) -> Result<cadmpeg_ir::features::EdgeSelection, CodecError> {
     use cadmpeg_ir::features::EdgeSelection;
-    let EdgeTreatmentInputs { groups, operands, identity_operands, vertex_operands, histories, previous_state_id, feature_id, treatment_radius } = input;
+    let EdgeTreatmentInputs {
+        groups,
+        operands,
+        identity_operands,
+        vertex_operands,
+        histories,
+        previous_state_id,
+        feature_id,
+        treatment_radius,
+    } = input;
 
     let stream = native_stream(&group.id);
     let has_group_corner = vertex_operands.iter().any(|operand| {
@@ -2862,10 +2880,19 @@ pub(super) fn project_fixed_fillet_with_corners(
             | RadiusSpec::Unresolved { .. } => None,
         };
         let edges = resolved_edge_treatment_group_with_corners(
-edge_group,
-crate::design::edge_resolve::EdgeTreatmentInputs { groups: construction_groups, operands: edge_operands, identity_operands: edge_identity_operands, vertex_operands, histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: edge_radius },
-ctx,
-)?;
+            edge_group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: construction_groups,
+                operands: edge_operands,
+                identity_operands: edge_identity_operands,
+                vertex_operands,
+                histories,
+                previous_state_id: scope.previous_history_state_id(),
+                feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?,
+                treatment_radius: edge_radius,
+            },
+            ctx,
+        )?;
         ctx.push_vec(
             &mut groups,
             FilletGroup {

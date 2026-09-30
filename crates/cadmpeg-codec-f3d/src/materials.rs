@@ -1567,8 +1567,11 @@ fn body_node_candidate(
     };
     // Include the three strings before the marker and every string after it.
     let mut first = None;
-    for (_, (_, candidate)) in strings[..visual_index].iter().enumerate()
-        .filter(|(ordinal, _)| *ordinal >= marker || ordinal.abs_diff(marker) <= 3) {
+    for (_, (_, candidate)) in strings[..visual_index]
+        .iter()
+        .enumerate()
+        .filter(|(ordinal, _)| *ordinal >= marker || ordinal.abs_diff(marker) <= 3)
+    {
         let operation = "fold F3D browser node candidate";
         let length = u64::try_from(candidate.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
@@ -2129,7 +2132,9 @@ fn consume_catalog_strings(
     let count = View::u32_le_at(record, *position)
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     *position += 4;
-    let count = record.len().checked_sub(*position)
+    let count = record
+        .len()
+        .checked_sub(*position)
         .and_then(|left| bounded_len(u64::from(count), 4, left))
         .ok_or_else(|| malformed_definition_catalog_record("string count", *position))?;
     for _ in 0..count {

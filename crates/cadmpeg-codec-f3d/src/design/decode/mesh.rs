@@ -425,8 +425,13 @@ fn record_identity(
         record_index,
         u64::try_from(frame.start)
             .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
-        u64::try_from(frame.end.checked_sub(frame.start).ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?)
-            .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
+        u64::try_from(
+            frame
+                .end
+                .checked_sub(frame.start)
+                .ok_or_else(|| malformed_frame(ctx, record_kind, frame.entity_id))?,
+        )
+        .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))?,
     )
     .map_err(|_| malformed_frame(ctx, record_kind, frame.entity_id))
 }
@@ -473,8 +478,18 @@ fn nested_record_identity(
     meta: &crate::metastream::MetaStream,
     input: MeshRecordType<'_>,
 ) -> Option<DesignMeshRecordIdentity> {
-    let NestedMeshRecordFrame { frame_start, at, end, record_index } = frame;
-    let MeshRecordType { type_guid: expected_type_guid, base_type_guid: expected_base_type_guid, version: expected_version, module: expected_module } = input;
+    let NestedMeshRecordFrame {
+        frame_start,
+        at,
+        end,
+        record_index,
+    } = frame;
+    let MeshRecordType {
+        type_guid: expected_type_guid,
+        base_type_guid: expected_base_type_guid,
+        version: expected_version,
+        module: expected_module,
+    } = input;
     let class_tag = indexed_class_tag(record, at)?;
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
         .then_some(())?;
@@ -682,11 +697,21 @@ fn parse_mesh_collection_record(
         let texture_table_record_index =
             exact_local_record_index(record, mesh_collection::TEXTURE_TABLE_REFERENCE)?;
         let base_record = nested_record_identity(
-record,
-crate::design::decode::mesh::NestedMeshRecordFrame { frame_start: frame.start, at: mesh_collection::LEN, end: record.len(), record_index: identity.record_index() },
-meta,
-crate::design::decode::mesh::MeshRecordType { type_guid: MESH_COLLECTION_BASE_TYPE_GUID, base_type_guid: MESH_COLLECTION_BASE_BASE_TYPE_GUID, version: MESH_COLLECTION_BASE_TYPE_VERSION, module: COMMON_DATA_MODULE },
-)?;
+            record,
+            crate::design::decode::mesh::NestedMeshRecordFrame {
+                frame_start: frame.start,
+                at: mesh_collection::LEN,
+                end: record.len(),
+                record_index: identity.record_index(),
+            },
+            meta,
+            crate::design::decode::mesh::MeshRecordType {
+                type_guid: MESH_COLLECTION_BASE_TYPE_GUID,
+                base_type_guid: MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+                version: MESH_COLLECTION_BASE_TYPE_VERSION,
+                module: COMMON_DATA_MODULE,
+            },
+        )?;
         (record.get(
             mesh_collection::LEN + mesh_collection_base::ZERO_RUN_9
                 ..mesh_collection::LEN + mesh_collection_base::BODY_COUNT,
@@ -907,7 +932,10 @@ fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPa
     }
     let mut values = [0.0; 6];
     for (ordinal, value) in values.iter_mut().enumerate() {
-        let Some(offset) = ordinal.checked_mul(8).and_then(|relative| payload_at.checked_add(relative)) else {
+        let Some(offset) = ordinal
+            .checked_mul(8)
+            .and_then(|relative| payload_at.checked_add(relative))
+        else {
             return SceneBoundsPayload::Invalid;
         };
         let Some(parsed) = View::f64_le_at(record, offset) else {
@@ -915,7 +943,10 @@ fn parse_scene_bounds_payload(record: &[u8], payload_at: usize) -> SceneBoundsPa
         };
         *value = parsed;
     }
-    match DesignMeshSceneBounds::new([values[0], values[1], values[2]], [values[3], values[4], values[5]]) {
+    match DesignMeshSceneBounds::new(
+        [values[0], values[1], values[2]],
+        [values[3], values[4], values[5]],
+    ) {
         Ok(bounds) => SceneBoundsPayload::Present(bounds),
         Err(_) => SceneBoundsPayload::Invalid,
     }
@@ -942,7 +973,9 @@ fn parse_mesh_scene_state_record(
         return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id));
     }
     let bounds = match parse_scene_footer(record, scene_state::FOOTER_MARKER) {
-        SceneBoundsPayload::Invalid => return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id)),
+        SceneBoundsPayload::Invalid => {
+            return Err(malformed_frame(ctx, "mesh-scene-state", frame.entity_id))
+        }
         SceneBoundsPayload::Absent => None,
         SceneBoundsPayload::Present(bounds) => Some(bounds),
     };
@@ -1071,11 +1104,21 @@ fn parse_mesh_scope_record(
             && paired_relative.checked_add(feature_scope_base::LEN) == Some(record.len()))
         .then_some(())?;
         let base_record = nested_record_identity(
-record,
-crate::design::decode::mesh::NestedMeshRecordFrame { frame_start: frame.start, at: paired_relative, end: record.len(), record_index: identity.record_index() },
-meta,
-crate::design::decode::mesh::MeshRecordType { type_guid: MESH_SCOPE_BASE_RECORD_TYPE_GUID, base_type_guid: MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID, version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION, module: DATA_MODEL_MODULE },
-)?;
+            record,
+            crate::design::decode::mesh::NestedMeshRecordFrame {
+                frame_start: frame.start,
+                at: paired_relative,
+                end: record.len(),
+                record_index: identity.record_index(),
+            },
+            meta,
+            crate::design::decode::mesh::MeshRecordType {
+                type_guid: MESH_SCOPE_BASE_RECORD_TYPE_GUID,
+                base_type_guid: MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
+                version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
+                module: DATA_MODEL_MODULE,
+            },
+        )?;
         (record.get(
             paired_relative + feature_scope_base::ZERO_RUN_8
                 ..paired_relative + feature_scope_base::SCOPE_OWNER_REFERENCE,

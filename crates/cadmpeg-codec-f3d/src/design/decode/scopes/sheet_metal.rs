@@ -822,7 +822,13 @@ fn exact_hem_operation(
     let mut resolved = None;
     for header_shift in SHEET_METAL_HEADER_SHIFTS {
         for candidate in [
-            hem_gap_length_operation_at(bytes, start, paired_at, (*references).clone(), header_shift),
+            hem_gap_length_operation_at(
+                bytes,
+                start,
+                paired_at,
+                (*references).clone(),
+                header_shift,
+            ),
             hem_radius_angle_operation_at(
                 bytes,
                 start,
@@ -925,12 +931,12 @@ pub(super) fn bind_hem_operation_from_parameters(
     };
     {
         let construction = exact_hem_operation(
-bytes,
-start,
-paired_at,
-&scope.reference_members().values().copied(),
-&has_kind,
-);
+            bytes,
+            start,
+            paired_at,
+            &scope.reference_members().values().copied(),
+            &has_kind,
+        );
         if let crate::records::feature::scope::DesignScopePayloadMut::Hem(slot) =
             scope.payload_mut()
         {

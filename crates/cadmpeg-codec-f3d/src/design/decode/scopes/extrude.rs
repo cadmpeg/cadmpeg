@@ -238,7 +238,10 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
 }
 
 pub(crate) fn is_class_296_two_sided_to_faces_scope(scope: &DesignParameterScope) -> bool {
-    let Some(reference_count_offset) = scope.reference_count_offset().checked_sub(scope.byte_offset()) else {
+    let Some(reference_count_offset) = scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())
+    else {
         return false;
     };
     is_class_296_two_sided_to_faces_layout(
@@ -981,13 +984,33 @@ fn exact_current_extrude_prologue(
                 && reference_members.contains(&record_index)
                 && matches!(View::u32_le_at(bytes, *operation_offset), Some(1..=4))
                 && matches!(
-                    operation_offset.checked_add(4).and_then(|at| View::u32_le_at(bytes, at)),
+                    operation_offset
+                        .checked_add(4)
+                        .and_then(|at| View::u32_le_at(bytes, at)),
                     Some(1..=3)
                 )
-                && operation_offset.checked_add(8).and_then(|at| View::u32_le_at(bytes, at)).is_some()
-                && matches!(operation_offset.checked_add(12).and_then(|at| bytes.get(at)), Some(0 | 1))
-                && matches!(operation_offset.checked_add(13).and_then(|at| bytes.get(at)), Some(0 | 1))
-                && matches!(operation_offset.checked_add(14).and_then(|at| bytes.get(at)), Some(0..=2))
+                && operation_offset
+                    .checked_add(8)
+                    .and_then(|at| View::u32_le_at(bytes, at))
+                    .is_some()
+                && matches!(
+                    operation_offset
+                        .checked_add(12)
+                        .and_then(|at| bytes.get(at)),
+                    Some(0 | 1)
+                )
+                && matches!(
+                    operation_offset
+                        .checked_add(13)
+                        .and_then(|at| bytes.get(at)),
+                    Some(0 | 1)
+                )
+                && matches!(
+                    operation_offset
+                        .checked_add(14)
+                        .and_then(|at| bytes.get(at)),
+                    Some(0..=2)
+                )
         });
         let (operation_offset, operation_marker_offset) = candidates.next()?;
         if candidates.next().is_some() {

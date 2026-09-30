@@ -435,12 +435,18 @@ fn exact_legacy_as_built_face_selection(
                 byte_offset: u64::try_from(byte_offset).ok()?,
             };
             let operand = parse_face_operand(
-ctx,
-bytes,
-records,
-crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal, group_ownership: None, next_byte_offset, header: &header },
-recipes,
-)?;
+                ctx,
+                bytes,
+                records,
+                crate::design::decode::operands::FaceOperandFrame {
+                    scope,
+                    scope_reference_ordinal,
+                    group_ownership: None,
+                    next_byte_offset,
+                    header: &header,
+                },
+                recipes,
+            )?;
             let operand = match operand {
                 Ok(operand) => operand,
                 Err(error) => return Some(Err(error)),

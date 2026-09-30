@@ -781,20 +781,41 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         copy_paste_bodies.payload_mut()
     {
         *slot = Some(
-            crate::test_support::with_decode_context(|ctx| DesignCopyPasteBodiesOperation::try_new_charged(ctx, vec![crate::records::feature::body_ops::DesignCopiedBody {
-                    operand: crate::records::identity::Located {
-                        value: 502,
-                        offset: 26,
+            crate::test_support::with_decode_context(|ctx| {
+                DesignCopyPasteBodiesOperation::try_new_charged(
+                    ctx,
+                    vec![crate::records::feature::body_ops::DesignCopiedBody {
+                        operand: crate::records::identity::Located {
+                            value: 502,
+                            offset: 26,
+                        },
+                        source: crate::records::identity::Located {
+                            value: 11,
+                            offset: 25,
+                        },
+                        copied: crate::records::identity::Located {
+                            value: 12,
+                            offset: 40,
+                        },
+                    }],
+                    crate::records::feature::body_ops::CopyPasteRecordLocation {
+                        record_index: 501,
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            "264".to_owned(),
+                        )
+                        .unwrap(),
+                        byte_offset: 0,
                     },
-                    source: crate::records::identity::Located {
-                        value: 11,
-                        offset: 25,
+                    crate::records::feature::body_ops::CopyPasteRecordLocation {
+                        record_index: 503,
+                        class_tag: crate::records::references::DesignClassTag::try_from(
+                            "264".to_owned(),
+                        )
+                        .unwrap(),
+                        byte_offset: 0,
                     },
-                    copied: crate::records::identity::Located {
-                        value: 12,
-                        offset: 40,
-                    },
-                }], crate::records::feature::body_ops::CopyPasteRecordLocation { record_index: 501, class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(), byte_offset: 0 }, crate::records::feature::body_ops::CopyPasteRecordLocation { record_index: 503, class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned()).unwrap(), byte_offset: 0 }))
+                )
+            })
             .unwrap(),
         );
     }

@@ -230,7 +230,12 @@ pub(crate) fn decode_component_naming_spaces(
         let mut by_component = HashMap::<u64, DesignComponentNamingSpace>::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
-            for uuid_offset in bytes.len().checked_sub(4).into_iter().flat_map(|last| prefix_len..last) {
+            for uuid_offset in bytes
+                .len()
+                .checked_sub(4)
+                .into_iter()
+                .flat_map(|last| prefix_len..last)
+            {
                 let marker = uuid_offset - prefix_len;
                 if bytes[marker] != 1
                     || (marker > 0 && bytes[marker - 1] == 1)

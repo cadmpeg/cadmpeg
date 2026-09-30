@@ -560,11 +560,7 @@ impl TryFrom<DesignCoilScopeWire> for DesignCoilScope {
                 wire.operation_offset,
                 "coil_operation",
             )?,
-            extent: MaybeRecordedValue::from_wire(
-                wire.extent,
-                wire.extent_offset,
-                "coil_extent",
-            )?,
+            extent: MaybeRecordedValue::from_wire(wire.extent, wire.extent_offset, "coil_extent")?,
             section: MaybeRecordedValue::from_wire(
                 wire.section,
                 wire.section_offset,
@@ -597,9 +593,7 @@ impl From<DesignCoilScope> for DesignCoilScopeWire {
             section: value.section.map(|field| field.value()),
             section_offset: value.section.and_then(|field| field.offset()),
             section_placement: value.section_placement.map(|field| field.value()),
-            section_placement_offset: value
-                .section_placement
-                .and_then(|field| field.offset()),
+            section_placement_offset: value.section_placement.and_then(|field| field.offset()),
             clockwise: value.clockwise.map(|field| field.value()),
             clockwise_offset: value.clockwise.and_then(|field| field.offset()),
             placement: value.placement,

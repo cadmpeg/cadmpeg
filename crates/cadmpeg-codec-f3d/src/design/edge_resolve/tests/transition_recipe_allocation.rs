@@ -15,10 +15,19 @@ fn assert_transition_recipe_refusal(operation: &'static str, through_group: bool
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if through_group {
             resolved_edge_treatment_group_with_corners(
-&selection_group,
-crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&selection_group), operands: std::slice::from_ref(&operand), identity_operands: std::slice::from_ref(&persistent), vertex_operands: &[], histories: &[], previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: None },
-&ctx,
-)
+                &selection_group,
+                crate::design::edge_resolve::EdgeTreatmentInputs {
+                    groups: std::slice::from_ref(&selection_group),
+                    operands: std::slice::from_ref(&operand),
+                    identity_operands: std::slice::from_ref(&persistent),
+                    vertex_operands: &[],
+                    histories: &[],
+                    previous_state_id: Some(7),
+                    feature_id: &feature_id,
+                    treatment_radius: None,
+                },
+                &ctx,
+            )
             .map(|_| true)
         } else {
             transition_chain_is_supported_by_recipe(&[17], 1, &[&operand], &ctx)

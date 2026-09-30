@@ -756,7 +756,9 @@ fn parse_sketch_placement_candidates(
     for pair in records.offsets(record_index).windows(2) {
         let start = pair[0];
         let paired_at = pair[1];
-        let Some(frame_length) = paired_at.checked_sub(start) else { continue; };
+        let Some(frame_length) = paired_at.checked_sub(start) else {
+            continue;
+        };
         if !matches!(frame_length, 201 | 213 | 305 | 325 | 329 | 341) {
             continue;
         }
@@ -2829,7 +2831,15 @@ fn assemble_sketch_text(
     payload: &[u8],
     input: SketchTextRecord<'_>,
 ) -> Result<SketchText, CodecError> {
-    let SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail } = input;
+    let SketchTextRecord {
+        stream,
+        class_tag,
+        class_version,
+        record_index,
+        byte_offset,
+        head,
+        tail,
+    } = input;
     let id = design_record_id_charged(
         ctx,
         stream,
@@ -2921,10 +2931,18 @@ pub(crate) fn decode_sketch_text_record(
             };
             if let Some(tail) = tail {
                 return Some(assemble_sketch_text(
-ctx,
-payload,
-crate::design::decode::sketch::SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail },
-));
+                    ctx,
+                    payload,
+                    crate::design::decode::sketch::SketchTextRecord {
+                        stream,
+                        class_tag,
+                        class_version,
+                        record_index,
+                        byte_offset,
+                        head,
+                        tail,
+                    },
+                ));
             }
         }
         let (head, width_factor) = match decode_indexed_sketch_text_head(ctx, payload) {
@@ -2937,10 +2955,18 @@ crate::design::decode::sketch::SketchTextRecord { stream, class_tag, class_versi
                 Err(error) => return Some(Err(error)),
             };
         Some(assemble_sketch_text(
-ctx,
-payload,
-crate::design::decode::sketch::SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail },
-))
+            ctx,
+            payload,
+            crate::design::decode::sketch::SketchTextRecord {
+                stream,
+                class_tag,
+                class_version,
+                record_index,
+                byte_offset,
+                head,
+                tail,
+            },
+        ))
     })()
     .transpose()
 }

@@ -48,9 +48,7 @@ use super::thread::DesignThreadConstruction;
 use super::work_geometry::{
     DesignWorkAxisConstruction, DesignWorkPlaneConstruction, DesignWorkPointConstruction,
 };
-use crate::records::identity::{
-    deserialize_absent_u64_offset, DesignEntityId, ReferenceRun,
-};
+use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -1047,10 +1045,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = JointOriginFrameWire::deserialize(deserializer)?;
-    let reference = match (
-        wire.reference,
-        wire.reference_offset,
-    ) {
+    let reference = match (wire.reference, wire.reference_offset) {
         (None, None) => None,
         (Some(joint_origin_reference), Some(joint_origin_reference_offset)) => {
             Some(DesignJointOriginReference {
@@ -1103,11 +1098,7 @@ where
     D: serde::Deserializer<'de>,
 {
     let wire = SketchEntityWire::deserialize(deserializer)?;
-    match (
-        wire.id,
-        wire.suffix,
-        wire.reference_offset,
-    ) {
+    match (wire.id, wire.suffix, wire.reference_offset) {
         (None, None, None) => Ok(None),
         (Some(entity_id), Some(entity_suffix), Some(entity_reference_offset)) => {
             DesignSketchEntityBinding::try_from(DesignSketchEntityBindingWire {
@@ -1124,7 +1115,6 @@ where
     }
 }
 
-
 fn base_flange_scope_is_absent(base_flange: Option<&DesignBaseFlangeScope>) -> bool {
     match base_flange {
         None => true,
@@ -1133,7 +1123,6 @@ fn base_flange_scope_is_absent(base_flange: Option<&DesignBaseFlangeScope>) -> b
         }
     }
 }
-
 
 fn coil_scope_is_absent(coil: Option<&DesignCoilScope>) -> bool {
     match coil {
@@ -1150,7 +1139,6 @@ fn coil_scope_is_absent(coil: Option<&DesignCoilScope>) -> bool {
     }
 }
 
-
 fn extrude_scope_is_absent(extrude: Option<&DesignExtrudeScope>) -> bool {
     match extrude {
         None => true,
@@ -1161,7 +1149,6 @@ fn extrude_scope_is_absent(extrude: Option<&DesignExtrudeScope>) -> bool {
         }
     }
 }
-
 
 fn path_feature_scope_is_absent(path_feature: Option<&DesignPathFeatureWire>) -> bool {
     match path_feature {
@@ -2085,10 +2072,18 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::Face
             | DesignScopePayload::Native(_) => {}
         }
-        if base_flange_scope_is_absent(wire.base_flange.as_ref()) { wire.base_flange = None; }
-        if coil_scope_is_absent(wire.coil.as_ref()) { wire.coil = None; }
-        if extrude_scope_is_absent(wire.extrude.as_ref()) { wire.extrude = None; }
-        if path_feature_scope_is_absent(wire.path_feature.as_ref()) { wire.path_feature = None; }
+        if base_flange_scope_is_absent(wire.base_flange.as_ref()) {
+            wire.base_flange = None;
+        }
+        if coil_scope_is_absent(wire.coil.as_ref()) {
+            wire.coil = None;
+        }
+        if extrude_scope_is_absent(wire.extrude.as_ref()) {
+            wire.extrude = None;
+        }
+        if path_feature_scope_is_absent(wire.path_feature.as_ref()) {
+            wire.path_feature = None;
+        }
         wire
     }
 }

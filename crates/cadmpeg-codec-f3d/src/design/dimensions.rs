@@ -5155,13 +5155,20 @@ pub(crate) struct DimensionLocusInputs<'a> {
 
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
-pub(crate) fn bind_dimension_loci<'a>(
+pub(crate) fn bind_dimension_loci(
     ctx: &DecodeContext<'_>,
-    input: DimensionLocusInputs<'a>,
+    input: DimensionLocusInputs<'_>,
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
 ) -> Result<(), CodecError> {
-    let DimensionLocusInputs { placements, owners, pairs, groups, annotation_frames, null_pairs } = input;
+    let DimensionLocusInputs {
+        placements,
+        owners,
+        pairs,
+        groups,
+        annotation_frames,
+        null_pairs,
+    } = input;
     let mut placements_by_scope = HashMap::new();
     for placement in placements {
         if let (Some(scope), Some(record_index), Ok(owner)) = (

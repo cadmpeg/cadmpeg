@@ -170,7 +170,9 @@ pub(crate) fn decode_body_bounds(
         if !(first < second && second < third) {
             continue;
         }
-        let Some(search_at) = third.checked_add(11) else { continue; };
+        let Some(search_at) = third.checked_add(11) else {
+            continue;
+        };
         let third_end = next_indexed_record_offset(bytes, search_at)
             .filter(|offset| *offset <= end)
             .unwrap_or(end);
@@ -184,7 +186,10 @@ pub(crate) fn decode_body_bounds(
                 {
                     let mut matches = body_bound_candidates(bytes, record_start, record_end)
                         .filter(|(offset, _)| {
-                            offset.checked_add(49).and_then(|end| bytes.get(*offset..end)) == Some(frame)
+                            offset
+                                .checked_add(49)
+                                .and_then(|end| bytes.get(*offset..end))
+                                == Some(frame)
                         })
                         .map(|(offset, _)| offset + 1);
                     value_offsets[ordinal] = match (matches.next(), matches.next()) {
@@ -273,22 +278,25 @@ fn body_bound_candidates(
     start: usize,
     end: usize,
 ) -> impl Iterator<Item = (usize, [FiniteReal; 6])> + '_ {
-    end.checked_sub(48).into_iter().flat_map(move |last| start..last).filter_map(move |offset| {
-        if bytes.get(offset) != Some(&1) {
-            return None;
-        }
-        let values = [
-            FiniteReal::new(View::f64_le_at(bytes, offset + 1)?)?,
-            FiniteReal::new(View::f64_le_at(bytes, offset + 9)?)?,
-            FiniteReal::new(View::f64_le_at(bytes, offset + 17)?)?,
-            FiniteReal::new(View::f64_le_at(bytes, offset + 25)?)?,
-            FiniteReal::new(View::f64_le_at(bytes, offset + 33)?)?,
-            FiniteReal::new(View::f64_le_at(bytes, offset + 41)?)?,
-        ];
-        ((0..3).all(|axis| values[axis] >= values[axis + 3])
-            && (0..3).any(|axis| values[axis] > values[axis + 3]))
-        .then_some((offset, values))
-    })
+    end.checked_sub(48)
+        .into_iter()
+        .flat_map(move |last| start..last)
+        .filter_map(move |offset| {
+            if bytes.get(offset) != Some(&1) {
+                return None;
+            }
+            let values = [
+                FiniteReal::new(View::f64_le_at(bytes, offset + 1)?)?,
+                FiniteReal::new(View::f64_le_at(bytes, offset + 9)?)?,
+                FiniteReal::new(View::f64_le_at(bytes, offset + 17)?)?,
+                FiniteReal::new(View::f64_le_at(bytes, offset + 25)?)?,
+                FiniteReal::new(View::f64_le_at(bytes, offset + 33)?)?,
+                FiniteReal::new(View::f64_le_at(bytes, offset + 41)?)?,
+            ];
+            ((0..3).all(|axis| values[axis] >= values[axis + 3])
+                && (0..3).any(|axis| values[axis] > values[axis + 3]))
+            .then_some((offset, values))
+        })
 }
 
 pub(super) fn decode_stream(

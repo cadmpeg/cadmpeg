@@ -114,7 +114,10 @@ fn exact_class_363_operand_path(
             carrier_at.checked_add(class_363_carrier::REPEATED_TERMINAL_REFERENCE)?,
         ) != Some(terminal_record_index)
         || scope_backlinks.iter().any(|frame| {
-            frame.start.checked_add(frame.scope_reference).and_then(|at| marked_record_reference(bytes, at))
+            frame
+                .start
+                .checked_add(frame.scope_reference)
+                .and_then(|at| marked_record_reference(bytes, at))
                 != Some(scope.record_index)
         })
     {

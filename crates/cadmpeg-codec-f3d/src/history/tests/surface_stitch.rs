@@ -251,11 +251,18 @@ fn surface_stitch_group_collection_refuses_limit() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = bind_feature_face_selections(
-&ctx,
-std::slice::from_mut(&mut fixture.feature),
-&mut fixture.input_topologies,
-crate::history::FeatureFaceSelectionInputs { scopes: std::slice::from_ref(&fixture.scope), groups: &fixture.groups, operands: &[], entity_operands: &fixture.operands, body_recipe_operands: &[], histories: std::slice::from_ref(&fixture.history) },
-);
+        &ctx,
+        std::slice::from_mut(&mut fixture.feature),
+        &mut fixture.input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&fixture.scope),
+            groups: &fixture.groups,
+            operands: &[],
+            entity_operands: &fixture.operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&fixture.history),
+        },
+    );
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::ResourceLimit { .. })
@@ -294,11 +301,18 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
     let mut ambiguous_topologies = input_topologies.clone();
 
     bind_feature_face_selections(
-&cadmpeg_test_support::service_decode_context(),
-std::slice::from_mut(&mut feature),
-&mut input_topologies,
-crate::history::FeatureFaceSelectionInputs { scopes: std::slice::from_ref(&scope), groups: &groups, operands: &[], entity_operands: &operands, body_recipe_operands: &[], histories: std::slice::from_ref(&history) },
-)
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &groups,
+            operands: &[],
+            entity_operands: &operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&history),
+        },
+    )
     .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::KnitSurface {
@@ -329,11 +343,18 @@ crate::history::FeatureFaceSelectionInputs { scopes: std::slice::from_ref(&scope
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
 
     bind_feature_face_selections(
-&cadmpeg_test_support::service_decode_context(),
-std::slice::from_mut(&mut ambiguous_feature),
-&mut ambiguous_topologies,
-crate::history::FeatureFaceSelectionInputs { scopes: std::slice::from_ref(&scope), groups: &groups, operands: &[], entity_operands: &ambiguous_operands, body_recipe_operands: &[], histories: std::slice::from_ref(&history) },
-)
+        &cadmpeg_test_support::service_decode_context(),
+        std::slice::from_mut(&mut ambiguous_feature),
+        &mut ambiguous_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &groups,
+            operands: &[],
+            entity_operands: &ambiguous_operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_ref(&history),
+        },
+    )
     .unwrap();
     assert!(matches!(
         ambiguous_feature.evaluation.definition(),

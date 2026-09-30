@@ -234,7 +234,12 @@ impl DesignMeshTextureTable {
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {
-        Self::new_inner(crate::records::admission::RecordAdmission::Charged(ctx), record, resources).map_err(|error| match error {
+        Self::new_inner(
+            crate::records::admission::RecordAdmission::Charged(ctx),
+            record,
+            resources,
+        )
+        .map_err(|error| match error {
             TextureTableError::Payload(message) => CodecError::Malformed(message),
             TextureTableError::Resource(error) => error,
         })
@@ -272,21 +277,16 @@ impl DesignMeshTextureTable {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
 
-            admission.reserve_set(
-                &mut flags,
-                1,
-                "index F3D texture flag ordinals",
-            )
-            .map_err(TextureTableError::Resource)?;
+            admission
+                .reserve_set(&mut flags, 1, "index F3D texture flag ordinals")
+                .map_err(TextureTableError::Resource)?;
             flags.insert(resource.ordinal);
-            admission.reserve_set(
-                &mut filenames,
-                1,
-                "index F3D texture filename ordinals",
-            )
-            .map_err(TextureTableError::Resource)?;
+            admission
+                .reserve_set(&mut filenames, 1, "index F3D texture filename ordinals")
+                .map_err(TextureTableError::Resource)?;
             filenames.insert(resource.filename_ordinal);
-            admission.reserve_set(&mut guids, 1, "index F3D texture GUIDs")
+            admission
+                .reserve_set(&mut guids, 1, "index F3D texture GUIDs")
                 .map_err(TextureTableError::Resource)?;
             guids.insert(guid);
         }
@@ -343,7 +343,9 @@ impl DesignMeshTextureTable {
         let filenames_start = flags_start.and_then(|start| {
             start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4)
         });
-        let mut resources = DecodeContext::admitted_vec(rows.len(), "reconstruct F3D texture resources").map_err(|error| error.to_string())?;
+        let mut resources =
+            DecodeContext::admitted_vec(rows.len(), "reconstruct F3D texture resources")
+                .map_err(|error| error.to_string())?;
         for row in rows {
             let flags_guid = flags_start.and_then(|start| {
                 start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4)
@@ -383,7 +385,15 @@ impl DesignMeshTextureTable {
                 asset: row.asset,
             });
         }
-        let table = Self::new_inner(crate::records::admission::RecordAdmission::Admitted, record, resources).map_err(|error| match error { TextureTableError::Payload(message) => message, TextureTableError::Resource(error) => error.to_string() })?;
+        let table = Self::new_inner(
+            crate::records::admission::RecordAdmission::Admitted,
+            record,
+            resources,
+        )
+        .map_err(|error| match error {
+            TextureTableError::Payload(message) => message,
+            TextureTableError::Resource(error) => error.to_string(),
+        })?;
         if table.flags_count_offset() != flags_count_offset
             || table.filename_count_offset() != filename_count_offset
         {
@@ -1512,11 +1522,12 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 "body_record_indices must repeat bodies.body_record.record_index in order".into(),
             );
         }
-        let bodies = wire
-            .bodies
-            .into_iter()
-            .map(DesignMeshBody::from_wire)
-            .collect::<Result<Vec<_>, _>>()?;
+        let mut bodies =
+            DecodeContext::admitted_vec(wire.bodies.len(), "reconstruct F3D mesh bodies")
+                .map_err(|error| error.to_string())?;
+        for body in wire.bodies {
+            bodies.push(DesignMeshBody::from_wire(body)?);
+        }
         let scope = DesignMeshScope::new(
             wire.scope_record,
             wire.scope_base_record,

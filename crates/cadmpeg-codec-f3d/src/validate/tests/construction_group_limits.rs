@@ -163,34 +163,57 @@ fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check:
     crate::test_support::with_decode_context(|decode| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = native(true, false);
-        let class_tag: crate::records::references::DesignClassTag = "280".to_owned().try_into().unwrap();
-        let mut frame = DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
-            member_count_offset: 1_021,
-            auxiliary_records: Vec::new(), auxiliary_paths: Vec::new(),
-            trailing_records: vec![Located { value: 102, offset: 1_030 }],
-            trailing_transforms: Vec::new(), trailing_dual_transforms: Vec::new(),
-            trailing_flags: Vec::new(), opaque_index: 1,
-            opaque_index_offset: 1_058, opaque_scalar: 0.0,
-            opaque_scalar_offset: 1_062, variant: false,
-        }).unwrap();
+        let class_tag: crate::records::references::DesignClassTag =
+            "280".to_owned().try_into().unwrap();
+        let mut frame = DesignConstructionOperandGroupFrame::try_from(
+            DesignConstructionOperandGroupFrameDraft {
+                member_count_offset: 1_021,
+                auxiliary_records: Vec::new(),
+                auxiliary_paths: Vec::new(),
+                trailing_records: vec![Located {
+                    value: 102,
+                    offset: 1_030,
+                }],
+                trailing_transforms: Vec::new(),
+                trailing_dual_transforms: Vec::new(),
+                trailing_flags: Vec::new(),
+                opaque_index: 1,
+                opaque_index_offset: 1_058,
+                opaque_scalar: 0.0,
+                opaque_scalar_offset: 1_062,
+                variant: false,
+            },
+        )
+        .unwrap();
         if flag {
-            frame.try_set_trailing_flags(vec![DesignConstructionOperandFlag {
-                record_index: 102, byte_offset, class_tag: class_tag.clone(),
-                value: true, value_offset: byte_offset.saturating_add(22),
-            }]).unwrap();
+            frame
+                .try_set_trailing_flags(vec![DesignConstructionOperandFlag {
+                    record_index: 102,
+                    byte_offset,
+                    class_tag: class_tag.clone(),
+                    value: true,
+                    value_offset: byte_offset.saturating_add(22),
+                }])
+                .unwrap();
         } else {
-            frame.try_set_trailing_dual_transforms(vec![DesignConstructionOperandDualTransform {
-                record_index: 102, byte_offset, class_tag: class_tag.clone(),
-                first_transform: SketchPlacementMatrix::IDENTITY,
-                first_transform_offset: byte_offset.saturating_add(21),
-                second_transform: SketchPlacementMatrix::IDENTITY,
-                second_transform_offset: byte_offset.saturating_add(149),
-            }]).unwrap();
+            frame
+                .try_set_trailing_dual_transforms(vec![DesignConstructionOperandDualTransform {
+                    record_index: 102,
+                    byte_offset,
+                    class_tag: class_tag.clone(),
+                    first_transform: SketchPlacementMatrix::IDENTITY,
+                    first_transform_offset: byte_offset.saturating_add(21),
+                    second_transform: SketchPlacementMatrix::IDENTITY,
+                    second_transform_offset: byte_offset.saturating_add(149),
+                }])
+                .unwrap();
         }
         native.design_construction_operand_groups[0].frame = frame;
         native.design_record_headers.push(DesignRecordHeader {
             id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
-            record_index: 102, class_tag, byte_offset,
+            record_index: 102,
+            class_tag,
+            byte_offset,
         });
         let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let mut findings = Vec::new();

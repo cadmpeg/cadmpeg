@@ -337,7 +337,11 @@ fn decode_table(
     let count =
         usize::try_from(View::u32_le_at(bytes, count_offset).ok_or_else(|| malformed("count"))?)
             .map_err(|_| malformed("count"))?;
-    if frame.end.checked_sub(cursor).is_none_or(|left| count > left / 15) {
+    if frame
+        .end
+        .checked_sub(cursor)
+        .is_none_or(|left| count > left / 15)
+    {
         return Err(malformed("entry count"));
     }
     let mut entries = Vec::new();
@@ -396,7 +400,11 @@ fn decode_table(
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("table-reference count"))?;
-    if frame.end.checked_sub(cursor).is_none_or(|left| reference_count > left / 11) {
+    if frame
+        .end
+        .checked_sub(cursor)
+        .is_none_or(|left| reference_count > left / 11)
+    {
         return Err(malformed("table-reference count"));
     }
     let mut table_references = Vec::new();
@@ -430,7 +438,11 @@ fn decode_table(
     cursor = cursor
         .checked_add(4)
         .ok_or_else(|| malformed("channel-registry count"))?;
-    if frame.end.checked_sub(cursor).is_none_or(|left| registry_count > left / 81) {
+    if frame
+        .end
+        .checked_sub(cursor)
+        .is_none_or(|left| registry_count > left / 81)
+    {
         return Err(malformed("channel-registry count"));
     }
     let mut registry_names = BTreeSet::new();
