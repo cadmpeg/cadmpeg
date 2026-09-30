@@ -610,3 +610,65 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             == Some("derived_nurbs_isoparametric_pcurve")
     }));
 }
+
+fn isocurve_admission_source() -> Vec<u8> {
+    use crate::test_support::parasolid::{be16, be32, f64_array, u16_array};
+    let mut body = triangle_body();
+    let bridge = body.windows(2).position(|window| window == [0x00, 0x0e]).unwrap();
+    body[bridge + 26..bridge + 28].copy_from_slice(&180_u16.to_be_bytes());
+    let edge = body.windows(2).position(|window| window == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&190_u16.to_be_bytes());
+    let mut surface = vec![0x00, 0x7c];
+    be16(&mut surface, 180); be32(&mut surface, 1);
+    for reference in [0, 10, 0, 0, 0] { be16(&mut surface, reference); }
+    surface.push(0x2b); be16(&mut surface, 181); be16(&mut surface, 0);
+    surface.extend_from_slice(&[0x00, 0x7e]); be16(&mut surface, 181);
+    surface.extend_from_slice(&[0, 0]); be16(&mut surface, 1); be16(&mut surface, 1);
+    be32(&mut surface, 3); be32(&mut surface, 2);
+    surface.extend_from_slice(&[1, 1]); be32(&mut surface, 3); be32(&mut surface, 2);
+    surface.extend_from_slice(&[0, 0, 0, 0x0c]); be16(&mut surface, 3);
+    for reference in [182, 183, 184, 185, 186] { be16(&mut surface, reference); }
+    surface.extend(f64_array(0x2d, 182, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.5, 0.0, 1.0, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.5]));
+    surface.extend(u16_array(183, &[2, 1, 2])); surface.extend(u16_array(184, &[2, 2]));
+    surface.extend(f64_array(0x80, 185, &[0.0, 0.5, 1.0])); surface.extend(f64_array(0x80, 186, &[0.0, 1.0]));
+    body.extend(surface); body.extend(linear_nurbs_curve_carrier(190, 191));
+    sldprt_with_body(&body)
+}
+
+fn assert_isocurve_route_limit(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    let source = isocurve_admission_source();
+    let mut options = DecodeOptions { policy: DecodePolicy::service(), ..DecodeOptions::default() };
+    let expected = SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap().ir().clone();
+    assert!(!expected.model.pcurves.is_empty());
+    let set_limit = |options: &mut DecodeOptions, limit| match dimension {
+        ResourceDimension::MaterializedBytes => options.policy.limits.max_materialized_bytes = limit,
+        ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
+        _ => panic!("unexpected isocurve route dimension"),
+    };
+    let run = |options: &DecodeOptions| match SldprtCodec.decode(&mut Cursor::new(&source), options) {
+        Ok(decoded) => { assert_eq!(decoded.ir(), &expected); true }
+        Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            assert_eq!(limit.dimension, dimension); false
+        }
+        Err(error) => panic!("unexpected isocurve route failure: {error}"),
+    };
+    let mut lower = 0; let mut upper = 1_u64;
+    loop { set_limit(&mut options, upper); if run(&options) { break; } upper = upper.checked_mul(2).unwrap(); }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2; set_limit(&mut options, middle);
+        if run(&options) { upper = middle; } else { lower = middle + 1; }
+    }
+    assert!(upper > 0); set_limit(&mut options, upper); assert!(run(&options));
+    set_limit(&mut options, upper - 1); assert!(!run(&options));
+}
+
+#[test]
+fn geometry_isocurve_route_refuses_scoped_limit() {
+    assert_isocurve_route_limit(cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+}
+
+#[test]
+fn geometry_isocurve_route_refuses_work_limit() {
+    assert_isocurve_route_limit(cadmpeg_core::decode::ResourceDimension::WorkUnits);
+}

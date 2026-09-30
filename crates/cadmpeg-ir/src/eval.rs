@@ -3196,6 +3196,32 @@ pub fn nurbs_surface_isoline(
     nurbs_surface_isocurve(surface, fixed_axis, at)
 }
 
+/// Peak vector storage for isocurve evaluation and its returned pole carrier.
+///
+/// The bound includes the fixed basis, homogeneous sums, output positions,
+/// weights, both rational constructor conversions and the copied knot lane.
+/// The reservation must remain live while the returned curve is used.
+pub fn nurbs_surface_isocurve_scratch_bytes(
+    surface: &NurbsSurface,
+    fixed_axis: SurfaceParameterAxis,
+) -> Result<usize, ResourceLimit> {
+    let (degree, count, knots) = match fixed_axis {
+        SurfaceParameterAxis::U => (surface.u_degree(), surface.v_count(), surface.v_knots().len()),
+        SurfaceParameterAxis::V => (surface.v_degree(), surface.u_count(), surface.u_knots().len()),
+    };
+    let bytes = usize::try_from(degree).ok().and_then(|degree| degree.checked_add(1))
+        .and_then(|basis| basis.checked_add(knots))
+        .and_then(|lanes| lanes.checked_mul(std::mem::size_of::<f64>()))
+        .and_then(|bytes| {
+            let per_pole = std::mem::size_of::<Homogeneous>()
+                .checked_add(std::mem::size_of::<FinitePoint3>())?
+                .checked_add(std::mem::size_of::<f64>())?
+                .checked_add(std::mem::size_of::<crate::geometry::nurbs::WeightedPole3<FinitePoint3>>().checked_mul(2)?)?;
+            bytes.checked_add(count.checked_mul(per_pole)?)
+        });
+    bytes.ok_or_else(|| scratch::allocation_failed(count, "IR isocurve workspace bound"))
+}
+
 /// Extract the exact rational NURBS curve obtained by fixing one parameter of
 /// a tensor-product NURBS surface.
 pub fn nurbs_surface_isocurve(
@@ -3239,7 +3265,7 @@ pub fn nurbs_surface_isocurve(
         SurfaceParameterAxis::U => v_count,
         SurfaceParameterAxis::V => u_count,
     };
-    let rational = surface.weights().is_some();
+    let rational = surface.weight(0, 0).is_some();
     let mut control_points = Vec::new();
     scratch::reserve_exact(
         &mut control_points,
