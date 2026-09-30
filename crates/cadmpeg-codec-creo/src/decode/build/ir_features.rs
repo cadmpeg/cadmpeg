@@ -212,7 +212,7 @@ pub(super) fn emit_model_features(
             annotations,
             &id,
             "ActDatums",
-            datum.offset_in_payload as u64,
+            cadmpeg_core::decode::u64_from_index(datum.offset_in_payload),
             "datum_plane_feature",
             Exactness::Derived,
         )?;
@@ -220,7 +220,7 @@ pub(super) fn emit_model_features(
         id_bytes.commit()?;
         let feature = Feature {
             id,
-            ordinal: ir.model.features.len() as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -255,7 +255,7 @@ pub(super) fn emit_model_features(
             annotations,
             &id,
             "VisibGeom",
-            generator.offset as u64,
+            cadmpeg_core::decode::u64_from_index(generator.offset),
             "geometry_generator_feature",
             Exactness::ByteExact,
         )?;
@@ -263,7 +263,7 @@ pub(super) fn emit_model_features(
         id_bytes.commit()?;
         let feature = Feature {
             id,
-            ordinal: ir.model.features.len() as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: None,
             suppressed: Some(false),
             dependencies: cadmpeg_ir::features::DistinctMembers::default(),
@@ -524,14 +524,14 @@ pub(super) fn emit_model_features(
             annotations,
             &id,
             operation_section,
-            operation.offset as u64,
+            cadmpeg_core::decode::u64_from_index(operation.offset),
             operation_annotation_kind,
             operation_exactness,
         )?;
         id_bytes.commit()?;
         let feature = Feature {
             id,
-            ordinal: (operation_ordinal_base + operation_index) as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(operation_ordinal_base + operation_index),
             name,
             suppressed: Some(false),
             dependencies: DistinctMembers::try_from_unique_vec(dependencies)
@@ -586,7 +586,7 @@ pub(super) fn emit_model_features(
             annotations,
             &id,
             "AllFeatur",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "schema_feature_operation",
             Exactness::ByteExact,
         )?;
@@ -655,7 +655,7 @@ pub(super) fn emit_model_features(
         id_bytes.commit()?;
         let feature = Feature {
             id,
-            ordinal: ir.model.features.len() as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
             name: Some(match reference_name {
                 Some(name) => ctx.copy_retained_text(name, "creo row Feature name")?,
                 None => ctx.format_retained(
@@ -960,7 +960,13 @@ pub(super) fn finish_feature_transfers(
         coverage.record_admitted(
             ctx,
             crate::coverage::UNRESOLVED_FEATURE_DIMENSION_VALUE_COUNT,
-            decoded_dimension_count.saturating_sub(resolved_dimension_count),
+            decoded_dimension_count
+                .checked_sub(resolved_dimension_count)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "resolved dimension count exceeds decoded count",
+                    )
+                })?,
         )?;
     }
     close_sketch_constraint_parameter_references(ctx, ir)?;

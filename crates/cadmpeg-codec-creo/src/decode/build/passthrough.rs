@@ -44,7 +44,11 @@ pub(super) fn preserve_passthrough_sections(
                 "creo passthrough section bounds error",
             )?));
         };
-        let payload_start = section.raw_name.len().saturating_add(2);
+        let payload_start = section
+            .raw_name
+            .len()
+            .checked_add(2)
+            .ok_or_else(|| CodecError::malformed("section payload start exceeds usize"))?;
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
@@ -103,14 +107,14 @@ pub(super) fn preserve_passthrough_sections(
             annotations,
             &id,
             section.name(),
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             tag,
             exactness,
         )?;
         ctx.reserve_vec(&mut unknowns, 1, "creo passthrough unknown records")?;
         unknowns.push(UnknownRecord::retained(
             id,
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             ctx.copy_retained(bytes, "retain Creo passthrough section")?,
             Vec::new(),
         ));
@@ -144,7 +148,7 @@ where
             annotations,
             record.id(),
             legacy_source_stream(scan, record.offset),
-            record.offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.offset),
             tag,
             Exactness::ByteExact,
         )?;
@@ -173,7 +177,7 @@ pub(super) fn emit_legacy_arenas(
                 annotations,
                 record.id(),
                 legacy_source_stream(scan, record.offset),
-                record.offset as u64,
+                cadmpeg_core::decode::u64_from_index(record.offset),
                 "legacy_type_0_object",
                 Exactness::ByteExact,
             )?;
@@ -283,7 +287,7 @@ pub(super) fn emit_legacy_arenas(
                     annotations,
                     record.id(),
                     legacy_source_stream(scan, record.offset),
-                    record.offset as u64,
+                    cadmpeg_core::decode::u64_from_index(record.offset),
                     "legacy_configuration_driver_table",
                     Exactness::ByteExact,
                 )?;

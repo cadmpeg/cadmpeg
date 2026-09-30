@@ -915,7 +915,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = id.as_str().len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -992,7 +992,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = id.as_str().len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -1077,7 +1077,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = id.as_str().len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()
@@ -1163,7 +1163,7 @@ mod tests {
         };
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = id.as_str().len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("valid test setup or admitted service result");
         let error = SourceUnitCarriers::default()

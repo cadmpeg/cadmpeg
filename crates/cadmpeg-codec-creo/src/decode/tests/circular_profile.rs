@@ -256,7 +256,7 @@ fn section_profile_lookup_refuses_scan_and_retained_sketch_copy() {
             && resource.operation == "creo section profile sketch lookup")
     );
     policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_profile_ref(&ctx, &ir, "creo:featdefs:sketch#40".to_owned())
         .expect_err("selected sketch copy exceeds cap");

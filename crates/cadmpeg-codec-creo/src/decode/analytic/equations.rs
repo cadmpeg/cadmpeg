@@ -655,16 +655,17 @@ fn real_polynomial_roots(
         degree,
         "creo polynomial derivative coefficients",
     )?;
-    derivative.extend(
-        scaled
-            .iter()
-            .enumerate()
-            .skip(1)
-            .map(|(power, coefficient)| BoundedCoefficient {
-                value: coefficient.value * power as f64,
-                bound: coefficient.bound * power as f64,
-            }),
-    );
+    for (power, coefficient) in scaled.iter().enumerate().skip(1) {
+        let Some(power) = cadmpeg_core::convert::f64_from_index(power) else {
+            return Err(CodecError::malformed(
+                "Creo polynomial power cannot be represented exactly",
+            ));
+        };
+        derivative.push(BoundedCoefficient {
+            value: coefficient.value * power,
+            bound: coefficient.bound * power,
+        });
+    }
     let leading = coefficients[degree].abs() - scaled[degree].bound;
     let bound = 1.0
         + scaled[..degree]

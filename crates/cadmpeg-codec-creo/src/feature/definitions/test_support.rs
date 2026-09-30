@@ -38,6 +38,7 @@ pub(crate) fn replace_points(table: &mut FeatureVariableTable, points: Vec<Featu
     table
         .rows
         .retain(|row| !matches!(row.variable_type, VariableType::U | VariableType::V));
-    table.declared_count -= (previous_count - table.rows.len()) as u32;
+    table.declared_count -=
+        u32::try_from(previous_count - table.rows.len()).expect("fixture value fits u32");
     append_points(table, points);
 }

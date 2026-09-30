@@ -186,7 +186,7 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
         reversed: id == 31,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend((31..=36).map(row));
     let plane = |id, z| Surface {

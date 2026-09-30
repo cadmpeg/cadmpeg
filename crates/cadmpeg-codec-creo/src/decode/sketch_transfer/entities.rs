@@ -118,33 +118,62 @@ fn placed_source_object(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // mechanical extract from transfer_sketches
+/// Source sketch, resolved geometry, profiles, and destinations for entity transfer.
+pub(super) struct SectionEntityTransfer<'a> {
+    pub scan: &'a ContainerScan<'a>,
+    pub ir: &'a mut CadIr,
+    pub annotations: &'a mut AnnotationBuilder,
+    pub definition: &'a crate::feature::definitions::FeatureDefinition,
+    pub transform: Option<&'a crate::placement::FeatureSectionTransform>,
+    pub sketch_id: &'a SketchId,
+    pub segments: &'a [&'a crate::feature::definitions::FeatureSegment],
+    pub unique_segment_ids: &'a BTreeSet<u32>,
+    pub unique_saved_ids: &'a BTreeSet<u32>,
+    pub ambiguous_segment_ids: &'a BTreeSet<u32>,
+    pub complete_segment_table: bool,
+    pub solved: &'a BTreeSet<u32>,
+    pub segment_geometries: &'a BTreeMap<usize, Option<SketchGeometry>>,
+    pub resolved_segment_geometries: &'a BTreeMap<usize, Option<SketchGeometry>>,
+    pub circle_geometries: &'a BTreeMap<usize, SketchGeometry>,
+    pub point_geometries: &'a BTreeMap<usize, SketchGeometry>,
+    pub centered_line_geometries: &'a BTreeMap<usize, SketchGeometry>,
+    pub reference_line_geometries: &'a BTreeMap<usize, SketchGeometry>,
+    pub materialized_saved_section_external_ids: &'a BTreeSet<u32>,
+    pub profiles: Vec<Vec<SketchEntityUse>>,
+    pub profile_entities: &'a BTreeSet<SketchEntityId>,
+    pub losses: &'a mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub source_carriers: &'a mut crate::decode::source_carriers::SourceUnitCarriers,
+}
+
 pub(super) fn transfer_section_entities(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    scan: &ContainerScan,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    definition: &crate::feature::definitions::FeatureDefinition,
-    transform: Option<&crate::placement::FeatureSectionTransform>,
-    sketch_id: &SketchId,
-    segments: &[&crate::feature::definitions::FeatureSegment],
-    unique_segment_ids: &BTreeSet<u32>,
-    unique_saved_ids: &BTreeSet<u32>,
-    ambiguous_segment_ids: &BTreeSet<u32>,
-    complete_segment_table: bool,
-    solved: &BTreeSet<u32>,
-    segment_geometries: &BTreeMap<usize, Option<SketchGeometry>>,
-    resolved_segment_geometries: &BTreeMap<usize, Option<SketchGeometry>>,
-    circle_geometries: &BTreeMap<usize, SketchGeometry>,
-    point_geometries: &BTreeMap<usize, SketchGeometry>,
-    centered_line_geometries: &BTreeMap<usize, SketchGeometry>,
-    reference_line_geometries: &BTreeMap<usize, SketchGeometry>,
-    materialized_saved_section_external_ids: &BTreeSet<u32>,
-    mut profiles: Vec<Vec<SketchEntityUse>>,
-    profile_entities: &BTreeSet<SketchEntityId>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source_carriers: &mut crate::decode::source_carriers::SourceUnitCarriers,
+    transfer: SectionEntityTransfer<'_>,
 ) -> Result<(Vec<SketchEntity>, Vec<Vec<SketchEntityUse>>), cadmpeg_core::CodecError> {
+    let SectionEntityTransfer {
+        scan,
+        ir,
+        annotations,
+        definition,
+        transform,
+        sketch_id,
+        segments,
+        unique_segment_ids,
+        unique_saved_ids,
+        ambiguous_segment_ids,
+        complete_segment_table,
+        solved,
+        segment_geometries,
+        resolved_segment_geometries,
+        circle_geometries,
+        point_geometries,
+        centered_line_geometries,
+        reference_line_geometries,
+        materialized_saved_section_external_ids,
+        mut profiles,
+        profile_entities,
+        losses,
+        source_carriers,
+    } = transfer;
     let segment_geometry = |segment: &crate::feature::definitions::FeatureSegment| -> Result<Option<SketchGeometry>, cadmpeg_core::CodecError> {
         if let Some(geometry) = segment_geometries.get(&segment.offset).and_then(Option::as_ref) {
             return geometry.try_clone_for_decode(ctx, "creo section entity geometry copy").map(Some);
@@ -173,7 +202,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             match (geometry.definition(), segment.kind) {
                 (SketchGeometryDefinition::Native { native_kind }, _) if native_kind == "line" => {
                     "section_degenerate_axis_line"
@@ -251,7 +280,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_segment",
             Exactness::ByteExact,
         )?;
@@ -314,7 +343,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_circle"
             } else {
@@ -371,7 +400,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_point"
             } else {
@@ -427,7 +456,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_centered_line"
             } else {
@@ -490,7 +519,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             if solved_geometry {
                 "solved_section_reference_line"
             } else {
@@ -545,7 +574,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_bounded_curve",
             Exactness::ByteExact,
         )?;
@@ -589,7 +618,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "unresolved_section_conic",
             Exactness::ByteExact,
         )?;
@@ -650,7 +679,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             id.as_str(),
             "FeatDefs",
-            segment.offset as u64,
+            cadmpeg_core::decode::u64_from_index(segment.offset),
             "opaque_section_segment",
             Exactness::ByteExact,
         )?;
@@ -728,7 +757,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity_id.as_str(),
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "saved_section_entity",
             Exactness::Derived,
         )?;
@@ -862,7 +891,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity_id.as_str(),
             "FeatDefs",
-            spline.offset as u64,
+            cadmpeg_core::decode::u64_from_index(spline.offset),
             "saved_interpolation_spline",
             Exactness::Derived,
         )?;
@@ -916,7 +945,7 @@ pub(super) fn transfer_section_entities(
             annotations,
             entity.id().as_str(),
             "FeatDefs",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "unresolved_saved_section_entity",
             Exactness::ByteExact,
         )?;
@@ -964,7 +993,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_curve",
                 Exactness::Derived,
             )?;
@@ -1014,7 +1043,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_circle",
                 Exactness::Derived,
             )?;
@@ -1064,7 +1093,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                segment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(segment.offset),
                 "placed_section_line",
                 Exactness::Derived,
             )?;
@@ -1097,7 +1126,7 @@ pub(super) fn transfer_section_entities(
                 annotations,
                 &id,
                 "FeatDefs",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "placed_saved_section_curve",
                 Exactness::Derived,
             )?;
@@ -1196,14 +1225,15 @@ mod tests {
     fn section_row_suffix_refuses_each_retained_choice() {
         for (unique, expected) in [(true, "42"), (false, "circle:offset:9")] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+            policy.limits.max_retained_bytes =
+                cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
             assert!(
                 matches!(with_policy(&policy, |ctx| section_row_suffix(ctx, unique, 42, "circle", 9)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::RetainedBytes
                         && refusal.operation == "creo section entity suffix")
             );
-            policy.limits.max_retained_bytes = expected.len() as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
             assert_eq!(
                 with_policy(&policy, |ctx| section_row_suffix(
                     ctx, unique, 42, "circle", 9
@@ -1218,14 +1248,14 @@ mod tests {
     fn placed_section_source_refuses_before_object_id_formatting() {
         let expected = "FeatDefs:section#5:42";
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         assert!(
             matches!(with_policy(&policy, |ctx| placed_source_object(ctx, expected)),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo placed section source object")
         );
-        policy.limits.max_retained_bytes = expected.len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
         let admitted = with_policy(&policy, |ctx| placed_source_object(ctx, expected))
             .expect("exact cap admits placed source");
         assert_eq!(admitted.object_id.as_str(), expected);
@@ -1263,7 +1293,7 @@ mod tests {
         let expected = "creo:featdefs:sketch#5:point#7";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))

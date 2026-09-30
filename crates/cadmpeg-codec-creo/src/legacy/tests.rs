@@ -1604,3 +1604,16 @@ fn value_kind_types_are_distinct_and_preserve_identity_tokens() {
     assert_eq!(token(super::declaration_code(ValueKind::TYPE9)), "type_9");
     assert_eq!(token(super::declaration_code(ValueKind::TYPE11)), "type_11");
 }
+
+#[test]
+fn numeric_array_withholds_child_at_maximum_depth() {
+    let data = b"@value 1 1\n4294967295 1 [1]\n4294967295 1 7\n";
+    let persistence =
+        scan(data, std::iter::once(0..data.len())).expect("maximum-depth fixture is admitted");
+    assert_eq!(persistence.integer_values.rows.len(), 1);
+    assert!(matches!(
+        persistence.integer_values.rows[0].payload,
+        IntegerPayload::Scalar { value: 7 }
+    ));
+    assert_eq!(persistence.integer_values.unresolved_count, 1);
+}

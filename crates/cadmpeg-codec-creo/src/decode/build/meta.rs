@@ -12,6 +12,7 @@ use super::super::sketch::equations_scalar::resolved_section_scalar_values;
 use super::super::sketch::radii::resolved_section_radii;
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
 use cadmpeg_core::dialect::DialectLayers;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::SourceMeta;
 
 fn insert_source_attribute(
@@ -192,7 +193,7 @@ pub(super) fn source_meta(
             crate::coverage::UNRESOLVED_LEGACY_OBJECT_VALUE_COUNT,
             legacy.persistence.unresolved_object_value_count,
         )?;
-        let integer_counts = legacy_numeric_coverage(&legacy.persistence.integer_values.rows);
+        let integer_counts = legacy_numeric_coverage(ctx, &legacy.persistence.integer_values.rows)?;
         coverage.record_admitted(
             ctx,
             crate::coverage::DECODED_LEGACY_INTEGER_SCALAR_COUNT,
@@ -213,7 +214,7 @@ pub(super) fn source_meta(
             crate::coverage::UNRESOLVED_LEGACY_INTEGER_VALUE_COUNT,
             legacy.persistence.integer_values.unresolved_count,
         )?;
-        let real_counts = legacy_numeric_coverage(&legacy.persistence.real_values.rows);
+        let real_counts = legacy_numeric_coverage(ctx, &legacy.persistence.real_values.rows)?;
         coverage.record_admitted(
             ctx,
             crate::coverage::DECODED_LEGACY_REAL_SCALAR_COUNT,
@@ -235,10 +236,12 @@ pub(super) fn source_meta(
             legacy.persistence.real_values.unresolved_count,
         )?;
         let (string_scalars, string_arrays, string_elements, undecoded_encodings) =
-            legacy.persistence.string_values.iter().fold(
+            legacy.persistence.string_values.iter().try_fold(
                 (0usize, 0usize, 0usize, 0usize),
-                |(scalars, arrays, elements, undecoded_encodings), record| {
-                    (
+                |(scalars, arrays, elements, undecoded_encodings),
+                 record|
+                 -> Result<_, CodecError> {
+                    Ok((
                         scalars
                             + usize::from(matches!(
                                 record.payload,
@@ -249,12 +252,27 @@ pub(super) fn source_meta(
                                 record.payload,
                                 crate::legacy::StringPayload::Array { .. }
                             )),
-                        elements.saturating_add(record.payload.element_count()),
+                        elements
+                            .checked_add(record.payload.element_count())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "creo legacy string element count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
                         undecoded_encodings
-                            .saturating_add(record.payload.undecoded_encoding_count()),
-                    )
+                            .checked_add(record.payload.undecoded_encoding_count())
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(
+                                    "creo legacy string encoding count",
+                                    u64::MAX,
+                                    u64::MAX,
+                                )
+                            })?,
+                    ))
                 },
-            );
+            )?;
         coverage.record_admitted(
             ctx,
             crate::coverage::DECODED_LEGACY_STRING_SCALAR_COUNT,
@@ -320,7 +338,7 @@ pub(super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_5_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_5_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_5_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_5_values.rows),
+            legacy_numeric_coverage(ctx, &legacy.persistence.type_5_values.rows)?,
             legacy.persistence.type_5_values.unresolved_count,
         )?;
         insert_numbered_numeric_coverage(
@@ -328,7 +346,7 @@ pub(super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_6_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_6_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_6_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_6_values.rows),
+            legacy_numeric_coverage(ctx, &legacy.persistence.type_6_values.rows)?,
             legacy.persistence.type_6_values.unresolved_count,
         )?;
         insert_numbered_numeric_coverage(
@@ -336,7 +354,7 @@ pub(super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_7_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_7_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_7_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_7_values.rows),
+            legacy_numeric_coverage(ctx, &legacy.persistence.type_7_values.rows)?,
             legacy.persistence.type_7_values.unresolved_count,
         )?;
         insert_numbered_numeric_coverage(
@@ -344,7 +362,7 @@ pub(super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_9_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_9_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_9_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_9_values.rows),
+            legacy_numeric_coverage(ctx, &legacy.persistence.type_9_values.rows)?,
             legacy.persistence.type_9_values.unresolved_count,
         )?;
         insert_numbered_numeric_coverage(
@@ -352,7 +370,7 @@ pub(super) fn source_meta(
             crate::coverage::DECODED_LEGACY_TYPE_11_ARRAY_COUNT,
             crate::coverage::DECODED_LEGACY_TYPE_11_ELEMENT_COUNT,
             crate::coverage::UNRESOLVED_LEGACY_TYPE_11_VALUE_COUNT,
-            legacy_numeric_coverage(&legacy.persistence.type_11_values.rows),
+            legacy_numeric_coverage(ctx, &legacy.persistence.type_11_values.rows)?,
             legacy.persistence.type_11_values.unresolved_count,
         )?;
     }
@@ -917,7 +935,10 @@ pub(super) fn source_meta(
         ctx,
         crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .saturating_sub(decoded_dimension_driven_coordinate_variable_count),
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
@@ -943,20 +964,30 @@ pub(super) fn source_meta(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .saturating_sub(resolved_dimension_driven_variable_count),
+            .checked_sub(resolved_dimension_driven_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
         decoded_dimension_driven_coordinate_variable_count
-            .saturating_sub(resolved_dimension_driven_coordinate_variable_count),
+            .checked_sub(resolved_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
         crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
         decoded_dimension_driven_variable_count
-            .saturating_sub(decoded_dimension_driven_coordinate_variable_count)
-            .saturating_sub(resolved_dimension_driven_other_variable_count),
+            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
+            .ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?
+            .checked_sub(resolved_dimension_driven_other_variable_count)
+            .ok_or_else(|| {
+                CodecError::malformed("resolved dimension count exceeds decoded count")
+            })?,
     )?;
     coverage.record_admitted(
         ctx,
@@ -1239,7 +1270,8 @@ mod tests {
     fn principal_unit_attribute_refuses_before_retaining_token() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = ("principal_unit".len() + "unknown:7".len() - 1) as u64;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("principal_unit".len() + "unknown:7".len() - 1);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut attributes = BTreeMap::new();

@@ -506,10 +506,20 @@ fn design_constraint_coverage_separates_typed_and_native_constraints() {
 
     assert_eq!(coverage.transferred, 2);
     assert_eq!(coverage.native, 1);
-    assert_eq!(coverage.typed(), 1);
+    assert_eq!(
+        coverage
+            .typed()
+            .expect("native constraints are a transferred subset"),
+        1
+    );
     assert_eq!(coverage.active, 2);
     assert_eq!(coverage.active_native, 1);
-    assert_eq!(coverage.active_typed(), 1);
+    assert_eq!(
+        coverage
+            .active_typed()
+            .expect("native constraints are a transferred subset"),
+        1
+    );
     assert_eq!(coverage.native_by_kind, BTreeMap::from([(9, 1)]));
     assert_eq!(coverage.active_native_by_kind, BTreeMap::from([(9, 1)]));
     let mut report_coverage = cadmpeg_ir::report::decode::Coverage::default();

@@ -103,7 +103,7 @@ fn generated_nurbs_translations_define_a_blind_extrusion() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows.extend([
@@ -1765,8 +1765,8 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
                 schema: crate::feature::schema::SchemaClass::from(schema),
                 parent: 0,
             }),
-            offset: feature_id as usize,
-            state_offset: feature_id as usize,
+            offset: usize::try_from(feature_id).expect("fixture index fits usize"),
+            state_offset: usize::try_from(feature_id).expect("fixture index fits usize"),
         }
     };
     let definition = |id, section_offset, offset| crate::feature::definitions::FeatureDefinition {

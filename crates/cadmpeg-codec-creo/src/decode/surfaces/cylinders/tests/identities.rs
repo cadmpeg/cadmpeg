@@ -33,14 +33,14 @@ fn hole_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         scan.planes.outlines.push(crate::surface::OutlinePlane {
             surface_id: id,
             origin: [0.0, 0.0, z],
             normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         scan.planes
             .envelopes
@@ -68,7 +68,7 @@ fn hole_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan
@@ -115,14 +115,14 @@ fn circular_sweep_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         scan.planes.outlines.push(crate::surface::OutlinePlane {
             surface_id: id,
             origin: [0.0, y, 0.0],
             normal: cadmpeg_ir::units::UnitVector3::Y_AXIS,
             u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.surfaces.rows.push(crate::surface::SurfaceRow {

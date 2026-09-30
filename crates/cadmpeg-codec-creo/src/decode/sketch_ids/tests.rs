@@ -22,16 +22,17 @@ fn sketch_entity_identity_refuses_before_retained_formatting() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let expected = "creo:featdefs:sketch_entity#40:7";
     assert!(
-        matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
         sketch_entity_id_admitted(ctx, &sketch, 7)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo sketch entity identity")
     );
     assert_eq!(
-        with_retained_limit(expected.len() as u64, |ctx| {
-            sketch_entity_id_admitted(ctx, &sketch, 7)
-        })
+        with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(expected.len()),
+            |ctx| { sketch_entity_id_admitted(ctx, &sketch, 7) }
+        )
         .expect("exact cap admits entity ID")
         .expect("valid entity ID")
         .as_str(),
@@ -44,16 +45,17 @@ fn sketch_point_reference_refuses_before_retained_formatting() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let expected = "creo:featdefs:sketch#40:point#7";
     assert!(
-        matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
         sketch_point_ref_admitted(ctx, &sketch, 7)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo sketch point reference")
     );
     assert_eq!(
-        with_retained_limit(expected.len() as u64, |ctx| {
-            sketch_point_ref_admitted(ctx, &sketch, 7)
-        })
+        with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(expected.len()),
+            |ctx| { sketch_point_ref_admitted(ctx, &sketch, 7) }
+        )
         .expect("exact retained cap admits point ref"),
         expected
     );
@@ -63,7 +65,7 @@ fn sketch_point_reference_refuses_before_retained_formatting() {
 fn section_curve_identity_and_reference_refuse_before_formatting() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let expected = "creo:featdefs:section_curve#40:7";
-    let limit = expected.len() as u64 - 1;
+    let limit = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
     for (operation, result) in [
         (
             "creo section curve reference",
@@ -86,9 +88,10 @@ fn section_curve_identity_and_reference_refuse_before_formatting() {
         );
     }
     assert_eq!(
-        with_retained_limit(expected.len() as u64, |ctx| {
-            typed_sketch_section_curve_id_admitted(ctx, &sketch, 7)
-        })
+        with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(expected.len()),
+            |ctx| { typed_sketch_section_curve_id_admitted(ctx, &sketch, 7) }
+        )
         .expect("exact cap admits curve ID")
         .expect("valid curve ID")
         .as_str(),
@@ -101,16 +104,17 @@ fn sketch_feature_identity_refuses_before_formatting() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let expected = "creo:model:sketch_feature#40";
     assert!(
-        matches!(with_retained_limit(expected.len() as u64 - 1, |ctx| {
+        matches!(with_retained_limit(cadmpeg_core::decode::u64_from_index(expected.len()) - 1, |ctx| {
         sketch_feature_id_admitted(ctx, &sketch)
     }), Err(cadmpeg_core::CodecError::ResourceLimit(resource))
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo sketch feature identity")
     );
     assert_eq!(
-        with_retained_limit(expected.len() as u64, |ctx| {
-            sketch_feature_id_admitted(ctx, &sketch)
-        })
+        with_retained_limit(
+            cadmpeg_core::decode::u64_from_index(expected.len()),
+            |ctx| { sketch_feature_id_admitted(ctx, &sketch) }
+        )
         .expect("exact cap admits feature ID")
         .expect("valid feature ID")
         .as_str(),
@@ -150,8 +154,9 @@ fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("sketch ID");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        "creo:featdefs:sketch_constraint#40:equation:offset:28".len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "creo:featdefs:sketch_constraint#40:equation:offset:28".len(),
+    ) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = sketch_constraint_id_admitted(&ctx, &sketch, "equation:offset:28")
         .expect_err("constraint ID exceeds retained cap");
@@ -160,7 +165,8 @@ fn sketch_constraint_identity_and_native_ref_refuse_retained_bytes() {
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo sketch constraint identity")
     );
-    policy.limits.max_retained_bytes = "creo:featdefs:sketch#40".len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#40".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error =
         sketch_native_ref_admitted(&ctx, &sketch).expect_err("native ref exceeds retained cap");
@@ -190,7 +196,8 @@ fn section_owner_feature_identity_refuses_before_formatting() {
     let sketch = cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#917").expect("sketch ID");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "creo:model:sketch_feature#917".len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch_feature#917".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = section_owner_feature_id(&ctx, &scan, 917, &sketch)
         .expect_err("owner feature ID exceeds retained cap");
@@ -228,7 +235,8 @@ fn model_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
             && resource.operation == "creo model sketch identity uniqueness")
     );
     policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes = "creo:model:sketch#offset:9".len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch#offset:9".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = model_sketch_id(&ctx, &scan, &scan.features.definitions[0])
         .expect_err("identity text exceeds retained cap");
@@ -263,7 +271,8 @@ fn native_sketch_identity_refuses_before_formatting_and_uniqueness_scan() {
             && resource.operation == "creo native sketch identity uniqueness")
     );
     policy.limits.max_work_units = DecodePolicy::service().limits.max_work_units;
-    policy.limits.max_retained_bytes = "creo:featdefs:sketch#offset:9".len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#offset:9".len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = feature_sketch_record_id_in_scan(&ctx, &scan, &scan.features.definitions[0])
         .expect_err("native identity exceeds retained cap");

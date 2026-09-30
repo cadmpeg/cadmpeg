@@ -991,7 +991,7 @@ fn fc05_cap_pair_tangency_selects_one_stored_plane_branch() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.outlines.extend([
@@ -1168,7 +1168,7 @@ fn fc05_strict_cap_pair_accepts_a_reference_frame_when_tangency_improves() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code01,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.outlines.extend([

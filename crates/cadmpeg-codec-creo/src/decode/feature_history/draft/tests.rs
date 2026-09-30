@@ -104,7 +104,7 @@ fn hole_resolved_face_id_refuses_retained_limit() {
     let native = "creo:visibgeom:surface#11";
     hole_face_limit_error(
         None,
-        Some(native.len() as u64),
+        Some(cadmpeg_core::decode::u64_from_index(native.len())),
         None,
         true,
         "creo hole face IDs",
@@ -155,7 +155,8 @@ fn hole_generated_native_copy_refuses_retained_limit() {
     let local = "surface#11";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = (native.len() + producer.len() + local.len()) as u64;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() + local.len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
@@ -236,8 +237,8 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
             ),
             entity_id,
             prefixed: true,
-            offset: entity_id as usize,
-            end_offset: entity_id as usize,
+            offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+            end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(
@@ -267,7 +268,7 @@ fn thicken_scan() -> crate::container::ContainerScan<'static> {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows = vec![row(11, 3), row(201, 17)];
     scan
@@ -305,7 +306,7 @@ fn thicken_native_selection_refuses_retained_limit() {
     let identities = "creo:model:feature#3".len() + "creo:model:feature#17".len();
     thicken_resource_error(
         None,
-        Some(identities as u64),
+        Some(cadmpeg_core::decode::u64_from_index(identities)),
         "creo thicken native selection",
     );
 }
@@ -315,7 +316,11 @@ fn thicken_face_ids_refuse_retained_limit() {
     let prior = "creo:model:feature#3".len()
         + "creo:model:feature#17".len()
         + "creo:allfeatur:thicken_source_surfaces#17:11".len();
-    thicken_resource_error(None, Some(prior as u64), "creo thicken face IDs");
+    thicken_resource_error(
+        None,
+        Some(cadmpeg_core::decode::u64_from_index(prior)),
+        "creo thicken face IDs",
+    );
 }
 
 #[test]
@@ -332,7 +337,7 @@ fn thicken_generated_native_copy_refuses_retained_limit() {
         + "surface#11".len();
     thicken_resource_error(
         None,
-        Some(prior as u64),
+        Some(cadmpeg_core::decode::u64_from_index(prior)),
         "creo thicken generated native selection",
     );
 }

@@ -341,8 +341,11 @@ pub(super) fn transfer_and_record_scanned_geometry(
         .definitions
         .iter()
         .filter_map(|definition| definition.relations.as_ref())
-        .map(feature_relation_table_missing_rows)
-        .sum::<usize>();
+        .try_fold(0usize, |missing, relations| {
+            missing
+                .checked_add(feature_relation_table_missing_rows(relations)?)
+                .ok_or_else(|| CodecError::malformed("missing relation row count exceeds usize"))
+        })?;
     let malformed_feature_relation_table_count = scan
         .features
         .definitions
@@ -425,7 +428,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::UNTRANSFERRED_VISIBLE_SURFACE_ROW_COUNT,
             surface_coverage
                 .unique_rows()
-                .saturating_sub(surface_coverage.transferred_rows()),
+                .checked_sub(surface_coverage.transferred_rows())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
         )?;
         coverage.record_admitted(
             ctx,
@@ -437,7 +443,13 @@ pub(super) fn transfer_and_record_scanned_geometry(
             let keys = crate::coverage::surface_family_keys(kind);
             coverage.record_admitted(ctx, keys.visible, rows)?;
             coverage.record_admitted(ctx, keys.transferred, transferred)?;
-            coverage.record_admitted(ctx, keys.untransferred, rows.saturating_sub(transferred))?;
+            coverage.record_admitted(
+                ctx,
+                keys.untransferred,
+                rows.checked_sub(transferred).ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+            )?;
             coverage.record_admitted(
                 ctx,
                 keys.retained_unknown,
@@ -464,7 +476,10 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::UNTRANSFERRED_VISIBLE_CURVE_ROW_COUNT,
             curve_coverage
                 .unique_rows()
-                .saturating_sub(curve_coverage.transferred_rows()),
+                .checked_sub(curve_coverage.transferred_rows())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
         )?;
         coverage.record_admitted(
             ctx,
@@ -758,13 +773,22 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::UNRESOLVED_FEATURE_SEGMENT_GEOMETRY_COUNT,
             sketch_segment_coverage
                 .decoded_rows()
-                .saturating_sub(sketch_segment_coverage.resolved_geometry()),
+                .checked_sub(sketch_segment_coverage.resolved_geometry())
+                .ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
         )?;
         for (family, (decoded, resolved)) in sketch_segment_coverage.families() {
             let keys = crate::coverage::sketch_segment_keys(family);
             coverage.record_admitted(ctx, keys.decoded, decoded)?;
             coverage.record_admitted(ctx, keys.resolved, resolved)?;
-            coverage.record_admitted(ctx, keys.unresolved, decoded.saturating_sub(resolved))?;
+            coverage.record_admitted(
+                ctx,
+                keys.unresolved,
+                decoded.checked_sub(resolved).ok_or_else(|| {
+                    CodecError::malformed("transferred geometry count exceeds source count")
+                })?,
+            )?;
         }
         coverage.record_admitted(
             ctx,
@@ -794,7 +818,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.record_admitted(
             ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
-            skamp_constraint_coverage.typed(),
+            skamp_constraint_coverage.typed()?,
         )?;
         coverage.record_admitted(
             ctx,
@@ -809,7 +833,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.record_admitted(
             ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_SKAMP_CONSTRAINT_COUNT,
-            skamp_constraint_coverage.active_typed(),
+            skamp_constraint_coverage.active_typed()?,
         )?;
         for (kind, count) in &skamp_constraint_coverage.native_by_kind {
             coverage.record_indexed_admitted(
@@ -865,7 +889,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.record_admitted(
             ctx,
             crate::coverage::TRANSFERRED_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
-            relation_constraint_coverage.typed(),
+            relation_constraint_coverage.typed()?,
         )?;
         coverage.record_admitted(
             ctx,
@@ -880,7 +904,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
         coverage.record_admitted(
             ctx,
             crate::coverage::ACTIVE_TYPED_FEATURE_RELATION_CONSTRAINT_COUNT,
-            relation_constraint_coverage.active_typed(),
+            relation_constraint_coverage.active_typed()?,
         )?;
         for (kind, count) in &relation_constraint_coverage.native_by_kind {
             coverage.record_indexed_admitted(
@@ -912,7 +936,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             coverage.record_admitted(
                 ctx,
                 crate::coverage::TRANSFERRED_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
-                equation_constraint_coverage.typed(),
+                equation_constraint_coverage.typed()?,
             )?;
             coverage.record_admitted(
                 ctx,
@@ -927,7 +951,7 @@ pub(super) fn transfer_and_record_scanned_geometry(
             coverage.record_admitted(
                 ctx,
                 crate::coverage::ACTIVE_TYPED_FEATURE_EQUATION_CONSTRAINT_COUNT,
-                equation_constraint_coverage.active_typed(),
+                equation_constraint_coverage.active_typed()?,
             )?;
         }
     }

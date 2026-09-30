@@ -81,9 +81,12 @@ fn choice_label_refuses_before_retained_text_copy() {
 fn choice_payload_refuses_before_retained_byte_copy() {
     let row = row();
     retained(
-        &run(&row.body, 2, "blend_choice".len() as u64, |ctx| {
-            super::super::choices(ctx, std::slice::from_ref(&row))
-        })
+        &run(
+            &row.body,
+            2,
+            cadmpeg_core::decode::u64_from_index("blend_choice".len()),
+            |ctx| super::super::choices(ctx, std::slice::from_ref(&row)),
+        )
         .expect_err("choice payload needs retained bytes"),
         "creo feature choice payload",
     );
@@ -204,9 +207,12 @@ fn choice_field_label_refuses_before_retained_text_copy() {
 fn choice_field_name_refuses_before_retained_text_copy() {
     let choice = field_choice(b"\xe0\x01foo\0\xf8\x01\x07".to_vec());
     retained(
-        &run(&choice.payload, 3, choice.label.len() as u64, |ctx| {
-            super::super::choice_fields(ctx, std::slice::from_ref(&choice))
-        })
+        &run(
+            &choice.payload,
+            3,
+            cadmpeg_core::decode::u64_from_index(choice.label.len()),
+            |ctx| super::super::choice_fields(ctx, std::slice::from_ref(&choice)),
+        )
         .expect_err("field name needs retained bytes"),
         "creo choice field name",
     );

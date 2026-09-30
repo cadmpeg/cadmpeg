@@ -75,7 +75,7 @@ fn plane_row(id: u32) -> crate::surface::SurfaceRow {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     }
 }
 
@@ -100,7 +100,7 @@ fn plane_outline(id: u32, z: f64) -> crate::surface::OutlinePlane {
         origin: [0.0, 0.0, z],
         normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     }
 }
 
@@ -363,7 +363,7 @@ fn generated_table_cap_classes_use_placed_cap_planes() {
             reversed: id == 31,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.planes.positional_frames.extend([
