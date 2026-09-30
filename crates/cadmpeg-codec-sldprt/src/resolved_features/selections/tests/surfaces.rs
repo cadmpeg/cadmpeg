@@ -1651,6 +1651,10 @@ fn face_reference_plane_accepts_a_component_face_path() {
 
 #[test]
 fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let prefix = [0x54, 0x81, 0x56, 0x01];
     let signature = |source: u32, identity: u32| {
         let mut signature = [0; 12];
@@ -1667,7 +1671,7 @@ fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
     payload.extend(signature(10, 2));
     payload.extend(7u32.to_le_bytes());
 
-    let path = inline_surface_reference_at(&payload, 4).expect("required invariant");
+    let path = inline_surface_reference_at(&ctx, &payload, 4).unwrap().expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[0].instance, Some(0x8157));
     assert_eq!(path[0].local_id, None);
