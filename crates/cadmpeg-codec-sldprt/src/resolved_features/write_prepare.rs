@@ -10,7 +10,7 @@ use super::markers::{
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars};
 use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
-use super::transforms::{locus_entity, sketch_entity_loci};
+use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
 use super::write_generate::{
     append_generated_object_name, append_generated_sketch_markers, generated_locus_is_point,
@@ -950,9 +950,9 @@ fn constraint_locus_point(
     locus: &SketchLocus,
 ) -> Result<Point2, cadmpeg_core::CodecError> {
     let entity = sketch_constraint_entity(ir, constraint, locus_entity(locus))?;
-    sketch_entity_loci(entity)
-        .into_iter()
-        .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
+    sketch_entity_locus_points(entity)
+        .into_iter().flatten()
+        .find_map(|(point, role)| role.matches(locus).then_some(point))
         .ok_or_else(|| {
             cadmpeg_core::CodecError::malformed(format_args!(
                 "sketch constraint {} references unavailable locus {:?}",

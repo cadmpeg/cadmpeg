@@ -9,7 +9,7 @@ use super::relation_geometry::{
 use super::relation_records::{relation_uses_dynamic_operands, relation_uses_solver_points};
 use super::transforms::{
     compatible_marker_transform_candidates, locus_entity, locus_key, marker_entities,
-    marker_transforms_with_frame_fallback, sketch_entity_loci, MarkerTransform, ProfileAxis,
+    marker_transforms_with_frame_fallback, sketch_entity_loci, sketch_entity_locus_points, MarkerTransform, ProfileAxis,
 };
 use super::typed_relations::{
     line_endpoint_markers, relation_link_identifies_owner, relation_link_is_geometric_operand,
@@ -2784,9 +2784,9 @@ pub(super) fn profile_locus_point(
     let entity = sketch_entities
         .iter()
         .find(|entity| entity.id() == locus_entity(locus))?;
-    sketch_entity_loci(entity)
-        .into_iter()
-        .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
+    sketch_entity_locus_points(entity)
+        .into_iter().flatten()
+        .find_map(|(point, role)| role.matches(locus).then_some(point))
 }
 
 fn canonicalize_physical_loci(
@@ -4136,7 +4136,7 @@ pub(super) fn marker_transform_candidates_by_feature<'a>(
                         ctx.charge_work(work, OPERATION)?;
                         if entity.sketch != **sketch { continue; }
                         if primary_only {
-                            for (point, _) in sketch_entity_loci(entity) {
+                            for (point, _) in sketch_entity_locus_points(entity).into_iter().flatten() {
                                 if marker_accepts_locus(marker.kind(), &entity.geometry) {
                                     insert_compatible_locus(ctx, &mut points, marker_point, quantize(point, QUANTUM))?;
                                 }

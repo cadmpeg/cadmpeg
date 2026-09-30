@@ -4,7 +4,7 @@ use super::markers::marker_coordinates;
 use super::relation_geometry::is_reference_relation_parameter;
 use super::relation_loci::marker_accepts_locus;
 use super::selections::{operand_accepts_marker, operand_uses_compatible_ordinal};
-use super::transforms::{locus_entity, locus_key, sketch_entity_loci, sketch_entity_marker_loci};
+use super::transforms::{locus_entity, locus_key, sketch_entity_loci, sketch_entity_locus_points, sketch_entity_marker_loci};
 use super::write_prepare::{
     arc_angle_relation_kind, binary_marker_relation, ellipse_angle_relation_kind, same_point2,
 };
@@ -656,9 +656,9 @@ fn unique_generated_entity_marker(
             .filter(|candidate| candidate.sketch == sketch.id)
             .filter(|candidate| marker_accepts_locus(*kind, &candidate.geometry))
             .filter(|candidate| {
-                sketch_entity_loci(candidate)
-                    .iter()
-                    .any(|(candidate, _)| same_point2(*point, *candidate))
+                sketch_entity_locus_points(candidate)
+                    .into_iter().flatten()
+                    .any(|(candidate, _)| same_point2(*point, candidate))
             })
             .map(cadmpeg_ir::SketchEntity::id);
         if candidates.next() == Some(entity) && candidates.next().is_none() {

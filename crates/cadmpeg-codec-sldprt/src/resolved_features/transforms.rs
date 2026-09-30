@@ -695,25 +695,49 @@ pub(super) fn sketch_entity_marker_loci(entity: &SketchEntity) -> Option<SketchE
     (!loci.is_empty()).then_some(SketchEntityMarkerLoci { kind, loci })
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum SketchLocusRole {
+    Entity,
+    Start,
+    End,
+    Center,
+}
+
+impl SketchLocusRole {
+    pub(super) fn matches(self, locus: &SketchLocus) -> bool {
+        matches!((self, locus),
+            (Self::Entity, SketchLocus::Entity(_))
+            | (Self::Start, SketchLocus::Start(_))
+            | (Self::End, SketchLocus::End(_))
+            | (Self::Center, SketchLocus::Center(_)))
+    }
+}
+
 pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLocus)> {
-    let locus = |point: Point2, locus| (point, locus);
+    sketch_entity_locus_points(entity).into_iter().flatten().map(|(point, role)| {
+        let id = entity.id().clone();
+        let locus = match role {
+            SketchLocusRole::Entity => SketchLocus::Entity(id),
+            SketchLocusRole::Start => SketchLocus::Start(id),
+            SketchLocusRole::End => SketchLocus::End(id),
+            SketchLocusRole::Center => SketchLocus::Center(id),
+        };
+        (point, locus)
+    }).collect()
+}
+
+pub(super) fn sketch_entity_locus_points(
+    entity: &SketchEntity,
+) -> [Option<(Point2, SketchLocusRole)>; 3] {
+    let locus = |point: Point2, role| Some((point, role));
     match entity.geometry.definition() {
         SketchGeometryDefinition::Point { position } => {
-            vec![locus(
-                position.get(),
-                SketchLocus::Entity(entity.id().clone()),
-            )]
+            [locus(position.get(), SketchLocusRole::Entity), None, None]
         }
-        SketchGeometryDefinition::Line { start, end } => vec![
-            locus(start.get(), SketchLocus::Start(entity.id().clone())),
-            locus(end.get(), SketchLocus::End(entity.id().clone())),
-        ],
-        SketchGeometryDefinition::ReferenceLine { .. } => Vec::new(),
+        SketchGeometryDefinition::Line { start, end } => [locus(start.get(), SketchLocusRole::Start), locus(end.get(), SketchLocusRole::End), None],
+        SketchGeometryDefinition::ReferenceLine { .. } => [None, None, None],
         SketchGeometryDefinition::Circle { center, .. } => {
-            vec![locus(
-                center.get(),
-                SketchLocus::Center(entity.id().clone()),
-            )]
+            [locus(center.get(), SketchLocusRole::Center), None, None]
         }
         SketchGeometryDefinition::Ellipse {
             center,
@@ -723,10 +747,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         } => {
             let major_radius = radii.major();
             let minor_radius = radii.minor();
-            let mut loci = vec![locus(
-                center.get(),
-                SketchLocus::Center(entity.id().clone()),
-            )];
+            let mut loci = [locus(center.get(), SketchLocusRole::Center), None, None];
             if let Some([start, end]) = bounds {
                 let point = |parameter: f64| {
                     Point2::new(
@@ -737,14 +758,8 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
                             + major_angle.get().cos() * minor_radius.get() * parameter.sin(),
                     )
                 };
-                loci.push(locus(
-                    point(start.get()),
-                    SketchLocus::Start(entity.id().clone()),
-                ));
-                loci.push(locus(
-                    point(end.get()),
-                    SketchLocus::End(entity.id().clone()),
-                ));
+                loci[1] = locus(point(start.get()), SketchLocusRole::Start);
+                loci[2] = locus(point(end.get()), SketchLocusRole::End);
             }
             loci
         }
@@ -753,21 +768,21 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             radius,
             start_angle,
             end_angle,
-        } => vec![
-            locus(center.get(), SketchLocus::Center(entity.id().clone())),
+        } => [
+            locus(center.get(), SketchLocusRole::Center),
             locus(
                 Point2::new(
                     center.u + radius.get() * start_angle.get().cos(),
                     center.v + radius.get() * start_angle.get().sin(),
                 ),
-                SketchLocus::Start(entity.id().clone()),
+                SketchLocusRole::Start,
             ),
             locus(
                 Point2::new(
                     center.u + radius.get() * end_angle.get().cos(),
                     center.v + radius.get() * end_angle.get().sin(),
                 ),
-                SketchLocus::End(entity.id().clone()),
+                SketchLocusRole::End,
             ),
         ],
         SketchGeometryDefinition::Hyperbola {
@@ -777,10 +792,7 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             minor_radius,
             bounds,
         } => {
-            let mut loci = vec![locus(
-                center.get(),
-                SketchLocus::Center(entity.id().clone()),
-            )];
+            let mut loci = [locus(center.get(), SketchLocusRole::Center), None, None];
             let point = |parameter: cadmpeg_ir::scalar::FiniteReal| {
                 let (_, x) =
                     cadmpeg_ir::math::scaled_sinh_cosh(major_radius.magnitude(), parameter).ok()?;
@@ -799,8 +811,8 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             };
             if let Some([start, end]) = bounds {
                 if let (Some(start), Some(end)) = (point(*start), point(*end)) {
-                    loci.push(locus(start, SketchLocus::Start(entity.id().clone())));
-                    loci.push(locus(end, SketchLocus::End(entity.id().clone())));
+                    loci[1] = locus(start, SketchLocusRole::Start);
+                    loci[2] = locus(end, SketchLocusRole::End);
                 }
             }
             loci
@@ -825,31 +837,19 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
             };
             match bounds {
                 Some([start, end]) => match (point(start.get()), point(end.get())) {
-                    (Some(start), Some(end)) => vec![
-                        locus(start, SketchLocus::Start(entity.id().clone())),
-                        locus(end, SketchLocus::End(entity.id().clone())),
-                    ],
-                    _ => Vec::new(),
+                    (Some(start), Some(end)) => [locus(start, SketchLocusRole::Start), locus(end, SketchLocusRole::End), None],
+                    _ => [None, None, None],
                 },
-                None => Vec::new(),
+                None => [None, None, None],
             }
         }
         SketchGeometryDefinition::Nurbs { curve } => {
             let control_points = curve.control_points();
-            vec![
-                locus(
-                    control_points[0].get(),
-                    SketchLocus::Start(entity.id().clone()),
-                ),
-                locus(
-                    control_points[control_points.len() - 1].get(),
-                    SketchLocus::End(entity.id().clone()),
-                ),
-            ]
+            [locus(control_points[0].get(), SketchLocusRole::Start), locus(control_points[control_points.len() - 1].get(), SketchLocusRole::End), None]
         }
         SketchGeometryDefinition::Text { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
-        | SketchGeometryDefinition::Native { .. } => Vec::new(),
+        | SketchGeometryDefinition::Native { .. } => [None, None, None],
     }
 }
 

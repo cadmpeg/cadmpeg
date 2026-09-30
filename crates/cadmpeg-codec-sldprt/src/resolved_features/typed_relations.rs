@@ -24,7 +24,7 @@ use super::relation_loci::{
 use super::scalars::operand_kind;
 use super::selections::operand_accepts_marker;
 use super::transforms::{
-    locus_entity, locus_key, marker_entities, sketch_entity_loci, ProfileAxis,
+    locus_entity, locus_key, marker_entities, ProfileAxis,
 };
 use super::{
     LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER, SKETCH_POINT_TOLERANCE,
@@ -1349,15 +1349,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
         (None, Some(known)) => (known, false),
         _ => return None,
     };
-    let point = |locus: &SketchLocus| {
-        let entity = sketch_entities
-            .iter()
-            .find(|entity| entity.id() == locus_entity(locus))?;
-        sketch_entity_loci(entity)
-            .into_iter()
-            .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
-    };
-    let known_point = point(&known)?;
+    let known_point = profile_locus_point(&known, sketch_entities)?;
     let mut candidates = canonical_profile_loci(sketch, sketch_entities)
         .into_iter()
         .filter_map(|(candidate_point, candidate)| {
