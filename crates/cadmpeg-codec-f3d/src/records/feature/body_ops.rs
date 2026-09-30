@@ -261,9 +261,18 @@ impl DesignCopyPasteBodiesOperation {
             return Err("bodies must not be empty".into());
         }
         let mut suffixes = std::collections::HashSet::new();
-        let mut operand_offset = body_group_byte_offset.saturating_add(26);
-        let mut source_offset = relation_byte_offset.saturating_add(25);
-        for body in &bodies {
+        for (ordinal, body) in bodies.iter().enumerate() {
+            let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+            let operand_offset = ordinal.checked_mul(11)
+                .and_then(|delta| body_group_byte_offset.checked_add(delta))
+                .and_then(|offset| offset.checked_add(26))
+                .ok_or("body operand offsets overflow")?;
+            let source_offset = ordinal.checked_mul(30)
+                .and_then(|delta| relation_byte_offset.checked_add(delta))
+                .and_then(|offset| offset.checked_add(25))
+                .ok_or("body source offsets overflow")?;
+            let copied_offset = source_offset.checked_add(15)
+                .ok_or("body copied offsets overflow")?;
             for suffix in [body.source.value, body.copied.value] {
                 if suffixes.contains(&suffix) {
                     return Err("source and copied body suffixes must be pairwise distinct".into());
@@ -277,15 +286,13 @@ impl DesignCopyPasteBodiesOperation {
             }
             if body.operand.offset != operand_offset
                 || body.source.offset != source_offset
-                || body.copied.offset != source_offset.saturating_add(15)
+                || body.copied.offset != copied_offset
             {
                 return Err(
                     "bodies operand, source, and copied offsets must follow their record strides"
                         .into(),
                 );
             }
-            operand_offset = operand_offset.saturating_add(11);
-            source_offset = source_offset.saturating_add(30);
         }
         Ok(Self {
             bodies,
