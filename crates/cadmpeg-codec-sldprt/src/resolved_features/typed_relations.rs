@@ -64,8 +64,7 @@ impl SingleEntityRelation {
         }
     }
 
-    fn definition(self, entity: &SketchEntityId) -> SketchConstraintDefinitionInput {
-        let entity = entity.clone();
+    fn definition(self, entity: SketchEntityId) -> SketchConstraintDefinitionInput {
         match self {
             Self::Horizontal => SketchConstraintDefinitionInput::Horizontal { entity },
             Self::Vertical => SketchConstraintDefinitionInput::Vertical { entity },
@@ -107,10 +106,9 @@ enum BinaryRelation {
 impl BinaryRelation {
     fn definition(
         self,
-        first: &SketchEntityId,
-        second: &SketchEntityId,
+        first: SketchEntityId,
+        second: SketchEntityId,
     ) -> SketchConstraintDefinitionInput {
-        let (first, second) = (first.clone(), second.clone());
         match self {
             Self::Parallel => SketchConstraintDefinitionInput::Parallel { first, second },
             Self::Perpendicular => SketchConstraintDefinitionInput::Perpendicular { first, second },
@@ -267,10 +265,7 @@ fn unique_entity_from_link_intersection(
     });
     candidates.sort();
     candidates.dedup();
-    match candidates.as_slice() {
-        [entity] => Some(entity.clone()),
-        _ => None,
-    }
+    if candidates.len() == 1 { candidates.into_iter().next() } else { None }
 }
 
 pub(super) fn typed_marker_relation_definition_in_sketch(
@@ -461,11 +456,11 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         if let Some(loci) =
                             relation_operand_loci(marker, markers_by_id, loci_by_marker)
                         {
-                            if let [first, second] = loci.as_slice() {
+                            if let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) {
                                 return Some(SketchConstraintDefinitionInput::SameCoordinate {
                                     relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                                        first.clone(),
-                                        second.clone(),
+                                        first,
+                                        second,
                                         same_coordinate,
                                     )
                                     .ok()?,
@@ -548,7 +543,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 {
                     return Some(native());
                 }
-                single.definition(entity)
+                single.definition(entities.into_iter().next()?)
             } else if let Some((same_coordinate, profile_axis)) = axes {
                 let loci =
                     relation_operand_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
@@ -564,12 +559,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 let Some(loci) = loci else {
                     return Some(native());
                 };
-                let [first, second] = loci.as_slice() else {
-                    return Some(native());
-                };
+                let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else { return Some(native()); };
                 cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                    first.clone(),
-                    second.clone(),
+                    first,
+                    second,
                     same_coordinate,
                 )
                 .map_or_else(
@@ -695,10 +688,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         .collect::<Vec<_>>();
                     matches.sort();
                     matches.dedup();
-                    match matches.as_slice() {
-                        [pair] => Some(pair.clone()),
-                        _ => None,
-                    }
+                    if matches.len() == 1 { matches.into_iter().next() } else { None }
                 } else {
                     None
                 }
@@ -737,6 +727,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                     return Some(native());
                 };
             }
+            let [first, second] = <[SketchEntityId; 2]>::try_from(entities).ok()?;
             binary.definition(first, second)
         }
         MarkerRelationGroup::Coincidence => {
@@ -759,12 +750,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             let Some(loci) = relation_operand_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
-            let [first, second] = loci.as_slice() else {
-                return Some(native());
-            };
+            let Ok([first, second]) = <[SketchLocus; 2]>::try_from(loci) else { return Some(native()); };
             cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
-                first.clone(),
-                second.clone(),
+                first,
+                second,
                 if kind == HorizontalPoints {
                     SketchCoordinateAxis::V
                 } else {
@@ -822,11 +811,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }) {
                 return Some(native());
             }
-            SketchConstraintDefinitionInput::AtIntersection {
-                point,
-                first: first.clone(),
-                second: second.clone(),
-            }
+            let [first, second] = <[SketchEntityId; 2]>::try_from(entities).ok()?;
+            SketchConstraintDefinitionInput::AtIntersection { point, first, second }
         }
         MarkerRelationGroup::Symmetric => {
             if sketch_entities.is_empty() {
@@ -877,11 +863,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Some(native());
             }
-            SketchConstraintDefinitionInput::Symmetric {
-                first: first.clone(),
-                second: second.clone(),
-                axis,
-            }
+            let [first, second] = <[SketchLocus; 2]>::try_from(points).ok()?;
+            SketchConstraintDefinitionInput::Symmetric { first, second, axis }
         }
         MarkerRelationGroup::Midpoint => {
             let Some((point, entity)) =
@@ -1363,14 +1346,9 @@ pub(super) fn unique_axis_aligned_linked_loci(
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(if known_is_first {
-        vec![known, candidate.clone()]
-    } else {
-        vec![candidate.clone(), known]
-    })
+    if candidates.len() != 1 { return None; }
+    let candidate = candidates.into_iter().next()?;
+    Some(if known_is_first { vec![known, candidate] } else { vec![candidate, known] })
 }
 
 fn axis_relation_point_loci(
