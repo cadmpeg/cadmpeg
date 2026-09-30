@@ -27,7 +27,7 @@ fn validation_entity_header(
 }
 
 #[test]
-fn native_entity_suffix_index_refuses_collection_limit() {
+fn native_entity_suffix_index_refuses_collection_limit() { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -39,17 +39,17 @@ fn native_entity_suffix_index_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let error = super::super::validate_entity_headers(&ctx, &mut Vec::new()).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D design entity suffixes")
     );
-}
+}) }
 
 #[test]
-fn native_entity_duplicate_finding_refuses_collection_limit() {
+fn native_entity_duplicate_finding_refuses_collection_limit() { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -61,17 +61,17 @@ fn native_entity_duplicate_finding_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let error = super::super::validate_entity_headers(&ctx, &mut Vec::new()).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
     );
-}
+}) }
 
 #[test]
-fn native_entity_reference_finding_refuses_retained_limit() {
+fn native_entity_reference_finding_refuses_retained_limit() { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -88,17 +88,17 @@ fn native_entity_reference_finding_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let error = super::super::validate_entity_headers(&ctx, &mut Vec::new()).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
-}
+}) }
 
 #[test]
-fn native_sketch_relation_finding_refuses_retained_limit() {
+fn native_sketch_relation_finding_refuses_retained_limit() { crate::test_support::with_decode_context(|service_ctx| {
     use crate::records::identity::ReferenceRun;
     use crate::records::sketch_relations::{
         SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMembers,
@@ -133,14 +133,14 @@ fn native_sketch_relation_finding_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let error = super::super::validate_sketch_relations(&ctx, &mut Vec::new()).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
     );
-}
+}) }
 
 fn sketch_geometry_fixture() -> crate::native::F3dNative {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -158,7 +158,7 @@ fn sketch_geometry_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -166,10 +166,10 @@ fn sketch_geometry_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_sketch_geometry_identities(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn sketch_point_identity_index_refuses_collection_limit() {
@@ -384,7 +384,7 @@ fn body_bounds_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -392,10 +392,10 @@ fn body_bounds_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_body_bounds(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn body_bounds_binding_collection_refuses_collection_limit() {
@@ -434,20 +434,20 @@ fn body_bounds_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn body_bounds_valid_binding_order_has_no_finding() {
+fn body_bounds_valid_binding_order_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = validation_body_bounds(true);
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_body_bounds(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
-}
+}) }
 
 fn body_binding_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -455,10 +455,10 @@ fn body_binding_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_body_bindings(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn body_binding_offset_index_refuses_collection_limit() {
@@ -535,14 +535,14 @@ fn body_binding_incomplete_group_finding_refuses_collection_limit() {
 }
 
 #[test]
-fn body_binding_valid_group_has_no_finding() {
+fn body_binding_valid_group_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = validation_body_bounds(true);
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
-}
+}) }
 
 fn validation_occurrence(
     record_index: u32,
@@ -572,7 +572,7 @@ fn occurrence_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -580,10 +580,10 @@ fn occurrence_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_component_occurrences(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn occurrence_guid_key_refuses_retained_limit() {
@@ -677,7 +677,7 @@ fn occurrence_duplicate_entity_refuses_retained_limit() {
     );
 }
 
-fn invalid_history_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn invalid_history_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = crate::native::F3dNative::default();
@@ -695,10 +695,10 @@ fn invalid_history_error(max_items: u64, max_retained: u64) -> cadmpeg_core::Cod
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
-    super::super::validate_history_graphs(Some(&decode), &ctx, &mut Vec::new()).unwrap_err()
-}
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
+    super::super::validate_history_graphs(&decode, &ctx, &mut Vec::new()).unwrap_err()
+}) }
 
 #[test]
 fn invalid_history_finding_refuses_collection_limit() {
@@ -769,7 +769,7 @@ fn placement_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -777,10 +777,10 @@ fn placement_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_sketch_placements(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn placement_record_index_refuses_collection_limit() {
@@ -887,14 +887,14 @@ fn placement_noncontiguous_visibility_finding_refuses_collection_limit() {
 }
 
 #[test]
-fn placement_contiguous_visibility_has_no_finding() {
+fn placement_contiguous_visibility_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = placement_native(validation_placement(None, Some(1), true));
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_sketch_placements(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
-}
+}) }
 
 fn validation_parameter_owner() -> crate::records::parameters::DesignParameterOwner {
     use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
@@ -916,7 +916,7 @@ fn validation_parameter_owner() -> crate::records::parameters::DesignParameterOw
     .unwrap()
 }
 
-fn parameter_owner_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn parameter_owner_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = crate::native::F3dNative::default();
@@ -928,10 +928,10 @@ fn parameter_owner_error(max_items: u64, max_retained: u64) -> cadmpeg_core::Cod
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_parameter_owners(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn parameter_owner_index_refuses_collection_limit() {
@@ -1007,7 +1007,7 @@ fn companion_error(
     native: crate::native::F3dNative,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let arena = DecodeArena::new();
@@ -1015,10 +1015,10 @@ fn companion_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_parameter_companions(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn companion_recipe_collection_refuses_collection_limit() {

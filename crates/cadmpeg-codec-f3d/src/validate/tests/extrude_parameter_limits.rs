@@ -4,7 +4,7 @@ fn extrude_error(
     max_items: u64,
     max_retained_bytes: u64,
     operation: crate::records::feature::extrude::DesignExtrudeOperation,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use crate::records::{
         feature::{
             extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
@@ -53,10 +53,10 @@ fn extrude_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained_bytes;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_extrude_parameter_operands(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn extrude_face_groups_refuse_collection_limit() {

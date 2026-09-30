@@ -125,7 +125,7 @@ fn group() -> DesignDimensionLocusGroup {
     }
 }
 
-fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = crate::native::F3dNative::default();
@@ -182,8 +182,8 @@ fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_cor
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     let mut findings = Vec::new();
     match case {
         Case::Recipe => {
@@ -205,7 +205,7 @@ fn dimension_error(case: Case, max_items: u64, max_retained: u64) -> cadmpeg_cor
         ),
     }
     .unwrap_err()
-}
+}) }
 
 macro_rules! limit_case {
     ($name:ident, $case:expr, $items:expr, $retained:expr, $operation:literal) => {

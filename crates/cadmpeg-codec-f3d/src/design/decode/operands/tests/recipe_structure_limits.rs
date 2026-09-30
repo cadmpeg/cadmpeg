@@ -73,7 +73,7 @@ fn edge_recipe_structure_refuses_candidate_work_limit() {
 
 #[test]
 fn edge_recipe_topology_references_refuse_collection_limit() {
-    let structure = super::super::edge_recipe_structure(&EDGE_RECIPE).unwrap();
+    let structure = crate::test_support::with_decode_context(|ctx| super::super::edge_recipe_structure_with_context(ctx, &EDGE_RECIPE).expect("recipe structure")).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;

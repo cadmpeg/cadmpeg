@@ -49,7 +49,7 @@ fn typed_reload_collection_cost(ir: &cadmpeg_ir::document::CadIr) -> u64 {
     1 + u64::try_from(fields.len()).unwrap() + fields.values().map(nested_items).sum::<u64>()
 }
 
-fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(valid);
@@ -70,11 +70,11 @@ fn edge_error(valid: bool, after_reload_items: u64, max_retained: u64) -> cadmpe
     };
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
-    super::super::validate_edge_identity_operands(Some(&decode), &ctx, &mut Vec::new(), &[])
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
+    super::super::validate_edge_identity_operands(&decode, &ctx, &mut Vec::new(), &[])
         .unwrap_err()
-}
+}) }
 
 #[test]
 fn edge_identity_expected_index_refuses_collection_limit() {
@@ -122,7 +122,7 @@ fn edge_identity_invalid_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn edge_identity_valid_slot_has_no_finding() {
+fn edge_identity_valid_slot_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(true);
     native
@@ -131,10 +131,10 @@ fn edge_identity_valid_slot_has_no_finding() {
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     let records =
-        super::super::validate_edge_identity_operands(None, &ctx, &mut findings, &[]).unwrap();
+        crate::test_support::with_decode_context(|decode_ctx| super::super::validate_edge_identity_operands(decode_ctx, &ctx, &mut findings, &[])).unwrap();
     assert!(findings.is_empty());
     assert!(records.contains(&("f3d:Design/BulkStream.dat", 101)));
-}
+}) }

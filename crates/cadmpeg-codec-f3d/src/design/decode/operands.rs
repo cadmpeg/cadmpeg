@@ -5385,19 +5385,9 @@ fn parse_edge_operand(
     .map(Ok)
 }
 
-pub(crate) fn edge_recipe_structure(
-    program: &[i32],
-) -> Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()) else { return None; };
-    let decode_ctx = &decode_ctx;
 
-    edge_recipe_structure_with_context(decode_ctx, program)
-        .ok()
-        .flatten()
-}
 
-fn edge_recipe_structure_with_context(
+pub(crate) fn edge_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>, CodecError> {
@@ -5413,20 +5403,9 @@ fn edge_recipe_structure_with_context(
 /// second fields name face references, the third and fifth fields name edge
 /// references, and the fourth and sixth fields are zero pairs. The final field
 /// is a counted sequence of the standard eight-word topology entries.
-pub(crate) fn surface_patch_recipe_structure(
-    program: &[i32],
-    reference_count: usize,
-) -> Option<crate::records::topology::edge_recipe::DesignSurfacePatchRecipeStructure> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()) else { return None; };
-    let decode_ctx = &decode_ctx;
 
-    surface_patch_recipe_structure_with_context(decode_ctx, program, reference_count)
-        .ok()
-        .flatten()
-}
 
-fn surface_patch_recipe_structure_with_context(
+pub(crate) fn surface_patch_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
     reference_count: usize,
@@ -5779,19 +5758,9 @@ fn edge_recipe_counted_side_candidates<'w>(
     Ok(candidates)
 }
 
-pub(crate) fn face_recipe_structure(
-    program: &[i32],
-) -> Option<crate::records::topology::face::DesignFaceRecipeStructure> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let Ok((decode_ctx, _)) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default()) else { return None; };
-    let decode_ctx = &decode_ctx;
 
-    face_recipe_structure_with_context(decode_ctx, program)
-        .ok()
-        .flatten()
-}
 
-fn face_recipe_structure_with_context(
+pub(crate) fn face_recipe_structure_with_context(
     ctx: &DecodeContext<'_>,
     program: &[i32],
 ) -> Result<Option<crate::records::topology::face::DesignFaceRecipeStructure>, CodecError> {

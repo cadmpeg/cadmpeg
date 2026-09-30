@@ -140,7 +140,7 @@ fn body_recipe_error(
     valid: bool,
     after_reload_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native(valid);
@@ -163,14 +163,14 @@ fn body_recipe_error(
     };
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
-    super::super::validate_body_recipe_operands(Some(&decode), &ctx, &mut Vec::new()).unwrap_err()
-}
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
+    super::super::validate_body_recipe_operands(&decode, &ctx, &mut Vec::new()).unwrap_err()
+}) }
 
 #[test]
 fn body_recipe_expected_index_refuses_collection_limit() {
-    let error = body_recipe_error(true, 3, u64::MAX);
+    let error = body_recipe_error(true, 4, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D expected body recipe operands")
@@ -179,7 +179,7 @@ fn body_recipe_expected_index_refuses_collection_limit() {
 
 #[test]
 fn body_recipe_member_slot_refuses_collection_limit() {
-    let error = body_recipe_error(true, 4, u64::MAX);
+    let error = body_recipe_error(true, 5, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D body recipe member slots")
@@ -188,7 +188,7 @@ fn body_recipe_member_slot_refuses_collection_limit() {
 
 #[test]
 fn body_recipe_record_refuses_collection_limit() {
-    let error = body_recipe_error(true, 5, u64::MAX);
+    let error = body_recipe_error(true, 6, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D body recipe records")

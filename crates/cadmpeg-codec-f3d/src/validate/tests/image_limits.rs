@@ -22,7 +22,7 @@ fn design_type(module: &str) -> crate::records::entity_header::SegmentType {
     }
 }
 
-fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError {
+fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -32,14 +32,14 @@ fn image_index_error(module: &str, canvas: bool) -> cadmpeg_core::CodecError {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     if canvas {
         super::super::validate_canvas_images(&ctx, &mut Vec::new()).unwrap_err()
     } else {
         super::super::validate_decal_images(&ctx, &mut Vec::new()).unwrap_err()
     }
-}
+}) }
 
 fn canvas_image() -> crate::records::canvas::DesignCanvasImage {
     let mut payload = [0; 77];
@@ -135,7 +135,7 @@ fn image_record_error(
     with_scope: bool,
     max_items: u64,
     max_retained: u64,
-) -> cadmpeg_core::CodecError {
+) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let mut native = crate::native::F3dNative::default();
@@ -161,14 +161,14 @@ fn image_record_error(
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     if canvas {
         super::super::validate_canvas_images(&ctx, &mut Vec::new()).unwrap_err()
     } else {
         super::super::validate_decal_images(&ctx, &mut Vec::new()).unwrap_err()
     }
-}
+}) }
 
 #[test]
 fn canvas_geometry_entity_index_refuses_collection_limit() {

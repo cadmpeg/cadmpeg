@@ -21,7 +21,7 @@ fn native() -> crate::native::F3dNative {
     native
 }
 
-fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = native();
@@ -30,15 +30,15 @@ fn group_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_fillet_operand_groups(
         &ctx,
         &mut Vec::new(),
         &std::collections::HashSet::new(),
     )
     .unwrap_err()
-}
+}) }
 
 #[test]
 fn fillet_missing_radius_finding_refuses_collection_limit() {
@@ -111,7 +111,7 @@ fn full_round_native() -> crate::native::F3dNative {
     native
 }
 
-fn full_round_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn full_round_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = full_round_native();
@@ -120,15 +120,15 @@ fn full_round_error(max_items: u64, max_retained: u64) -> cadmpeg_core::CodecErr
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_fillet_operand_groups(
         &ctx,
         &mut Vec::new(),
         &std::collections::HashSet::new(),
     )
     .unwrap_err()
-}
+}) }
 
 #[test]
 fn fillet_full_round_finding_refuses_collection_limit() {
@@ -227,7 +227,7 @@ fn radius_native(valid: bool) -> crate::native::F3dNative {
     native
 }
 
-fn radius_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError {
+fn radius_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core::CodecError { crate::test_support::with_decode_context(|service_ctx| {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = radius_native(valid);
@@ -236,10 +236,10 @@ fn radius_error(valid: bool, max_items: u64, max_retained: u64) -> cadmpeg_core:
     policy.limits.max_collection_items = max_items;
     policy.limits.max_retained_bytes = max_retained;
     let (decode, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
-    ctx.decode = Some(&decode);
+    let mut ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
+    ctx.decode = &decode;
     super::super::validate_fillet_radius_groups(&ctx, &mut Vec::new()).unwrap_err()
-}
+}) }
 
 #[test]
 fn fillet_radius_record_index_refuses_collection_limit() {
@@ -278,14 +278,14 @@ fn fillet_radius_invalid_entity_refuses_retained_limit() {
 }
 
 #[test]
-fn fillet_radius_valid_assignment_has_no_finding() {
+fn fillet_radius_valid_assignment_has_no_finding() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let native = radius_native(true);
-    let ctx = super::super::Ctx::new(&ir, &native, None).unwrap();
+    let ctx = super::super::Ctx::new(&ir, &native, service_ctx).unwrap();
     let mut findings = Vec::new();
     super::super::validate_fillet_radius_groups(&ctx, &mut findings).unwrap();
     assert!(findings.is_empty());
-}
+}) }
 
 fn variable_radius_native(increasing: bool) -> crate::native::F3dNative {
     use crate::records::topology::fillet::{DesignFilletMidpoint, DesignFilletRadiusLaw};
@@ -318,18 +318,18 @@ fn variable_radius_native(increasing: bool) -> crate::native::F3dNative {
 }
 
 #[test]
-fn fillet_variable_radius_midpoints_keep_order_validation() {
+fn fillet_variable_radius_midpoints_keep_order_validation() { crate::test_support::with_decode_context(|service_ctx| {
     let ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let valid_native = variable_radius_native(true);
-    let valid_ctx = super::super::Ctx::new(&ir, &valid_native, None).unwrap();
+    let valid_ctx = super::super::Ctx::new(&ir, &valid_native, service_ctx).unwrap();
     let mut valid_findings = Vec::new();
     super::super::validate_fillet_radius_groups(&valid_ctx, &mut valid_findings).unwrap();
     assert!(valid_findings.is_empty());
 
     let invalid_native = variable_radius_native(false);
-    let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, None).unwrap();
+    let invalid_ctx = super::super::Ctx::new(&ir, &invalid_native, service_ctx).unwrap();
     let mut invalid_findings = Vec::new();
     super::super::validate_fillet_radius_groups(&invalid_ctx, &mut invalid_findings).unwrap();
     assert!(invalid_findings.iter().any(|finding| finding.message
         == "Fusion Design Fillet radius group has an invalid parameter assignment"));
-}
+}) }

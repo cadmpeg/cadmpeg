@@ -193,7 +193,7 @@ fn referenced_operand_faces_refuses_collection_limit() {
 fn surface_patch_long_field_rejected_before_copy() {
     let mut program = vec![0; 7];
     program.extend_from_slice(&[2, 1, 2, 3, -1]);
-    assert!(crate::design::decode::operands::surface_patch_recipe_structure(&program, 4).is_none());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::surface_patch_recipe_structure_with_context(ctx, &program, 4).expect("recipe structure")).is_none());
 }
 
 #[test]
@@ -773,10 +773,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     assert_eq!(edge_operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
     assert!(edge_operand.recipe_structure.is_none());
-    let structured = crate::design::decode::operands::edge_recipe_structure(&[
+    let structured = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 1, 1, 5, 4, 4, 4, 4, 3, 4, -1,
         3, 0, -1, 1, -1, 3, -1, 0, 1, 2, 5, 3, 3, 3, 1, 1, 1, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("standard two-side recipe structure");
     assert_eq!(structured.root, 2);
     assert_eq!(structured.sides[0].field_count(), 3);
@@ -882,10 +882,10 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .map(|incident| incident.ordinal),
         None
     );
-    let signed_face = crate::design::decode::operands::face_recipe_structure(&[
+    let signed_face = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3, 0, -1,
         0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("signed face-node topology recipe structure");
     assert_eq!(
         signed_face.sides[0].entries[0].topology_triplets[0].middle,
@@ -897,23 +897,23 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             .map(|incident| incident.ordinal),
         None
     );
-    let postlude_face = crate::design::decode::operands::face_recipe_structure(&[
+    let postlude_face = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 0, -1, 0, -1, 0, 1, 1, 4, 1, -2, 1, 4, 4, 4, -1, 3, 0, -1,
         0, -1, 0, -1, 0, 1, 1, 4, 1, 1, 1, 4, 4, 4, -1, 4, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("face-node topology postlude");
     assert_eq!(postlude_face.postlude_value, Some(4));
-    let unambiguous_payload_face = crate::design::decode::operands::face_recipe_structure(&[
+    let unambiguous_payload_face = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
         1, 1, 1, -1, 3, 0, -1, 0, -1, 1, -1, 0, 1, 0, 1, 1, 1, 1, 1, 1, 1, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("face-node payload prefix grammar");
     assert_eq!(unambiguous_payload_face.sides[0].entries.len(), 2);
     let ambiguous_extended_payload_face =
-        crate::design::decode::operands::face_recipe_structure(&[
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
             0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 0, -1, 0, 2, -1, 1, 1, 1, 1, 1, 1, 1, 1, -1, 3,
             0, -1, 1, -1, 0, -1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1,
-        ]);
+        ]).expect("recipe structure"));
     assert!(ambiguous_extended_payload_face.is_none());
     let mut referenced_headers = structured.clone();
     referenced_headers.sides[0].header_value = 2;
@@ -983,20 +983,20 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         2, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,
     ])
     .is_none());
-    let extended = crate::design::decode::operands::edge_recipe_structure(&[
+    let extended = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 2, -1, 1, -1, 0, -1, 0, 0, -1, 4, 3, -1, 0, -1, 1, -1,
         4, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("recipe structure with a third scalar on its second side");
     assert_eq!(extended.sides[0].scalars, [1, 0]);
     assert_eq!(extended.sides[1].scalars, [0, 1, 4]);
     assert_eq!(extended.sides[1].field_count(), 4);
     assert!(extended.sides[0].entries.is_empty());
     assert!(extended.sides[1].entries.is_empty());
-    let zero_delimited = crate::design::decode::operands::edge_recipe_structure(&[
+    let zero_delimited = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 1, 0, 0, 0, 2, 0, 0, 0, -1, 4, 1, 0, 3, 0, 4, 0, 0, 0, 0,
         1, 2, 3, 2, 1, 2, 1, 1, 1, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("recipe structure with zero-delimited side fields");
     assert_eq!(zero_delimited.root, 2);
     assert_eq!(zero_delimited.sides[0].field_count(), 3);
@@ -1011,48 +1011,48 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         zero_delimited.sides[1].entries[0].boundary_edge_count.get(),
         3
     );
-    let mixed_delimiters = crate::design::decode::operands::edge_recipe_structure(&[
+    let mixed_delimiters = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, 0, 1, -1, 2, -1, 3, 2, 0, 1, -1, 0, 0, 0, 0, -1, 3, 0, 0, 1, -1, 3, 0, 0, 0,
         -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("recipe structure with field-local delimiters");
     assert_eq!(mixed_delimiters.root, 2);
     assert_eq!(mixed_delimiters.sides[0].header_value, 2);
     assert_eq!(mixed_delimiters.sides[0].scalars, [1, 0]);
     assert_eq!(mixed_delimiters.sides[1].header_value, 0);
     assert_eq!(mixed_delimiters.sides[1].scalars, [1, 3]);
-    let revolution_axis = crate::design::decode::operands::edge_recipe_structure(&[
+    let revolution_axis = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 0, 0, 2, -1, 1, 0, 0, 1, 1, 7, 1, 1, 1, 4, 4, 4, -1, 3, 0,
         0, 1, 0, 3, 0, 0, 0, 0,
-    ])
+    ]).expect("recipe structure"))
     .expect("revolution-axis edge recipe structure");
     assert_eq!(revolution_axis.sides[0].scalars, [2, 1]);
     assert_eq!(revolution_axis.sides[0].entries.len(), 1);
     assert!(revolution_axis.sides[1].entries.is_empty());
-    let variable_scalars = crate::design::decode::operands::edge_recipe_structure(&[
+    let variable_scalars = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 5, 1, -1, 0, -1, 2, -1, 3, -1, 4, -1, 0, 0, -1, 3, 0, -1,
         1, -1, 2, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("recipe structure with four scalar fields");
     assert_eq!(variable_scalars.sides[0].field_count(), 5);
     assert_eq!(variable_scalars.sides[0].scalars, [0, 2, 3, 4]);
-    let extended_payload = crate::design::decode::operands::edge_recipe_structure(&[
+    let extended_payload = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::edge_recipe_structure_with_context(ctx, &[
         -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 2, 3, -1, 0, 0, -1, 4, -1, 0, 0,
         -1, 1, 0, 4, 1, 1, 1, 2, 2, 2, -1, 3, 0, -1, 1, -1, 2, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("recipe structure with an extended payload field program");
     assert_eq!(
         extended_payload.sides[0].payload_prefix,
         [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
     );
     assert_eq!(extended_payload.sides[0].entries.len(), 1);
-    let surface_patch = crate::design::decode::operands::surface_patch_recipe_structure(
+    let surface_patch = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::surface_patch_recipe_structure_with_context(ctx, 
         &[
             0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0, 2,
             1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0, -1,
         ],
         4,
-    )
+    ).expect("recipe structure"))
     .expect("SurfacePatch two-clause recipe structure");
     assert_eq!(surface_patch.clauses.len(), 2);
     assert_eq!(surface_patch.clauses[0].face_reference_ordinals, [2, 1]);
@@ -1064,25 +1064,25 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(surface_patch.clauses[1].entries.len(), 0);
     assert!(surface_patch.clauses[1].entries.is_empty());
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::surface_patch_recipe_structure_with_context(ctx, 
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
                 -1,
             ],
             3,
-        )
+        ).expect("recipe structure"))
         .is_none()
     );
     assert!(
-        crate::design::decode::operands::surface_patch_recipe_structure(
+        crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::surface_patch_recipe_structure_with_context(ctx, 
             &[
                 0, -1, 1, 1, -1, 2, -1, 2, 2, -1, 1, -1, 2, 0, -1, 0, 0, -1, 2, -1, 0, 0, -1, 1, 0,
                 2, 1, 1, 1, 2, 1, 2, -1, 2, 3, -1, 1, -1, 2, 0, -1, 0, 0, -1, 3, -1, 0, 0, -1, 0,
                 7,
             ],
             4,
-        )
+        ).expect("recipe structure"))
         .is_none()
     );
     let mut surface_patch_operand = edge_operand.clone();
@@ -1117,9 +1117,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap(),
         cadmpeg_ir::features::EdgeSelection::Native(_)
     ));
-    let face = crate::design::decode::operands::face_recipe_structure(&[
+    let face = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("face node topology recipe structure");
     assert_eq!(face.root, 0);
     assert_eq!(face.prelude, [1, 2]);
@@ -1129,9 +1129,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(face.sides[1].field_count(), 3);
     assert_eq!(face.sides[1].header_value, 0);
     assert_eq!(face.sides[1].scalars, [1, 3]);
-    let zero_delimited_face = crate::design::decode::operands::face_recipe_structure(&[
+    let zero_delimited_face = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, 0, 1, 0, 2, -1, 3, 0, 0, 2, 0, 1, 0, 0, 0, -1, 3, 0, 0, 1, 0, 3, 0, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("zero-delimited face node topology recipe structure");
     assert_eq!(zero_delimited_face, face);
     assert_eq!(edge_operand.next_record_index, 104);
@@ -1686,9 +1686,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap()
     );
 
-    let split_structure = crate::design::decode::operands::face_recipe_structure(&[
+    let split_structure = crate::test_support::with_decode_context(|ctx| crate::design::decode::operands::face_recipe_structure_with_context(ctx, &[
         0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
-    ])
+    ]).expect("recipe structure"))
     .expect("split-face context recipe structure");
     let mut split_scope = face_scope.clone();
     split_scope
