@@ -1332,3 +1332,33 @@ fn idless_history_features_use_unique_feature_input_object_sources() {
     let ambiguous = history_features_with_object_sources(&history_ctx, &[ambiguous_history], &lane).unwrap();
     assert_eq!(ambiguous[0].source_id, None);
 }
+
+#[test]
+fn component_path_continuation_accepts_both_entry_grammars() {
+    use crate::resolved_features::selections::component_path_continues;
+
+    let tagged = [
+        0x3e, 0x80, 0, 0, 0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0, 9, 0, 0, 0,
+    ];
+    let anonymous = [0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0, 9, 0, 0, 0];
+    let mut layout_only = tagged;
+    layout_only[4..6].copy_from_slice(&[1, 0]);
+    for entry in [&tagged[..], &anonymous[..], &layout_only[..]] {
+        assert!(component_path_continues(entry, 0, false));
+        for length in 0..entry.len() {
+            assert!(!component_path_continues(&entry[..length], 0, false));
+        }
+        for separator in [
+            &[][..], &[0; 2][..], &[0; 4][..], &[0; 8][..], &[0; 12][..],
+            &[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0][..],
+        ] {
+            let mut payload = separator.to_vec();
+            payload.extend_from_slice(entry);
+            assert!(component_path_continues(&payload, 0, false));
+        }
+    }
+    let mut root_slot = vec![1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    root_slot.extend_from_slice(&anonymous);
+    assert!(!component_path_continues(&root_slot, 0, false));
+    assert!(component_path_continues(&root_slot, 0, true));
+}
