@@ -62,6 +62,25 @@ pub struct PolygonalSurface {
 }
 
 impl PolygonalSurface {
+    /// Copy the admitted vertex and triangle lanes under the caller's limits.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let count = self.vertices.len().checked_add(self.triangles.len())
+            .and_then(|count| count.checked_mul(32))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), operation)?;
+        let mut vertices = Vec::new();
+        ctx.reserve_collection_vec(&mut vertices, self.vertices.len(), operation)?;
+        vertices.extend_from_slice(&self.vertices);
+        let mut triangles = Vec::new();
+        ctx.reserve_collection_vec(&mut triangles, self.triangles.len(), operation)?;
+        triangles.extend_from_slice(&self.triangles);
+        Ok(Self { vertices, triangles, chordal_deflection: self.chordal_deflection })
+    }
+
     /// Build a polygonal surface whose triangle indices address `vertices`.
     pub fn new(
         vertices: Vec<Point3>,

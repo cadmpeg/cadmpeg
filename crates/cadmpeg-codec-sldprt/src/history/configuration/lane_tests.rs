@@ -90,7 +90,7 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+    assert_eq!(configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0).unwrap(), ir.model.surfaces,);
 }
 
 #[test]
@@ -113,7 +113,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
         .configurations
         .push(design_configuration("empty", 0, Some(0), None));
 
-    assert!(configuration_surface_carriers(&ir, 0).is_empty());
+    assert!(configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0).unwrap().is_empty());
 }
 
 #[test]
