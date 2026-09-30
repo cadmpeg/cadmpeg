@@ -2,6 +2,7 @@
 //! Unified resource accounting for one decode session.
 
 use std::cell::Cell;
+use std::num::NonZeroU64;
 
 use crate::CodecError;
 
@@ -361,6 +362,7 @@ pub struct WorkBudget<'a> {
     remaining: Cell<Option<usize>>,
     recursion_depth: Cell<usize>,
     session: Option<&'a DecodeBudget>,
+    session_work_scale: NonZeroU64,
 }
 
 /// RAII guard for one recursive geometry-evaluation frame.
@@ -385,6 +387,7 @@ impl WorkBudget<'static> {
             remaining: Cell::new(Some(limit)),
             recursion_depth: Cell::new(0),
             session: None,
+            session_work_scale: NonZeroU64::MIN,
         }
     }
 }
@@ -401,7 +404,16 @@ impl<'a> WorkBudget<'a> {
             remaining: Cell::new(Some(limit)),
             recursion_depth: Cell::new(0),
             session: Some(session),
+            session_work_scale: NonZeroU64::MIN,
         }
+    }
+
+    /// Set the session work owed by each local unit without changing this
+    /// slice's local ceiling. Attached children preserve the same scale.
+    #[must_use]
+    pub fn with_session_work_scale(mut self, scale: NonZeroU64) -> Self {
+        self.session_work_scale = scale;
+        self
     }
 
     /// Charges one work unit, returning false after exhaustion.
@@ -423,7 +435,14 @@ impl<'a> WorkBudget<'a> {
             false
         } else {
             if let Some(session) = session {
-                if session.charge_work(work as u64, "work_budget").is_err() {
+                let Some(scaled) = super::view::u64_from_index(work).checked_mul(self.session_work_scale.get()) else {
+                    // The sticky session keeps the refusal for finish_session.
+                    let _failure = session.refuse(ResourceDimension::Codec("scaled_work_budget"), ResourceFailure::BudgetExceeded,
+                        u64::MAX - 1, u64::MAX - 1, 1, "scaled_work_budget");
+                    self.remaining.set(None);
+                    return false;
+                };
+                if session.charge_work(scaled, "work_budget").is_err() {
                     self.remaining.set(None);
                     return false;
                 }
@@ -481,6 +500,7 @@ impl<'a> WorkBudget<'a> {
             remaining: Cell::new(Some(limit.min(self.remaining()))),
             recursion_depth: Cell::new(0),
             session: self.session,
+            session_work_scale: self.session_work_scale,
         }
     }
 
@@ -611,6 +631,30 @@ mod tests {
         assert_eq!(parent.remaining(), 1);
         assert_eq!(session.work.get(), 1);
         assert!(session.fused().is_none());
+    }
+
+    #[test]
+    fn scaled_session_work_preserves_local_ceiling_and_child_accounting() {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 8;
+        let session = DecodeBudget::new(policy, 1);
+        let parent = WorkBudget::for_session(3, &session)
+            .with_session_work_scale(std::num::NonZeroU64::new(4).unwrap());
+        let child = parent.session_child_slice(1);
+        assert!(child.charge());
+        assert_eq!(session.work.get(), 4);
+        assert!(parent.consume_child(&child).is_ok());
+        assert_eq!(parent.remaining(), 2);
+        assert_eq!(session.work.get(), 4);
+        assert!(parent.charge());
+        assert_eq!(parent.remaining(), 1);
+        assert_eq!(session.work.get(), 8);
+        assert!(!parent.charge());
+        assert!(parent.exhausted());
+        let failure = session.fused().unwrap();
+        assert_eq!(failure.dimension, super::ResourceDimension::WorkUnits);
+        assert_eq!(failure.used, 8);
+        assert_eq!(failure.additional, 4);
     }
 
     #[test]
