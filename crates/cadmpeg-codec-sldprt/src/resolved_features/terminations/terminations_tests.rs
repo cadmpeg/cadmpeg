@@ -477,7 +477,11 @@ fn extrusion_termination_stops_before_the_following_profile_object() {
         sketch_entities: Vec::new(),
     };
 
-    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane)).unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
@@ -573,7 +577,11 @@ fn extrusion_termination_includes_cosmetic_children_before_the_end_spec() {
         sketch_entities: Vec::new(),
     };
 
-    enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane)).unwrap();
 
     assert_eq!(
         histories[0].features[0].properties.get("EndCondition"),
@@ -651,7 +659,11 @@ fn extrusion_termination_admits_retained_dimension_with_an_existing_depth() {
             sketch_entities: Vec::new(),
         };
 
-        enrich_history_extrusion_terminations(&mut histories, std::slice::from_ref(&lane));
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
+        enrich_history_extrusion_terminations(&ctx, &mut histories, std::slice::from_ref(&lane)).unwrap();
         (
             histories[0].features[0]
                 .properties
@@ -716,6 +728,10 @@ fn compact_extrusion_to_face_preserves_an_unparsed_framed_face_path() {
 
 #[test]
 fn termination_consensus_uses_stable_reference_identity_across_lanes() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let vote = |reference: &str, identity: &str| super::TerminationVote::Face {
         condition: super::FaceCondition::ToFace,
         reference: super::FaceReference::Lane {
@@ -727,16 +743,16 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     let first = vote("lane-0:100", "components:1,2,3");
     let second = vote("lane-1:200", "components:1,2,3");
     let consensus =
-        super::consensus_termination_vote(&[Some(first.clone()), Some(second)]).unwrap();
+        super::consensus_termination_vote(&ctx, &[Some(first.clone()), Some(second)]).unwrap().unwrap();
     assert_eq!(consensus.reference(), Some("components:1,2,3"));
 
-    let exact = super::consensus_termination_vote(&[Some(first.clone())]).unwrap();
+    let exact = super::consensus_termination_vote(&ctx, &[Some(first.clone())]).unwrap().unwrap();
     assert_eq!(exact.reference(), first.reference());
-    assert!(super::consensus_termination_vote(&[
+    assert!(super::consensus_termination_vote(&ctx, &[
         Some(first),
         Some(vote("lane-1:200", "components:1,2,4")),
     ])
-    .is_none());
+    .unwrap().is_none());
 
     let first_depth = super::TerminationVote::Blind {
         depth_m: Some(0.01),
@@ -744,7 +760,7 @@ fn termination_consensus_uses_stable_reference_identity_across_lanes() {
     let second_depth = super::TerminationVote::Blind {
         depth_m: Some(0.02),
     };
-    assert!(super::consensus_termination_vote(&[Some(first_depth), Some(second_depth),]).is_none());
+    assert!(super::consensus_termination_vote(&ctx, &[Some(first_depth), Some(second_depth),]).unwrap().is_none());
 }
 
 #[test]
@@ -1648,3 +1664,5 @@ fn combine_selection_enrichment_refuses_work_limit() {
     assert!(matches!(combine_selection_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
+
+mod route_limits;

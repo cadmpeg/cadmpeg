@@ -97,7 +97,7 @@ pub(crate) fn enrich_history_semantic(
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    crate::resolved_features::terminations::enrich_history_extrusion_terminations(histories, lanes);
+    crate::resolved_features::terminations::enrich_history_extrusion_terminations(ctx, histories, lanes)?;
     crate::resolved_features::terminations::enrich_history_combine_selections(ctx, histories, lanes)?;
     crate::resolved_features::terminations::enrich_history_sweep_paths(ctx, histories, lanes)?;
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
