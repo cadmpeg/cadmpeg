@@ -279,6 +279,18 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     translated.feature_ref = Some("feature".into());
     translated.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.001, 0.0]);
     markers.push(translated);
+    for (name, coordinates) in [("pair-start", [0.0, 0.0]), ("pair-end", [0.001, 0.0])] {
+        let mut endpoint = SketchInputEntity::new(name, "lane", 0, 0, SketchInputKind::Point);
+        endpoint.coordinates_m = cadmpeg_ir::units::FiniteVector::new(coordinates);
+        markers.push(endpoint);
+    }
+    let mut handle = SketchInputEntity::new("pair-line-handle", "lane", 0, 0, SketchInputKind::LineOrCircle);
+    handle.feature_ref = Some("feature".into());
+    handle.links = SketchInputLinks::new(0, vec![
+        SketchInputLink { local_id: 1, entity_ref: "pair-start".into() },
+        SketchInputLink { local_id: 2, entity_ref: "pair-end".into() },
+    ]);
+    markers.push(handle);
     lane.sketch_entities = markers;
     let (mut owner_sketch, mut owner, _) = planar_fixture();
     owner_sketch.id = sketch.clone();
