@@ -6504,6 +6504,20 @@ impl<T: PartialEq> DistinctMembers<T> {
         Ok(Self(value))
     }
 
+    /// Inserts a new member after charging and reserving its decode slot.
+    pub fn insert_for_decode(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        if self.0.contains(&value) {
+            return Ok(false);
+        }
+        ctx.push_vec(&mut self.0, value, operation)?;
+        Ok(true)
+    }
+
     /// Inserts a member unless it is already present, and returns whether it was added.
     pub fn insert(&mut self, value: T) -> bool {
         if self.0.contains(&value) {
@@ -6525,12 +6539,14 @@ impl<T: PartialEq> DistinctMembers<T> {
 }
 
 impl<T> DistinctMembers<T> {
-    /// Reserve storage before inserting already admitted members.
-    pub fn try_reserve(
+    /// Charges and reserves additional decode member slots.
+    pub fn reserve_for_decode(
         &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         additional: usize,
-    ) -> Result<(), std::collections::TryReserveError> {
-        self.0.try_reserve(additional)
+        operation: &'static str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        ctx.reserve_vec(&mut self.0, additional, operation)
     }
 
     /// Removes all members.

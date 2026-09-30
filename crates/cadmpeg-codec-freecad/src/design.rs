@@ -478,10 +478,13 @@ pub(crate) fn transfer(
             }
             dependencies
         };
-        ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(dependencies.len()),
+        let mut dependency_members = DistinctMembers::default();
+        dependency_members.reserve_for_decode(
+            ctx,
+            dependencies.len(),
             "fcstd distinct feature dependencies",
         )?;
+        dependency_members.extend(dependencies);
         ctx.charge_collection_items(
             cadmpeg_core::decode::u64_from_index(outputs.len()),
             "fcstd distinct feature outputs",
@@ -492,7 +495,7 @@ pub(crate) fn transfer(
             ordinal: feature_ordinals[object.id.as_str()],
             name: Some(ctx.copy_retained_text(&object.name, "fcstd feature name")?),
             suppressed: bool_property(&owned, "Suppressed"),
-            dependencies: (dependencies).into_iter().collect(),
+            dependencies: dependency_members,
             source_properties: feature_state(ctx, &object.id, &owned)?,
             source_tag: Some(
                 ctx.copy_retained_text(&object.type_name, "fcstd feature source type")?,
@@ -4086,23 +4089,16 @@ fn build_profiles(
                 )
             };
             unused.remove(&candidate.entity);
-            ctx.charge_collection_items(1, "FCStd profile uses")?;
-            chain.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FCStd profile uses",
-                    ),
-                )
-            })?;
-            chain.push_front(SketchEntityUse {
-                entity: entities[candidate.entity]
-                    .id()
-                    .try_clone_for_decode(ctx, "FCStd profile use identity")?,
-                reversed,
-            });
+            ctx.push_front(
+                &mut chain,
+                SketchEntityUse {
+                    entity: entities[candidate.entity]
+                        .id()
+                        .try_clone_for_decode(ctx, "FCStd profile use identity")?,
+                    reversed,
+                },
+                "FCStd profile uses",
+            )?;
             head = next_head;
         }
         ctx.reserve_vec(&mut profiles, 1, "FCStd profile chains")?;

@@ -28,23 +28,27 @@ fn simple_hole_property_with_limit(
         start_treatment: SimpleHoleEndTreatment::None,
         end_treatment: SimpleHoleEndTreatment::None,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut properties = std::collections::BTreeMap::new();
-    simple_hole_native_properties(
-        &ctx,
-        &mut properties,
-        "operation",
-        &[template],
+
+    crate::test_support::with_decode_context_over(
         &[],
-        &[],
-        &[],
-    )?;
-    assert_eq!(properties["simple_hole_template"], "template");
-    Ok(())
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut properties = std::collections::BTreeMap::new();
+            simple_hole_native_properties(
+                ctx,
+                &mut properties,
+                "operation",
+                &[template],
+                &[],
+                &[],
+                &[],
+            )?;
+            assert_eq!(properties["simple_hole_template"], "template");
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -84,18 +88,22 @@ fn chamfer_selection_with_limit(
         start_treatment: SimpleHoleEndTreatment::Chamfer,
         end_treatment: SimpleHoleEndTreatment::Chamfer,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let _ = simple_hole_chamfers(
-        &ctx,
-        &cadmpeg_ir::document::CadIr::empty(),
-        &[template],
-        &std::collections::BTreeMap::new(),
-    )?;
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let _ = simple_hole_chamfers(
+                ctx,
+                &cadmpeg_ir::document::CadIr::empty(),
+                &[template],
+                &std::collections::BTreeMap::new(),
+            )?;
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -136,20 +144,24 @@ fn primary_hole_output_with_limit(
         end_treatment: SimpleHoleEndTreatment::None,
     };
     let references = std::collections::BTreeMap::from([("operation", 94)]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let outputs = primary_hole_outputs(
-        &ctx,
-        &[template],
-        &references,
+
+    crate::test_support::with_decode_context_over(
         &[],
-        &std::collections::BTreeMap::new(),
-    )?;
-    assert_eq!(outputs["operation"], []);
-    Ok(())
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let outputs = primary_hole_outputs(
+                ctx,
+                &[template],
+                &references,
+                &[],
+                &std::collections::BTreeMap::new(),
+            )?;
+            assert_eq!(outputs["operation"], []);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -185,16 +197,19 @@ fn primary_hole_output_refuses_work_limit() {
 fn hole_output_map_result(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-output-body").unwrap();
-    let mut outputs = std::collections::BTreeMap::new();
-    insert_hole_output_body(&ctx, &mut outputs, "operation", &body)?;
-    assert_eq!(outputs["operation"], [body]);
-    Ok(())
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-output-body").unwrap();
+            let mut outputs = std::collections::BTreeMap::new();
+            insert_hole_output_body(ctx, &mut outputs, "operation", &body)?;
+            assert_eq!(outputs["operation"], [body]);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -227,15 +242,19 @@ fn hole_output_map_refuses_work_limit() {
 
 #[test]
 fn hole_operation_uniqueness_refuses_work_limit() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = hole_operations_are_unique(&ctx, &["first".into(), "second".into()]).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error =
+                hole_operations_are_unique(ctx, &["first".into(), "second".into()]).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+            );
+        },
     );
 }
 
@@ -245,19 +264,23 @@ fn hole_body_group_result(
     let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-group-body").unwrap();
     let operations = ["hole-operation".to_string()];
     let outputs = std::collections::BTreeMap::from([(operations[0].clone(), vec![body])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let groups = hole_operations_by_body(
-        &ctx,
-        &cadmpeg_ir::document::CadIr::empty(),
-        &operations,
-        &outputs,
-    )?;
-    assert_eq!(groups.unwrap().len(), 1);
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let groups = hole_operations_by_body(
+                ctx,
+                &cadmpeg_ir::document::CadIr::empty(),
+                &operations,
+                &outputs,
+            )?;
+            assert_eq!(groups.unwrap().len(), 1);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -383,40 +406,39 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         ])
         .unwrap(),
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut properties = std::collections::BTreeMap::new();
-    simple_hole_native_properties(
-        &ctx,
-        &mut properties,
-        operation,
-        &[template],
-        &[lane],
-        &[blocks],
-        &[group],
-    )
-    .unwrap();
-    assert_eq!(properties["simple_hole_template"], "template");
-    assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
-    assert_eq!(
-        properties["simple_hole_repeated_scalar_lane_block_references"],
-        "blocks"
-    );
-    assert_eq!(properties["simple_hole_construction_group"], "group");
-    let mut empty_properties = std::collections::BTreeMap::new();
-    simple_hole_native_properties(
-        &ctx,
-        &mut empty_properties,
-        "nx:feature-history:operation-label#1-5",
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
-    assert!(empty_properties.is_empty());
+
+    crate::test_support::with_decode_context(|ctx| {
+        let mut properties = std::collections::BTreeMap::new();
+        simple_hole_native_properties(
+            ctx,
+            &mut properties,
+            operation,
+            &[template],
+            &[lane],
+            &[blocks],
+            &[group],
+        )
+        .unwrap();
+        assert_eq!(properties["simple_hole_template"], "template");
+        assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
+        assert_eq!(
+            properties["simple_hole_repeated_scalar_lane_block_references"],
+            "blocks"
+        );
+        assert_eq!(properties["simple_hole_construction_group"], "group");
+        let mut empty_properties = std::collections::BTreeMap::new();
+        simple_hole_native_properties(
+            ctx,
+            &mut empty_properties,
+            "nx:feature-history:operation-label#1-5",
+            &[],
+            &[],
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert!(empty_properties.is_empty());
+    });
 }
 
 #[test]
@@ -439,698 +461,106 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::SourceObjectAssociation;
 
-    let default_arena = cadmpeg_core::decode::DecodeArena::new();
-    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (default_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
-            .unwrap();
-    let operations = ["hole-a".to_string(), "hole-b".to_string()];
-    let templates = operations
-        .iter()
-        .map(|operation| FeatureSimpleHoleTemplate {
-            id: format!("template-{operation}"),
-            operation_label: operation.clone(),
-            payload_string: format!("string-{operation}"),
-            family: SimpleHoleFamily::GeneralHole,
-            form: SimpleHoleForm::Simple,
-            extent: SimpleHoleExtent::Through,
-            start_treatment: SimpleHoleEndTreatment::Chamfer,
-            end_treatment: SimpleHoleEndTreatment::Chamfer,
-        })
-        .collect::<Vec<_>>();
-    let group = FeatureSimpleHoleConstructionGroup {
-        id: "group".into(),
-        first_data_blocks: ["a".into(), "b".into()],
-        second_data_blocks: ["c".into(), "d".into()],
-        members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: operations[0].clone(),
-                scalar_lane: "lane-a".into(),
-                block_reference: "refs-a".into(),
-            },
-            crate::native::features::holes::FeatureSimpleHoleConstructionMember {
-                operation_label: operations[1].clone(),
-                scalar_lane: "lane-b".into(),
-                block_reference: "refs-b".into(),
-            },
-        ])
-        .unwrap(),
-    };
-    let mut model = Model::default();
-    for ordinal in 0..2 {
-        let surface = SurfaceId::mint(format!("test:model:entity#surface-{ordinal}"))
-            .expect("identity grammar");
-        model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(f64::from(ordinal), 0.0, 0.0),
-                    Vector3::new(0.0, 1.0, 0.0),
-                    Vector3::new(1.0, 0.0, 0.0),
-                    2.55,
-                )
-                .unwrap(),
-            )),
-            source_object: None::<SourceObjectAssociation>,
-        });
-        model.faces.push(Face {
-            id: FaceId::mint(format!("test:model:entity#face-{ordinal}"))
-                .expect("identity grammar"),
-            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            surface,
-            sense: Sense::Reversed,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
-                LoopId::mint(format!("test:model:entity#loop-{ordinal}-0"))
-                    .expect("identity grammar"),
-                LoopId::mint(format!("test:model:entity#loop-{ordinal}-1"))
-                    .expect("identity grammar"),
-            ]),
-            name: None,
-            color: None,
-            tolerance: None,
-        });
-        for boundary in 0..2 {
-            let loop_id = LoopId::mint(format!("test:model:entity#loop-{ordinal}-{boundary}"))
+    crate::test_support::with_decode_context(|default_ctx| {
+        let operations = ["hole-a".to_string(), "hole-b".to_string()];
+        let templates = operations
+            .iter()
+            .map(|operation| FeatureSimpleHoleTemplate {
+                id: format!("template-{operation}"),
+                operation_label: operation.clone(),
+                payload_string: format!("string-{operation}"),
+                family: SimpleHoleFamily::GeneralHole,
+                form: SimpleHoleForm::Simple,
+                extent: SimpleHoleExtent::Through,
+                start_treatment: SimpleHoleEndTreatment::Chamfer,
+                end_treatment: SimpleHoleEndTreatment::Chamfer,
+            })
+            .collect::<Vec<_>>();
+        let group = FeatureSimpleHoleConstructionGroup {
+            id: "group".into(),
+            first_data_blocks: ["a".into(), "b".into()],
+            second_data_blocks: ["c".into(), "d".into()],
+            members: crate::native::features::holes::SimpleHoleConstructionMembers::new(vec![
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: operations[0].clone(),
+                    scalar_lane: "lane-a".into(),
+                    block_reference: "refs-a".into(),
+                },
+                crate::native::features::holes::FeatureSimpleHoleConstructionMember {
+                    operation_label: operations[1].clone(),
+                    scalar_lane: "lane-b".into(),
+                    block_reference: "refs-b".into(),
+                },
+            ])
+            .unwrap(),
+        };
+        let mut model = Model::default();
+        for ordinal in 0..2 {
+            let surface = SurfaceId::mint(format!("test:model:entity#surface-{ordinal}"))
                 .expect("identity grammar");
-            let curve = CurveId::mint(format!("test:model:entity#bore-curve-{ordinal}-{boundary}"))
-                .expect("identity grammar");
-            let edge = EdgeId::mint(format!("test:model:entity#bore-edge-{ordinal}-{boundary}"))
-                .expect("identity grammar");
-            let coedge = CoedgeId::mint(format!(
-                "test:model:entity#bore-coedge-{ordinal}-{boundary}"
-            ))
-            .expect("identity grammar");
-            model.curves.push(Curve {
-                id: curve.clone(),
-                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(f64::from(ordinal), f64::from(boundary), 0.0),
+            model.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                    cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                        Point3::new(f64::from(ordinal), 0.0, 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         2.55,
                     )
                     .unwrap(),
                 )),
-                source_object: None,
+                source_object: None::<SourceObjectAssociation>,
             });
-            model.edges.push(Edge {
-                id: edge.clone(),
-                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
-                start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                tolerance: None,
-            });
-            model.coedges.push(Coedge {
-                id: coedge.clone(),
-                owner_loop: loop_id,
-                edge,
-                radial_next: coedge,
-                sense: Sense::Forward,
-                pcurves: Vec::new(),
-                use_curve: None,
-            });
-        }
-    }
-    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    model.bodies.push(Body {
-        id: body.clone(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    model.regions.push(Region {
-        id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-        body: body.clone(),
-        shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-    });
-    model.shells.push(
-        Shell::new(
-            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            vec![
-                FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
-                FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
-            ],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap(),
-    );
-    let mut ir = CadIr::empty();
-    ir.model = model;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let outputs = std::collections::BTreeMap::from([
-        ("hole-a".to_string(), vec![body.clone()]),
-        ("hole-b".to_string(), vec![body]),
-    ]);
-    let inferred = hole_body_projection(&ctx, &ir, &operations, &std::collections::BTreeMap::new())
-        .unwrap()
-        .expect("complete bore bijection");
-    assert_eq!(inferred.outputs, outputs);
-    assert_eq!(
-        simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-        ])
-    );
-    assert_eq!(
-        simple_hole_diameters(&ir, &templates, &[], &outputs),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-        ])
-    );
-    assert_eq!(
-        hole_diameters_for_operations(&ir, &operations, &outputs),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-        ])
-    );
-    assert!(
-        hole_axis_placements_for_operations(&ctx, &ir, &operations, &outputs)
-            .unwrap()
-            .is_empty()
-    );
-    assert!(hole_axis_placements_for_operations(
-        &ctx,
-        &ir,
-        &operations,
-        &std::collections::BTreeMap::new(),
-    )
-    .unwrap()
-    .is_empty());
-    let mut single_hole = ir.clone();
-    {
-        let members = vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
-        single_hole.model.shells[0].edit_topology(|faces, _, _| *faces = members)
-    }
-    .unwrap();
-    let single_operation = [operations[1].clone()];
-    let single_output = std::collections::BTreeMap::from([(
-        operations[1].clone(),
-        outputs[&operations[1]].clone(),
-    )]);
-    assert_eq!(
-        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,)
-            .unwrap(),
-        std::collections::BTreeMap::from([(
-            operations[1].clone(),
-            HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                    .unwrap(),
-            },
-        )])
-    );
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut single_hole.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
-    let radius = cylinder_surface.radius().get();
-    let mut origin = *origin;
-    origin.y = 91.0;
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        origin,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    assert_eq!(
-        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,)
-            .unwrap(),
-        std::collections::BTreeMap::from([(
-            operations[1].clone(),
-            HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                    .unwrap(),
-            },
-        )])
-    );
-    let mut opposite_axis = single_hole.clone();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut opposite_axis.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
-    let radius = cylinder_surface.radius().get();
-
-    let axis = Vector3::new(0.0, -1.0, 0.0);
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        *origin,
-        axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
-        curve
-            .id
-            .as_str()
-            .starts_with("test:model:entity#bore-curve-1-")
-    }) {
-        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
-        else {
-            unreachable!()
-        };
-        let center = circle_curve.center().get();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-        let radius = circle_curve.radius().get();
-
-        let axis = Vector3::new(0.0, -1.0, 0.0);
-        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            axis,
-            *ref_direction,
-            radius,
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        hole_axis_placements_for_operations(
-            &ctx,
-            &opposite_axis,
-            &single_operation,
-            &single_output,
-        )
-        .unwrap(),
-        std::collections::BTreeMap::from([(
-            operations[1].clone(),
-            HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 0.0, 0.0))
-                    .unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0))
-                    .unwrap(),
-            },
-        )])
-    );
-    let mut different_radii = ir.clone();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut different_radii.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
-
-    let radius = 3.1;
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        *origin,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    for curve in different_radii.model.curves.iter_mut().filter(|curve| {
-        curve
-            .id
-            .as_str()
-            .starts_with("test:model:entity#bore-curve-1-")
-    }) {
-        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
-        else {
-            unreachable!()
-        };
-        let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-
-        let radius = 3.1;
-        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            *axis,
-            *ref_direction,
-            radius,
-        )
-        .unwrap();
-    }
-    assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
-    assert!(hole_body_projection(
-        &ctx,
-        &different_radii,
-        &operations,
-        &std::collections::BTreeMap::new(),
-    )
-    .unwrap()
-    .is_none());
-    let unresolved_primary =
-        std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
-    assert!(hole_body_projection(
-        &ctx,
-        &ir,
-        std::slice::from_ref(&operations[0]),
-        &unresolved_primary,
-    )
-    .unwrap()
-    .is_none());
-    assert_eq!(
-        simple_hole_diameters(
-            &ir,
-            &templates,
-            std::slice::from_ref(&group),
-            &std::collections::BTreeMap::new(),
-        ),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-        ])
-    );
-    assert!(hole_diameters_for_operations(
-        &ir,
-        &[operations[0].clone(), operations[0].clone()],
-        &outputs,
-    )
-    .is_empty());
-    let mut invalid_boundary = ir.clone();
-    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        &mut invalid_boundary.model.curves[0].geometry
-    else {
-        unreachable!()
-    };
-    let center = circle_curve.center().get();
-    let axis = circle_curve.frame().axis().as_raw();
-    let ref_direction = circle_curve.frame().reference().as_raw();
-    let radius = circle_curve.radius().get();
-    let mut radius = radius;
-    radius += 0.1;
-    *circle_curve =
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-            .unwrap();
-    assert!(hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,).is_empty());
-    let mut coincident_boundaries = ir.clone();
-    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-        &mut coincident_boundaries.model.curves[1].geometry
-    else {
-        unreachable!()
-    };
-    let center = circle_curve.center().get();
-    let axis = circle_curve.frame().axis().as_raw();
-    let ref_direction = circle_curve.frame().reference().as_raw();
-    let radius = circle_curve.radius().get();
-    let mut center = center;
-    center.y = 0.0;
-    *circle_curve =
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-            .unwrap();
-    assert!(
-        hole_diameters_for_operations(&coincident_boundaries, &operations, &outputs,).is_empty()
-    );
-    let mut nonparallel = single_hole.clone();
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut nonparallel.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
-    let radius = cylinder_surface.radius().get();
-
-    let axis = Vector3::new(0.0, 0.0, 1.0);
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        *origin,
-        axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    assert!(hole_axis_placements_for_operations(
-        &ctx,
-        &nonparallel,
-        &single_operation,
-        &single_output,
-    )
-    .unwrap()
-    .is_empty());
-    let mut sheet = ir.clone();
-    sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
-    let mut disconnected = ir.clone();
-    disconnected.model.bodies[0]
-        .regions
-        .push(RegionId::mint("test:model:entity#second-region").expect("identity grammar"));
-    assert!(hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty());
-    let mut shared_carrier = ir.clone();
-    shared_carrier.model.faces.push(Face {
-        id: FaceId::mint("test:model:entity#unowned-shared-cylinder-face")
-            .expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#unowned-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#surface-0").expect("identity grammar"),
-        sense: Sense::Reversed,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
-            LoopId::mint("test:model:entity#unowned-loop-a").expect("identity grammar"),
-            LoopId::mint("test:model:entity#unowned-loop-b").expect("identity grammar"),
-        ]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    assert_eq!(
-        simple_hole_diameters(
-            &shared_carrier,
-            &templates,
-            std::slice::from_ref(&group),
-            &outputs,
-        ),
-        simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,)
-    );
-
-    let mut distinct = ir.clone();
-    distinct.model.shells[0]
-        .edit_topology(|faces, _, _| faces.pop())
-        .unwrap();
-    distinct.model.bodies.push(Body {
-        id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:entity#second-region").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    distinct.model.regions.push(Region {
-        id: RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-        body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
-        shells: vec![ShellId::mint("test:model:entity#second-shell").expect("identity grammar")],
-    });
-    distinct.model.shells.push(Shell::with_face(
-        ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
-        RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
-        FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
-    ));
-    distinct.model.faces[1].shell =
-        ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut distinct.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
-
-    let radius = 3.0;
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        *origin,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    for curve in distinct.model.curves.iter_mut().filter(|curve| {
-        curve
-            .id
-            .as_str()
-            .starts_with("test:model:entity#bore-curve-1-")
-    }) {
-        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut curve.geometry
-        else {
-            unreachable!()
-        };
-        let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis().as_raw();
-        let ref_direction = circle_curve.frame().reference().as_raw();
-
-        let radius = 3.0;
-        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-            center,
-            *axis,
-            *ref_direction,
-            radius,
-        )
-        .unwrap();
-    }
-    let distinct_outputs = std::collections::BTreeMap::from([
-        (
-            "hole-a".to_string(),
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-        ),
-        (
-            "hole-b".to_string(),
-            vec![BodyId::mint("test:model:entity#second-body").expect("identity grammar")],
-        ),
-    ]);
-    assert_eq!(
-        simple_hole_diameters(
-            &distinct,
-            &templates,
-            std::slice::from_ref(&group),
-            &distinct_outputs,
-        ),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(6.0).unwrap()
-            ),
-        ])
-    );
-    assert_eq!(
-        hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::scalar::Length::new(5.1).unwrap()
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::scalar::Length::new(6.0).unwrap()
-            ),
-        ])
-    );
-    assert!(hole_diameters_for_operations(
-        &distinct,
-        &operations,
-        &std::collections::BTreeMap::new(),
-    )
-    .is_empty());
-    assert!(hole_diameters_for_operations(
-        &ir,
-        &operations,
-        &std::collections::BTreeMap::from([(
-            "hole-a".to_string(),
-            vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
-        )]),
-    )
-    .is_empty());
-
-    let mut chamfered = ir.clone();
-    for bore in 0..2 {
-        for end in 0..2 {
-            let surface = SurfaceId::mint(format!("test:model:entity#cone-{bore}-{end}"))
-                .expect("identity grammar");
-            let face = FaceId::mint(format!("test:model:entity#cone-face-{bore}-{end}"))
-                .expect("identity grammar");
-            let loops = [
-                LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-inner"))
+            model.faces.push(Face {
+                id: FaceId::mint(format!("test:model:entity#face-{ordinal}"))
                     .expect("identity grammar"),
-                LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-outer"))
-                    .expect("identity grammar"),
-            ];
-            chamfered.model.surfaces.push(Surface {
-                id: surface.clone(),
-                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-                    cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        Point3::new(f64::from(bore), f64::from(end), 0.0),
-                        Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
-                        Vector3::new(1.0, 0.0, 0.0),
-                        0.0,
-                        1.0,
-                        std::f64::consts::FRAC_PI_4,
-                    )
-                    .unwrap(),
-                )),
-                source_object: None,
-            });
-            chamfered.model.shells[0].add_face(face.clone());
-            chamfered.model.faces.push(Face {
-                id: face,
                 shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
                 surface,
                 sense: Sense::Reversed,
-                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+                    LoopId::mint(format!("test:model:entity#loop-{ordinal}-0"))
+                        .expect("identity grammar"),
+                    LoopId::mint(format!("test:model:entity#loop-{ordinal}-1"))
+                        .expect("identity grammar"),
+                ]),
                 name: None,
                 color: None,
                 tolerance: None,
             });
-            for (boundary, (loop_id, radius)) in loops.into_iter().zip([2.55, 3.55]).enumerate() {
-                let curve = CurveId::mint(format!(
-                    "test:model:entity#cone-curve-{bore}-{end}-{boundary}"
-                ))
-                .expect("identity grammar");
-                let edge = EdgeId::mint(format!(
-                    "test:model:entity#cone-edge-{bore}-{end}-{boundary}"
-                ))
-                .expect("identity grammar");
+            for boundary in 0..2 {
+                let loop_id = LoopId::mint(format!("test:model:entity#loop-{ordinal}-{boundary}"))
+                    .expect("identity grammar");
+                let curve =
+                    CurveId::mint(format!("test:model:entity#bore-curve-{ordinal}-{boundary}"))
+                        .expect("identity grammar");
+                let edge =
+                    EdgeId::mint(format!("test:model:entity#bore-edge-{ordinal}-{boundary}"))
+                        .expect("identity grammar");
                 let coedge = CoedgeId::mint(format!(
-                    "test:model:entity#cone-coedge-{bore}-{end}-{boundary}"
+                    "test:model:entity#bore-coedge-{ordinal}-{boundary}"
                 ))
                 .expect("identity grammar");
-                chamfered.model.curves.push(Curve {
+                model.curves.push(Curve {
                     id: curve.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            Point3::new(f64::from(bore), f64::from(end), 0.0),
+                            Point3::new(f64::from(ordinal), f64::from(boundary), 0.0),
                             Vector3::new(0.0, 1.0, 0.0),
                             Vector3::new(1.0, 0.0, 0.0),
-                            radius,
+                            2.55,
                         )
                         .unwrap(),
                     )),
                     source_object: None,
                 });
-                chamfered.model.edges.push(Edge {
+                model.edges.push(Edge {
                     id: edge.clone(),
                     carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
                     start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
                     tolerance: None,
                 });
-                chamfered.model.coedges.push(Coedge {
+                model.coedges.push(Coedge {
                     id: coedge.clone(),
                     owner_loop: loop_id,
                     edge,
@@ -1141,132 +571,820 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 });
             }
         }
-    }
-    assert_eq!(
-        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap(),
-        std::collections::BTreeMap::from([
-            (
-                "hole-a".into(),
-                cadmpeg_ir::features::holes::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-                    angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
-                        .unwrap(),
-                },
-            ),
-            (
-                "hole-b".into(),
-                cadmpeg_ir::features::holes::HoleKind::Chamfer {
-                    diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
-                    angle: cadmpeg_ir::scalar::InteriorAngle::new(std::f64::consts::FRAC_PI_2)
-                        .unwrap(),
-                },
-            ),
-        ])
-    );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 1;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = simple_hole_chamfers(&ctx, &chamfered, &templates, &outputs)
-        .expect_err("two bore cone counters exceed one admitted collection item");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-    ));
-    assert_eq!(
-        simple_hole_chamfers(
-            &default_ctx,
-            &chamfered,
-            &templates,
-            &std::collections::BTreeMap::new()
-        )
-        .unwrap(),
-        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
-    );
-    let mut sheet = chamfered.clone();
-    sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(
-        simple_hole_chamfers(&default_ctx, &sheet, &templates, &outputs)
-            .unwrap()
-            .is_empty()
-    );
-    let mut unrelated = chamfered.clone();
-    unrelated.model.surfaces.push(Surface {
-        id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-            cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 1.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                0.0,
-                1.0,
-                0.0,
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        model.regions.push(Region {
+            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body: body.clone(),
+            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        });
+        model.shells.push(
+            Shell::new(
+                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+                RegionId::mint("test:model:entity#region").expect("identity grammar"),
+                vec![
+                    FaceId::mint("test:model:entity#face-0").expect("identity grammar"),
+                    FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+                ],
+                Vec::new(),
+                Vec::new(),
             )
             .unwrap(),
-        )),
-        source_object: None,
-    });
-    unrelated.model.faces.push(Face {
-        id: FaceId::mint("test:model:entity#unrelated-cone-face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#unrelated-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
-        sense: Sense::Reversed,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
-            LoopId::mint("test:model:entity#unrelated-a").expect("identity grammar"),
-            LoopId::mint("test:model:entity#unrelated-b").expect("identity grammar"),
-        ]),
-        name: None,
-        color: None,
-        tolerance: None,
-    });
-    assert_eq!(
-        simple_hole_chamfers(&default_ctx, &unrelated, &templates, &outputs).unwrap(),
-        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
-    );
-    let mut unequal_chamfers = chamfered;
-    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
-        .model
-        .curves
-        .last_mut()
-        .expect("required invariant")
-        .geometry
-    else {
-        unreachable!()
-    };
-    let center = circle_curve.center().get();
-    let axis = circle_curve.frame().axis().as_raw();
-    let ref_direction = circle_curve.frame().reference().as_raw();
-    let radius = circle_curve.radius().get();
-    let mut radius = radius;
-    radius += 0.1;
-    *circle_curve =
-        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
-            .unwrap();
-    assert!(
-        simple_hole_chamfers(&default_ctx, &unequal_chamfers, &templates, &outputs)
-            .unwrap()
-            .is_empty()
-    );
+        );
+        let mut ir = CadIr::empty();
+        ir.model = model;
 
-    let mut mismatched = ir;
-    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
-        &mut mismatched.model.surfaces[1].geometry
-    else {
-        unreachable!()
-    };
-    let origin = cylinder_surface.origin();
-    let axis = cylinder_surface.frame().axis().as_raw();
-    let ref_direction = cylinder_surface.frame().reference().as_raw();
+        crate::test_support::with_decode_context_over(
+            &[],
+            |_| {},
+            |ctx| {
+                let outputs = std::collections::BTreeMap::from([
+                    ("hole-a".to_string(), vec![body.clone()]),
+                    ("hole-b".to_string(), vec![body]),
+                ]);
+                let inferred =
+                    hole_body_projection(ctx, &ir, &operations, &std::collections::BTreeMap::new())
+                        .unwrap()
+                        .expect("complete bore bijection");
+                assert_eq!(inferred.outputs, outputs);
+                assert_eq!(
+                    simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                    ])
+                );
+                assert_eq!(
+                    simple_hole_diameters(&ir, &templates, &[], &outputs),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                    ])
+                );
+                assert_eq!(
+                    hole_diameters_for_operations(&ir, &operations, &outputs),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                    ])
+                );
+                assert!(
+                    hole_axis_placements_for_operations(ctx, &ir, &operations, &outputs)
+                        .unwrap()
+                        .is_empty()
+                );
+                assert!(hole_axis_placements_for_operations(
+                    ctx,
+                    &ir,
+                    &operations,
+                    &std::collections::BTreeMap::new(),
+                )
+                .unwrap()
+                .is_empty());
+                let mut single_hole = ir.clone();
+                {
+                    let members =
+                        vec![FaceId::mint("test:model:entity#face-1").expect("identity grammar")];
+                    single_hole.model.shells[0].edit_topology(|faces, _, _| *faces = members)
+                }
+                .unwrap();
+                let single_operation = [operations[1].clone()];
+                let single_output = std::collections::BTreeMap::from([(
+                    operations[1].clone(),
+                    outputs[&operations[1]].clone(),
+                )]);
+                assert_eq!(
+                    hole_axis_placements_for_operations(
+                        ctx,
+                        &single_hole,
+                        &single_operation,
+                        &single_output,
+                    )
+                    .unwrap(),
+                    std::collections::BTreeMap::from([(
+                        operations[1].clone(),
+                        HolePlacement::Axis {
+                            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                1.0, 0.0, 0.0
+                            ))
+                            .unwrap(),
+                            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                                0.0, 1.0, 0.0
+                            ))
+                            .unwrap(),
+                        },
+                    )])
+                );
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                    &mut single_hole.model.surfaces[1].geometry
+                else {
+                    unreachable!()
+                };
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.frame().axis().as_raw();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
+                let radius = cylinder_surface.radius().get();
+                let mut origin = *origin;
+                origin.y = 91.0;
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    origin,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                assert_eq!(
+                    hole_axis_placements_for_operations(
+                        ctx,
+                        &single_hole,
+                        &single_operation,
+                        &single_output,
+                    )
+                    .unwrap(),
+                    std::collections::BTreeMap::from([(
+                        operations[1].clone(),
+                        HolePlacement::Axis {
+                            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                1.0, 0.0, 0.0
+                            ))
+                            .unwrap(),
+                            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                                0.0, 1.0, 0.0
+                            ))
+                            .unwrap(),
+                        },
+                    )])
+                );
+                let mut opposite_axis = single_hole.clone();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                    &mut opposite_axis.model.surfaces[1].geometry
+                else {
+                    unreachable!()
+                };
+                let origin = cylinder_surface.origin();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
+                let radius = cylinder_surface.radius().get();
 
-    let radius = 3.0;
-    *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-        *origin,
-        *axis,
-        *ref_direction,
-        radius,
-    )
-    .unwrap();
-    assert!(simple_hole_diameters(&mismatched, &templates, &[group], &outputs,).is_empty());
+                let axis = Vector3::new(0.0, -1.0, 0.0);
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    *origin,
+                    axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                for curve in opposite_axis.model.curves.iter_mut().filter(|curve| {
+                    curve
+                        .id
+                        .as_str()
+                        .starts_with("test:model:entity#bore-curve-1-")
+                }) {
+                    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                        &mut curve.geometry
+                    else {
+                        unreachable!()
+                    };
+                    let center = circle_curve.center().get();
+                    let ref_direction = circle_curve.frame().reference().as_raw();
+                    let radius = circle_curve.radius().get();
+
+                    let axis = Vector3::new(0.0, -1.0, 0.0);
+                    *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        center,
+                        axis,
+                        *ref_direction,
+                        radius,
+                    )
+                    .unwrap();
+                }
+                assert_eq!(
+                    hole_axis_placements_for_operations(
+                        ctx,
+                        &opposite_axis,
+                        &single_operation,
+                        &single_output,
+                    )
+                    .unwrap(),
+                    std::collections::BTreeMap::from([(
+                        operations[1].clone(),
+                        HolePlacement::Axis {
+                            origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                                1.0, 0.0, 0.0
+                            ))
+                            .unwrap(),
+                            axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                                0.0, 1.0, 0.0
+                            ))
+                            .unwrap(),
+                        },
+                    )])
+                );
+                let mut different_radii = ir.clone();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                    &mut different_radii.model.surfaces[1].geometry
+                else {
+                    unreachable!()
+                };
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.frame().axis().as_raw();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+                let radius = 3.1;
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    *origin,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                for curve in different_radii.model.curves.iter_mut().filter(|curve| {
+                    curve
+                        .id
+                        .as_str()
+                        .starts_with("test:model:entity#bore-curve-1-")
+                }) {
+                    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                        &mut curve.geometry
+                    else {
+                        unreachable!()
+                    };
+                    let center = circle_curve.center().get();
+                    let axis = circle_curve.frame().axis().as_raw();
+                    let ref_direction = circle_curve.frame().reference().as_raw();
+
+                    let radius = 3.1;
+                    *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        center,
+                        *axis,
+                        *ref_direction,
+                        radius,
+                    )
+                    .unwrap();
+                }
+                assert!(
+                    hole_diameters_for_operations(&different_radii, &operations, &outputs,)
+                        .is_empty()
+                );
+                assert!(hole_body_projection(
+                    ctx,
+                    &different_radii,
+                    &operations,
+                    &std::collections::BTreeMap::new(),
+                )
+                .unwrap()
+                .is_none());
+                let unresolved_primary = std::collections::BTreeMap::from([(
+                    operations[0].clone(),
+                    Vec::<BodyId>::new(),
+                )]);
+                assert!(hole_body_projection(
+                    ctx,
+                    &ir,
+                    std::slice::from_ref(&operations[0]),
+                    &unresolved_primary,
+                )
+                .unwrap()
+                .is_none());
+                assert_eq!(
+                    simple_hole_diameters(
+                        &ir,
+                        &templates,
+                        std::slice::from_ref(&group),
+                        &std::collections::BTreeMap::new(),
+                    ),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                    ])
+                );
+                assert!(hole_diameters_for_operations(
+                    &ir,
+                    &[operations[0].clone(), operations[0].clone()],
+                    &outputs,
+                )
+                .is_empty());
+                let mut invalid_boundary = ir.clone();
+                let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                    &mut invalid_boundary.model.curves[0].geometry
+                else {
+                    unreachable!()
+                };
+                let center = circle_curve.center().get();
+                let axis = circle_curve.frame().axis().as_raw();
+                let ref_direction = circle_curve.frame().reference().as_raw();
+                let radius = circle_curve.radius().get();
+                let mut radius = radius;
+                radius += 0.1;
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    center,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                assert!(
+                    hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,)
+                        .is_empty()
+                );
+                let mut coincident_boundaries = ir.clone();
+                let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                    &mut coincident_boundaries.model.curves[1].geometry
+                else {
+                    unreachable!()
+                };
+                let center = circle_curve.center().get();
+                let axis = circle_curve.frame().axis().as_raw();
+                let ref_direction = circle_curve.frame().reference().as_raw();
+                let radius = circle_curve.radius().get();
+                let mut center = center;
+                center.y = 0.0;
+                *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                    center,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                assert!(hole_diameters_for_operations(
+                    &coincident_boundaries,
+                    &operations,
+                    &outputs,
+                )
+                .is_empty());
+                let mut nonparallel = single_hole.clone();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                    &mut nonparallel.model.surfaces[1].geometry
+                else {
+                    unreachable!()
+                };
+                let origin = cylinder_surface.origin();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
+                let radius = cylinder_surface.radius().get();
+
+                let axis = Vector3::new(0.0, 0.0, 1.0);
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    *origin,
+                    axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                assert!(hole_axis_placements_for_operations(
+                    ctx,
+                    &nonparallel,
+                    &single_operation,
+                    &single_output,
+                )
+                .unwrap()
+                .is_empty());
+                let mut sheet = ir.clone();
+                sheet.model.bodies[0].kind = BodyKind::Sheet;
+                assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
+                let mut disconnected = ir.clone();
+                disconnected.model.bodies[0].regions.push(
+                    RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+                );
+                assert!(
+                    hole_diameters_for_operations(&disconnected, &operations, &outputs).is_empty()
+                );
+                let mut shared_carrier = ir.clone();
+                shared_carrier.model.faces.push(Face {
+                    id: FaceId::mint("test:model:entity#unowned-shared-cylinder-face")
+                        .expect("identity grammar"),
+                    shell: ShellId::mint("test:model:entity#unowned-shell")
+                        .expect("identity grammar"),
+                    surface: SurfaceId::mint("test:model:entity#surface-0")
+                        .expect("identity grammar"),
+                    sense: Sense::Reversed,
+                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+                        LoopId::mint("test:model:entity#unowned-loop-a").expect("identity grammar"),
+                        LoopId::mint("test:model:entity#unowned-loop-b").expect("identity grammar"),
+                    ]),
+                    name: None,
+                    color: None,
+                    tolerance: None,
+                });
+                assert_eq!(
+                    simple_hole_diameters(
+                        &shared_carrier,
+                        &templates,
+                        std::slice::from_ref(&group),
+                        &outputs,
+                    ),
+                    simple_hole_diameters(&ir, &templates, std::slice::from_ref(&group), &outputs,)
+                );
+
+                let mut distinct = ir.clone();
+                distinct.model.shells[0]
+                    .edit_topology(|faces, _, _| faces.pop())
+                    .unwrap();
+                distinct.model.bodies.push(Body {
+                    id: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
+                    kind: BodyKind::Solid,
+                    regions: vec![RegionId::mint("test:model:entity#second-region")
+                        .expect("identity grammar")],
+                    transform: None,
+                    name: None,
+                    color: None,
+                    visible: None,
+                });
+                distinct.model.regions.push(Region {
+                    id: RegionId::mint("test:model:entity#second-region")
+                        .expect("identity grammar"),
+                    body: BodyId::mint("test:model:entity#second-body").expect("identity grammar"),
+                    shells: vec![
+                        ShellId::mint("test:model:entity#second-shell").expect("identity grammar")
+                    ],
+                });
+                distinct.model.shells.push(Shell::with_face(
+                    ShellId::mint("test:model:entity#second-shell").expect("identity grammar"),
+                    RegionId::mint("test:model:entity#second-region").expect("identity grammar"),
+                    FaceId::mint("test:model:entity#face-1").expect("identity grammar"),
+                ));
+                distinct.model.faces[1].shell =
+                    ShellId::mint("test:model:entity#second-shell").expect("identity grammar");
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) =
+                    &mut distinct.model.surfaces[1].geometry
+                else {
+                    unreachable!()
+                };
+                let origin = cylinder_surface.origin();
+                let axis = cylinder_surface.frame().axis().as_raw();
+                let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+                let radius = 3.0;
+                *cylinder_surface = cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    *origin,
+                    *axis,
+                    *ref_direction,
+                    radius,
+                )
+                .unwrap();
+                for curve in distinct.model.curves.iter_mut().filter(|curve| {
+                    curve
+                        .id
+                        .as_str()
+                        .starts_with("test:model:entity#bore-curve-1-")
+                }) {
+                    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                        &mut curve.geometry
+                    else {
+                        unreachable!()
+                    };
+                    let center = circle_curve.center().get();
+                    let axis = circle_curve.frame().axis().as_raw();
+                    let ref_direction = circle_curve.frame().reference().as_raw();
+
+                    let radius = 3.0;
+                    *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                        center,
+                        *axis,
+                        *ref_direction,
+                        radius,
+                    )
+                    .unwrap();
+                }
+                let distinct_outputs = std::collections::BTreeMap::from([
+                    (
+                        "hole-a".to_string(),
+                        vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+                    ),
+                    (
+                        "hole-b".to_string(),
+                        vec![BodyId::mint("test:model:entity#second-body")
+                            .expect("identity grammar")],
+                    ),
+                ]);
+                assert_eq!(
+                    simple_hole_diameters(
+                        &distinct,
+                        &templates,
+                        std::slice::from_ref(&group),
+                        &distinct_outputs,
+                    ),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(6.0).unwrap()
+                        ),
+                    ])
+                );
+                assert_eq!(
+                    hole_diameters_for_operations(&distinct, &operations, &distinct_outputs,),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::scalar::Length::new(5.1).unwrap()
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::scalar::Length::new(6.0).unwrap()
+                        ),
+                    ])
+                );
+                assert!(hole_diameters_for_operations(
+                    &distinct,
+                    &operations,
+                    &std::collections::BTreeMap::new(),
+                )
+                .is_empty());
+                assert!(hole_diameters_for_operations(
+                    &ir,
+                    &operations,
+                    &std::collections::BTreeMap::from([(
+                        "hole-a".to_string(),
+                        vec![BodyId::mint("test:model:entity#body").expect("identity grammar")],
+                    )]),
+                )
+                .is_empty());
+
+                let mut chamfered = ir.clone();
+                for bore in 0..2 {
+                    for end in 0..2 {
+                        let surface =
+                            SurfaceId::mint(format!("test:model:entity#cone-{bore}-{end}"))
+                                .expect("identity grammar");
+                        let face =
+                            FaceId::mint(format!("test:model:entity#cone-face-{bore}-{end}"))
+                                .expect("identity grammar");
+                        let loops = [
+                            LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-inner"))
+                                .expect("identity grammar"),
+                            LoopId::mint(format!("test:model:entity#cone-loop-{bore}-{end}-outer"))
+                                .expect("identity grammar"),
+                        ];
+                        chamfered.model.surfaces.push(Surface {
+                            id: surface.clone(),
+                            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                                    Point3::new(f64::from(bore), f64::from(end), 0.0),
+                                    Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
+                                    Vector3::new(1.0, 0.0, 0.0),
+                                    0.0,
+                                    1.0,
+                                    std::f64::consts::FRAC_PI_4,
+                                )
+                                .unwrap(),
+                            )),
+                            source_object: None,
+                        });
+                        chamfered.model.shells[0].add_face(face.clone());
+                        chamfered.model.faces.push(Face {
+                            id: face,
+                            shell: ShellId::mint("test:model:entity#shell")
+                                .expect("identity grammar"),
+                            surface,
+                            sense: Sense::Reversed,
+                            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops.to_vec()),
+                            name: None,
+                            color: None,
+                            tolerance: None,
+                        });
+                        for (boundary, (loop_id, radius)) in
+                            loops.into_iter().zip([2.55, 3.55]).enumerate()
+                        {
+                            let curve = CurveId::mint(format!(
+                                "test:model:entity#cone-curve-{bore}-{end}-{boundary}"
+                            ))
+                            .expect("identity grammar");
+                            let edge = EdgeId::mint(format!(
+                                "test:model:entity#cone-edge-{bore}-{end}-{boundary}"
+                            ))
+                            .expect("identity grammar");
+                            let coedge = CoedgeId::mint(format!(
+                                "test:model:entity#cone-coedge-{bore}-{end}-{boundary}"
+                            ))
+                            .expect("identity grammar");
+                            chamfered.model.curves.push(Curve {
+                                id: curve.clone(),
+                                geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                                    cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                                        Point3::new(f64::from(bore), f64::from(end), 0.0),
+                                        Vector3::new(0.0, 1.0, 0.0),
+                                        Vector3::new(1.0, 0.0, 0.0),
+                                        radius,
+                                    )
+                                    .unwrap(),
+                                )),
+                                source_object: None,
+                            });
+                            chamfered.model.edges.push(Edge {
+                                id: edge.clone(),
+                                carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve)),
+                                start: VertexId::mint("test:model:entity#vertex")
+                                    .expect("identity grammar"),
+                                end: VertexId::mint("test:model:entity#vertex")
+                                    .expect("identity grammar"),
+                                tolerance: None,
+                            });
+                            chamfered.model.coedges.push(Coedge {
+                                id: coedge.clone(),
+                                owner_loop: loop_id,
+                                edge,
+                                radial_next: coedge,
+                                sense: Sense::Forward,
+                                pcurves: Vec::new(),
+                                use_curve: None,
+                            });
+                        }
+                    }
+                }
+                assert_eq!(
+                    simple_hole_chamfers(default_ctx, &chamfered, &templates, &outputs).unwrap(),
+                    std::collections::BTreeMap::from([
+                        (
+                            "hole-a".into(),
+                            cadmpeg_ir::features::holes::HoleKind::Chamfer {
+                                diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
+                                angle: cadmpeg_ir::scalar::InteriorAngle::new(
+                                    std::f64::consts::FRAC_PI_2
+                                )
+                                .unwrap(),
+                            },
+                        ),
+                        (
+                            "hole-b".into(),
+                            cadmpeg_ir::features::holes::HoleKind::Chamfer {
+                                diameter: cadmpeg_ir::scalar::PositiveLength::new(7.1).unwrap(),
+                                angle: cadmpeg_ir::scalar::InteriorAngle::new(
+                                    std::f64::consts::FRAC_PI_2
+                                )
+                                .unwrap(),
+                            },
+                        ),
+                    ])
+                );
+
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_collection_items = 1;
+                    },
+                    |ctx| {
+                        let error = simple_hole_chamfers(ctx, &chamfered, &templates, &outputs)
+                            .expect_err(
+                                "two bore cone counters exceed one admitted collection item",
+                            );
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                        ));
+                        assert_eq!(
+                            simple_hole_chamfers(
+                                default_ctx,
+                                &chamfered,
+                                &templates,
+                                &std::collections::BTreeMap::new()
+                            )
+                            .unwrap(),
+                            simple_hole_chamfers(default_ctx, &chamfered, &templates, &outputs)
+                                .unwrap()
+                        );
+                        let mut sheet = chamfered.clone();
+                        sheet.model.bodies[0].kind = BodyKind::Sheet;
+                        assert!(
+                            simple_hole_chamfers(default_ctx, &sheet, &templates, &outputs)
+                                .unwrap()
+                                .is_empty()
+                        );
+                        let mut unrelated = chamfered.clone();
+                        unrelated.model.surfaces.push(Surface {
+                            id: SurfaceId::mint("test:model:entity#unrelated-cone")
+                                .expect("identity grammar"),
+                            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+                                cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
+                                    Point3::new(0.0, 0.0, 0.0),
+                                    Vector3::new(0.0, 1.0, 0.0),
+                                    Vector3::new(1.0, 0.0, 0.0),
+                                    0.0,
+                                    1.0,
+                                    0.0,
+                                )
+                                .unwrap(),
+                            )),
+                            source_object: None,
+                        });
+                        unrelated.model.faces.push(Face {
+                            id: FaceId::mint("test:model:entity#unrelated-cone-face")
+                                .expect("identity grammar"),
+                            shell: ShellId::mint("test:model:entity#unrelated-shell")
+                                .expect("identity grammar"),
+                            surface: SurfaceId::mint("test:model:entity#unrelated-cone")
+                                .expect("identity grammar"),
+                            sense: Sense::Reversed,
+                            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![
+                                LoopId::mint("test:model:entity#unrelated-a")
+                                    .expect("identity grammar"),
+                                LoopId::mint("test:model:entity#unrelated-b")
+                                    .expect("identity grammar"),
+                            ]),
+                            name: None,
+                            color: None,
+                            tolerance: None,
+                        });
+                        assert_eq!(
+                            simple_hole_chamfers(default_ctx, &unrelated, &templates, &outputs)
+                                .unwrap(),
+                            simple_hole_chamfers(default_ctx, &chamfered, &templates, &outputs)
+                                .unwrap()
+                        );
+                        let mut unequal_chamfers = chamfered;
+                        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
+                            &mut unequal_chamfers
+                                .model
+                                .curves
+                                .last_mut()
+                                .expect("required invariant")
+                                .geometry
+                        else {
+                            unreachable!()
+                        };
+                        let center = circle_curve.center().get();
+                        let axis = circle_curve.frame().axis().as_raw();
+                        let ref_direction = circle_curve.frame().reference().as_raw();
+                        let radius = circle_curve.radius().get();
+                        let mut radius = radius;
+                        radius += 0.1;
+                        *circle_curve = cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                            center,
+                            *axis,
+                            *ref_direction,
+                            radius,
+                        )
+                        .unwrap();
+                        assert!(simple_hole_chamfers(
+                            default_ctx,
+                            &unequal_chamfers,
+                            &templates,
+                            &outputs
+                        )
+                        .unwrap()
+                        .is_empty());
+
+                        let mut mismatched = ir;
+                        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                            cylinder_surface,
+                        )) = &mut mismatched.model.surfaces[1].geometry
+                        else {
+                            unreachable!()
+                        };
+                        let origin = cylinder_surface.origin();
+                        let axis = cylinder_surface.frame().axis().as_raw();
+                        let ref_direction = cylinder_surface.frame().reference().as_raw();
+
+                        let radius = 3.0;
+                        *cylinder_surface =
+                            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                                *origin,
+                                *axis,
+                                *ref_direction,
+                                radius,
+                            )
+                            .unwrap();
+                        assert!(
+                            simple_hole_diameters(&mismatched, &templates, &[group], &outputs,)
+                                .is_empty()
+                        );
+                    },
+                );
+            },
+        );
+    });
 }

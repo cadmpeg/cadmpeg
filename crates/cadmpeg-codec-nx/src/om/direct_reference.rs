@@ -191,38 +191,46 @@ mod tests {
     #[test]
     fn direct_reference_fields_refuse_collection_limit() {
         let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::operation_reference_fields(
-            &ctx,
-            record(&bytes, 0),
-            ReferenceFieldKind::DataBlock03,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = super::operation_reference_fields(
+                    ctx,
+                    record(&bytes, 0),
+                    ReferenceFieldKind::DataBlock03,
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
     }
 
     #[test]
     fn direct_reference_fields_refuse_retained_limit() {
         let bytes = [1, 2, 3, 7, 1, 0, 0, 0, 0, 0];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = super::operation_reference_fields(
-            &ctx,
-            record(&bytes, 0),
-            ReferenceFieldKind::DataBlock03,
-        )
-        .unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                let error = super::operation_reference_fields(
+                    ctx,
+                    record(&bytes, 0),
+                    ReferenceFieldKind::DataBlock03,
+                )
+                .unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+                );
+            },
         );
     }
 }

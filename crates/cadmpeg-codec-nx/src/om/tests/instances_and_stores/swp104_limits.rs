@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resource refusals for the SWP104 leading branch.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 
 fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
@@ -13,13 +13,19 @@ fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     payload.extend([0x23, 1, 3, 0xf0, 0x31, 0xf0, 0x32, 1, 4]);
     payload.extend([0, 1, 1, 0, 0, 0, 0]);
     payload.extend([0xff, 1, 2, 0xf0, 0x33, 0, 0xaa]);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let record =
-        crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104").unwrap();
-    crate::om::swp104_payload_leading_branch(&ctx, record).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &payload,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let record =
+                crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
+                    .unwrap();
+            crate::om::swp104_payload_leading_branch(ctx, record).unwrap_err()
+        },
+    )
 }
 
 #[test]

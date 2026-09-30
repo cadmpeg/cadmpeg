@@ -90,18 +90,16 @@ fn body_image_outputs_require_one_body_per_binding() {
         ),
     ]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) =
-        operation_body_image_outputs_by_write(&ctx, &uses, &bodies).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let (outputs, _reservation) =
+            operation_body_image_outputs_by_write(ctx, &uses, &bodies).unwrap();
 
-    assert_eq!(
-        outputs.get("write-a"),
-        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
-    );
-    assert!(!outputs.contains_key("write-b"));
+        assert_eq!(
+            outputs.get("write-a"),
+            Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
+        );
+        assert!(!outputs.contains_key("write-b"));
+    });
 }
 
 fn body_image_index_with_limit(
@@ -110,14 +108,19 @@ fn body_image_index_with_limit(
     let uses = [body_image_use("use", "write", "binding")];
     let body = BodyId::mint("test:model:entity#body").unwrap();
     let bodies = BTreeMap::from([("binding", vec![body.clone()])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) = operation_body_image_outputs_by_write(&ctx, &uses, &bodies)?;
-    assert_eq!(outputs["write"], body);
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let (outputs, _reservation) =
+                operation_body_image_outputs_by_write(ctx, &uses, &bodies)?;
+            assert_eq!(outputs["write"], body);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -151,56 +154,54 @@ fn body_image_index_refuses_work_limit() {
 
 #[test]
 fn complete_body_image_outputs_reject_partial_and_duplicate_results() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let write_a = native_body_write("write-a");
-    let write_b = native_body_write("write-b");
-    let writes = [&write_a, &write_b];
-    let complete = BTreeMap::from([
-        (
+    crate::test_support::with_decode_context(|ctx| {
+        let write_a = native_body_write("write-a");
+        let write_b = native_body_write("write-b");
+        let writes = [&write_a, &write_b];
+        let complete = BTreeMap::from([
+            (
+                "write-a",
+                BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+            ),
+            (
+                "write-b",
+                BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+            ),
+        ]);
+        assert_eq!(
+            complete_operation_body_image_outputs(ctx, &writes, &complete).unwrap(),
+            [
+                BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+                BodyId::mint("test:model:entity#body-b").expect("identity grammar")
+            ]
+        );
+
+        let partial = BTreeMap::from([(
             "write-a",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-        ),
-        (
-            "write-b",
-            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
-        ),
-    ]);
-    assert_eq!(
-        complete_operation_body_image_outputs(&ctx, &writes, &complete).unwrap(),
-        [
-            BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-            BodyId::mint("test:model:entity#body-b").expect("identity grammar")
-        ]
-    );
+        )]);
+        assert!(
+            complete_operation_body_image_outputs(ctx, &writes, &partial)
+                .unwrap()
+                .is_empty()
+        );
 
-    let partial = BTreeMap::from([(
-        "write-a",
-        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-    )]);
-    assert!(
-        complete_operation_body_image_outputs(&ctx, &writes, &partial)
-            .unwrap()
-            .is_empty()
-    );
-
-    let duplicate = BTreeMap::from([
-        (
-            "write-a",
-            BodyId::mint("test:model:entity#body").expect("identity grammar"),
-        ),
-        (
-            "write-b",
-            BodyId::mint("test:model:entity#body").expect("identity grammar"),
-        ),
-    ]);
-    assert!(
-        complete_operation_body_image_outputs(&ctx, &writes, &duplicate)
-            .unwrap()
-            .is_empty()
-    );
+        let duplicate = BTreeMap::from([
+            (
+                "write-a",
+                BodyId::mint("test:model:entity#body").expect("identity grammar"),
+            ),
+            (
+                "write-b",
+                BodyId::mint("test:model:entity#body").expect("identity grammar"),
+            ),
+        ]);
+        assert!(
+            complete_operation_body_image_outputs(ctx, &writes, &duplicate)
+                .unwrap()
+                .is_empty()
+        );
+    });
 }
 
 fn complete_body_image_output_with_limit(
@@ -209,14 +210,18 @@ fn complete_body_image_output_with_limit(
     let write = native_body_write("write-a");
     let body = BodyId::mint("test:model:entity#body-a").unwrap();
     let outputs = BTreeMap::from([("write-a", body.clone())]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let selected = complete_operation_body_image_outputs(&ctx, &[&write], &outputs)?;
-    assert_eq!(selected, [body]);
-    Ok(())
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let selected = complete_operation_body_image_outputs(ctx, &[&write], &outputs)?;
+            assert_eq!(selected, [body]);
+            Ok(())
+        },
+    )
 }
 
 #[test]
@@ -340,60 +345,56 @@ fn body_identity_outputs_require_one_body_per_unique_plain_binding() {
         ),
     ]);
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) =
-        operation_body_identity_outputs_by_write(&ctx, &uses, &bodies).unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let (outputs, _reservation) =
+            operation_body_identity_outputs_by_write(ctx, &uses, &bodies).unwrap();
 
-    assert_eq!(
-        outputs.get("write-a"),
-        Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
-    );
-    assert!(!outputs.contains_key("write-b"));
+        assert_eq!(
+            outputs.get("write-a"),
+            Some(&BodyId::mint("test:model:entity#body-a").expect("identity grammar"))
+        );
+        assert!(!outputs.contains_key("write-b"));
+    });
 }
 
 #[test]
 fn conflicting_body_output_witnesses_remain_unresolved() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut reservation = ctx
-        .reserve_scoped(0, "NX body image output indexes")
-        .unwrap();
-    let mut outputs = BTreeMap::from([(
-        "write",
-        BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-    )]);
-    let mut conflicts = BTreeSet::new();
-
-    merge_operation_body_outputs(
-        &ctx,
-        &mut reservation,
-        &mut outputs,
-        &mut conflicts,
-        &BTreeMap::from([(
-            "write",
-            BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
-        )]),
-    )
-    .unwrap();
-    merge_operation_body_outputs(
-        &ctx,
-        &mut reservation,
-        &mut outputs,
-        &mut conflicts,
-        &BTreeMap::from([(
+    crate::test_support::with_decode_context(|ctx| {
+        let mut reservation = ctx
+            .reserve_scoped(0, "NX body image output indexes")
+            .unwrap();
+        let mut outputs = BTreeMap::from([(
             "write",
             BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
-        )]),
-    )
-    .unwrap();
+        )]);
+        let mut conflicts = BTreeSet::new();
 
-    assert!(!outputs.contains_key("write"));
-    assert!(conflicts.contains("write"));
+        merge_operation_body_outputs(
+            ctx,
+            &mut reservation,
+            &mut outputs,
+            &mut conflicts,
+            &BTreeMap::from([(
+                "write",
+                BodyId::mint("test:model:entity#body-b").expect("identity grammar"),
+            )]),
+        )
+        .unwrap();
+        merge_operation_body_outputs(
+            ctx,
+            &mut reservation,
+            &mut outputs,
+            &mut conflicts,
+            &BTreeMap::from([(
+                "write",
+                BodyId::mint("test:model:entity#body-a").expect("identity grammar"),
+            )]),
+        )
+        .unwrap();
+
+        assert!(!outputs.contains_key("write"));
+        assert!(conflicts.contains("write"));
+    });
 }
 
 #[test]
@@ -428,20 +429,19 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     };
 
     let writes = [write_a, write_b];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let (outputs, _reservation) = operation_body_group_partition_outputs_by_write(
-        &ctx,
-        &writes,
-        &[use_],
-        std::slice::from_ref(&body),
-    )
-    .unwrap();
 
-    assert_eq!(outputs.get("write-a"), Some(&body.id));
-    assert_eq!(outputs.get("write-b"), Some(&body.id));
+    crate::test_support::with_decode_context(|ctx| {
+        let (outputs, _reservation) = operation_body_group_partition_outputs_by_write(
+            ctx,
+            &writes,
+            &[use_],
+            std::slice::from_ref(&body),
+        )
+        .unwrap();
+
+        assert_eq!(outputs.get("write-a"), Some(&body.id));
+        assert_eq!(outputs.get("write-b"), Some(&body.id));
+    });
 }
 
 fn group_member(
@@ -494,95 +494,100 @@ fn direct_group_use(
 
 #[test]
 fn result_topology_uses_only_unique_current_group_members() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
-    let members = [
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-        group_member("edge", GroupNodeFamily::Edge, Some(41)),
-        group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
-        group_member("historical", GroupNodeFamily::Face, None),
-        group_member("shell", GroupNodeFamily::Shell, Some(43)),
-    ];
-    let result = feature_result_group_members(
-        &ctx,
-        use_.partition_stream_ordinal,
-        &use_.parasolid_group_members,
-        &members,
-    )
-    .unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        let use_ = group_use(&["face", "edge", "vertex", "historical", "shell"]);
+        let members = [
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+            group_member("edge", GroupNodeFamily::Edge, Some(41)),
+            group_member("vertex", GroupNodeFamily::Vertex, Some(42)),
+            group_member("historical", GroupNodeFamily::Face, None),
+            group_member("shell", GroupNodeFamily::Shell, Some(43)),
+        ];
+        let result = feature_result_group_members(
+            ctx,
+            use_.partition_stream_ordinal,
+            &use_.parasolid_group_members,
+            &members,
+        )
+        .unwrap();
 
-    assert_eq!(result.faces, ["nx:s4:face#40"]);
-    assert_eq!(result.edges, ["nx:s4:edge#41"]);
-    assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
+        assert_eq!(result.faces, ["nx:s4:face#40"]);
+        assert_eq!(result.edges, ["nx:s4:edge#41"]);
+        assert_eq!(result.vertices, ["nx:s4:vertex#42"]);
 
-    let duplicate_members = [
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-    ];
-    assert!(
-        feature_result_group_members(&ctx, 4, &["face".into()], &duplicate_members)
-            .unwrap()
-            .faces
-            .is_empty()
-    );
+        let duplicate_members = [
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+        ];
+        assert!(
+            feature_result_group_members(ctx, 4, &["face".into()], &duplicate_members)
+                .unwrap()
+                .faces
+                .is_empty()
+        );
+    });
 }
 
 #[test]
 fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let members = [
-        group_member("face", GroupNodeFamily::Face, Some(40)),
-        group_member("edge", GroupNodeFamily::Edge, Some(41)),
-    ];
-    let image = group_use(&["face"]);
-    let direct = direct_group_use(&["face"]);
+    crate::test_support::with_decode_context(|ctx| {
+        let members = [
+            group_member("face", GroupNodeFamily::Face, Some(40)),
+            group_member("edge", GroupNodeFamily::Edge, Some(41)),
+        ];
+        let image = group_use(&["face"]);
+        let direct = direct_group_use(&["face"]);
 
-    let from_image = operation_body_write_result_group_members(
-        &ctx,
-        "write",
-        std::slice::from_ref(&image),
-        &[],
-        &members,
-    )
-    .unwrap();
-    let from_direct = operation_body_write_result_group_members(
-        &ctx,
-        "write",
-        &[],
-        std::slice::from_ref(&direct),
-        &members,
-    )
-    .unwrap();
-    assert_eq!(from_image.faces, ["nx:s4:face#40"]);
-    assert_eq!(from_direct.faces, from_image.faces);
+        let from_image = operation_body_write_result_group_members(
+            ctx,
+            "write",
+            std::slice::from_ref(&image),
+            &[],
+            &members,
+        )
+        .unwrap();
+        let from_direct = operation_body_write_result_group_members(
+            ctx,
+            "write",
+            &[],
+            std::slice::from_ref(&direct),
+            &members,
+        )
+        .unwrap();
+        assert_eq!(from_image.faces, ["nx:s4:face#40"]);
+        assert_eq!(from_direct.faces, from_image.faces);
 
-    let conflict = direct_group_use(&["edge"]);
-    let rejected =
-        operation_body_write_result_group_members(&ctx, "write", &[image], &[conflict], &members)
-            .unwrap();
-    assert!(rejected.faces.is_empty());
-    assert!(rejected.edges.is_empty());
+        let conflict = direct_group_use(&["edge"]);
+        let rejected = operation_body_write_result_group_members(
+            ctx,
+            "write",
+            &[image],
+            &[conflict],
+            &members,
+        )
+        .unwrap();
+        assert!(rejected.faces.is_empty());
+        assert!(rejected.edges.is_empty());
+    });
 }
 
 fn result_group_with_limit(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let members = [group_member("face", GroupNodeFamily::Face, Some(40))];
-    let uses = [group_use(&["face"])];
-    let result = operation_body_write_result_group_members(&ctx, "write", &uses, &[], &members)?;
-    assert_eq!(result.faces, ["nx:s4:face#40"]);
-    Ok(())
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let members = [group_member("face", GroupNodeFamily::Face, Some(40))];
+            let uses = [group_use(&["face"])];
+            let result =
+                operation_body_write_result_group_members(ctx, "write", &uses, &[], &members)?;
+            assert_eq!(result.faces, ["nx:s4:face#40"]);
+            Ok(())
+        },
+    )
 }
 
 #[test]

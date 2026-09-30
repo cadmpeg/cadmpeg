@@ -316,21 +316,11 @@ impl DesignFeatureTransfer {
 
         for feature in &mut ir.model.features {
             if let Some(dependencies) = dependencies_by_feature.remove(&feature.id) {
-                feature
-                    .dependencies
-                    .try_reserve(dependencies.len())
-                    .map_err(|_| {
-                        cadmpeg_core::CodecError::ResourceLimit(
-                            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                                cadmpeg_core::decode::ResourceDimension::Codec(
-                                    "catia_feature_dependency_values",
-                                ),
-                                cadmpeg_core::decode::u64_from_index(0),
-                                cadmpeg_core::decode::u64_from_index(dependencies.len()),
-                                "catia_feature_dependency_values",
-                            ),
-                        )
-                    })?;
+                feature.dependencies.reserve_for_decode(
+                    ctx,
+                    dependencies.len(),
+                    "catia_feature_dependency_values",
+                )?;
                 feature.dependencies.extend(dependencies);
             }
         }

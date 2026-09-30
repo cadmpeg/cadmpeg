@@ -579,7 +579,7 @@ impl<'a> ParsedStreams<'a> {
 #[cfg(test)]
 mod tests {
     use crate::test_support::test_deltas::bspline_partition_stream;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
 
     use super::{topology_streams, ParsedStreams};
     use std::borrow::Cow;
@@ -622,12 +622,13 @@ mod tests {
         max_collection_items: u64,
         f: impl FnOnce(&DecodeContext<'_>) -> T,
     ) -> T {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = max_collection_items;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        f(&ctx)
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = max_collection_items;
+            },
+            |ctx| f(ctx),
+        )
     }
 
     #[test]
@@ -656,40 +657,49 @@ mod tests {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }]);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<super::TopologyStream<'_>>())
-                - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        let error = topology_streams(&ctx, &scan)
-            .expect_err("one prepared stream exceeds the retained limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx prepared topology streams"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                        super::TopologyStream<'_>,
+                    >()) - 1;
+            },
+            |ctx| {
+                let error = topology_streams(ctx, &scan)
+                    .expect_err("one prepared stream exceeds the retained limit");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx prepared topology streams"
+                ));
+            },
+        );
     }
 
     #[test]
     fn topology_preparation_refuses_paired_delta_scoped_limit() {
         let scan = scan_with_streams(one_delta_pair());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes =
-            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()) - 1;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        let error =
-            topology_streams(&ctx, &scan).expect_err("one paired delta exceeds the scoped limit");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::MaterializedBytes
-                    && limit.operation == "nx paired topology deltas"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes =
+                    cadmpeg_core::decode::u64_from_index(std::mem::size_of::<usize>()) - 1;
+            },
+            |ctx| {
+                let error = topology_streams(ctx, &scan)
+                    .expect_err("one paired delta exceeds the scoped limit");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::MaterializedBytes
+                            && limit.operation == "nx paired topology deltas"
+                ));
+            },
+        );
     }
 
     #[test]
@@ -801,33 +811,41 @@ mod tests {
     #[test]
     fn auxiliary_replacement_views_refuse_scoped_storage() {
         let scan = scan_with_streams(one_delta_pair());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
-            std::mem::size_of::<usize>() + std::mem::size_of::<&[u8]>() - 1,
-        );
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        let error = ParsedStreams::parse(&ctx, &scan)
-            .err()
-            .expect("replacement view exceeds remaining scoped bytes");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_materialized_bytes = cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<usize>() + std::mem::size_of::<&[u8]>() - 1,
+                );
+            },
+            |ctx| {
+                let error = ParsedStreams::parse(ctx, &scan)
+                    .err()
+                    .expect("replacement view exceeds remaining scoped bytes");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::MaterializedBytes
                 && limit.operation == "nx auxiliary replacement views")
+                );
+            },
         );
     }
 
     fn pair_under_limits(collection_items: u64, work_units: u64) -> cadmpeg_core::CodecError {
         let streams = one_delta_pair();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = collection_items;
-        policy.limits.max_work_units = work_units;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        super::pair_stream_indices(&ctx, &streams, None)
-            .expect_err("one delta pair exceeds the selected limit")
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = collection_items;
+                policy.limits.max_work_units = work_units;
+            },
+            |ctx| {
+                super::pair_stream_indices(ctx, &streams, None)
+                    .expect_err("one delta pair exceeds the selected limit")
+            },
+        )
     }
 
     #[test]
@@ -869,14 +887,18 @@ mod tests {
             body: crate::parasolid::StreamBody::Preview,
         }];
         streams.extend(one_delta_pair());
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let pairs = super::pair_stream_indices(&ctx, &streams, None)
-            .expect("the preceding partition matches within one work unit");
-        assert_eq!(pairs, std::collections::BTreeMap::from([(1, vec![2])]));
+
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_work_units = 1;
+            },
+            |ctx| {
+                let pairs = super::pair_stream_indices(ctx, &streams, None)
+                    .expect("the preceding partition matches within one work unit");
+                assert_eq!(pairs, std::collections::BTreeMap::from([(1, vec![2])]));
+            },
+        );
     }
 
     #[test]
@@ -885,19 +907,24 @@ mod tests {
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_stream_payload(),
         )]);
-        let scan_arena = DecodeArena::new();
-        let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-            .expect("bounded segment stream fixture");
-        let scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
-        let error = with_collection_limit(0, |ctx| super::paired_delta_streams(ctx, &scan))
-            .expect_err("linked delta candidate needs one collection item");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx linked delta candidates"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
+
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid linked delta stream");
+                let error = with_collection_limit(0, |ctx| super::paired_delta_streams(ctx, &scan))
+                    .expect_err("linked delta candidate needs one collection item");
+                assert!(matches!(
+                    error,
+                    cadmpeg_core::CodecError::ResourceLimit(limit)
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx linked delta candidates"
+                ));
+            },
+        );
     }
 
     #[test]
@@ -906,24 +933,33 @@ mod tests {
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_stream_payload(),
         )]);
-        let scan_arena = DecodeArena::new();
-        let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-            .expect("bounded segment stream fixture");
-        let scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 0;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let error = super::paired_delta_streams(&ctx, &scan)
-            .expect_err("one wrapper match exceeds zero work units");
-        assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == ResourceDimension::WorkUnits
-                    && limit.operation == "nx linked delta stream matching"
-        ));
+
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
+
+                let scan = crate::decode::scan(scan_ctx, root).expect("valid linked delta stream");
+
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_work_units = 0;
+                    },
+                    |ctx| {
+                        let error = super::paired_delta_streams(ctx, &scan)
+                            .expect_err("one wrapper match exceeds zero work units");
+                        assert!(matches!(
+                            error,
+                            cadmpeg_core::CodecError::ResourceLimit(limit)
+                                if limit.dimension == ResourceDimension::WorkUnits
+                                    && limit.operation == "nx linked delta stream matching"
+                        ));
+                    },
+                );
+            },
+        );
     }
 
     #[test]
@@ -932,25 +968,35 @@ mod tests {
             "/Root/UG_PART/UG_PART",
             crate::test_support::test_om::segment_stream_payload(),
         )]);
-        let scan_arena = DecodeArena::new();
-        let scan_policy = DecodePolicy::default();
-        let (scan_ctx, root) = DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy)
-            .expect("bounded segment stream fixture");
-        let mut scan = crate::decode::scan(&scan_ctx, root).expect("valid linked delta stream");
-        scan.streams.push(crate::parasolid::Stream {
-            file_offset: 0,
-            consumed: 0,
-            inflated: Vec::new(),
-            body: crate::parasolid::StreamBody::Preview,
-        });
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_work_units = 1;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-            .expect("empty root fits service policy");
-        let pairs = super::paired_delta_streams(&ctx, &scan)
-            .expect("the first stream matches within one work unit");
-        assert!(pairs.is_empty());
+
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let root = cadmpeg_core::decode::View::over_retained(&file);
+
+                let mut scan =
+                    crate::decode::scan(scan_ctx, root).expect("valid linked delta stream");
+                scan.streams.push(crate::parasolid::Stream {
+                    file_offset: 0,
+                    consumed: 0,
+                    inflated: Vec::new(),
+                    body: crate::parasolid::StreamBody::Preview,
+                });
+
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        policy.limits.max_work_units = 1;
+                    },
+                    |ctx| {
+                        let pairs = super::paired_delta_streams(ctx, &scan)
+                            .expect("the first stream matches within one work unit");
+                        assert!(pairs.is_empty());
+                    },
+                );
+            },
+        );
     }
 
     #[test]

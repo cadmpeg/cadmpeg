@@ -27,13 +27,17 @@ fn group_record_limit_error(
         "SCH_TEST",
         group_record(10, 7, 8),
     )];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    crate::native::parasolid::parasolid_group_records(&ctx, &streams, &BTreeMap::new(), &[])
-        .expect_err("GROUP record limit refusal")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::parasolid::parasolid_group_records(ctx, &streams, &BTreeMap::new(), &[])
+                .expect_err("GROUP record limit refusal")
+        },
+    )
 }
 
 fn group_member_route_limit_error(
@@ -41,28 +45,33 @@ fn group_member_route_limit_error(
 ) -> CodecError {
     let bytes =
         prt_with_partition(&crate::test_support::test_streams::parasolid_group_partition_stream());
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let scan = crate::decode::scan(&ctx, root).unwrap();
-    let parsed = crate::native::substrate::ParsedStreams::parse(&ctx, &scan).unwrap();
-    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut limited_policy);
-    let (limited_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+
+    crate::test_support::with_decode_context_over(
         &bytes,
-        &limited_arena,
-        &limited_policy,
+        |_| {},
+        |ctx| {
+            let root = cadmpeg_core::decode::View::over_retained(&bytes);
+
+            let scan = crate::decode::scan(ctx, root).unwrap();
+            let parsed = crate::native::substrate::ParsedStreams::parse(ctx, &scan).unwrap();
+
+            crate::test_support::with_decode_context_over(
+                &bytes,
+                |policy| {
+                    configure(policy);
+                },
+                |limited_ctx| {
+                    crate::native::parasolid::parasolid_group_members(
+                        limited_ctx,
+                        &scan.streams,
+                        &BTreeMap::new(),
+                        &parsed,
+                    )
+                    .expect_err("GROUP member route limit refusal")
+                },
+            )
+        },
     )
-    .unwrap();
-    crate::native::parasolid::parasolid_group_members(
-        &limited_ctx,
-        &scan.streams,
-        &BTreeMap::new(),
-        &parsed,
-    )
-    .expect_err("GROUP member route limit refusal")
 }
 
 #[test]

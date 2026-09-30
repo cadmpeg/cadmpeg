@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::ResourceDimension;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::native::NativeNamespace;
@@ -9,10 +9,9 @@ use serde_json::{json, Value};
 use super::{DisplayJtGraph, DisplayJtGraphWire};
 
 fn validate_native(ir: &cadmpeg_ir::CadIr) -> Vec<cadmpeg_ir::report::check::Finding> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("validation context");
-    crate::NxCodec::validate_native(&ctx, ir).expect("validation fits service policy")
+    crate::test_support::with_decode_context(|ctx| {
+        crate::NxCodec::validate_native(ctx, ir).expect("validation fits service policy")
+    })
 }
 
 fn graph_wire() -> Value {
@@ -71,69 +70,89 @@ fn aggregate_admission_preserves_native_json() {
 #[test]
 fn graph_index_refuses_before_btree_allocation() {
     let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index DisplayJT graph records")
+            );
+            let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+            crate::test_support::with_decode_context(|service| {
+                assert!(DisplayJtGraph::from_wire_with_context(service, raw).is_ok());
+            });
+        },
     );
-    let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(DisplayJtGraph::from_wire_with_context(&service, raw).is_ok());
 }
 
 #[test]
 fn graph_toc_index_refuses_before_btree_allocation() {
     let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 6;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index DisplayJT TOC entries")
+            );
+            let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
+            crate::test_support::with_decode_context(|service| {
+                assert!(DisplayJtGraph::from_wire_with_context(service, raw).is_ok());
+            });
+        },
     );
-    let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(DisplayJtGraph::from_wire_with_context(&service, raw).is_ok());
 }
 
 #[test]
 fn graph_index_refuses_scoped_limit() {
     let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn graph_index_refuses_work_limit() {
     let raw: DisplayJtGraphWire = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::WorkUnits
         && limit.operation == "index DisplayJT graph records")
+            );
+        },
     );
 }
 
@@ -142,53 +161,68 @@ fn graph_rejection_identity_refuses_retained_limit() {
     let mut wire = graph_wire();
     wire["display_jt_segments"][0]["document"] = json!("nx:display-jt:document#missing");
     let raw: DisplayJtGraphWire = serde_json::from_value(wire.clone()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&ctx, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_wire_with_context(ctx, raw).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit))
         if limit.dimension == ResourceDimension::RetainedBytes
             && limit.operation == "retain DisplayJT graph rejection")
-    );
+            );
 
-    let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    let error = DisplayJtGraph::from_wire_with_context(&service, raw).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
+            let raw: DisplayJtGraphWire = serde_json::from_value(wire).unwrap();
+            crate::test_support::with_decode_context(|service| {
+                let error = DisplayJtGraph::from_wire_with_context(service, raw).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_ir::native::NativeConvertError::InvalidCollection(message)
         if message.contains("nx:display-jt:segment#0: document does not resolve"))
+                );
+            });
+        },
     );
 }
 
 #[test]
 fn graph_native_reader_refuses_collection_limit() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_namespace_with_context(ctx, &namespace).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
 #[test]
 fn graph_native_reader_refuses_retained_limit() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = DisplayJtGraph::from_namespace_with_context(&ctx, &namespace).unwrap_err();
-    assert!(
-        matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = DisplayJtGraph::from_namespace_with_context(ctx, &namespace).unwrap_err();
+            assert!(
+                matches!(error, cadmpeg_ir::native::NativeConvertError::Resource(
         CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
@@ -197,19 +231,24 @@ fn display_jt_native_validation_propagates_resource_limit() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::NxCodec::validate_native(&ctx, &ir).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "decode DisplayJT native records"));
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(crate::NxCodec::validate_native(&service, &ir)
-        .unwrap()
-        .is_empty());
+            crate::test_support::with_decode_context(|service| {
+                assert!(crate::NxCodec::validate_native(service, &ir)
+                    .unwrap()
+                    .is_empty());
+            });
+        },
+    );
 }
 
 #[test]
@@ -217,19 +256,24 @@ fn display_jt_native_arena_refuses_before_value_clone() {
     let namespace: NativeNamespace = serde_json::from_value(graph_wire()).unwrap();
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.native.0.insert("nx".into(), namespace);
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = crate::NxCodec::validate_native(&ctx, &ir).unwrap_err();
-    assert!(matches!(error, CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = crate::NxCodec::validate_native(ctx, &ir).unwrap_err();
+            assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
             && limit.operation == "materialize DisplayJT native records"));
-    let (service, _) =
-        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(crate::NxCodec::validate_native(&service, &ir)
-        .unwrap()
-        .is_empty());
+            crate::test_support::with_decode_context(|service| {
+                assert!(crate::NxCodec::validate_native(service, &ir)
+                    .unwrap()
+                    .is_empty());
+            });
+        },
+    );
 }
 
 #[test]

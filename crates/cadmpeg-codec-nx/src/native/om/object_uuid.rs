@@ -191,7 +191,7 @@ mod tests {
     use super::{object_uuid_values, ObjectUuidValue};
     use crate::container::{Container, DirEntry, DirEntryBody, IndexedSectionCache, Region};
     use crate::om::{FixedEntityRecord, IndexedSection, IndexedStore};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::borrow::Cow;
     use std::collections::BTreeMap;
@@ -240,12 +240,18 @@ mod tests {
     }
 
     fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(UUID_FRAME, &arena, &policy).unwrap();
-        let error = object_uuid_values(&ctx, &container()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        crate::test_support::with_decode_context_over(
+            UUID_FRAME,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let error = object_uuid_values(ctx, &container()).unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+                );
+            },
+        );
     }
 
     #[test]
@@ -274,22 +280,25 @@ mod tests {
 
     #[test]
     fn object_uuid_values_preserve_wire_after_admission() {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(UUID_FRAME, &arena, &policy).unwrap();
-        let values = object_uuid_values(&ctx, &container()).unwrap();
-        assert_eq!(values.len(), 1);
-        assert_eq!(
-            values[0].uuid.as_str(),
-            "01234567-89ab-cdef-0123-456789abcdef"
-        );
-        assert_eq!(
-            values[0]
-                .records
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            ["nx:om-record-directory-0:entry#0"]
+        crate::test_support::with_decode_context_over(
+            UUID_FRAME,
+            |_| {},
+            |ctx| {
+                let values = object_uuid_values(ctx, &container()).unwrap();
+                assert_eq!(values.len(), 1);
+                assert_eq!(
+                    values[0].uuid.as_str(),
+                    "01234567-89ab-cdef-0123-456789abcdef"
+                );
+                assert_eq!(
+                    values[0]
+                        .records
+                        .iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>(),
+                    ["nx:om-record-directory-0:entry#0"]
+                );
+            },
         );
     }
 

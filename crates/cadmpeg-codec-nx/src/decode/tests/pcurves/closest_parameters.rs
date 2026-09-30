@@ -11,219 +11,195 @@ use cadmpeg_ir::math::{Point2, Point3};
 
 #[test]
 fn rational_pcurve_incidence_isolates_close_branches() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let controls = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
+        .collect::<Vec<_>>();
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                4,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                controls,
+                Some(weights.to_vec()),
+                false,
+            )
+            .unwrap(),
+        };
+        let roots =
+            closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
+                .expect("evaluator allocation succeeds")
+                .expect("complete homogeneous root isolation");
 
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let controls = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
-    .collect::<Vec<_>>();
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            4,
-            vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-            controls,
-            Some(weights.to_vec()),
-            false,
-        )
-        .unwrap(),
-    };
-    let roots =
-        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(0.11))
-            .expect("evaluator allocation succeeds")
-            .expect("complete homogeneous root isolation");
-
-    assert_eq!(roots.len(), 4);
-    for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
-        assert!((actual - expected).abs() < 1.0e-8);
-    }
+        assert_eq!(roots.len(), 4);
+        for (actual, expected) in roots.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
+            assert!((actual - expected).abs() < 1.0e-8);
+        }
+    });
 }
 
 #[test]
 fn rational_pcurve_closest_search_retains_close_global_branches() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let control_points = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
+        .collect();
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                4,
+                vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+                control_points,
+                Some(weights.to_vec()),
+                false,
+            )
+            .unwrap(),
+        };
+        let parameters =
+            closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
+                .expect("evaluator allocation succeeds")
+                .expect("complete global closest-point search");
 
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let control_points = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point2::new(numerator / weight, 0.0))
-    .collect();
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+        assert_eq!(parameters.len(), 4, "{parameters:?}");
+        for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
+            assert!((actual - expected).abs() < 1.0e-8);
+        }
+    });
+}
+
+#[test]
+fn rational_spine_closest_search_resolves_close_global_branches() {
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
+        let control_points = [
+            0.006_306_3,
+            -0.029_213_45,
+            0.095_295_133_333_333_34,
+            -0.070_192_95,
+            0.024_297_3,
+        ]
+        .into_iter()
+        .zip(weights)
+        .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
+        .collect();
+        let curve = NurbsCurve::from_lanes(
             4,
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             control_points,
             Some(weights.to_vec()),
             false,
         )
-        .unwrap(),
-    };
-    let parameters =
-        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 1.0e-4), Some(0.11))
-            .expect("evaluator allocation succeeds")
-            .expect("complete global closest-point search");
+        .unwrap();
+        let point = Point3::new(0.0, 1.0e-4, 0.0);
 
-    assert_eq!(parameters.len(), 4, "{parameters:?}");
-    for (actual, expected) in parameters.iter().zip([0.1001, 0.1, 0.7, 0.9]) {
-        assert!((actual - expected).abs() < 1.0e-8);
-    }
-}
+        let first = closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            point,
+            Some(0.099),
+            &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(8_000_000),
+            ),
+        )
+        .expect("evaluator allocation succeeds")
+        .expect("first close branch");
+        let second = closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            point,
+            Some(0.101),
+            &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(8_000_000),
+            ),
+        )
+        .expect("evaluator allocation succeeds")
+        .expect("second close branch");
+        let remote = closest_nurbs_curve_parameter_with_budget(
+            &curve,
+            point,
+            Some(0.69),
+            &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(8_000_000),
+            ),
+        )
+        .expect("evaluator allocation succeeds")
+        .expect("remote global branch");
 
-#[test]
-fn rational_spine_closest_search_resolves_close_global_branches() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
-
-    let weights = [1.0, 1.1, 0.9, 1.2, 1.0];
-    let control_points = [
-        0.006_306_3,
-        -0.029_213_45,
-        0.095_295_133_333_333_34,
-        -0.070_192_95,
-        0.024_297_3,
-    ]
-    .into_iter()
-    .zip(weights)
-    .map(|(numerator, weight)| Point3::new(numerator / weight, 0.0, 0.0))
-    .collect();
-    let curve = NurbsCurve::from_lanes(
-        4,
-        vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        control_points,
-        Some(weights.to_vec()),
-        false,
-    )
-    .unwrap();
-    let point = Point3::new(0.0, 1.0e-4, 0.0);
-
-    let first = closest_nurbs_curve_parameter_with_budget(
-        &curve,
-        point,
-        Some(0.099),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(8_000_000),
-        ),
-    )
-    .expect("evaluator allocation succeeds")
-    .expect("first close branch");
-    let second = closest_nurbs_curve_parameter_with_budget(
-        &curve,
-        point,
-        Some(0.101),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(8_000_000),
-        ),
-    )
-    .expect("evaluator allocation succeeds")
-    .expect("second close branch");
-    let remote = closest_nurbs_curve_parameter_with_budget(
-        &curve,
-        point,
-        Some(0.69),
-        &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(8_000_000),
-        ),
-    )
-    .expect("evaluator allocation succeeds")
-    .expect("remote global branch");
-
-    assert!((first - 0.1).abs() < 1.0e-8);
-    assert!((second - 0.1001).abs() < 1.0e-8);
-    assert!((remote - 0.7).abs() < 1.0e-8);
+        assert!((first - 0.1).abs() < 1.0e-8);
+        assert!((second - 0.1001).abs() < 1.0e-8);
+        assert!((remote - 0.7).abs() < 1.0e-8);
+    });
 }
 
 #[test]
 fn periodic_nurbs_inversion_lifts_the_continuation_phase() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
-
-    let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let knots = vec![0.0, 0.0, 1.0, 2.0, 2.0];
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                knots.clone(),
+                vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(0.0, 0.0),
+                ],
+                None,
+                true,
+            )
+            .unwrap(),
+        };
+        let curve = NurbsCurve::from_lanes(
             1,
-            knots.clone(),
+            knots,
             vec![
-                Point2::new(0.0, 0.0),
-                Point2::new(1.0, 0.0),
-                Point2::new(0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
             ],
             None,
             true,
         )
-        .unwrap(),
-    };
-    let curve = NurbsCurve::from_lanes(
-        1,
-        knots,
-        vec![
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 0.0),
-        ],
-        None,
-        true,
-    )
-    .unwrap();
+        .unwrap();
 
-    assert_eq!(
-        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(4.1))
-            .expect("evaluator allocation succeeds")
-            .expect("periodic pcurve phase"),
-        [4.0]
-    );
-    assert_eq!(
-        closest_nurbs_curve_parameter_with_budget(
-            &curve,
-            Point3::new(0.0, 0.0, 0.0),
-            Some(4.1),
-            &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-                &geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(8_000_000)
+        assert_eq!(
+            closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(0.0, 0.0), Some(4.1))
+                .expect("evaluator allocation succeeds")
+                .expect("periodic pcurve phase"),
+            [4.0]
+        );
+        assert_eq!(
+            closest_nurbs_curve_parameter_with_budget(
+                &curve,
+                Point3::new(0.0, 0.0, 0.0),
+                Some(4.1),
+                &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                    geometry_ctx,
+                    cadmpeg_core::decode::u64_from_index(8_000_000)
+                )
             )
-        )
-        .expect("evaluator allocation succeeds")
-        .expect("periodic curve phase"),
-        4.0
-    );
+            .expect("evaluator allocation succeeds")
+            .expect("periodic curve phase"),
+            4.0
+        );
+    });
 }
 
 #[test]
@@ -238,79 +214,72 @@ fn polynomial_root_isolation_retains_repeated_real_roots() {
 
 #[test]
 fn coincident_pcurve_interval_retains_seed_and_boundaries() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let pcurve = PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![Point2::new(2.0, -3.0); 3],
+                None,
+                false,
+            )
+            .unwrap(),
+        };
+        let roots =
+            closest_pcurve_parameters(geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
+                .expect("evaluator allocation succeeds")
+                .expect("coincident interval");
 
-    let pcurve = PcurveGeometry::Nurbs {
-        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-            2,
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-            vec![Point2::new(2.0, -3.0); 3],
-            None,
-            false,
-        )
-        .unwrap(),
-    };
-    let roots =
-        closest_pcurve_parameters(&geometry_ctx, &pcurve, Point2::new(2.0, -3.0), Some(0.3))
-            .expect("evaluator allocation succeeds")
-            .expect("coincident interval");
-
-    assert_eq!(roots, [0.3, 0.0, 1.0]);
+        assert_eq!(roots, [0.3, 0.0, 1.0]);
+    });
 }
 
 #[test]
 fn pcurve_bezier_extraction_preserves_rational_knot_spans() {
-    let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &geometry_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )
-    .expect("empty geometry root is admitted");
+    crate::test_support::with_decode_context(|geometry_ctx| {
+        let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
+        let points = [
+            Point2::new(-1.0, 0.0),
+            Point2::new(0.0, 2.0),
+            Point2::new(1.0, -1.0),
+            Point2::new(2.0, 3.0),
+            Point2::new(4.0, 0.0),
+        ];
+        let weights = [1.0, 1.5, 0.75, 2.0, 1.25];
+        let controls = points
+            .iter()
+            .zip(weights)
+            .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
+            .collect();
+        let spans = homogeneous_spans(2, &knots, controls)
+            .expect("resource allocation did not fail")
+            .expect("valid Bézier extraction");
 
-    let knots = [0.0, 0.0, 0.0, 0.25, 0.75, 1.0, 1.0, 1.0];
-    let points = [
-        Point2::new(-1.0, 0.0),
-        Point2::new(0.0, 2.0),
-        Point2::new(1.0, -1.0),
-        Point2::new(2.0, 3.0),
-        Point2::new(4.0, 0.0),
-    ];
-    let weights = [1.0, 1.5, 0.75, 2.0, 1.25];
-    let controls = points
-        .iter()
-        .zip(weights)
-        .map(|(point, weight)| [point.u * weight, point.v * weight, weight])
-        .collect();
-    let spans = homogeneous_spans(2, &knots, controls)
-        .expect("resource allocation did not fail")
-        .expect("valid Bézier extraction");
-
-    assert_eq!(spans.len(), 3);
-    for span in spans {
-        for fraction in [0.0, 0.5, 1.0] {
-            let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
-            let expected =
-                cadmpeg_ir::eval::nurbs_pcurve_uv(2, &knots, &points, Some(&weights), parameter)
-                    .expect("source NURBS evaluation");
-            let actual = homogeneous_residual_distance(
-                &span.controls,
-                parameter,
-                span.domain,
-                &crate::decode::geometry_work::GeometryWorkBudget::from_context(
-                    &geometry_ctx,
-                    cadmpeg_core::decode::u64_from_index(100),
-                ),
-            )
-            .expect("test solver allocation succeeds");
-            let expected = expected.as_raw();
-            assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
+        assert_eq!(spans.len(), 3);
+        for span in spans {
+            for fraction in [0.0, 0.5, 1.0] {
+                let parameter = span.domain[0] + fraction * (span.domain[1] - span.domain[0]);
+                let expected = cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    2,
+                    &knots,
+                    &points,
+                    Some(&weights),
+                    parameter,
+                )
+                .expect("source NURBS evaluation");
+                let actual = homogeneous_residual_distance(
+                    &span.controls,
+                    parameter,
+                    span.domain,
+                    &crate::decode::geometry_work::GeometryWorkBudget::from_context(
+                        geometry_ctx,
+                        cadmpeg_core::decode::u64_from_index(100),
+                    ),
+                )
+                .expect("test solver allocation succeeds");
+                let expected = expected.as_raw();
+                assert!((actual - expected.u.hypot(expected.v)).abs() < 1.0e-12);
+            }
         }
-    }
+    });
 }

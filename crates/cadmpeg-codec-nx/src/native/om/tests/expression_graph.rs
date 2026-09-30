@@ -17,7 +17,7 @@ fn nx_expression_parameter_references_preserve_formula_order() {
 #[test]
 fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
     let expression =
-        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
@@ -58,7 +58,7 @@ fn nx_expression_graph_rejects_noncanonical_parameter_tokens() {
 #[test]
 fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
     let expression =
-        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
@@ -100,7 +100,7 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
 #[test]
 fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
     let expression =
-        |name: &str, formula: &str, value: Option<f64>| crate::native::om::Expression {
+        |name: &str, formula: &str, value: Option<f64>| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{name}"),
             owner: None,
             declaration: None,
@@ -141,7 +141,7 @@ fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
 #[test]
 fn nx_expression_graph_scopes_names_to_their_expression_table() {
     let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
-        crate::native::om::Expression {
+        crate::native::om::ParameterFormula {
             id: id.into(),
             owner: None,
             declaration: None,
@@ -207,7 +207,7 @@ fn nx_expression_graph_scopes_names_to_their_expression_table() {
 #[test]
 fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
     let expression = |id: &str, table: &str, name: &str, formula: &str, value: Option<f64>| {
-        crate::native::om::Expression {
+        crate::native::om::ParameterFormula {
             id: id.into(),
             owner: None,
             declaration: None,
@@ -302,7 +302,7 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
                       unit: crate::native::om::ExpressionUnit,
                       formula: &str,
                       value: Option<f64>| {
-        crate::native::om::Expression {
+        crate::native::om::ParameterFormula {
             id: id.into(),
             owner: None,
             declaration: None,
@@ -380,8 +380,8 @@ fn nx_expression_graph_scopes_equal_names_by_declared_unit() {
 
 #[test]
 fn nx_formula_dependencies_resolve_to_section_parameters() {
-    let expression =
-        |key: u32, name: &str, text: &str, value: Option<f64>| crate::native::om::Expression {
+    let expression = |key: u32, name: &str, text: &str, value: Option<f64>| {
+        crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
@@ -393,7 +393,8 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
             source_table: cadmpeg_core::text::NonBlankString::new("nx:test:expression-table#table")
                 .unwrap(),
             source_offset: u64::from(key),
-        };
+        }
+    };
     let expressions = [
         expression(20, "p2", "5", Some(5.0)),
         expression(21, "p2_radius", "7", Some(7.0)),
@@ -422,7 +423,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
 
 #[test]
 fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
-    let expression = |key: u32, name: &str, text: &str| crate::native::om::Expression {
+    let expression = |key: u32, name: &str, text: &str| crate::native::om::ParameterFormula {
         id: format!("nx:test:expression#{key}"),
         owner: None,
         declaration: None,
@@ -464,7 +465,7 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
                       unit: crate::native::om::ExpressionUnit,
                       text: &str,
                       value: Option<f64>| {
-        crate::native::om::Expression {
+        crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{key}"),
             owner: None,
             declaration: None,
@@ -570,7 +571,7 @@ fn nx_formula_dependencies_bind_equal_names_within_declared_unit() {
 #[test]
 fn nx_formula_dependencies_resolve_within_the_expression_table() {
     let expression = |id: &str, table: &str, name: &str, text: &str, source_offset: u64| {
-        crate::native::om::Expression {
+        crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
@@ -713,7 +714,7 @@ fn nx_formula_dependencies_resolve_within_the_expression_table() {
 #[test]
 fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
     let expression =
-        |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
+        |id: &str, name: &str, text: &str, source_offset| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
@@ -774,7 +775,7 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
 #[test]
 fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
     let expression =
-        |id: &str, name: &str, text: &str, source_offset| crate::native::om::Expression {
+        |id: &str, name: &str, text: &str, source_offset| crate::native::om::ParameterFormula {
             id: format!("nx:test:expression#{id}"),
             owner: None,
             declaration: None,
@@ -883,7 +884,7 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
         [20, 30]
     );
 
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "nx:test:expression#20".to_string(),
         owner: None,
         declaration: None,
@@ -921,7 +922,7 @@ fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
 
 #[test]
 fn nx_parameter_consumers_follow_physical_use_order() {
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "nx:test:expression#20".to_string(),
         owner: None,
         declaration: None,
@@ -974,7 +975,7 @@ fn nx_parameter_consumers_follow_physical_use_order() {
 
 #[test]
 fn nx_parameter_consumers_depend_on_preceding_expression_owner() {
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "nx:test:expression#20".to_string(),
         owner: None,
         declaration: None,
@@ -1070,7 +1071,7 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         reference(1, None),
     ];
 
-    let expression = crate::native::om::Expression {
+    let expression = crate::native::om::ParameterFormula {
         id: "nx:om-entry-9:expression#3".to_string(),
         owner: None,
         declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),

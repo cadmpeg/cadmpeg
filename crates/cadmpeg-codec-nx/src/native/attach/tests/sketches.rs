@@ -42,48 +42,47 @@ fn sketch_coordinate_pairs_are_retained_as_native_entities_without_roles() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let sketch = super::super::attach_sketch_graph(
-        &ctx,
-        &mut ir,
-        &label,
-        &super::super::SketchSources {
-            point_uses: &[],
-            point_groups: &[],
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &[],
-            coordinate_pairs: &coordinate_pairs,
-        },
-        &mut annotations,
-        &stream,
-    )
-    .unwrap()
-    .expect("one complete coordinate pair retains a native sketch graph");
 
-    assert_eq!(ir.model.sketches[0].id, sketch);
-    assert!(matches!(
-        ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
-    ));
-    assert_eq!(ir.model.sketch_entities.len(), 1);
-    assert_eq!(
-        ir.model.sketch_entities[0].id().as_str(),
-        "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
-    );
-    assert!(cadmpeg_ir::ids::is_valid_identity(
-        ir.model.sketch_entities[0].id().as_str()
-    ));
-    assert_eq!(
-        ir.model.sketch_entities[0].native_ref.as_deref(),
-        Some(pair.id.as_str())
-    );
-    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-coordinate-pair"
-    ));
+    crate::test_support::with_decode_context(|ctx| {
+        let sketch = super::super::attach_sketch_graph(
+            ctx,
+            &mut ir,
+            &label,
+            &super::super::SketchSources {
+                point_uses: &[],
+                point_groups: &[],
+                points: &[],
+                payload_scalars: &[],
+                fixed_points: &[],
+                coordinate_pairs: &coordinate_pairs,
+            },
+            &mut annotations,
+            &stream,
+        )
+        .unwrap()
+        .expect("one complete coordinate pair retains a native sketch graph");
+
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert!(matches!(
+            ir.model.sketches[0].placement,
+            cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
+        ));
+        assert_eq!(ir.model.sketch_entities.len(), 1);
+        assert_eq!(
+            ir.model.sketch_entities[0].id().as_str(),
+            "nx:feature-history:sketch-entity#coordinate-pair-section-9-0000000000"
+        );
+        assert!(cadmpeg_ir::ids::is_valid_identity(
+            ir.model.sketch_entities[0].id().as_str()
+        ));
+        assert_eq!(
+            ir.model.sketch_entities[0].native_ref.as_deref(),
+            Some(pair.id.as_str())
+        );
+        assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-coordinate-pair"
+        ));
+    });
 }
 
 #[test]
@@ -110,45 +109,44 @@ fn sketch_fixed_points_are_retained_as_native_entities_without_roles() {
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let sketch = super::super::attach_sketch_graph(
-        &ctx,
-        &mut ir,
-        &label,
-        &super::super::SketchSources {
-            point_uses: &[],
-            point_groups: &[],
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &fixed_points,
-            coordinate_pairs: &[],
-        },
-        &mut annotations,
-        &stream,
-    )
-    .unwrap()
-    .expect("one complete fixed point retains a native sketch graph");
 
-    assert_eq!(ir.model.sketches[0].id, sketch);
-    assert!(matches!(
-        ir.model.sketches[0].placement,
-        cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
-    ));
-    assert_eq!(ir.model.sketch_entities.len(), 1);
-    assert_eq!(
-        ir.model.sketch_entities[0].id().as_str(),
-        "nx:feature-history:sketch-entity#fixed-point-section-11-0000000000"
-    );
-    assert_eq!(
-        ir.model.sketch_entities[0].native_ref.as_deref(),
-        Some(point.id.as_str())
-    );
-    assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
-        SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point"
-    ));
+    crate::test_support::with_decode_context(|ctx| {
+        let sketch = super::super::attach_sketch_graph(
+            ctx,
+            &mut ir,
+            &label,
+            &super::super::SketchSources {
+                point_uses: &[],
+                point_groups: &[],
+                points: &[],
+                payload_scalars: &[],
+                fixed_points: &fixed_points,
+                coordinate_pairs: &[],
+            },
+            &mut annotations,
+            &stream,
+        )
+        .unwrap()
+        .expect("one complete fixed point retains a native sketch graph");
+
+        assert_eq!(ir.model.sketches[0].id, sketch);
+        assert!(matches!(
+            ir.model.sketches[0].placement,
+            cadmpeg_ir::sketches::SketchPlacement::Unresolved {}
+        ));
+        assert_eq!(ir.model.sketch_entities.len(), 1);
+        assert_eq!(
+            ir.model.sketch_entities[0].id().as_str(),
+            "nx:feature-history:sketch-entity#fixed-point-section-11-0000000000"
+        );
+        assert_eq!(
+            ir.model.sketch_entities[0].native_ref.as_deref(),
+            Some(point.id.as_str())
+        );
+        assert!(matches!(ir.model.sketch_entities[0].geometry.definition(),
+            SketchGeometryDefinition::Native { native_kind } if native_kind == "nx-fixed-point"
+        ));
+    });
 }
 
 fn fixed_point_sketch_with_limit(
@@ -172,27 +170,32 @@ fn fixed_point_sketch_with_limit(
         values: [0.25, -0.5].map(|value| cadmpeg_ir::scalar::FiniteReal::new(value).unwrap()),
         source_offset: 91,
     };
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    super::super::attach_sketch_graph(
-        &ctx,
-        &mut ir,
-        &label,
-        &super::super::SketchSources {
-            point_uses: &[],
-            point_groups: &[],
-            points: &[],
-            payload_scalars: &[],
-            fixed_points: &[&point],
-            coordinate_pairs: &[],
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
         },
-        &mut annotations,
-        &stream,
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
+            super::super::attach_sketch_graph(
+                ctx,
+                &mut ir,
+                &label,
+                &super::super::SketchSources {
+                    point_uses: &[],
+                    point_groups: &[],
+                    points: &[],
+                    payload_scalars: &[],
+                    fixed_points: &[&point],
+                    coordinate_pairs: &[],
+                },
+                &mut annotations,
+                &stream,
+            )
+        },
     )
 }
 

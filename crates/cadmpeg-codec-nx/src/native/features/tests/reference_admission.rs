@@ -133,12 +133,14 @@ fn extrude_profile_join_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("extrude profile join resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("extrude profile join resource limit"),
+    )
 }
 
 fn extrude_32_branch_route_refusal(
@@ -155,12 +157,14 @@ fn extrude_32_branch_route_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("extrude 32 branch resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("extrude 32 branch resource limit"),
+    )
 }
 
 fn block_reference_refusal(
@@ -183,12 +187,14 @@ fn block_reference_refusal(
             .len(),
         19
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("block reference resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("block reference resource limit"),
+    )
 }
 
 #[test]
@@ -350,12 +356,14 @@ fn operation_lane_refusal(
             .expect("admitted operation lane"),
         expected
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("operation lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("operation lane resource limit"),
+    )
 }
 
 macro_rules! operation_lane_limit_tests {
@@ -462,12 +470,14 @@ fn extrude_route_refusal(
             .expect("admitted extrude route"),
         expected
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("extrude route resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("extrude route resource limit"),
+    )
 }
 
 macro_rules! extrude_route_limit_tests {
@@ -531,12 +541,14 @@ fn swp104_branch_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("SWP104 branch resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("SWP104 branch resource limit"),
+    )
 }
 
 #[test]
@@ -592,12 +604,14 @@ fn point_lane_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("point scalar lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("point scalar lane resource limit"),
+    )
 }
 
 #[test]
@@ -640,12 +654,14 @@ fn point_header_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("point header resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("point header resource limit"),
+    )
 }
 
 #[test]
@@ -720,12 +736,14 @@ fn projected_curve_payload_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("projected curve payload resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("projected curve payload resource limit"),
+    )
 }
 
 fn projected_curve_string_refusal(
@@ -747,12 +765,14 @@ fn projected_curve_string_refusal(
             .len(),
         1
     );
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    decode(&ctx).expect_err("projected curve string resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| decode(ctx).expect_err("projected curve string resource limit"),
+    )
 }
 
 #[test]
@@ -885,13 +905,17 @@ fn projected_curve_route_refusal(
     })
     .expect("admitted projected curve references");
     assert_eq!(records.len(), 3);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_projected_curve_references(&ctx, &container)
-        .expect_err("projected curve reference resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_projected_curve_references(ctx, &container)
+                .expect_err("projected curve reference resource limit")
+        },
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -921,12 +945,14 @@ fn reference_route_refusal(
     let records =
         crate::test_support::with_decode_context(call).expect("admitted feature references");
     assert_eq!(records, expected_count);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    call(&ctx).expect_err("feature reference resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| call(ctx).expect_err("feature reference resource limit"),
+    )
 }
 
 #[test]
@@ -1099,13 +1125,17 @@ fn surface_payload_route_refusal(
     })
     .expect("admitted surface payload");
     assert_eq!(payloads.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_surface_construction_payloads(&ctx, &container, &references)
-        .expect_err("surface payload resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_surface_construction_payloads(ctx, &container, &references)
+                .expect_err("surface payload resource limit")
+        },
+    )
 }
 
 fn draft_resolved_lane() -> FeatureDraftConstructionIndexLane {
@@ -1132,13 +1162,17 @@ fn draft_payload_route_refusal(
     })
     .expect("admitted draft payload");
     assert_eq!(payloads.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_payloads(&ctx, &container, &[lane])
-        .expect_err("draft payload resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_payloads(ctx, &container, &[lane])
+                .expect_err("draft payload resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1237,13 +1271,17 @@ fn draft_fixed_route_refusal(
     })
     .expect("admitted draft fixed lane");
     assert_eq!(lanes.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_fixed_lanes(&ctx, &container, &[payload])
-        .expect_err("draft fixed lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_fixed_lanes(ctx, &container, &[payload])
+                .expect_err("draft fixed lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1304,13 +1342,17 @@ fn draft_binary32_route_refusal(
     })
     .expect("admitted draft binary32 lane");
     assert_eq!(lanes.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_binary32_lanes(&ctx, &container, &[payload])
-        .expect_err("draft binary32 lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_binary32_lanes(ctx, &container, &[payload])
+                .expect_err("draft binary32 lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1358,13 +1400,17 @@ fn draft_string_route_refusal(
     })
     .expect("admitted draft graph string");
     assert_eq!(strings.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_graph_strings(&ctx, &container, &[payload])
-        .expect_err("draft graph string resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_graph_strings(ctx, &container, &[payload])
+                .expect_err("draft graph string resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1426,13 +1472,17 @@ fn draft_identity_route_refusal(
     })
     .expect("admitted draft identity frames");
     assert_eq!(frames.len(), 2);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_identity_frames(&ctx, &container, &[payload])
-        .expect_err("draft identity frame resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_identity_frames(ctx, &container, &[payload])
+                .expect_err("draft identity frame resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1480,13 +1530,17 @@ fn draft_terminal_route_refusal(
     })
     .expect("admitted draft terminal lane");
     assert_eq!(lanes.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_terminal_lanes(&ctx, &container)
-        .expect_err("draft terminal lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_terminal_lanes(ctx, &container)
+                .expect_err("draft terminal lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1539,13 +1593,17 @@ fn draft_index_route_refusal(
     })
     .expect("resolved draft index target blocks");
     assert_eq!(payloads.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_index_lanes(&ctx, &container)
-        .expect_err("draft index lane resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_index_lanes(ctx, &container)
+                .expect_err("draft index lane resource limit")
+        },
+    )
 }
 
 #[test]
@@ -1600,13 +1658,17 @@ fn draft_graph_payload_route_refusal(
     })
     .expect("admitted draft graph payload");
     assert_eq!(payloads.len(), 1);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    feature_draft_construction_graph_payloads(&ctx, &container, &[lane], &references)
-        .expect_err("draft graph payload resource limit")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            feature_draft_construction_graph_payloads(ctx, &container, &[lane], &references)
+                .expect_err("draft graph payload resource limit")
+        },
+    )
 }
 
 #[test]

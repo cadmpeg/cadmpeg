@@ -682,7 +682,10 @@ impl<'a> Container<'a> {
         // Search candidates in byte order and use the first span whose suffix
         // parses as a modern product record.
         let mut candidate = None;
-        for count_offset in search_start..bytes.len().saturating_sub(3) {
+        let Some(search_end) = bytes.len().checked_sub(3) else {
+            return Ok(None);
+        };
+        for count_offset in search_start..search_end {
             ctx.charge_work(1, "scan NX FastLoad table candidates")?;
             let Some((count, ids_start, id_bytes)) = (|| {
                 let count = usize::try_from(View::u32_le_at(bytes, count_offset)?).ok()?;
@@ -759,7 +762,10 @@ fn locate_extref_string_table(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<(usize, usize, usize)>, CodecError> {
-    for marker in (0..payload.len().saturating_sub(4)).rev() {
+    let Some(last_marker) = payload.len().checked_sub(4) else {
+        return Ok(None);
+    };
+    for marker in (0..last_marker).rev() {
         ctx.charge_work(1, "nx external reference string table scan")?;
         if payload[marker] != 1 {
             continue;
@@ -771,8 +777,10 @@ fn locate_extref_string_table(
             continue;
         };
         // Each entry is a 2-byte length prefix plus at least one non-empty string byte.
-        let Some(count) = bounded_len(u64::from(count), 3, payload.len().saturating_sub(start))
-        else {
+        let Some(remaining) = payload.len().checked_sub(start) else {
+            continue;
+        };
+        let Some(count) = bounded_len(u64::from(count), 3, remaining) else {
             continue;
         };
         ctx.charge_work(
@@ -1173,7 +1181,10 @@ fn parse_framed_section_cache<'bytes>(
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+        let Some(end) = offset.checked_add(size) else {
+            continue;
+        };
+        let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
         let parsed = crate::om::sections(ctx, payload)?;
@@ -1222,7 +1233,10 @@ fn parse_indexed_section_cache<'bytes>(
         let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
             continue;
         };
-        let Some(payload) = bytes.get(offset..offset.saturating_add(size)) else {
+        let Some(end) = offset.checked_add(size) else {
+            continue;
+        };
+        let Some(payload) = bytes.get(offset..end) else {
             continue;
         };
         let parsed = crate::om::indexed_sections(ctx, payload)?;

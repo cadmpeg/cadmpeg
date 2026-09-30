@@ -234,76 +234,75 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
     );
     let mut ir = CadIr::empty();
     ir.model = model;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let operation_positions = BTreeMap::from([("blind", 0usize)]);
-    assert_eq!(
-        blind_hole_operations(&ctx, std::slice::from_ref(&template), &operation_positions).unwrap(),
-        Some(vec![operation.clone()]),
-    );
-    let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-    let projection =
-        blind_hole_body_projection(&ctx, &ir, std::slice::from_ref(&operation), &outputs)
-            .expect("blind bore resource budget")
-            .expect("complete blind-bore witness");
-    assert_eq!(projection.outputs, outputs);
-    assert_eq!(
-        projection.diameters,
-        BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
-    );
-    assert_eq!(
-        projection.blind_depths,
-        BTreeMap::from([(
-            operation.clone(),
-            cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap()
-        )])
-    );
-    assert_eq!(
-        blind_hole_axis_placements_for_operations(
-            &ctx,
-            &ir,
-            std::slice::from_ref(&operation),
-            &outputs,
-        )
-        .unwrap(),
-        BTreeMap::from([(
-            operation.clone(),
-            HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0
-                ))
+
+    crate::test_support::with_decode_context(|ctx| {
+        let operation_positions = BTreeMap::from([("blind", 0usize)]);
+        assert_eq!(
+            blind_hole_operations(ctx, std::slice::from_ref(&template), &operation_positions)
                 .unwrap(),
+            Some(vec![operation.clone()]),
+        );
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let projection =
+            blind_hole_body_projection(ctx, &ir, std::slice::from_ref(&operation), &outputs)
+                .expect("blind bore resource budget")
+                .expect("complete blind-bore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
+        );
+        assert_eq!(
+            projection.blind_depths,
+            BTreeMap::from([(
+                operation.clone(),
+                cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap()
+            )])
+        );
+        assert_eq!(
+            blind_hole_axis_placements_for_operations(
+                ctx,
+                &ir,
+                std::slice::from_ref(&operation),
+                &outputs,
+            )
+            .unwrap(),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Directed {
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0
+                    ))
+                    .unwrap(),
+                },
+            )])
+        );
+        let definition = non_boolean_feature_definition_with_parameters(
+            "SIMPLE HOLE",
+            &["Hole_GeneralHole_Simple_Blind"],
+            None,
+            None,
+            HoleProjection {
+                placements: vec![HolePlacement::Directed {
+                    position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                }],
+                diameter: Some(Length::new(4.0).unwrap()),
+                extent: Some(LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap(),
+                }),
+                ..HoleProjection::default()
             },
-        )])
-    );
-    let definition = non_boolean_feature_definition_with_parameters(
-        "SIMPLE HOLE",
-        &["Hole_GeneralHole_Simple_Blind"],
-        None,
-        None,
-        HoleProjection {
-            placements: vec![HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    0.0, 0.0, 1.0,
-                ))
-                .unwrap(),
-            }],
-            diameter: Some(Length::new(4.0).unwrap()),
-            extent: Some(LinearTermination::Blind {
-                length: cadmpeg_ir::scalar::NonZeroLength::new(3.0).unwrap(),
-            }),
-            ..HoleProjection::default()
-        },
-        BTreeMap::new(),
-    )
-    .unwrap();
-    assert!(matches!(
+            BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
@@ -318,65 +317,72 @@ fn nx_blind_hole_projection_requires_a_unique_cap_and_entry_direction() {
             direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         }][..])) && actual_diameter.get() == 4.0 && actual_length.get() == 3.0)));
 
-    let mut missing_cap = ir.clone();
-    missing_cap.model.shells[0]
-        .edit_topology(|faces, _, _| {
-            faces.retain(|face| {
-                face != &FaceId::mint("test:model:entity#blind-cap-face").expect("identity grammar")
-            });
-        })
-        .unwrap();
-    assert!(blind_hole_body_projection(
-        &ctx,
-        &missing_cap,
-        std::slice::from_ref(&operation),
-        &outputs,
-    )
-    .unwrap()
-    .is_none());
-    let mut duplicate_cap = ir.clone();
-    duplicate_cap.model.faces.push(Face {
-        id: FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
-        shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
-        surface: SurfaceId::mint("test:model:entity#blind-cap-surface").expect("identity grammar"),
-        sense: Sense::Forward,
-        loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
-            "test:model:entity#blind-cap-face-loop",
+        let mut missing_cap = ir.clone();
+        missing_cap.model.shells[0]
+            .edit_topology(|faces, _, _| {
+                faces.retain(|face| {
+                    face != &FaceId::mint("test:model:entity#blind-cap-face")
+                        .expect("identity grammar")
+                });
+            })
+            .unwrap();
+        assert!(blind_hole_body_projection(
+            ctx,
+            &missing_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
         )
-        .expect("identity grammar")]),
-        name: None,
-        color: None,
-        tolerance: None,
+        .unwrap()
+        .is_none());
+        let mut duplicate_cap = ir.clone();
+        duplicate_cap.model.faces.push(Face {
+            id: FaceId::mint("test:model:entity#blind-duplicate-cap-face")
+                .expect("identity grammar"),
+            shell: ShellId::mint("test:model:entity#blind-shell").expect("identity grammar"),
+            surface: SurfaceId::mint("test:model:entity#blind-cap-surface")
+                .expect("identity grammar"),
+            sense: Sense::Forward,
+            loops: cadmpeg_ir::topology::FaceLoops::unspecified(vec![LoopId::mint(
+                "test:model:entity#blind-cap-face-loop",
+            )
+            .expect("identity grammar")]),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        duplicate_cap.model.shells[0].add_face(
+            FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
+        );
+        assert!(blind_hole_body_projection(
+            ctx,
+            &duplicate_cap,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .unwrap()
+        .is_none());
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(blind_hole_body_projection(
+            ctx,
+            &sheet,
+            std::slice::from_ref(&operation),
+            &outputs,
+        )
+        .unwrap()
+        .is_none());
+        assert!(blind_hole_body_projection(
+            ctx,
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .unwrap()
+        .is_none());
     });
-    duplicate_cap.model.shells[0].add_face(
-        FaceId::mint("test:model:entity#blind-duplicate-cap-face").expect("identity grammar"),
-    );
-    assert!(blind_hole_body_projection(
-        &ctx,
-        &duplicate_cap,
-        std::slice::from_ref(&operation),
-        &outputs,
-    )
-    .unwrap()
-    .is_none());
-    let mut sheet = ir.clone();
-    sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(
-        blind_hole_body_projection(&ctx, &sheet, std::slice::from_ref(&operation), &outputs,)
-            .unwrap()
-            .is_none()
-    );
-    assert!(blind_hole_body_projection(
-        &ctx,
-        &ir,
-        &[operation.clone(), "second-operation".into()],
-        &BTreeMap::from([
-            (operation, vec![body.clone()]),
-            ("second-operation".into(), vec![body]),
-        ]),
-    )
-    .unwrap()
-    .is_none());
 }
 
 #[test]
@@ -402,335 +408,341 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
 
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
 
-    let default_arena = cadmpeg_core::decode::DecodeArena::new();
-    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (default_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
-            .unwrap();
-    let operation = "counterbore".to_string();
-    let template = FeatureSimpleHoleTemplate {
-        id: "template-counterbore".into(),
-        operation_label: operation.clone(),
-        payload_string: "payload-counterbore".into(),
-        family: SimpleHoleFamily::GeneralHole,
-        form: SimpleHoleForm::Counterbored,
-        extent: SimpleHoleExtent::Through,
-        start_treatment: SimpleHoleEndTreatment::None,
-        end_treatment: SimpleHoleEndTreatment::None,
-    };
-    assert_eq!(
-        counterbore_operations(
-            &default_ctx,
-            std::slice::from_ref(&template),
+    crate::test_support::with_decode_context(|default_ctx| {
+        let operation = "counterbore".to_string();
+        let template = FeatureSimpleHoleTemplate {
+            id: "template-counterbore".into(),
+            operation_label: operation.clone(),
+            payload_string: "payload-counterbore".into(),
+            family: SimpleHoleFamily::GeneralHole,
+            form: SimpleHoleForm::Counterbored,
+            extent: SimpleHoleExtent::Through,
+            start_treatment: SimpleHoleEndTreatment::None,
+            end_treatment: SimpleHoleEndTreatment::None,
+        };
+        assert_eq!(
+            counterbore_operations(
+                default_ctx,
+                std::slice::from_ref(&template),
+                &BTreeMap::from([("counterbore", 0usize)]),
+            )
+            .unwrap(),
+            Some(vec![operation.clone()]),
+        );
+        let competing_template = FeatureSimpleHoleTemplate {
+            form: SimpleHoleForm::Simple,
+            ..template.clone()
+        };
+        assert!(counterbore_operations(
+            default_ctx,
+            &[template.clone(), competing_template],
             &BTreeMap::from([("counterbore", 0usize)]),
         )
-        .unwrap(),
-        Some(vec![operation.clone()]),
-    );
-    let competing_template = FeatureSimpleHoleTemplate {
-        form: SimpleHoleForm::Simple,
-        ..template.clone()
-    };
-    assert!(counterbore_operations(
-        &default_ctx,
-        &[template.clone(), competing_template],
-        &BTreeMap::from([("counterbore", 0usize)]),
-    )
-    .unwrap()
-    .is_none());
-    let mut model = Model::default();
-    let mut add_circle_loop =
-        |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
-            let loop_id =
-                LoopId::mint(format!("test:model:entity#{name}-loop")).expect("identity grammar");
-            let edge_name = shared_edge.unwrap_or(name);
-            let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
-                .expect("identity grammar");
-            let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}-edge"))
-                .expect("identity grammar");
-            let coedge_id = CoedgeId::mint(format!("test:model:entity#{name}-coedge"))
-                .expect("identity grammar");
-            if !model.edges.iter().any(|edge| edge.id == edge_id) {
-                model.curves.push(Curve {
-                    id: curve_id.clone(),
-                    geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-                        cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            center,
-                            Vector3::new(0.0, 0.0, 1.0),
-                            Vector3::new(1.0, 0.0, 0.0),
-                            radius,
-                        )
-                        .unwrap(),
-                    )),
-                    source_object: None,
+        .unwrap()
+        .is_none());
+        let mut model = Model::default();
+        let mut add_circle_loop =
+            |name: &str, shared_edge: Option<&str>, center: Point3, radius: f64| {
+                let loop_id = LoopId::mint(format!("test:model:entity#{name}-loop"))
+                    .expect("identity grammar");
+                let edge_name = shared_edge.unwrap_or(name);
+                let curve_id = CurveId::mint(format!("test:model:entity#{edge_name}-curve"))
+                    .expect("identity grammar");
+                let edge_id = EdgeId::mint(format!("test:model:entity#{edge_name}-edge"))
+                    .expect("identity grammar");
+                let coedge_id = CoedgeId::mint(format!("test:model:entity#{name}-coedge"))
+                    .expect("identity grammar");
+                if !model.edges.iter().any(|edge| edge.id == edge_id) {
+                    model.curves.push(Curve {
+                        id: curve_id.clone(),
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                                center,
+                                Vector3::new(0.0, 0.0, 1.0),
+                                Vector3::new(1.0, 0.0, 0.0),
+                                radius,
+                            )
+                            .unwrap(),
+                        )),
+                        source_object: None,
+                    });
+                    model.edges.push(Edge {
+                        id: edge_id.clone(),
+                        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+                        start: VertexId::mint("test:model:entity#vertex")
+                            .expect("identity grammar"),
+                        end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
+                        tolerance: None,
+                    });
+                }
+                model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    radial_next: coedge_id,
+                    sense: Sense::Forward,
+                    pcurves: Vec::new(),
+                    use_curve: None,
                 });
-                model.edges.push(Edge {
-                    id: edge_id.clone(),
-                    carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-                    start: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                    end: VertexId::mint("test:model:entity#vertex").expect("identity grammar"),
-                    tolerance: None,
-                });
-            }
-            model.coedges.push(Coedge {
-                id: coedge_id.clone(),
-                owner_loop: loop_id.clone(),
-                edge: edge_id,
-                radial_next: coedge_id,
-                sense: Sense::Forward,
-                pcurves: Vec::new(),
-                use_curve: None,
+                loop_id
+            };
+        let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
+            model.faces.push(Face {
+                id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
+                shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+                surface,
+                sense,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+                name: None,
+                color: None,
+                tolerance: None,
             });
-            loop_id
         };
-    let mut add_face = |id: &str, surface: SurfaceId, sense: Sense, loops: Vec<LoopId>| {
-        model.faces.push(Face {
-            id: FaceId::mint(format!("test:model:entity#{id}")).expect("identity grammar"),
-            shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            surface,
-            sense,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
+        let bore_surface =
+            SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
+        model.surfaces.push(Surface {
+            id: bore_surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        let bore_loops = vec![
+            add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
+            add_circle_loop(
+                "bore-shoulder",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+        ];
+        add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
+
+        let counterbore_surface =
+            SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
+        model.surfaces.push(Surface {
+            id: counterbore_surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+                cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
+                    Point3::new(0.0, 0.0, 10.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    4.0,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        let counterbore_loops = vec![
+            add_circle_loop(
+                "counterbore-shoulder",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+            add_circle_loop("counterbore-entry", None, Point3::new(0.0, 0.0, 12.0), 4.0),
+        ];
+        add_face(
+            "counterbore-face",
+            counterbore_surface,
+            Sense::Reversed,
+            counterbore_loops,
+        );
+
+        let shoulder_surface =
+            SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
+        model.surfaces.push(Surface {
+            id: shoulder_surface.clone(),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 10.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+        let shoulder_loops = vec![
+            add_circle_loop(
+                "shoulder-inner",
+                Some("bore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                2.0,
+            ),
+            add_circle_loop(
+                "shoulder-outer",
+                Some("counterbore-shoulder"),
+                Point3::new(0.0, 0.0, 10.0),
+                4.0,
+            ),
+        ];
+        add_face(
+            "shoulder-face",
+            shoulder_surface,
+            Sense::Forward,
+            shoulder_loops,
+        );
+
+        let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
+        model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
+            transform: None,
             name: None,
             color: None,
-            tolerance: None,
+            visible: None,
         });
-    };
-    let bore_surface = SurfaceId::mint("test:model:entity#bore-surface").expect("identity grammar");
-    model.surfaces.push(Surface {
-        id: bore_surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 0.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                2.0,
+        model.regions.push(Region {
+            id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
+            body: body.clone(),
+            shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
+        });
+        model.shells.push(
+            Shell::new(
+                ShellId::mint("test:model:entity#shell").expect("identity grammar"),
+                RegionId::mint("test:model:entity#region").expect("identity grammar"),
+                vec![
+                    FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
+                    FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
+                    FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
+                ],
+                Vec::new(),
+                Vec::new(),
             )
             .unwrap(),
-        )),
-        source_object: None,
-    });
-    let bore_loops = vec![
-        add_circle_loop("bore-entry", None, Point3::new(0.0, 0.0, 0.0), 2.0),
-        add_circle_loop(
-            "bore-shoulder",
-            Some("bore-shoulder"),
-            Point3::new(0.0, 0.0, 10.0),
-            2.0,
-        ),
-    ];
-    add_face("bore-face", bore_surface, Sense::Reversed, bore_loops);
-
-    let counterbore_surface =
-        SurfaceId::mint("test:model:entity#counterbore-surface").expect("identity grammar");
-    model.surfaces.push(Surface {
-        id: counterbore_surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                Point3::new(0.0, 0.0, 10.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-                4.0,
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    let counterbore_loops = vec![
-        add_circle_loop(
-            "counterbore-shoulder",
-            Some("counterbore-shoulder"),
-            Point3::new(0.0, 0.0, 10.0),
-            4.0,
-        ),
-        add_circle_loop("counterbore-entry", None, Point3::new(0.0, 0.0, 12.0), 4.0),
-    ];
-    add_face(
-        "counterbore-face",
-        counterbore_surface,
-        Sense::Reversed,
-        counterbore_loops,
-    );
-
-    let shoulder_surface =
-        SurfaceId::mint("test:model:entity#shoulder-surface").expect("identity grammar");
-    model.surfaces.push(Surface {
-        id: shoulder_surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                Point3::new(0.0, 0.0, 10.0),
-                Vector3::new(0.0, 0.0, 1.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .unwrap(),
-        )),
-        source_object: None,
-    });
-    let shoulder_loops = vec![
-        add_circle_loop(
-            "shoulder-inner",
-            Some("bore-shoulder"),
-            Point3::new(0.0, 0.0, 10.0),
-            2.0,
-        ),
-        add_circle_loop(
-            "shoulder-outer",
-            Some("counterbore-shoulder"),
-            Point3::new(0.0, 0.0, 10.0),
-            4.0,
-        ),
-    ];
-    add_face(
-        "shoulder-face",
-        shoulder_surface,
-        Sense::Forward,
-        shoulder_loops,
-    );
-
-    let body = BodyId::mint("test:model:entity#body").expect("identity grammar");
-    model.bodies.push(Body {
-        id: body.clone(),
-        kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("test:model:entity#region").expect("identity grammar")],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    model.regions.push(Region {
-        id: RegionId::mint("test:model:entity#region").expect("identity grammar"),
-        body: body.clone(),
-        shells: vec![ShellId::mint("test:model:entity#shell").expect("identity grammar")],
-    });
-    model.shells.push(
-        Shell::new(
-            ShellId::mint("test:model:entity#shell").expect("identity grammar"),
-            RegionId::mint("test:model:entity#region").expect("identity grammar"),
-            vec![
-                FaceId::mint("test:model:entity#bore-face").expect("identity grammar"),
-                FaceId::mint("test:model:entity#counterbore-face").expect("identity grammar"),
-                FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar"),
-            ],
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap(),
-    );
-    let mut ir = CadIr::empty();
-    ir.model = model;
-    let operations = vec![operation.clone()];
-    let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
-    let body_faces = connected_solid_body_faces(&default_ctx, &ir, &body)
-        .unwrap()
-        .expect("solid body faces");
-    assert_eq!(body_faces.len(), 3);
-    let cylinders = cylindrical_face_witnesses(&default_ctx, &ir, &body_faces)
-        .unwrap()
-        .unwrap();
-    assert_eq!(cylinders.len(), 2);
-    assert!(plane_annulus_witness(
-        &default_ctx,
-        &ir,
-        &body_faces,
-        &cylinders[0],
-        1,
-        &cylinders[1],
-        0,
-    )
-    .unwrap());
-    assert!(counterbore_cylinders(&default_ctx, &ir, &body_faces)
-        .unwrap()
-        .is_some());
-    for dimension in [
-        cadmpeg_core::decode::ResourceDimension::RetainedBytes,
-        cadmpeg_core::decode::ResourceDimension::WorkUnits,
-    ] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes {
-            policy.limits.max_retained_bytes = 0;
-        } else {
-            policy.limits.max_work_units = 0;
-        }
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = counterbore_cylinders(&ctx, &ir, &body_faces)
-            .err()
-            .expect("limit refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
         );
-    }
-    for admitted_items in [1, 5] {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-        policy.limits.max_collection_items = admitted_items;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = counterbore_body_projection(&ctx, &ir, &operations, &outputs)
-            .err()
-            .expect("counterbore candidate and assignment allocations exceed item limit");
+        let mut ir = CadIr::empty();
+        ir.model = model;
+        let operations = vec![operation.clone()];
+        let outputs = BTreeMap::from([(operation.clone(), vec![body.clone()])]);
+        let body_faces = connected_solid_body_faces(default_ctx, &ir, &body)
+            .unwrap()
+            .expect("solid body faces");
+        assert_eq!(body_faces.len(), 3);
+        let cylinders = cylindrical_face_witnesses(default_ctx, &ir, &body_faces)
+            .unwrap()
+            .unwrap();
+        assert_eq!(cylinders.len(), 2);
+        assert!(plane_annulus_witness(
+            default_ctx,
+            &ir,
+            &body_faces,
+            &cylinders[0],
+            1,
+            &cylinders[1],
+            0,
+        )
+        .unwrap());
+        assert!(counterbore_cylinders(default_ctx, &ir, &body_faces)
+            .unwrap()
+            .is_some());
+        for dimension in [
+            cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+            cadmpeg_core::decode::ResourceDimension::WorkUnits,
+        ] {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    if dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes {
+                        policy.limits.max_retained_bytes = 0;
+                    } else {
+                        policy.limits.max_work_units = 0;
+                    }
+                },
+                |ctx| {
+                    let error = counterbore_cylinders(ctx, &ir, &body_faces)
+                        .err()
+                        .expect("limit refusal");
+                    assert!(
+                        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+                    );
+                },
+            );
+        }
+        for admitted_items in [1, 5] {
+            crate::test_support::with_decode_context_over(
+                &[],
+                |policy| {
+                    policy.limits.max_collection_items = admitted_items;
+                },
+                |ctx| {
+                    let error = counterbore_body_projection(ctx, &ir, &operations, &outputs)
+                        .err()
+                        .expect(
+                            "counterbore candidate and assignment allocations exceed item limit",
+                        );
+                    assert!(matches!(
+                        error,
+                        cadmpeg_core::CodecError::ResourceLimit(limit)
+                            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                    ));
+                },
+            );
+        }
+        let projection = counterbore_body_projection(default_ctx, &ir, &operations, &outputs)
+            .unwrap()
+            .expect("coaxial counterbore witness");
+        assert_eq!(projection.outputs, outputs);
+        assert_eq!(
+            projection.diameters,
+            BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
+        );
+        assert_eq!(
+            projection.counterbores,
+            BTreeMap::from([(
+                operation.clone(),
+                CounterboreDimensions {
+                    diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
+                    depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
+                },
+            )])
+        );
+        let inferred = counterbore_body_projection(default_ctx, &ir, &operations, &BTreeMap::new())
+            .unwrap()
+            .expect("unique connected solid counterbore witness");
+        assert_eq!(inferred.outputs, outputs);
+        assert_eq!(inferred.counterbores, projection.counterbores);
+        assert_eq!(
+            counterbore_axis_placements_for_operations(default_ctx, &ir, &operations, &outputs)
+                .unwrap(),
+            BTreeMap::from([(
+                operation.clone(),
+                HolePlacement::Axis {
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
+                },
+            )])
+        );
+        let definition = non_boolean_feature_definition_with_parameters(
+            "CBORE_HOLE",
+            &["Hole_GeneralHole_Counterbored_Through"],
+            None,
+            None,
+            HoleProjection {
+                placements: vec![HolePlacement::Axis {
+                    origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                        .unwrap(),
+                    axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
+                        .unwrap(),
+                }],
+                diameter: Some(Length::new(4.0).unwrap()),
+                counterbore: projection.counterbores.get(&operation).copied(),
+                ..HoleProjection::default()
+            },
+            BTreeMap::new(),
+        )
+        .unwrap();
         assert!(matches!(
-            error,
-            cadmpeg_core::CodecError::ResourceLimit(limit)
-                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-        ));
-    }
-    let projection = counterbore_body_projection(&default_ctx, &ir, &operations, &outputs)
-        .unwrap()
-        .expect("coaxial counterbore witness");
-    assert_eq!(projection.outputs, outputs);
-    assert_eq!(
-        projection.diameters,
-        BTreeMap::from([(operation.clone(), Length::new(4.0).unwrap())])
-    );
-    assert_eq!(
-        projection.counterbores,
-        BTreeMap::from([(
-            operation.clone(),
-            CounterboreDimensions {
-                diameter: cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap(),
-                depth: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            },
-        )])
-    );
-    let inferred = counterbore_body_projection(&default_ctx, &ir, &operations, &BTreeMap::new())
-        .unwrap()
-        .expect("unique connected solid counterbore witness");
-    assert_eq!(inferred.outputs, outputs);
-    assert_eq!(inferred.counterbores, projection.counterbores);
-    assert_eq!(
-        counterbore_axis_placements_for_operations(&default_ctx, &ir, &operations, &outputs)
-            .unwrap(),
-        BTreeMap::from([(
-            operation.clone(),
-            HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                    .unwrap(),
-            },
-        )])
-    );
-    let definition = non_boolean_feature_definition_with_parameters(
-        "CBORE_HOLE",
-        &["Hole_GeneralHole_Counterbored_Through"],
-        None,
-        None,
-        HoleProjection {
-            placements: vec![HolePlacement::Axis {
-                origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
-                    .unwrap(),
-                axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-                    .unwrap(),
-            }],
-            diameter: Some(Length::new(4.0).unwrap()),
-            counterbore: projection.counterbores.get(&operation).copied(),
-            ..HoleProjection::default()
-        },
-        BTreeMap::new(),
-    )
-    .unwrap();
-    assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
 
@@ -748,289 +760,287 @@ fn nx_counterbore_projection_requires_a_coaxial_pair_and_shoulder_and_refuses_al
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
         }][..])) && actual_diameter.get() == 8.0 && actual_depth.get() == 2.0 && actual_diameter_2.get() == 4.0)));
 
-    let mut missing_shoulder = ir.clone();
-    missing_shoulder.model.shells[0]
-        .edit_topology(|faces, _, _| {
-            faces.retain(|face| {
-                face != &FaceId::mint("test:model:entity#shoulder-face").expect("identity grammar")
-            });
-        })
-        .unwrap();
-    assert!(
-        counterbore_body_projection(&default_ctx, &missing_shoulder, &operations, &outputs)
-            .unwrap()
-            .is_none()
-    );
-    let mut sheet = ir.clone();
-    sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(
-        counterbore_body_projection(&default_ctx, &sheet, &operations, &outputs)
-            .unwrap()
-            .is_none()
-    );
-    assert!(counterbore_body_projection(
-        &default_ctx,
-        &ir,
-        &[operation.clone(), "second-operation".into()],
-        &BTreeMap::from([
-            (operation, vec![body.clone()]),
-            ("second-operation".into(), vec![body]),
-        ]),
-    )
-    .unwrap()
-    .is_none());
+        let mut missing_shoulder = ir.clone();
+        missing_shoulder.model.shells[0]
+            .edit_topology(|faces, _, _| {
+                faces.retain(|face| {
+                    face != &FaceId::mint("test:model:entity#shoulder-face")
+                        .expect("identity grammar")
+                });
+            })
+            .unwrap();
+        assert!(
+            counterbore_body_projection(default_ctx, &missing_shoulder, &operations, &outputs)
+                .unwrap()
+                .is_none()
+        );
+        let mut sheet = ir.clone();
+        sheet.model.bodies[0].kind = BodyKind::Sheet;
+        assert!(
+            counterbore_body_projection(default_ctx, &sheet, &operations, &outputs)
+                .unwrap()
+                .is_none()
+        );
+        assert!(counterbore_body_projection(
+            default_ctx,
+            &ir,
+            &[operation.clone(), "second-operation".into()],
+            &BTreeMap::from([
+                (operation, vec![body.clone()]),
+                ("second-operation".into(), vec![body]),
+            ]),
+        )
+        .unwrap()
+        .is_none());
+    });
 }
 
 #[test]
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-        offset_surface_feature_definition(&ctx, ir, outputs).expect("offset resource admission")
-    };
+    crate::test_support::with_decode_context(|ctx| {
+        let project_offset = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+            offset_surface_feature_definition(ctx, ir, outputs).expect("offset resource admission")
+        };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
-    let make_offset = |ordinal: u32, distance: f64| {
-        let owner =
-            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
-        let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
-                        .expect("identity grammar"),
-                    distance,
-                    Some(1),
-                    Some(1),
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        );
-        (owner, procedural)
-    };
-    for ordinal in 0..2 {
-        let (owner, procedural) = make_offset(ordinal, 30.0);
-        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
-    }
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+        let make_offset = |ordinal: u32, distance: f64| {
+            let owner =
+                SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+            let procedural = ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                    .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                            .expect("identity grammar"),
+                        distance,
+                        Some(1),
+                        Some(1),
+                        false,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
+                        },
+                    )
+                    .unwrap(),
+                ),
+                None,
+            );
+            (owner, procedural)
+        };
+        for ordinal in 0..2 {
+            let (owner, procedural) = make_offset(ordinal, 30.0);
+            attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
+        }
 
-    let (definition, supports) =
-        project_offset(&ir, std::slice::from_ref(&output)).expect("unique offset distance");
-    assert_eq!(supports.len(), 2);
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Native(_),
-            distance: None,
-        })
-    ));
+        let (definition, supports) =
+            project_offset(&ir, std::slice::from_ref(&output)).expect("unique offset distance");
+        assert_eq!(supports.len(), 2);
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                faces: FaceSelection::Native(_),
+                distance: None,
+            })
+        ));
 
-    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
-    for ordinal in 0..2 {
+        let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
+        for ordinal in 0..2 {
+            attach_test_body_surface(
+                &mut ir,
+                &input,
+                SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
+            );
+        }
+        let (definition, _) =
+            project_offset(&ir, std::slice::from_ref(&output)).expect("uniquely faced supports");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                faces: FaceSelection::Resolved { faces, .. },
+                distance: Some(actual_distance),
+            }) if (faces.len() == 2) && actual_distance.get() == 30.0
+        ));
+
+        for face in ir.model.faces.iter_mut().filter(|face| {
+            face.surface.as_str() == "nx:s4:nurbs-surf#0"
+                || face.surface.as_str() == "nx:s4:nurbs-surf#1"
+        }) {
+            face.sense = cadmpeg_ir::topology::Sense::Reversed;
+        }
+        let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
+            .expect("uniformly reversed support faces");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                distance: Some(actual_distance),
+                ..
+            }) if actual_distance.get() == -30.0
+        ));
+
+        ir.model
+            .faces
+            .iter_mut()
+            .find(|face| {
+                face.surface == SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar")
+            })
+            .expect("first support face")
+            .sense = cadmpeg_ir::topology::Sense::Forward;
+        let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
+            .expect("mixed support-face orientations retain offset family");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                faces: FaceSelection::Resolved { .. },
+                distance: None,
+            })
+        ));
+
+        let mut ambiguous = ir.clone();
         attach_test_body_surface(
-            &mut ir,
-            &input,
-            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
+            &mut ambiguous,
+            &BodyId::mint("nx:s4:body#duplicate").expect("identity grammar"),
+            SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar"),
         );
-    }
-    let (definition, _) =
-        project_offset(&ir, std::slice::from_ref(&output)).expect("uniquely faced supports");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Resolved { faces, .. },
-            distance: Some(actual_distance),
-        }) if (faces.len() == 2) && actual_distance.get() == 30.0
-    ));
+        let (definition, _) = project_offset(&ambiguous, std::slice::from_ref(&output))
+            .expect("offset semantics survive ambiguous face identity");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
+                faces: FaceSelection::Native(_),
+                distance: None,
+            })
+        ));
 
-    for face in ir.model.faces.iter_mut().filter(|face| {
-        face.surface.as_str() == "nx:s4:nurbs-surf#0"
-            || face.surface.as_str() == "nx:s4:nurbs-surf#1"
-    }) {
-        face.sense = cadmpeg_ir::topology::Sense::Reversed;
-    }
-    let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
-        .expect("uniformly reversed support faces");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            distance: Some(actual_distance),
-            ..
-        }) if actual_distance.get() == -30.0
-    ));
+        let (unowned, procedural) = make_offset(99, -40.0);
+        insert_test_procedural_surface(&mut ir, &unowned, procedural);
+        assert!(project_offset(&ir, std::slice::from_ref(&output)).is_some());
+        ir.model.procedural_surfaces.pop();
+        ir.model.surfaces.pop();
 
-    ir.model
-        .faces
-        .iter_mut()
-        .find(|face| {
-            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar")
-        })
-        .expect("first support face")
-        .sense = cadmpeg_ir::topology::Sense::Forward;
-    let (definition, _) = project_offset(&ir, std::slice::from_ref(&output))
-        .expect("mixed support-face orientations retain offset family");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Resolved { .. },
-            distance: None,
-        })
-    ));
-
-    let mut ambiguous = ir.clone();
-    attach_test_body_surface(
-        &mut ambiguous,
-        &BodyId::mint("nx:s4:body#duplicate").expect("identity grammar"),
-        SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar"),
-    );
-    let (definition, _) = project_offset(&ambiguous, std::slice::from_ref(&output))
-        .expect("offset semantics survive ambiguous face identity");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Native(_),
-            distance: None,
-        })
-    ));
-
-    let (unowned, procedural) = make_offset(99, -40.0);
-    insert_test_procedural_surface(&mut ir, &unowned, procedural);
-    assert!(project_offset(&ir, std::slice::from_ref(&output)).is_some());
-    ir.model.procedural_surfaces.pop();
-    ir.model.surfaces.pop();
-
-    let (owner, conflicting) = make_offset(2, -30.0);
-    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
-    assert!(project_offset(&ir, &[output]).is_none());
+        let (owner, conflicting) = make_offset(2, -30.0);
+        attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
+        assert!(project_offset(&ir, &[output]).is_none());
+    });
 }
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-        thicken_feature_definition(&ctx, ir, outputs).expect("thicken resource admission")
-    };
+    crate::test_support::with_decode_context(|ctx| {
+        let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+        };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
-    let make_offset = |ordinal: u32, distance: f64| {
-        let owner =
-            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
-        let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
-                        .expect("identity grammar"),
-                    distance,
-                    Some(1),
-                    Some(1),
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        );
-        (owner, procedural)
-    };
-    for ordinal in 0..2 {
-        let (owner, procedural) = make_offset(ordinal, -12.5);
-        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
-    }
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+        let make_offset = |ordinal: u32, distance: f64| {
+            let owner =
+                SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+            let procedural = ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                    .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Offset(
+                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                        SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}"))
+                            .expect("identity grammar"),
+                        distance,
+                        Some(1),
+                        Some(1),
+                        false,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
+                        },
+                    )
+                    .unwrap(),
+                ),
+                None,
+            );
+            (owner, procedural)
+        };
+        for ordinal in 0..2 {
+            let (owner, procedural) = make_offset(ordinal, -12.5);
+            attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
+        }
 
-    let (definition, supports) = project_thicken(&ir, std::slice::from_ref(&output))
-        .expect("unique nonzero offset distance");
-    assert_eq!(supports.len(), 2);
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Native(_),
-            thickness: Some(actual_thickness),
-            side: None,
-        }) if actual_thickness.get() == 12.5
-    ));
+        let (definition, supports) = project_thicken(&ir, std::slice::from_ref(&output))
+            .expect("unique nonzero offset distance");
+        assert_eq!(supports.len(), 2);
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::Native(_),
+                thickness: Some(actual_thickness),
+                side: None,
+            }) if actual_thickness.get() == 12.5
+        ));
 
-    let mut sheet_output = ir.clone();
-    sheet_output
-        .model
-        .bodies
-        .iter_mut()
-        .find(|body| body.id == output)
-        .expect("output body")
-        .kind = cadmpeg_ir::topology::BodyKind::Sheet;
-    assert!(project_thicken(&sheet_output, std::slice::from_ref(&output)).is_none());
+        let mut sheet_output = ir.clone();
+        sheet_output
+            .model
+            .bodies
+            .iter_mut()
+            .find(|body| body.id == output)
+            .expect("output body")
+            .kind = cadmpeg_ir::topology::BodyKind::Sheet;
+        assert!(project_thicken(&sheet_output, std::slice::from_ref(&output)).is_none());
 
-    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
-    for ordinal in 0..2 {
-        attach_test_body_surface(
-            &mut ir,
-            &input,
-            SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
-        );
-    }
-    let (definition, _) =
-        project_thicken(&ir, std::slice::from_ref(&output)).expect("uniquely faced supports");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Resolved { faces, .. },
-            side: Some(ThickenSide::Reverse),
-            ..
-        }) if faces.len() == 2
-    ));
+        let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
+        for ordinal in 0..2 {
+            attach_test_body_surface(
+                &mut ir,
+                &input,
+                SurfaceId::mint(format!("nx:s4:nurbs-surf#{ordinal}")).expect("identity grammar"),
+            );
+        }
+        let (definition, _) =
+            project_thicken(&ir, std::slice::from_ref(&output)).expect("uniquely faced supports");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::Resolved { faces, .. },
+                side: Some(ThickenSide::Reverse),
+                ..
+            }) if faces.len() == 2
+        ));
 
-    ir.model
-        .faces
-        .iter_mut()
-        .find(|face| {
-            face.surface == SurfaceId::mint("nx:s4:nurbs-surf#1").expect("identity grammar")
-        })
-        .expect("second support face")
-        .sense = cadmpeg_ir::topology::Sense::Reversed;
-    let (definition, _) = project_thicken(&ir, std::slice::from_ref(&output))
-        .expect("mixed support senses preserve thicken semantics");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Resolved { .. },
-            side: None,
-            ..
-        })
-    ));
+        ir.model
+            .faces
+            .iter_mut()
+            .find(|face| {
+                face.surface == SurfaceId::mint("nx:s4:nurbs-surf#1").expect("identity grammar")
+            })
+            .expect("second support face")
+            .sense = cadmpeg_ir::topology::Sense::Reversed;
+        let (definition, _) = project_thicken(&ir, std::slice::from_ref(&output))
+            .expect("mixed support senses preserve thicken semantics");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::Resolved { .. },
+                side: None,
+                ..
+            })
+        ));
 
-    let (unowned, procedural) = make_offset(99, 40.0);
-    insert_test_procedural_surface(&mut ir, &unowned, procedural);
-    assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_some());
-    ir.model.procedural_surfaces.pop();
-    ir.model.surfaces.pop();
+        let (unowned, procedural) = make_offset(99, 40.0);
+        insert_test_procedural_surface(&mut ir, &unowned, procedural);
+        assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_some());
+        ir.model.procedural_surfaces.pop();
+        ir.model.surfaces.pop();
 
-    let (owner, conflicting) = make_offset(2, 12.5);
-    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
-    assert!(project_thicken(&ir, &[output]).is_none());
+        let (owner, conflicting) = make_offset(2, 12.5);
+        attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
+        assert!(project_thicken(&ir, &[output]).is_none());
 
-    let zero_output = BodyId::mint("nx:s4:body#4").expect("identity grammar");
-    let (owner, zero) = make_offset(3, 0.0);
-    attach_test_body_procedural_surface(&mut ir, &zero_output, owner, zero);
-    assert!(project_thicken(&ir, &[zero_output]).is_none());
+        let zero_output = BodyId::mint("nx:s4:body#4").expect("identity grammar");
+        let (owner, zero) = make_offset(3, 0.0);
+        attach_test_body_procedural_surface(&mut ir, &zero_output, owner, zero);
+        assert!(project_thicken(&ir, &[zero_output]).is_none());
+    });
 }
 
 #[test]
@@ -1039,99 +1049,98 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
-        thicken_feature_definition(&ctx, ir, outputs).expect("thicken resource admission")
-    };
+    crate::test_support::with_decode_context(|ctx| {
+        let project_thicken = |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId]| {
+            thicken_feature_definition(ctx, ir, outputs).expect("thicken resource admission")
+        };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId::mint("nx:s4:body#symmetric").expect("identity grammar");
-    let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
-    let support = SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar");
-    attach_test_body_surface(&mut ir, &input, support.clone());
-    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| {
-        let owner =
-            SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
-        let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Offset(
-                cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                    support,
-                    distance,
-                    Some(1),
-                    Some(1),
-                    false,
-                    cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                        flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                        cache: None,
-                    },
-                )
-                .unwrap(),
-            ),
-            None,
-        );
-        (owner, procedural)
-    };
-    for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
-        let (owner, procedural) = make_offset(ordinal, support.clone(), distance);
-        attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
-    }
-
-    let (definition, supports) =
-        project_thicken(&ir, std::slice::from_ref(&output)).expect("matched symmetric offsets");
-    assert_eq!(supports, std::slice::from_ref(&support));
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Resolved { faces, .. },
-            thickness: Some(actual_thickness),
-            side: Some(ThickenSide::Both),
-        }) if (faces.len() == 1) && actual_thickness.get() == 12.5
-    ));
-
-    let mut mismatched_support = ir.clone();
-    mismatched_support
-        .model
-        .procedural_surfaces
-        .last_mut()
-        .expect("positive offset")
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
-                unreachable!()
-            };
-            definition_payload
-                .set_support(SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar"));
-        });
-    assert!(project_thicken(&mismatched_support, std::slice::from_ref(&output)).is_none());
-
-    ir.model
-        .procedural_surfaces
-        .last_mut()
-        .expect("positive offset")
-        .edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
-                unreachable!()
-            };
-            {
-                let replacement = 7.0;
-                edit::replace(definition_payload, |previous| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let output = BodyId::mint("nx:s4:body#symmetric").expect("identity grammar");
+        let input = BodyId::mint("nx:s4:body#input").expect("identity grammar");
+        let support = SurfaceId::mint("nx:s4:nurbs-surf#0").expect("identity grammar");
+        attach_test_body_surface(&mut ir, &input, support.clone());
+        let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| {
+            let owner =
+                SurfaceId::mint(format!("nx:s4:offset-surf#{ordinal}")).expect("identity grammar");
+            let procedural = ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!("nx:s4:offset-construction#{ordinal}"))
+                    .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        previous.support().clone(),
-                        replacement,
-                        *previous.u_sense(),
-                        *previous.v_sense(),
-                        previous.linear_support_extension(),
-                        previous.extension().to_raw(),
+                        support,
+                        distance,
+                        Some(1),
+                        Some(1),
+                        false,
+                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                            cache: None,
+                        },
                     )
-                })
-            }
-            .unwrap();
-        });
-    assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_none());
+                    .unwrap(),
+                ),
+                None,
+            );
+            (owner, procedural)
+        };
+        for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
+            let (owner, procedural) = make_offset(ordinal, support.clone(), distance);
+            attach_test_body_procedural_surface(&mut ir, &output, owner, procedural);
+        }
+
+        let (definition, supports) =
+            project_thicken(&ir, std::slice::from_ref(&output)).expect("matched symmetric offsets");
+        assert_eq!(supports, std::slice::from_ref(&support));
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Thicken {
+                faces: FaceSelection::Resolved { faces, .. },
+                thickness: Some(actual_thickness),
+                side: Some(ThickenSide::Both),
+            }) if (faces.len() == 1) && actual_thickness.get() == 12.5
+        ));
+
+        let mut mismatched_support = ir.clone();
+        mismatched_support
+            .model
+            .procedural_surfaces
+            .last_mut()
+            .expect("positive offset")
+            .edit_definition(|definition| {
+                let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
+                    unreachable!()
+                };
+                definition_payload.set_support(
+                    SurfaceId::mint("nx:s4:nurbs-surf#other").expect("identity grammar"),
+                );
+            });
+        assert!(project_thicken(&mismatched_support, std::slice::from_ref(&output)).is_none());
+
+        ir.model
+            .procedural_surfaces
+            .last_mut()
+            .expect("positive offset")
+            .edit_definition(|definition| {
+                let ProceduralSurfaceDefinition::Offset(definition_payload) = definition else {
+                    unreachable!()
+                };
+                {
+                    let replacement = 7.0;
+                    edit::replace(definition_payload, |previous| {
+                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                            previous.support().clone(),
+                            replacement,
+                            *previous.u_sense(),
+                            *previous.v_sense(),
+                            previous.linear_support_extension(),
+                            previous.extension().to_raw(),
+                        )
+                    })
+                }
+                .unwrap();
+            });
+        assert!(project_thicken(&ir, std::slice::from_ref(&output)).is_none());
+    });
 }
 
 #[test]
@@ -1145,164 +1154,163 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     };
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let project_blend =
-        |ir: &cadmpeg_ir::document::CadIr, outputs: &[BodyId], family: NxBlendFamily| {
-            blend_feature_definition(&ctx, ir, outputs, family).expect("blend resource admission")
+    crate::test_support::with_decode_context(|ctx| {
+        let project_blend = |ir: &cadmpeg_ir::document::CadIr,
+                             outputs: &[BodyId],
+                             family: NxBlendFamily| {
+            blend_feature_definition(ctx, ir, outputs, family).expect("blend resource admission")
         };
-    let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
-        blend_support_bipartition(&ctx, &pairs)
-            .expect("blend graph resource admission")
-            .map(|sides| (sides.first, sides.second))
-    };
+        let project_bipartition = |pairs: Vec<[SurfaceId; 2]>| {
+            blend_support_bipartition(ctx, &pairs)
+                .expect("blend graph resource admission")
+                .map(|sides| (sides.first, sides.second))
+        };
 
-    let mut ir = cadmpeg_ir::document::CadIr::empty();
-    let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
-    let support_a = SurfaceId::mint("test:model:entity#support-a").expect("identity grammar");
-    let support_b = SurfaceId::mint("test:model:entity#support-b").expect("identity grammar");
-    let support_c = SurfaceId::mint("test:model:entity#support-c").expect("identity grammar");
-    assert_eq!(
-        project_bipartition(vec![
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        let output = BodyId::mint("nx:s4:body#3").expect("identity grammar");
+        let support_a = SurfaceId::mint("test:model:entity#support-a").expect("identity grammar");
+        let support_b = SurfaceId::mint("test:model:entity#support-b").expect("identity grammar");
+        let support_c = SurfaceId::mint("test:model:entity#support-c").expect("identity grammar");
+        assert_eq!(
+            project_bipartition(vec![
+                [support_a.clone(), support_b.clone()],
+                [support_b.clone(), support_c.clone()],
+            ]),
+            Some((
+                vec![support_a.clone(), support_c.clone()],
+                vec![support_b.clone()],
+            ))
+        );
+        assert!(project_bipartition(vec![
             [support_a.clone(), support_b.clone()],
             [support_b.clone(), support_c.clone()],
-        ]),
-        Some((
-            vec![support_a.clone(), support_c.clone()],
-            vec![support_b.clone()],
-        ))
-    );
-    assert!(project_bipartition(vec![
-        [support_a.clone(), support_b.clone()],
-        [support_b.clone(), support_c.clone()],
-        [support_c, support_a],
-    ])
-    .is_none());
-    assert!(project_bipartition(vec![
-        [
-            SurfaceId::mint("test:model:entity#a").expect("identity grammar"),
-            SurfaceId::mint("test:model:entity#b").expect("identity grammar")
-        ],
-        [
-            SurfaceId::mint("test:model:entity#c").expect("identity grammar"),
-            SurfaceId::mint("test:model:entity#d").expect("identity grammar")
-        ],
-    ])
-    .is_none());
-    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
-        let owner =
-            SurfaceId::mint(format!("nx:s4:blend-surf#{ordinal}")).expect("identity grammar");
-        let procedural = ProceduralSurface::new(
-            ProceduralSurfaceId::mint(format!("nx:s4:blend-construction#{ordinal}"))
-                .expect("identity grammar"),
-            ProceduralSurfaceDefinition::Blend(
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    [None, None],
-                    None,
-                    radius,
-                    BlendCrossSection::Circular,
-                    cadmpeg_ir::geometry::CacheContract::from_form(None),
-                )
-                .unwrap(),
-            ),
-            None,
-        );
-        (owner, procedural)
-    };
-    let (first_owner, first) = make_blend(0, BlendRadiusLaw::constant(5.0).unwrap());
-    attach_test_body_procedural_surface(&mut ir, &output, first_owner, first);
-    let (second_owner, second) = make_blend(1, BlendRadiusLaw::constant(-5.0).unwrap());
-    attach_test_body_procedural_surface(&mut ir, &output, second_owner, second);
+            [support_c, support_a],
+        ])
+        .is_none());
+        assert!(project_bipartition(vec![
+            [
+                SurfaceId::mint("test:model:entity#a").expect("identity grammar"),
+                SurfaceId::mint("test:model:entity#b").expect("identity grammar")
+            ],
+            [
+                SurfaceId::mint("test:model:entity#c").expect("identity grammar"),
+                SurfaceId::mint("test:model:entity#d").expect("identity grammar")
+            ],
+        ])
+        .is_none());
+        let make_blend = |ordinal: u32, radius: BlendRadiusLaw| {
+            let owner =
+                SurfaceId::mint(format!("nx:s4:blend-surf#{ordinal}")).expect("identity grammar");
+            let procedural = ProceduralSurface::new(
+                ProceduralSurfaceId::mint(format!("nx:s4:blend-construction#{ordinal}"))
+                    .expect("identity grammar"),
+                ProceduralSurfaceDefinition::Blend(
+                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                        [None, None],
+                        None,
+                        radius,
+                        BlendCrossSection::Circular,
+                        cadmpeg_ir::geometry::CacheContract::from_form(None),
+                    )
+                    .unwrap(),
+                ),
+                None,
+            );
+            (owner, procedural)
+        };
+        let (first_owner, first) = make_blend(0, BlendRadiusLaw::constant(5.0).unwrap());
+        attach_test_body_procedural_surface(&mut ir, &output, first_owner, first);
+        let (second_owner, second) = make_blend(1, BlendRadiusLaw::constant(-5.0).unwrap());
+        attach_test_body_procedural_surface(&mut ir, &output, second_owner, second);
 
-    let (definition, surfaces) =
-        project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
-            .expect("one circular constant-radius blend result");
-    assert_eq!(surfaces.len(), 2);
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: RadiusSpec::Constant { radius: actual_radius },
-            ..
-        }] if actual_radius.get() == 5.0)
-    ));
-    let (definition, _) = project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Face)
-        .expect("face blend retains unresolved supports");
-    assert!(matches!(
+        let (definition, surfaces) =
+            project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
+                .expect("one circular constant-radius blend result");
+        assert_eq!(surfaces.len(), 2);
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups
+            }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Constant { radius: actual_radius },
+                ..
+            }] if actual_radius.get() == 5.0)
+        ));
+        let (definition, _) =
+            project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Face)
+                .expect("face blend retains unresolved supports");
+        assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands,
 
             radius: RadiusSpec::Constant { .. },
         }) if matches!((operands.first_faces(), operands.second_faces(),), (FaceSelection::Unresolved, FaceSelection::Unresolved,))));
 
-    let mut face_blend_ir = ir.clone();
-    let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
-    let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
-    for procedural in &mut face_blend_ir.model.procedural_surfaces {
-        procedural.edit_definition(|definition| {
-            let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
-                unreachable!()
-            };
-            let mut edited_supports = definition_payload.supports().clone();
-            let supports = &mut edited_supports;
+        let mut face_blend_ir = ir.clone();
+        let first_support = SurfaceId::mint("nx:s4:blend-support#a").expect("identity grammar");
+        let second_support = SurfaceId::mint("nx:s4:blend-support#b").expect("identity grammar");
+        for procedural in &mut face_blend_ir.model.procedural_surfaces {
+            procedural.edit_definition(|definition| {
+                let ProceduralSurfaceDefinition::Blend(definition_payload) = definition else {
+                    unreachable!()
+                };
+                let mut edited_supports = definition_payload.supports().clone();
+                let supports = &mut edited_supports;
 
-            *supports = [
-                Some(BlendSupport {
-                    surface: first_support.clone(),
-                    reversed: false,
-                }),
-                Some(BlendSupport {
-                    surface: second_support.clone(),
-                    reversed: true,
-                }),
-            ];
-            let restored_cache = definition_payload.legacy_cache();
-            *definition_payload =
-                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                    edited_supports,
-                    definition_payload.spine().clone(),
-                    definition_payload.radius().clone(),
-                    definition_payload.cross_section().clone(),
-                    cadmpeg_ir::geometry::CacheContract::from_form(
-                        definition_payload
-                            .native()
-                            .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
-                            .map(Box::new),
-                    ),
-                )
-                .unwrap();
-            definition
-                .set_legacy_cache(restored_cache)
-                .expect("the rebuilt construction states the same legacy cache slot");
-        });
-    }
-    attach_test_body_surface(&mut face_blend_ir, &output, first_support);
-    attach_test_body_surface(&mut face_blend_ir, &output, second_support);
-    let (definition, _) = project_blend(
-        &face_blend_ir,
-        std::slice::from_ref(&output),
-        NxBlendFamily::Edge,
-    )
-    .expect("complete edge-blend supports");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
-            if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Constant { .. },
-                ..
-            }])
-    ));
-    let (definition, _) = project_blend(
-        &face_blend_ir,
-        std::slice::from_ref(&output),
-        NxBlendFamily::Face,
-    )
-    .expect("complete face-blend supports");
-    assert!(matches!(
+                *supports = [
+                    Some(BlendSupport {
+                        surface: first_support.clone(),
+                        reversed: false,
+                    }),
+                    Some(BlendSupport {
+                        surface: second_support.clone(),
+                        reversed: true,
+                    }),
+                ];
+                let restored_cache = definition_payload.legacy_cache();
+                *definition_payload =
+                    cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                        edited_supports,
+                        definition_payload.spine().clone(),
+                        definition_payload.radius().clone(),
+                        definition_payload.cross_section().clone(),
+                        cadmpeg_ir::geometry::CacheContract::from_form(
+                            definition_payload
+                                .native()
+                                .map(cadmpeg_ir::geometry::RollingBallConstruction::to_raw)
+                                .map(Box::new),
+                        ),
+                    )
+                    .unwrap();
+                definition
+                    .set_legacy_cache(restored_cache)
+                    .expect("the rebuilt construction states the same legacy cache slot");
+            });
+        }
+        attach_test_body_surface(&mut face_blend_ir, &output, first_support);
+        attach_test_body_surface(&mut face_blend_ir, &output, second_support);
+        let (definition, _) = project_blend(
+            &face_blend_ir,
+            std::slice::from_ref(&output),
+            NxBlendFamily::Edge,
+        )
+        .expect("complete edge-blend supports");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
+                if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                    edges: EdgeSelection::Unresolved,
+                    radius: RadiusSpec::Constant { .. },
+                    ..
+                }])
+        ));
+        let (definition, _) = project_blend(
+            &face_blend_ir,
+            std::slice::from_ref(&output),
+            NxBlendFamily::Face,
+        )
+        .expect("complete face-blend supports");
+        assert!(matches!(
         definition, FeatureDefinition::Operation(FeatureOperation::FaceBlend {
             operands,
 
@@ -1312,64 +1320,66 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 ..
             },) if faces.len() == 1 && second.len() == 1 && faces != second)));
 
-    let (unowned, procedural) = make_blend(99, BlendRadiusLaw::constant(17.0).unwrap());
-    insert_test_procedural_surface(&mut ir, &unowned, procedural);
-    let (definition, _) = project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
-        .expect("required invariant");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-            radius: RadiusSpec::Constant { radius: actual_radius },
-            ..
-        }] if actual_radius.get() == 5.0)
-    ));
-    ir.model.procedural_surfaces.pop();
-    ir.model.surfaces.pop();
+        let (unowned, procedural) = make_blend(99, BlendRadiusLaw::constant(17.0).unwrap());
+        insert_test_procedural_surface(&mut ir, &unowned, procedural);
+        let (definition, _) =
+            project_blend(&ir, std::slice::from_ref(&output), NxBlendFamily::Edge)
+                .expect("required invariant");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups
+            }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+                radius: RadiusSpec::Constant { radius: actual_radius },
+                ..
+            }] if actual_radius.get() == 5.0)
+        ));
+        ir.model.procedural_surfaces.pop();
+        ir.model.surfaces.pop();
 
-    let (owner, conflicting) = make_blend(2, BlendRadiusLaw::constant(7.0).unwrap());
-    attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
-    let (definition, _) =
-        project_blend(&ir, &[output], NxBlendFamily::Edge).expect("required invariant");
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups
-        }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
-        radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
-            ..
-        }])
-    ));
-    assert!(project_blend(&ir, &[], NxBlendFamily::Edge,).is_none());
+        let (owner, conflicting) = make_blend(2, BlendRadiusLaw::constant(7.0).unwrap());
+        attach_test_body_procedural_surface(&mut ir, &output, owner, conflicting);
+        let (definition, _) =
+            project_blend(&ir, &[output], NxBlendFamily::Edge).expect("required invariant");
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::Fillet {
+                groups
+            }) if matches!(groups.as_slice(), [cadmpeg_ir::features::edge_treatments::FilletGroup {
+            radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant) },
+                ..
+            }])
+        ));
+        assert!(project_blend(&ir, &[], NxBlendFamily::Edge,).is_none());
 
-    let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
-    let conic = ProceduralSurface::new(
-        ProceduralSurfaceId::mint("nx:s4:blend-construction#3").expect("identity grammar"),
-        ProceduralSurfaceDefinition::Blend(
-            cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
-                [None, None],
-                None,
-                BlendRadiusLaw::constant(7.0).unwrap(),
-                BlendCrossSection::Conic,
-                cadmpeg_ir::geometry::CacheContract::from_form(None),
-            )
-            .unwrap(),
-        ),
-        None,
-    );
-    attach_test_body_procedural_surface(
-        &mut ir,
-        &BodyId::mint("nx:s4:body#3").expect("identity grammar"),
-        conic_owner,
-        conic,
-    );
-    assert!(project_blend(
-        &ir,
-        &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
-        NxBlendFamily::Edge,
-    )
-    .is_none());
+        let conic_owner = SurfaceId::mint("nx:s4:blend-surf#3").expect("identity grammar");
+        let conic = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("nx:s4:blend-construction#3").expect("identity grammar"),
+            ProceduralSurfaceDefinition::Blend(
+                cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
+                    [None, None],
+                    None,
+                    BlendRadiusLaw::constant(7.0).unwrap(),
+                    BlendCrossSection::Conic,
+                    cadmpeg_ir::geometry::CacheContract::from_form(None),
+                )
+                .unwrap(),
+            ),
+            None,
+        );
+        attach_test_body_procedural_surface(
+            &mut ir,
+            &BodyId::mint("nx:s4:body#3").expect("identity grammar"),
+            conic_owner,
+            conic,
+        );
+        assert!(project_blend(
+            &ir,
+            &[BodyId::mint("nx:s4:body#3").expect("identity grammar")],
+            NxBlendFamily::Edge,
+        )
+        .is_none());
+    });
 }
 
 #[test]

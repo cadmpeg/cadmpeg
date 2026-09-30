@@ -73,7 +73,7 @@ impl CountedPatternReferences<()> {
                 return None;
             }
             let at = start.checked_add(2)?;
-            cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().saturating_sub(at))?;
+            cadmpeg_core::decode::bounded_len(u64::from(count), 2, bytes.len().checked_sub(at)?)?;
             let mut scan_at = at;
             for _ in 0..count {
                 let token = PayloadIndexToken::read(bytes.get(scan_at..)?)?;

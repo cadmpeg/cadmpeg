@@ -56,12 +56,14 @@ fn control_form_refusal(
     configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
 ) -> cadmpeg_core::CodecError {
     let bytes = [0, 1, 0, 0, 0, 2, 0, 0];
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    crate::om::offset_store_control_form(&ctx, &bytes, None).unwrap_err()
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            configure(policy);
+        },
+        |ctx| crate::om::offset_store_control_form(ctx, &bytes, None).unwrap_err(),
+    )
 }
 
 #[test]

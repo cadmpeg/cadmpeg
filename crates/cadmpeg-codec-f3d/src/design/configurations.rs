@@ -611,14 +611,11 @@ pub(crate) fn bind_configuration_suppressed_features(
                     let copied = cadmpeg_ir::features::FeatureId::try_from(copied)
                         .map_err(CodecError::malformed)?;
                     if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(1, "f3d configuration suppressed dependency")?;
-                        dependencies.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "f3d configuration suppressed dependency allocation",
-                                0,
-                                1,
-                            )
-                        })?;
+                        dependencies.reserve_for_decode(
+                            ctx,
+                            1,
+                            "f3d configuration suppressed dependency",
+                        )?;
                     }
                     dependencies.insert(copied);
                 }

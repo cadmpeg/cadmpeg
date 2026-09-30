@@ -28,61 +28,81 @@ use cadmpeg_core::decode::View;
 
 #[test]
 fn topology_graph_parse_refuses_collection_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = Graph::parse(&ctx, &bytes).expect_err("collection refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).expect_err("collection refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
 #[test]
 fn topology_graph_parse_refuses_retained_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = Graph::parse(&ctx, &bytes).expect_err("retained refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).expect_err("retained refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn topology_graph_parse_refuses_scoped_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = Graph::parse(&ctx, &bytes).expect_err("scoped refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).expect_err("scoped refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes)
+            );
+        },
     );
 }
 
 #[test]
 fn topology_graph_parse_refuses_work_limit() {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     let bytes = topology_partition_stream();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    let error = Graph::parse(&ctx, &bytes).expect_err("work refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &bytes,
+        |policy| {
+            policy.limits.max_work_units = 0;
+        },
+        |ctx| {
+            let error = Graph::parse(ctx, &bytes).expect_err("work refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits)
+            );
+        },
     );
 }
 
@@ -345,17 +365,21 @@ fn topology_closes_high_identity_procedural_surface_dependencies() {
 fn topology_projection_route_refuses_collection_limit() {
     let stream = offset_surface_topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
-    let error = graph
-        .offset_surfaces(&ctx)
-        .expect_err("offset surface collection refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = graph
+                .offset_surfaces(ctx)
+                .expect_err("offset surface collection refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
@@ -363,17 +387,21 @@ fn topology_projection_route_refuses_collection_limit() {
 fn topology_projection_route_refuses_retained_limit() {
     let stream = offset_surface_topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
-    let error = graph
-        .offset_surfaces(&ctx)
-        .expect_err("offset surface retained refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = graph
+                .offset_surfaces(ctx)
+                .expect_err("offset surface retained refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
@@ -381,17 +409,21 @@ fn topology_projection_route_refuses_retained_limit() {
 fn topology_carrier_references_refuse_collection_limit() {
     let stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
-    let error = graph
-        .referenced_carrier_xmts(&ctx)
-        .expect_err("carrier reference refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_collection_items = 0;
+        },
+        |ctx| {
+            let error = graph
+                .referenced_carrier_xmts(ctx)
+                .expect_err("carrier reference refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+            );
+        },
     );
 }
 
@@ -400,63 +432,73 @@ fn topology_shell_face_route_refuses_retained_limit() {
     let stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
     let shell = graph.get(NodeKind::Shell, 3).expect("shell");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, &policy).unwrap();
-    let error = graph
-        .shell_face_xmts(&ctx, shell)
-        .expect_err("shell face retained refusal");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+    crate::test_support::with_decode_context_over(
+        &stream,
+        |policy| {
+            policy.limits.max_retained_bytes = 0;
+        },
+        |ctx| {
+            let error = graph
+                .shell_face_xmts(ctx, shell)
+                .expect_err("shell face retained refusal");
+            assert!(
+                matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+            );
+        },
     );
 }
 
-fn face_ring_refusal(policy: &cadmpeg_core::decode::DecodePolicy) -> FaceLoopError {
+fn face_ring_refusal(
+    adjust: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> FaceLoopError {
     let stream = topology_partition_stream();
     let graph = crate::test_support::with_decode_context(|ctx| Graph::parse(ctx, &stream)).unwrap();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&stream, &arena, policy).unwrap();
-    graph
-        .face_loop_rings(&ctx, 4)
-        .expect_err("face ring resource refusal")
+
+    crate::test_support::with_decode_context_over(&stream, adjust, |ctx| {
+        graph
+            .face_loop_rings(ctx, 4)
+            .expect_err("face ring resource refusal")
+    })
 }
 
 #[test]
 fn topology_face_ring_refuses_collection_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_collection_items = 0;
-    assert!(matches!(face_ring_refusal(&policy),
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_collection_items = 0;
+    };
+    assert!(matches!(face_ring_refusal(adjust_policy),
         FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
 }
 
 #[test]
 fn topology_face_ring_refuses_retained_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_retained_bytes = 0;
-    assert!(matches!(face_ring_refusal(&policy),
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_retained_bytes = 0;
+    };
+    assert!(matches!(face_ring_refusal(adjust_policy),
         FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
 }
 
 #[test]
 fn topology_face_ring_refuses_scoped_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_materialized_bytes = 0;
-    assert!(matches!(face_ring_refusal(&policy),
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_materialized_bytes = 0;
+    };
+    assert!(matches!(face_ring_refusal(adjust_policy),
         FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
 }
 
 #[test]
 fn topology_face_ring_refuses_work_limit() {
-    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
-    policy.limits.max_work_units = 0;
-    assert!(matches!(face_ring_refusal(&policy),
+    let adjust_policy = |policy: &mut cadmpeg_core::decode::DecodePolicy| {
+        policy.limits.max_work_units = 0;
+    };
+    assert!(matches!(face_ring_refusal(adjust_policy),
         FaceLoopError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
 }
