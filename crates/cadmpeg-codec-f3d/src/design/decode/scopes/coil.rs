@@ -471,16 +471,12 @@ fn exact_coil_face_selection(
             record_index: selection_record_index,
         };
         let face = parse_face_operand(
-            ctx,
-            bytes,
-            records,
-            scope,
-            0,
-            None,
-            Some(u64::try_from(transform_start).ok()?),
-            &header,
-            recipes,
-        )?;
+ctx,
+bytes,
+records,
+crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal: 0, group_ownership: None, next_byte_offset: Some(u64::try_from(transform_start).ok()?), header: &header },
+recipes,
+)?;
         let face = match face {
             Ok(face) => face,
             Err(error) => return Some(Err(error)),

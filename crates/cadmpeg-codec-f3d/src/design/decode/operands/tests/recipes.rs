@@ -50,16 +50,12 @@ fn parse_face_operand(
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
     crate::design::decode::operands::parse_face_operand(
-        &ctx,
-        bytes,
-        records,
-        scope,
-        ordinal,
-        group_ownership,
-        next_byte_offset,
-        header,
-        recipes,
-    )
+&ctx,
+bytes,
+records,
+crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal: ordinal, group_ownership, next_byte_offset, header },
+recipes,
+)
     .map(|result| result.expect("recipe allocation admitted"))
 }
 

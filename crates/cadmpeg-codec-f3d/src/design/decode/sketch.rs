@@ -2814,18 +2814,22 @@ fn decode_indexed_sketch_text_record_tail(
     Ok(closed)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn assemble_sketch_text(
-    ctx: &DecodeContext<'_>,
-    payload: &[u8],
-    stream: &str,
+struct SketchTextRecord<'a> {
+    stream: &'a str,
     class_tag: crate::records::references::DesignClassTag,
     class_version: u32,
     record_index: u32,
     byte_offset: usize,
     head: SketchTextHead,
     tail: SketchTextTail,
+}
+
+fn assemble_sketch_text(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    input: SketchTextRecord<'_>,
 ) -> Result<SketchText, CodecError> {
+    let SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail } = input;
     let id = design_record_id_charged(
         ctx,
         stream,
@@ -2917,16 +2921,10 @@ pub(crate) fn decode_sketch_text_record(
             };
             if let Some(tail) = tail {
                 return Some(assemble_sketch_text(
-                    ctx,
-                    payload,
-                    stream,
-                    class_tag,
-                    class_version,
-                    record_index,
-                    byte_offset,
-                    head,
-                    tail,
-                ));
+ctx,
+payload,
+crate::design::decode::sketch::SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail },
+));
             }
         }
         let (head, width_factor) = match decode_indexed_sketch_text_head(ctx, payload) {
@@ -2939,16 +2937,10 @@ pub(crate) fn decode_sketch_text_record(
                 Err(error) => return Some(Err(error)),
             };
         Some(assemble_sketch_text(
-            ctx,
-            payload,
-            stream,
-            class_tag,
-            class_version,
-            record_index,
-            byte_offset,
-            head,
-            tail,
-        ))
+ctx,
+payload,
+crate::design::decode::sketch::SketchTextRecord { stream, class_tag, class_version, record_index, byte_offset, head, tail },
+))
     })()
     .transpose()
 }

@@ -197,16 +197,11 @@ fn split_face_case(
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     super::super::bind_feature_face_selections(
-        &ctx,
-        &mut features,
-        &mut [],
-        &[scope],
-        &[group],
-        &[operand],
-        &[],
-        &[],
-        &[history],
-    )?;
+&ctx,
+&mut features,
+&mut [],
+crate::history::FeatureFaceSelectionInputs { scopes: &[scope], groups: &[group], operands: &[operand], entity_operands: &[], body_recipe_operands: &[], histories: &[history] },
+)?;
 
     Ok((features, face_id, group_id))
 }
@@ -1055,16 +1050,11 @@ fn hole_face_case(
     policy.limits.max_collection_items = max_items;
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     bind_feature_face_selections(
-        &ctx,
-        std::slice::from_mut(&mut feature),
-        &mut input_topologies,
-        &[scope],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[history],
-    )?;
+&ctx,
+std::slice::from_mut(&mut feature),
+&mut input_topologies,
+crate::history::FeatureFaceSelectionInputs { scopes: &[scope], groups: &[], operands: &[], entity_operands: &[], body_recipe_operands: &[], histories: &[history] },
+)?;
 
     Ok((feature, input_topologies, feature_id))
 }

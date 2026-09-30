@@ -2381,17 +2381,10 @@ fn project_fillet_arm(
                     && group.record_index == resolved.assignment.group_record_index
             }) {
                 resolved_edge_treatment_group_with_corners(
-                    group,
-                    inputs.construction_groups,
-                    inputs.edge_operands,
-                    inputs.edge_identity_operands,
-                    inputs.edge_treatment_vertex_operands,
-                    inputs.histories,
-                    scope.previous_history_state_id(),
-                    &crate::design::identity::neutral_feature_id(ctx, scope)?,
-                    edge_radius,
-                    ctx,
-                )?
+group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: inputs.construction_groups, operands: inputs.edge_operands, identity_operands: inputs.edge_identity_operands, vertex_operands: inputs.edge_treatment_vertex_operands, histories: inputs.histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: edge_radius },
+ctx,
+)?
             } else {
                 EdgeSelection::Native(ctx.copy_retained_text(
                     &resolved.assignment.id,
@@ -5284,17 +5277,10 @@ fn project_variable_fillet(
         FeatureOperation::Fillet {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
                 edges: resolved_edge_treatment_group_with_corners(
-                    group,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    edge_treatment_vertex_operands,
-                    histories,
-                    scope.previous_history_state_id(),
-                    &crate::design::identity::neutral_feature_id(ctx, scope)?,
-                    None,
-                    ctx,
-                )?,
+group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: construction_groups, operands: edge_operands, identity_operands: edge_identity_operands, vertex_operands: edge_treatment_vertex_operands, histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: None },
+ctx,
+)?,
                 radius: RadiusSpec::Variable { points },
                 tangency_weight,
             }),
@@ -5604,17 +5590,10 @@ fn project_chamfer(
     for (spec, group) in candidates.into_iter().zip(edge_groups) {
         let group = ChamferGroup {
             edges: resolved_edge_treatment_group_with_corners(
-                group,
-                construction_groups,
-                edge_operands,
-                edge_identity_operands,
-                edge_treatment_vertex_operands,
-                histories,
-                scope.previous_history_state_id(),
-                &crate::design::identity::neutral_feature_id(ctx, scope)?,
-                None,
-                ctx,
-            )?,
+group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: construction_groups, operands: edge_operands, identity_operands: edge_identity_operands, vertex_operands: edge_treatment_vertex_operands, histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: None },
+ctx,
+)?,
             spec,
         };
         ctx.push_vec(&mut groups, group, "f3d chamfer output groups")?;
@@ -5666,17 +5645,10 @@ fn project_fixed_chamfer(
         FeatureOperation::Chamfer {
             groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
                 edges: resolved_edge_treatment_group_with_corners(
-                    group,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                    edge_treatment_vertex_operands,
-                    histories,
-                    scope.previous_history_state_id(),
-                    &crate::design::identity::neutral_feature_id(ctx, scope)?,
-                    None,
-                    ctx,
-                )?,
+group,
+crate::design::edge_resolve::EdgeTreatmentInputs { groups: construction_groups, operands: edge_operands, identity_operands: edge_identity_operands, vertex_operands: edge_treatment_vertex_operands, histories, previous_state_id: scope.previous_history_state_id(), feature_id: &crate::design::identity::neutral_feature_id(ctx, scope)?, treatment_radius: None },
+ctx,
+)?,
                 spec,
             }),
             flip_direction: false,

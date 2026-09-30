@@ -2968,18 +2968,23 @@ fn body_revision_without_topology_change(
     Some(body)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub(crate) struct FeatureFaceSelectionInputs<'a> {
+    pub(crate) scopes: &'a [crate::records::feature::scope::DesignParameterScope],
+    pub(crate) groups: &'a [crate::records::topology::construction::DesignConstructionOperandGroup],
+    pub(crate) operands: &'a [crate::records::topology::face::DesignFaceOperand],
+    pub(crate) entity_operands: &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    pub(crate) body_recipe_operands: &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    pub(crate) histories: &'a [AsmHistory],
+}
+
 pub(crate) fn bind_feature_face_selections(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
-    scopes: &[crate::records::feature::scope::DesignParameterScope],
-    groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
-    operands: &[crate::records::topology::face::DesignFaceOperand],
-    entity_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    body_recipe_operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
-    histories: &[AsmHistory],
+    input: FeatureFaceSelectionInputs<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FeatureFaceSelectionInputs { scopes, groups, operands, entity_operands, body_recipe_operands, histories } = input;
     for feature in features {
         let native_ref = feature.native_ref.as_deref();
         let feature_id = &feature.id;
@@ -3040,16 +3045,12 @@ pub(crate) fn bind_feature_face_selections(
                                 &transition.topology.faces.updated,
                             ));
                             admitted!(bind_entity_face_selection(
-                                ctx,
-                                face,
-                                feature_id,
-                                previous_state_id,
-                                &history.id,
-                                scope,
-                                groups,
-                                entity_operands,
-                                input_topologies,
-                            ));
+ctx,
+face,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id: &history.id, scope, input_topologies: &mut *input_topologies },
+groups,
+entity_operands,
+));
                         }
                         let sides = match extent {
                             cadmpeg_ir::features::ExtrudeExtent::OneSided { side }
@@ -3091,16 +3092,12 @@ pub(crate) fn bind_feature_face_selections(
                                 &transition.topology.faces.updated,
                             ));
                             admitted!(bind_entity_face_selection(
-                                ctx,
-                                faces,
-                                feature_id,
-                                previous_state_id,
-                                &history.id,
-                                scope,
-                                groups,
-                                entity_operands,
-                                input_topologies,
-                            ));
+ctx,
+faces,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id: &history.id, scope, input_topologies: &mut *input_topologies },
+groups,
+entity_operands,
+));
                         }
                     }
                     cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -3140,16 +3137,12 @@ pub(crate) fn bind_feature_face_selections(
                         cadmpeg_ir::features::FeatureOperation::KnitSurface { faces, .. },
                     ) => {
                         admitted!(bind_surface_stitch_face_selection(
-                            ctx,
-                            faces,
-                            feature_id,
-                            previous_state_id,
-                            &history.id,
-                            scope,
-                            groups,
-                            entity_operands,
-                            input_topologies,
-                        ));
+ctx,
+faces,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id: &history.id, scope, input_topologies: &mut *input_topologies },
+groups,
+entity_operands,
+));
                     }
                     cadmpeg_ir::features::FeatureDefinition::Operation(
                         cadmpeg_ir::features::FeatureOperation::SplitFace { targets, .. },
@@ -3169,14 +3162,10 @@ pub(crate) fn bind_feature_face_selections(
                         },
                     ) => {
                         admitted!(bind_hole_face_selection(
-                            ctx,
-                            face,
-                            feature_id,
-                            previous_state_id,
-                            &history.id,
-                            scope,
-                            input_topologies,
-                        ));
+ctx,
+face,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id: &history.id, scope, input_topologies: &mut *input_topologies },
+));
                     }
                     _ => {}
                 }
@@ -3187,18 +3176,22 @@ pub(crate) fn bind_feature_face_selections(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct FaceSelectionBinding<'a> {
+    pub(crate) feature_id: &'a cadmpeg_ir::features::FeatureId,
+    pub(crate) previous_state_id: i64,
+    pub(crate) operation_history_id: &'a str,
+    pub(crate) scope: &'a crate::records::feature::scope::DesignParameterScope,
+    pub(crate) input_topologies: &'a mut [cadmpeg_ir::features::FeatureInputTopology],
+}
+
 fn bind_entity_face_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    operation_history_id: &str,
-    scope: &crate::records::feature::scope::DesignParameterScope,
+    input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
 
     let group_id = match selection {
@@ -3218,33 +3211,25 @@ fn bind_entity_face_selection(
         return Ok(());
     }
     bind_entity_face_groups(
-        ctx,
-        selection,
-        &group.id,
-        feature_id,
-        previous_state_id,
-        operation_history_id,
-        scope,
-        std::slice::from_ref(&group),
-        operands,
-        input_topologies,
-    )
+ctx,
+selection,
+&group.id,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies: &mut *input_topologies },
+std::slice::from_ref(&group),
+operands,
+)
 }
 
 // Keep the serialized-selection context explicit at this boundary so every
 // admission input remains visible to the strict all-members proof.
-#[allow(clippy::too_many_arguments)]
 fn bind_surface_stitch_face_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    operation_history_id: &str,
-    scope: &crate::records::feature::scope::DesignParameterScope,
+    input: FaceSelectionBinding<'_>,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     let native_id = match selection {
         cadmpeg_ir::features::FaceSelection::Native(native_id) => native_id.as_str(),
         _ => return Ok(()),
@@ -3294,34 +3279,26 @@ fn bind_surface_stitch_face_selection(
         return Ok(());
     }
     bind_entity_face_groups(
-        ctx,
-        selection,
-        &scope.id,
-        feature_id,
-        previous_state_id,
-        operation_history_id,
-        scope,
-        &matching_groups,
-        operands,
-        input_topologies,
-    )
+ctx,
+selection,
+&scope.id,
+crate::history::FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies: &mut *input_topologies },
+&matching_groups,
+operands,
+)
 }
 
 // Keep the shared selection-binding inputs explicit; this helper is the
 // single admission point for both one-group and SurfaceStitch selections.
-#[allow(clippy::too_many_arguments)]
 fn bind_entity_face_groups(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
     native_id: &str,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    operation_history_id: &str,
-    scope: &crate::records::feature::scope::DesignParameterScope,
+    input: FaceSelectionBinding<'_>,
     groups: &[&crate::records::topology::construction::DesignConstructionOperandGroup],
     operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
 
     if groups.is_empty() {
@@ -3421,16 +3398,12 @@ fn bind_entity_face_groups(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn bind_hole_face_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     selection: &mut cadmpeg_ir::features::FaceSelection,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    operation_history_id: &str,
-    scope: &crate::records::feature::scope::DesignParameterScope,
-    input_topologies: &mut [cadmpeg_ir::features::FeatureInputTopology],
+    input: FaceSelectionBinding<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FaceSelectionBinding { feature_id, previous_state_id, operation_history_id, scope, input_topologies } = input;
     use cadmpeg_ir::features::FaceSelection;
 
     let FaceSelection::Native(native_id) = selection else {

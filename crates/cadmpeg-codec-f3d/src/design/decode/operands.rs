@@ -981,16 +981,12 @@ pub(crate) fn decode_face_operands(
                         .map(|header| header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
-                ctx,
-                bytes,
-                records,
-                scope,
-                group.scope_reference_ordinal,
-                Some((group.record_index, group_member_ordinal)),
-                next_byte_offset,
-                header,
-                recipes,
-            ) {
+ctx,
+bytes,
+records,
+crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal: group.scope_reference_ordinal, group_ownership: Some((group.record_index, group_member_ordinal)), next_byte_offset, header },
+recipes,
+) {
                 ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
@@ -1076,16 +1072,12 @@ pub(crate) fn decode_face_operands(
                 None
             };
             if let Some(operand) = parse_face_operand(
-                ctx,
-                bytes,
-                records,
-                scope,
-                scope_reference_ordinal,
-                None,
-                next_byte_offset,
-                header,
-                recipes,
-            ) {
+ctx,
+bytes,
+records,
+crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal, group_ownership: None, next_byte_offset, header },
+recipes,
+) {
                 ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
@@ -6208,21 +6200,23 @@ fn face_recipe_next_boundary(
         .map(|(record_index, offset)| (offset, record_index))
 }
 
-// One indexed-offset view rides along with the seven framing inputs the
-// parse already required; bundling them would touch every caller for no
-// structural gain.
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub(crate) struct FaceOperandFrame<'a> {
+    pub(crate) scope: &'a DesignParameterScope,
+    pub(crate) scope_reference_ordinal: u32,
+    pub(crate) group_ownership: Option<(u32, u32)>,
+    pub(crate) next_byte_offset: Option<u64>,
+    pub(crate) header: &'a DesignRecordHeader,
+}
+
 pub(super) fn parse_face_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
-    scope: &DesignParameterScope,
-    scope_reference_ordinal: u32,
-    group_ownership: Option<(u32, u32)>,
-    next_byte_offset: Option<u64>,
-    header: &DesignRecordHeader,
+    input: FaceOperandFrame<'_>,
     recipes: &[ConstructionRecipe],
 ) -> Option<Result<DesignFaceOperand, CodecError>> {
+    let FaceOperandFrame { scope, scope_reference_ordinal, group_ownership, next_byte_offset, header } = input;
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;
