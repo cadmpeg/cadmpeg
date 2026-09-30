@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::*;
+use cadmpeg_ir::eval::nurbs_curve_point_at;
 
 const SMALL_PARAMETER_DOMAIN: f64 = 1e-12;
 const INVERSE_FIT_TOLERANCE: f64 = 1e-6;

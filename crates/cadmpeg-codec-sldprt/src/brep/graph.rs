@@ -14,7 +14,7 @@ use std::hash::Hash;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, nurbs_curve_parameter_domain, nurbs_curve_point_at,
+    analytic_surface_parameters, nurbs_curve_parameter_domain,
     nurbs_pcurve_uv, nurbs_surface_isocurve, nurbs_surface_parameter_near_point,
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
     nurbs_surface_point, surface_point,
@@ -1192,6 +1192,7 @@ fn walk_face(
 }
 
 fn edge_parameter_range(
+    ctx: &DecodeContext<'_>,
     carrier: &CurveCarrier,
     endpoints: Option<[cadmpeg_ir::math::Point3; 2]>,
 ) -> Result<Option<([f64; 2], bool)>, cadmpeg_core::CodecError> {
@@ -1216,12 +1217,8 @@ fn edge_parameter_range(
         return Ok(Some((range, false)));
     };
     let geometry = &carrier.geometry;
-    let first = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
-        geometry, range[0],
-    ))?;
-    let second = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
-        geometry, range[1],
-    ))?;
+    let first = super::evaluation::curve_point(ctx, geometry, range[0])?;
+    let second = super::evaluation::curve_point(ctx, geometry, range[1])?;
     let (Some(first), Some(second)) = (first, second) else {
         return Ok(None);
     };
@@ -2081,7 +2078,7 @@ fn decode_graph(
         let parameter_range = carriers
             .curve(curve_attr)
             .map(|carrier| {
-                edge_parameter_range(carrier.carrier(), edge_endpoint_positions.get(&e).copied())
+                edge_parameter_range(ctx, carrier.carrier(), edge_endpoint_positions.get(&e).copied())
             })
             .transpose()?
             .flatten();
@@ -3773,9 +3770,9 @@ fn golden_section_minimum<F>(
     mut left: f64,
     mut right: f64,
     objective: &mut F,
-) -> Result<Option<(f64, f64)>, cadmpeg_core::decode::ResourceLimit>
+) -> Result<Option<(f64, f64)>, cadmpeg_core::CodecError>
 where
-    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit>,
+    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::CodecError>,
 {
     let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
     let Some(a) = cadmpeg_ir::math::interpolate(left, right, 1.0 - ratio) else {
@@ -3836,7 +3833,7 @@ fn sampled_parameter_minima<F>(
     mut objective: F,
 ) -> Result<Option<Vec<(f64, f64)>>, cadmpeg_core::CodecError>
 where
-    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::decode::ResourceLimit>,
+    F: FnMut(f64) -> Result<Option<f64>, cadmpeg_core::CodecError>,
 {
     let mut candidates = Vec::new();
     for span in knots.windows(2).filter(|span| span[0] < span[1]) {
@@ -3925,7 +3922,7 @@ fn nurbs_parameter_at_point(
 ) -> Result<InverseResolution<f64>, cadmpeg_core::CodecError> {
     let squared_distance = |parameter: f64| {
         let Some(point) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(nurbs, parameter))?
+            super::evaluation::nurbs_curve_point(ctx, nurbs, parameter)?
         else {
             return Ok(None);
         };
@@ -5668,13 +5665,7 @@ fn extended_nurbs_isocurve_axis_candidate(
     ];
     if overlap[0] < overlap[1] {
         let parameter = overlap[0].midpoint(overlap[1]);
-        let point = match nurbs_curve_point_at(curve, parameter) {
-            Ok(point) => Some(point),
-            Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
-                return Err(limit.into())
-            }
-            Err(_) => None,
-        };
+        let point = super::evaluation::nurbs_curve_point(ctx, curve, parameter)?;
         if let Some(point) = point {
             let tolerance = inverse_coordinate_tolerance(
                 admitted_surface_poles(surface)
@@ -5837,15 +5828,16 @@ fn nurbs_curve_sample_parameters(
 }
 
 fn nurbs_edge_endpoint_parameters(
+    ctx: &DecodeContext<'_>,
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
-) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, cadmpeg_core::decode::ResourceLimit> {
-    let Some(first) = cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, range[0]))?
+) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, cadmpeg_core::CodecError> {
+    let Some(first) = super::evaluation::nurbs_curve_point(ctx, curve, range[0])?
     else {
         return Ok(None);
     };
-    let Some(last) = cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, range[1]))?
+    let Some(last) = super::evaluation::nurbs_curve_point(ctx, curve, range[1])?
     else {
         return Ok(None);
     };
@@ -5896,7 +5888,7 @@ fn nurbs_curve_surface_deviation(
     let mut maximum = 0.0_f64;
     for parameter in parameters {
         let Some(point) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, parameter))?
+            super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
         else {
             return Ok(None);
         };
@@ -5967,7 +5959,7 @@ fn nurbs_degree_one_cache_lanes(
     let mut fit_tolerance = 0.0_f64;
     for parameter in parameters {
         let Some(model_point) =
-            cadmpeg_ir::eval::finite_or_refusal(nurbs_curve_point_at(curve, parameter))?
+            super::evaluation::nurbs_curve_point(ctx, curve, parameter)?
         else {
             return Ok(None);
         };
@@ -6054,7 +6046,7 @@ fn derive_nurbs_edge_pcurve(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: [f64; 2],
 ) -> Result<NurbsPcurveResolution, NurbsPcurveFailure> {
-    if nurbs_edge_endpoint_parameters(surface, curve, range)?.is_none() {
+    if nurbs_edge_endpoint_parameters(ctx, surface, curve, range)?.is_none() {
         return Ok(NurbsPcurveResolution::OffSurface);
     }
     if nurbs_curve_surface_deviation(ctx, surface, curve, range)?.is_none() {
@@ -6145,7 +6137,7 @@ fn ruled_surface_line_pcurve(
     if !fixed_min.is_finite() || !fixed_max.is_finite() || fixed_min >= fixed_max {
         return Ok(InverseResolution::NoMatch);
     }
-    let evaluate_ruling = |fixed: f64| {
+    let evaluate_ruling = |fixed: f64| -> Result<Option<(FinitePoint3, FinitePoint3)>, cadmpeg_core::CodecError> {
         let parameters = |varying| match fixed_axis {
             SurfaceParameterAxis::U => (fixed, varying),
             SurfaceParameterAxis::V => (varying, fixed),
@@ -7105,7 +7097,7 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
             cadmpeg_ir::math::Point3::new(0.0, 31.5, 0.0),
         ];
         assert_eq!(
-            super::edge_parameter_range(&carrier, Some(endpoints)).unwrap(),
+            super::edge_parameter_range(&cadmpeg_test_support::service_decode_context(), &carrier, Some(endpoints)).unwrap(),
             Some(([-14.0, 16.5], true))
         );
     }
@@ -8631,3 +8623,6 @@ fn with_test_context<T>(f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>)
 
 #[cfg(test)]
 mod numerical_range_tests;
+
+#[cfg(test)]
+mod evaluation_admission_tests;
