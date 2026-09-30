@@ -2,6 +2,8 @@
 #![allow(clippy::items_after_test_module)]
 //! Project parameter-design features and dispatch per feature family.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
@@ -9728,7 +9730,9 @@ fn project_coil(
             None
         } else {
             let expected_role = if scope.coil_operation_offset()
-                == scope.byte_offset().checked_add(coil_long::OPERATION as u64)
+                == scope
+                    .byte_offset()
+                    .checked_add(u64_from_index(coil_long::OPERATION))
             {
                 DesignOperandRole::BODIES_A
             } else {

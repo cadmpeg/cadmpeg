@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode `TSplines.BlobParts/*.tsm` Form control cages.
 
+use cadmpeg_core::decode::index_from_u32;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
@@ -729,14 +731,13 @@ fn build_fan(
 
     let mut gap = None;
     for (index, slot) in fan.iter().enumerate() {
-        if matches!(slot, FanSlot::Slot { face: None, .. })
-            && gap.replace(index).is_some() {
-                return Err(malformed(
-                    ctx,
-                    name,
-                    "vertex half-edge fan has multiple boundary gaps",
-                ));
-            }
+        if matches!(slot, FanSlot::Slot { face: None, .. }) && gap.replace(index).is_some() {
+            return Err(malformed(
+                ctx,
+                name,
+                "vertex half-edge fan has multiple boundary gaps",
+            ));
+        }
     }
     if let Some(gap) = gap {
         let phantom_count = if fan.len() < 4 { 4 - fan.len() } else { 0 };
@@ -946,7 +947,7 @@ fn build_secondary_layouts(
         }
         let vertex_ir = vertex_ir[vertex]
             .ok_or_else(|| malformed(ctx, name, "derived-grip vertex is deleted"))?;
-        layouts[vertex_ir as usize] = Some(
+        layouts[index_from_u32(vertex_ir)] = Some(
             SubdVertexGripLayout::new(direction, wedges)
                 .map_err(|error| malformed(ctx, name, error))?,
         );
@@ -1237,7 +1238,13 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                     push_charged(
                         ctx,
                         &mut grip_vertices,
-                        GripVertexMarker::Secondary((vertex >= 0).then_some(vertex as usize)),
+                        GripVertexMarker::Secondary(if vertex >= 0 {
+                            Some(usize::try_from(vertex).map_err(|_| {
+                                malformed(ctx, name, "secondary grip vertex exceeds address space")
+                            })?)
+                        } else {
+                            None
+                        }),
                         "read T-spline grip vertex markers",
                     )?;
                     require_end(ctx, name, fields, "secondary grip map")?;
@@ -1982,10 +1989,10 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
             .get(*edge)
             .copied()
             .flatten()
-            .and_then(|edge| edge_vertices.get(edge as usize))
+            .and_then(|edge| edge_vertices.get(index_from_u32(edge)))
             .ok_or_else(|| malformed(ctx, name, "crease edge is out of range"))?;
-        crease_incidence[vertices[0] as usize] += 1;
-        crease_incidence[vertices[1] as usize] += 1;
+        crease_incidence[index_from_u32(vertices[0])] += 1;
+        crease_incidence[index_from_u32(vertices[1])] += 1;
     }
     let mut vertices = Vec::new();
     for index in 0..live_vertices {
@@ -2294,6 +2301,19 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
              0m cg 0 4 1 0 0 0 4\n\
              0g 0 0 0 1\n0g 1 0 0 1\n0g 1 1 0 1\n0g 0 1 0 1\n0g 0.5 0 0 1\n"
         )
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "32")]
+    fn secondary_grip_vertex_refuses_32_bit_wrap() {
+        let source = derived_quad_source();
+        parse_cage(source.as_bytes()).expect("fixture derived grip is valid");
+        let invalid = source.replace("0m gv 0\n", "0m gv 4294967296\n");
+        let error =
+            parse_cage(invalid.as_bytes()).expect_err("secondary grip index exceeds address space");
+        assert!(error
+            .to_string()
+            .contains("secondary grip vertex exceeds address space"));
     }
 
     fn symmetry_quad_source() -> String {

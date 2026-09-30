@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::extrude::DesignExtrudeExtent;
@@ -877,19 +879,19 @@ fn compact_shifted_extrude_scope_decodes_one_sided_distance() {
     .expect("compact shifted Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
-        REFERENCE_COUNT_OFFSET as u64
+        u64_from_index(REFERENCE_COUNT_OFFSET)
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: OPERATION_OFFSET as u64,
+            operation_offset: u64_from_index(OPERATION_OFFSET),
             direction_face_extend_values: [1, 2],
             side_extent_discriminators: [1, 0],
             side_extent_discriminator_offsets: [
-                FIRST_SIDE_EXTENT_OFFSET as u64,
-                SECOND_SIDE_EXTENT_OFFSET as u64,
+                u64_from_index(FIRST_SIDE_EXTENT_OFFSET),
+                u64_from_index(SECOND_SIDE_EXTENT_OFFSET),
             ],
             extent: Some(DesignExtrudeExtent::OneSidedDistance),
             direction_face_extend_offsets: [30, 34],
@@ -929,7 +931,9 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         .copy_from_slice(&1u32.to_le_bytes());
     bytes[SECOND_SIDE_EXTENT_OFFSET..SECOND_SIDE_EXTENT_OFFSET + 4]
         .copy_from_slice(&2u32.to_le_bytes());
-    bytes.extend_from_slice(&(reference_members.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(reference_members.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in reference_members {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -963,7 +967,7 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
     .expect("compact mixed Extrude scope");
     assert_eq!(
         scope.reference_count_offset(),
-        REFERENCE_COUNT_OFFSET as u64
+        u64_from_index(REFERENCE_COUNT_OFFSET)
     );
     assert_eq!(
         scope
@@ -978,12 +982,12 @@ fn compact_shifted_extrude_scope_decodes_mixed_distance_to_face() {
         Some(DesignExtrudePrologue::LegacyShifted {
             operation_prefix_marker_offset: None,
             operation: DesignExtrudeOperation::Join,
-            operation_offset: OPERATION_OFFSET as u64,
+            operation_offset: u64_from_index(OPERATION_OFFSET),
             direction_face_extend_values: [2, 0],
             side_extent_discriminators: [1, 2],
             side_extent_discriminator_offsets: [
-                FIRST_SIDE_EXTENT_OFFSET as u64,
-                SECOND_SIDE_EXTENT_OFFSET as u64,
+                u64_from_index(FIRST_SIDE_EXTENT_OFFSET),
+                u64_from_index(SECOND_SIDE_EXTENT_OFFSET),
             ],
             extent: Some(DesignExtrudeExtent::TwoSidedDistanceToFace),
             direction_face_extend_offsets: [30, 34],
@@ -1043,8 +1047,10 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
             .copy_from_slice(&layout::FIRST_SIDE_EXTENT_VALUE.to_le_bytes());
         bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
             .copy_from_slice(&layout::SECOND_SIDE_EXTENT_VALUE.to_le_bytes());
-        bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
-            .copy_from_slice(&(reference_members.len() as u32).to_le_bytes());
+        bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4].copy_from_slice(
+            &(u32::try_from(reference_members.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for record_index in reference_members {
             let offset = bytes.len();
             bytes.resize(offset + 11, 0);
@@ -1107,32 +1113,32 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
         assert_eq!(scope.frame_length(), frame_length);
         assert_eq!(
             scope.reference_count_offset(),
-            layout::REFERENCE_COUNT as u64
+            u64_from_index(layout::REFERENCE_COUNT)
         );
         assert_eq!(
             scope.extrude_prologue(),
             Some(DesignExtrudePrologue::ReferenceAware {
                 reference: None,
                 operation,
-                operation_offset: layout::OPERATION as u64,
+                operation_offset: u64_from_index(layout::OPERATION),
                 direction_face_extend_values: [3, 2],
                 side_extent_discriminators: [1, 1],
                 side_extent_discriminator_offsets: [
-                    layout::FIRST_SIDE_EXTENT as u64,
-                    layout::SECOND_SIDE_EXTENT as u64,
+                    u64_from_index(layout::FIRST_SIDE_EXTENT),
+                    u64_from_index(layout::SECOND_SIDE_EXTENT),
                 ],
                 first_side_target_ordinal: None,
                 extent: DesignExtrudeExtent::SymmetricDistance,
                 direction_face_extend_offsets: [
-                    layout::DIRECTION as u64,
-                    layout::FACE_EXTEND as u64,
+                    u64_from_index(layout::DIRECTION),
+                    u64_from_index(layout::FACE_EXTEND),
                 ],
                 direction_reversed: false,
-                direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+                direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
                 solid_operation: true,
-                solid_operation_offset: layout::GEOMETRY_KIND as u64,
+                solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
                 start: DesignExtrudeStart::ProfilePlane,
-                start_offset: layout::START_SUPPORT as u64,
+                start_offset: u64_from_index(layout::START_SUPPORT),
             })
         );
     }
@@ -1205,8 +1211,9 @@ fn legacy_class_415_one_sided_scope_decodes_distinct_extent_lanes() {
         }
         let second_side_extent = reference_count_offset - 4;
         bytes[second_side_extent..second_side_extent + 4].copy_from_slice(&0u32.to_le_bytes());
-        bytes[reference_count_offset..reference_count_offset + 4]
-            .copy_from_slice(&(references.len() as u32).to_le_bytes());
+        bytes[reference_count_offset..reference_count_offset + 4].copy_from_slice(
+            &(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for reference in references {
             bytes.push(1);
             bytes.extend_from_slice(&reference.to_le_bytes());
@@ -1356,7 +1363,10 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
             lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
             bytes[213..289].copy_from_slice(&guid);
 
-            bytes.extend_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(
+                &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32"))
+                    .to_le_bytes(),
+            );
             for record_index in REFERENCE_MEMBERS {
                 let offset = bytes.len();
                 bytes.resize(offset + 11, 0);
@@ -1401,10 +1411,10 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         ("397", b"397", b"262"),
     ] {
         let scope = parse(&make_bytes(primary_class, paired_class, 2), class_tag);
-        assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
+        assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
         assert_eq!(
             scope.reference_count_offset(),
-            REFERENCE_COUNT_OFFSET as u64
+            u64_from_index(REFERENCE_COUNT_OFFSET)
         );
         assert_eq!(
             scope.extrude_prologue(),
@@ -1481,7 +1491,7 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
         id: "generated:scope-header#nonzero".into(),
         record_index: RECORD_INDEX,
         class_tag: crate::records::references::DesignClassTag::try_from("349".to_owned()).unwrap(),
-        byte_offset: prefix_length as u64,
+        byte_offset: u64_from_index(prefix_length),
     };
     let nonzero_scope = parse_parameter_scope(
         &cadmpeg_test_support::service_decode_context(),
@@ -1493,10 +1503,10 @@ fn shifted_reference_aware_extrude_scope_decodes_538_byte_face_targets() {
     )
     .unwrap()
     .expect("nonzero-start shifted reference-aware Extrude scope");
-    assert_eq!(nonzero_scope.byte_offset(), prefix_length as u64);
+    assert_eq!(nonzero_scope.byte_offset(), u64_from_index(prefix_length));
     assert_eq!(
         nonzero_scope.reference_count_offset(),
-        (prefix_length + REFERENCE_COUNT_OFFSET) as u64
+        u64_from_index(prefix_length + REFERENCE_COUNT_OFFSET)
     );
     assert!(nonzero_scope.extrude_prologue().is_some());
 }
@@ -1572,7 +1582,9 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     assert_eq!(guid.len(), guid_end - layout::BODY_GROUP_GUID_PREFIX);
     bytes[layout::BODY_GROUP_GUID_PREFIX..guid_end].copy_from_slice(&guid);
 
-    bytes.extend_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for record_index in REFERENCE_MEMBERS {
         let offset = bytes.len();
         bytes.resize(offset + 11, 0);
@@ -1605,30 +1617,33 @@ fn shifted_reference_aware_extrude_scope_decodes_516_byte_class_323_face_targets
     )
     .unwrap()
     .expect("shifted reference-aware class-323 Extrude scope");
-    assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
+    assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
     assert_eq!(
         scope.reference_count_offset(),
-        layout::REFERENCE_COUNT as u64
+        u64_from_index(layout::REFERENCE_COUNT)
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::NewBody,
-            operation_offset: layout::OPERATION as u64,
+            operation_offset: u64_from_index(layout::OPERATION),
             direction_face_extend_values: [2, 1],
             side_extent_discriminators: [2, 0],
             side_extent_discriminator_offsets: [
-                layout::FIRST_SIDE_EXTENT as u64,
-                layout::SECOND_SIDE_EXTENT as u64,
+                u64_from_index(layout::FIRST_SIDE_EXTENT),
+                u64_from_index(layout::SECOND_SIDE_EXTENT),
             ],
             extent: DesignExtrudeExtent::TwoSidedToFaces,
-            direction_face_extend_offsets: [layout::DIRECTION as u64, layout::FACE_EXTEND as u64,],
+            direction_face_extend_offsets: [
+                u64_from_index(layout::DIRECTION),
+                u64_from_index(layout::FACE_EXTEND),
+            ],
             direction_reversed: false,
-            direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+            direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
             solid_operation: true,
-            solid_operation_offset: layout::GEOMETRY_KIND as u64,
+            solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: layout::START_SUPPORT as u64,
+            start_offset: u64_from_index(layout::START_SUPPORT),
         })
     );
 
@@ -1728,7 +1743,9 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
     );
     bytes[symmetric::GUID_PREFIX..symmetric::REFERENCE_COUNT_PADDING].copy_from_slice(&guid);
 
-    bytes.extend_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for record_index in REFERENCE_MEMBERS {
         let offset = bytes.len();
         bytes.resize(offset + 11, 0);
@@ -1764,30 +1781,33 @@ fn shifted_reference_aware_extrude_scope_decodes_485_byte_class_323_symmetric_th
         .expect("shifted reference-aware symmetric Extrude scope")
     };
     let scope = parse(&bytes);
-    assert_eq!(scope.frame_length(), FRAME_LENGTH as u64);
+    assert_eq!(scope.frame_length(), u64_from_index(FRAME_LENGTH));
     assert_eq!(
         scope.reference_count_offset(),
-        symmetric::REFERENCE_COUNT as u64
+        u64_from_index(symmetric::REFERENCE_COUNT)
     );
     assert_eq!(
         scope.extrude_prologue(),
         Some(DesignExtrudePrologue::ShiftedReferenceAware {
             operation: DesignExtrudeOperation::Cut,
-            operation_offset: layout::OPERATION as u64,
+            operation_offset: u64_from_index(layout::OPERATION),
             direction_face_extend_values: [3, 0],
             side_extent_discriminators: [4, 4],
             side_extent_discriminator_offsets: [
-                symmetric::FIRST_SIDE_EXTENT as u64,
-                symmetric::SECOND_SIDE_EXTENT as u64,
+                u64_from_index(symmetric::FIRST_SIDE_EXTENT),
+                u64_from_index(symmetric::SECOND_SIDE_EXTENT),
             ],
             extent: DesignExtrudeExtent::SymmetricThroughAll,
-            direction_face_extend_offsets: [layout::DIRECTION as u64, layout::FACE_EXTEND as u64],
+            direction_face_extend_offsets: [
+                u64_from_index(layout::DIRECTION),
+                u64_from_index(layout::FACE_EXTEND)
+            ],
             direction_reversed: false,
-            direction_reversed_offset: layout::DIRECTION_REVERSED as u64,
+            direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
             solid_operation: true,
-            solid_operation_offset: layout::GEOMETRY_KIND as u64,
+            solid_operation_offset: u64_from_index(layout::GEOMETRY_KIND),
             start: DesignExtrudeStart::ProfilePlane,
-            start_offset: layout::START_SUPPORT as u64,
+            start_offset: u64_from_index(layout::START_SUPPORT),
         })
     );
 

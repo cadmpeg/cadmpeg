@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::sketch::{
     decode_persistent_references_from_stream, finish_persistent_references,
 };
@@ -54,7 +56,8 @@ fn persistent_reference_id_refuses_retained_limit() {
     let bytes = reference_bytes();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = crate::ids::native_scope("BulkStream.dat").len() as u64;
+    policy.limits.max_retained_bytes =
+        u64_from_index(crate::ids::native_scope("BulkStream.dat").len());
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = scan_references(&ctx, &bytes)
         .expect_err("retained limit must refuse persistent reference ID");

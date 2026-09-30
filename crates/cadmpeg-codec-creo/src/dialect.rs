@@ -79,10 +79,46 @@ impl DialectClassification {
         }
     }
 
+    pub(crate) fn copy_matched_admitted(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<DialectMatch, cadmpeg_core::CodecError> {
+        let matched = self.matched();
+        let mut declared = BTreeMap::new();
+        for (key, value) in matched.declared() {
+            ctx.charge_collection_items(1, "creo source dialect declaration nodes")?;
+            let key = cadmpeg_core::text::NonBlankString::new(
+                ctx.copy_retained_text(key.as_str(), "creo source dialect declaration key")?,
+            )
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))?;
+            declared.insert(
+                key,
+                ctx.copy_retained_text(value, "creo source dialect declaration value")?,
+            );
+        }
+        let copied = match &self.0 {
+            ClassificationState::Admitted(_) => DialectMatch::admitted(matched.dialect().clone()),
+            ClassificationState::Recovered { .. } => {
+                DialectMatch::residual(matched.dialect().clone())
+            }
+        };
+        Ok(copied.with_declared(declared))
+    }
+
+    pub(crate) fn into_matched(self) -> DialectMatch {
+        match self.0 {
+            ClassificationState::Admitted(matched)
+            | ClassificationState::Recovered { matched, .. } => matched,
+        }
+    }
+
     /// The loss charged exactly for the recovered variant.
-    pub(crate) fn loss(&self) -> Option<LossNote> {
+    pub(crate) fn loss(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ) -> Result<Option<LossNote>, cadmpeg_core::CodecError> {
         let ClassificationState::Recovered { cause, .. } = &self.0 else {
-            return None;
+            return Ok(None);
         };
         let cause = match cause {
             UnknownLayout::DepdbRootMissing => {
@@ -96,10 +132,13 @@ impl DialectClassification {
                  #P_OBJECT frame"
             }
         };
-        Some(CreoLossCode::SourceDialectUnverified.note(format!(
-            "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
-             legacy ASCII decode gate was skipped"
-        )))
+        Ok(Some(CreoLossCode::SourceDialectUnverified.note(ctx.format_retained(
+            format_args!(
+                "{cause}. This decode ran the layout-independent path only, so every ND, DEPDB, and \
+                 legacy ASCII decode gate was skipped"
+            ),
+            "creo unverified dialect loss text",
+        )?)))
     }
 }
 
@@ -134,26 +173,38 @@ impl Layout {
 /// so the admission is [`cadmpeg_core::dialect::Admission::Residual`]. Naming
 /// `creo:nd`, `creo:depdb`, or the residual row itself as a grammar would assert
 /// a substitution that did not happen.
-pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
+pub(crate) fn classify(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<DialectClassification, cadmpeg_core::CodecError> {
+    let declared_key = |name: &'static str| {
+        cadmpeg_core::text::NonBlankString::new(
+            ctx.copy_retained_text(name, "creo declared dialect key")?,
+        )
+        .ok_or_else(|| cadmpeg_core::CodecError::malformed("declared dialect key is blank"))
+    };
     let layout = &scan.framing.layout;
     let mut declared = BTreeMap::new();
+    ctx.charge_collection_items(1, "creo declared dialect nodes")?;
     declared.insert(
-        cadmpeg_core::nonblank_const!(DECLARED_VERSION_LINE),
-        scan.framing.version_line.clone(),
+        declared_key(DECLARED_VERSION_LINE)?,
+        ctx.copy_retained_text(&scan.framing.version_line, "creo declared version line")?,
     );
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
+        ctx.charge_collection_items(1, "creo declared dialect nodes")?;
         declared.insert(
-            cadmpeg_core::nonblank_const!(DECLARED_LEGACY_ASCII_SCHEMA),
-            legacy.schema.clone(),
+            declared_key(DECLARED_LEGACY_ASCII_SCHEMA)?,
+            ctx.copy_retained_text(&legacy.schema, "creo declared legacy schema")?,
         );
         if let Some(release) = &legacy.product_release {
+            ctx.charge_collection_items(1, "creo declared dialect nodes")?;
             declared.insert(
-                cadmpeg_core::nonblank_const!(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE),
-                release.clone(),
+                declared_key(DECLARED_LEGACY_ASCII_PRODUCT_RELEASE)?,
+                ctx.copy_retained_text(release, "creo declared product release")?,
             );
         }
     }
-    match layout {
+    Ok(match layout {
         Layout::Unknown(cause) => DialectClassification(ClassificationState::Recovered {
             matched: DialectMatch::residual(layout.id()).with_declared(declared),
             cause: *cause,
@@ -163,7 +214,7 @@ pub(crate) fn classify(scan: &ContainerScan) -> DialectClassification {
                 DialectMatch::admitted(layout.id()).with_declared(declared),
             ))
         }
-    }
+    })
 }
 
 #[cfg(test)]

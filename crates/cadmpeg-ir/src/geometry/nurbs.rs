@@ -7,6 +7,8 @@ pub mod bezier;
 pub mod bounds;
 pub(crate) mod scratch;
 
+mod admitted;
+
 use crate::features::FinitePoint3;
 use crate::math::Point3;
 use crate::scalar::{FiniteReal, NonZeroReal};
@@ -873,7 +875,12 @@ fn checked_knot_count(field: &str, pole_count: usize, degree: u32) -> Result<usi
 fn require_rectangular_grid<T>(field: &str, rows: &[Vec<T>]) -> Result<(), NurbsError> {
     let width = rows.first().map_or(0, Vec::len);
     for row in rows {
-        require_length(&format!("{field} row"), row.len(), width)?;
+        if row.len() != width {
+            return Err(NurbsError::Structure(format!(
+                "{field} row must contain {width} values, found {}",
+                row.len(),
+            )));
+        }
     }
     Ok(())
 }
@@ -1432,6 +1439,24 @@ pub struct NurbsCurve {
 }
 
 impl NurbsCurve {
+    /// Build a curve from finite knots and pole rows that the caller already
+    /// admitted through its decode context. This checks cardinality without
+    /// copying the pole collection.
+    pub fn new_admitted_poles(
+        degree: u32,
+        knots: KnotVector,
+        poles: NurbsPoles3<FinitePoint3>,
+        periodic: bool,
+    ) -> Result<Self, NurbsError> {
+        require_curve_cardinality(degree, knots.len(), poles.count(), "control_points")?;
+        Ok(Self {
+            degree,
+            knots,
+            poles,
+            periodic,
+        })
+    }
+
     /// Copy the admitted lanes through the decode collection budget.
     pub fn try_clone_for_decode(
         &self,
@@ -1453,6 +1478,37 @@ impl NurbsCurve {
             poles,
             periodic: self.periodic,
         })
+    }
+
+    /// Copy a curve after charging its knot and pole lanes, then map the
+    /// copied positions without another allocation. A non-finite result leaves
+    /// the source untouched and returns no curve.
+    pub fn map_control_points_admitted(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+        mut map: impl FnMut(Point3) -> Point3,
+    ) -> Result<Option<Self>, CodecError> {
+        let mut mapped = self.try_clone_for_decode(ctx, operation)?;
+        match &mut mapped.poles {
+            NurbsPoles3::Polynomial { points } => {
+                for point in points {
+                    let Some(next) = FinitePoint3::new(map(point.get())) else {
+                        return Ok(None);
+                    };
+                    *point = next;
+                }
+            }
+            NurbsPoles3::Rational { points } => {
+                for pole in points {
+                    let Some(next) = FinitePoint3::new(map(pole.point.get())) else {
+                        return Ok(None);
+                    };
+                    pole.point = next;
+                }
+            }
+        }
+        Ok(Some(mapped))
     }
 
     /// Build a NURBS curve with consistent knot, pole, and weight cardinalities.
@@ -1667,6 +1723,34 @@ impl NurbsCurve {
     pub fn reverse_parameterization(&mut self) {
         self.poles.reverse();
         self.knots.reverse_negated();
+    }
+
+    /// Reverse poles and reflect knots within an admitted parameter range.
+    /// The curve stays unchanged when a reflected knot is not finite or the
+    /// resulting knot lane is decreasing.
+    #[must_use]
+    pub fn reverse_parameterization_in_range(
+        &mut self,
+        start: FiniteReal,
+        end: FiniteReal,
+    ) -> Option<()> {
+        let mut previous = None;
+        for knot in self.knots.0.iter().rev() {
+            let reflected = crate::math::reflect_parameter(FiniteReal::new(*knot)?, start, end)?;
+            if previous.is_some_and(|previous| previous > reflected) {
+                return None;
+            }
+            previous = Some(reflected);
+        }
+        self.poles.reverse();
+        self.knots.0.reverse();
+        for knot in &mut self.knots.0 {
+            // The validation pass reached the same original knot before mutation.
+            let reflected = FiniteReal::new(*knot)
+                .and_then(|knot| crate::math::reflect_parameter(knot, start, end))?;
+            *knot = reflected.get();
+        }
+        Some(())
     }
 }
 

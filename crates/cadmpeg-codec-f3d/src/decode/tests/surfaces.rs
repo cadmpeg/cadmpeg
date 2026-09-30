@@ -9,6 +9,8 @@
     clippy::semicolon_if_nothing_returned,
     clippy::trivially_copy_pass_by_ref
 )]
+use cadmpeg_core::convert::f64_from_index;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::geometry::CurveGeometry;
@@ -264,7 +266,11 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
                 .expect("ruled profile")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
+                    cadmpeg_ir::math::Point3::new(
+                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                        2.0,
+                        3.0,
+                    ),
                     cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0)
                         .unit()
                         .unwrap(),
@@ -349,7 +355,11 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 .expect("sum source curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
+                    cadmpeg_ir::math::Point3::new(
+                        1.0,
+                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                        -1.0,
+                    ),
                     cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0)
                         .unit()
                         .unwrap(),

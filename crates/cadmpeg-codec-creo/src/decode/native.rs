@@ -2,7 +2,6 @@
 //! Native-arena emission layer for the `creo` namespace.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
@@ -106,16 +105,22 @@ const CREO_ARENAS: &[&str] = &[
 /// records the transfer exactness. Shared by the model-transfer path and every
 /// arena emission.
 pub(super) fn annotate(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
     source_stream: &str,
     offset: u64,
     tag: &str,
     exactness: Exactness,
-) {
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("creo:").with_suffix(source_stream));
-    annotations.note(id.to_string(), &stream, offset).tag(tag);
-    annotations.exactness(id, exactness);
+) -> Result<(), CodecError> {
+    annotations.annotate_admitted(
+        ctx,
+        id,
+        format_args!("creo:{source_stream}"),
+        offset,
+        tag,
+        exactness,
+    )
 }
 
 /// Refuse a native arena key the `creo` namespace does not define.
@@ -166,10 +171,10 @@ pub(super) fn emit_arena<T, F>(
 ) -> Result<(), CodecError>
 where
     T: Serialize,
-    F: FnMut(&mut AnnotationBuilder, &T),
+    F: FnMut(&mut AnnotationBuilder, &T) -> Result<(), CodecError>,
 {
     for record in records {
-        annotate_each(annotations, record);
+        annotate_each(annotations, record)?;
     }
     store_arena(ctx, ir, key, records)
 }
@@ -190,13 +195,14 @@ pub(super) fn emit_uniform<T: Serialize>(
 ) -> Result<(), CodecError> {
     emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
         annotate(
+            ctx,
             annotations,
             id(record),
             stream(record),
             offset(record),
             tag,
             exactness,
-        );
+        )
     })
 }
 

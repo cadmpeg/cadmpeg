@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact extrude admission frames.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::legacy_class_397;
 use super::legacy_class_415;
 use super::shared_frames::extrude_operation_at;
@@ -202,7 +204,7 @@ pub(crate) fn is_class_296_one_sided_to_face_layout(
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
-        && reference_count_delta == class_296_to_face::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(class_296_to_face::REFERENCE_COUNT)
         && matches!(
             (frame_length, reference_member_count),
             (440, 7) | (462, 9) | (473, 10)
@@ -218,7 +220,7 @@ pub(crate) fn is_class_296_symmetric_distance_layout(
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
-        && reference_count_delta == class_296_symmetric::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(class_296_symmetric::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (450, 7)
 }
 
@@ -231,7 +233,7 @@ pub(crate) fn is_class_296_two_sided_to_faces_layout(
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
-        && reference_count_delta == class_296_two_faces::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(class_296_two_faces::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (536, 13)
 }
 
@@ -259,7 +261,7 @@ pub(crate) fn is_class_296_legacy_one_sided_to_face_layout(
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
-        && reference_count_delta == class_296_legacy_to_face::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(class_296_legacy_to_face::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (515, 12)
 }
 
@@ -272,7 +274,7 @@ pub(crate) fn is_class_296_legacy_one_sided_distance_layout(
 ) -> bool {
     class_tag == "296"
         && paired_class_tag == "261"
-        && reference_count_delta == class_296_legacy_distance::REFERENCE_COUNT as u64
+        && reference_count_delta == u64_from_index(class_296_legacy_distance::REFERENCE_COUNT)
         && (frame_length, reference_member_count) == (483, 10)
 }
 
@@ -324,24 +326,24 @@ fn exact_compact_shifted_extrude_prologue(
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset: None,
         operation,
-        operation_offset: operation_offset as u64,
+        operation_offset: u64_from_index(operation_offset),
         direction_face_extend_values,
         side_extent_discriminators,
         side_extent_discriminator_offsets: [
-            side_extent_discriminator_offsets[0] as u64,
-            side_extent_discriminator_offsets[1] as u64,
+            u64_from_index(side_extent_discriminator_offsets[0]),
+            u64_from_index(side_extent_discriminator_offsets[1]),
         ],
         extent: Some(extent),
         direction_face_extend_offsets: [
-            direction_face_extend_offsets[0] as u64,
-            direction_face_extend_offsets[1] as u64,
+            u64_from_index(direction_face_extend_offsets[0]),
+            u64_from_index(direction_face_extend_offsets[1]),
         ],
         direction_reversed,
-        direction_reversed_offset: direction_reversed_offset as u64,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: solid_operation_offset as u64,
+        solid_operation_offset: u64_from_index(solid_operation_offset),
         start: start_support,
-        start_offset: start_offset as u64,
+        start_offset: u64_from_index(start_offset),
     })
 }
 
@@ -930,12 +932,12 @@ fn exact_legacy_distance_extrude_prologue(
     Some(DesignExtrudePrologue::LegacyDistance {
         prefix_zero_offset,
         operation,
-        operation_offset: operation_offset as u64,
-        extent_kind_offset: extent_kind_offset as u64,
+        operation_offset: u64_from_index(operation_offset),
+        extent_kind_offset: u64_from_index(extent_kind_offset),
         direction_reversed,
-        direction_reversed_offset: direction_reversed_offset as u64,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: geometry_kind_offset as u64,
+        solid_operation_offset: u64_from_index(geometry_kind_offset),
     })
 }
 
@@ -996,7 +998,7 @@ fn exact_current_extrude_prologue(
             operation_offset,
             DesignExtrudePrologueReference {
                 record_index,
-                record_index_offset: reference_record_index_offset as u64,
+                record_index_offset: u64_from_index(reference_record_index_offset),
                 trailing_zero_count,
                 operation_prefix_marker_offset: operation_marker_offset
                     .and_then(|offset| u64::try_from(offset).ok()),
@@ -1084,7 +1086,7 @@ fn exact_current_extrude_prologue(
         }
         Some(DesignExtrudeTargetOrdinal {
             scope_reference_ordinal,
-            scope_reference_ordinal_offset: extent_cursor as u64,
+            scope_reference_ordinal_offset: u64_from_index(extent_cursor),
         })
     });
     if first_side_target_ordinal.is_some() {
@@ -1132,22 +1134,25 @@ fn exact_current_extrude_prologue(
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,
         operation,
-        operation_offset: operation_offset as u64,
+        operation_offset: u64_from_index(operation_offset),
         direction_face_extend_values,
         side_extent_discriminators,
         side_extent_discriminator_offsets: [
-            first_side_extent_offset as u64,
-            second_side_extent_offset as u64,
+            u64_from_index(first_side_extent_offset),
+            u64_from_index(second_side_extent_offset),
         ],
         first_side_target_ordinal,
         extent,
-        direction_face_extend_offsets: [direction_offset as u64, face_extend_offset as u64],
+        direction_face_extend_offsets: [
+            u64_from_index(direction_offset),
+            u64_from_index(face_extend_offset),
+        ],
         direction_reversed,
-        direction_reversed_offset: direction_reversed_offset as u64,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: solid_operation_offset as u64,
+        solid_operation_offset: u64_from_index(solid_operation_offset),
         start: start_support,
-        start_offset: start_offset as u64,
+        start_offset: u64_from_index(start_offset),
     })
 }
 
@@ -1564,7 +1569,7 @@ fn exact_legacy_shifted_extrude_prologue(
                 Some(1..=4)
             )
         {
-            (Some(marker_offset as u64), 1)
+            (Some(u64_from_index(marker_offset)), 1)
         } else {
             return None;
         };
@@ -1700,21 +1705,24 @@ fn exact_legacy_shifted_extrude_prologue(
     Some(DesignExtrudePrologue::LegacyShifted {
         operation_prefix_marker_offset,
         operation,
-        operation_offset: operation_offset as u64,
+        operation_offset: u64_from_index(operation_offset),
         direction_face_extend_values,
         side_extent_discriminators,
         side_extent_discriminator_offsets: [
-            side_extent_discriminator_offsets[0] as u64,
-            side_extent_discriminator_offsets[1] as u64,
+            u64_from_index(side_extent_discriminator_offsets[0]),
+            u64_from_index(side_extent_discriminator_offsets[1]),
         ],
         extent: Some(extent),
-        direction_face_extend_offsets: [first_extent_offset as u64, second_extent_offset as u64],
+        direction_face_extend_offsets: [
+            u64_from_index(first_extent_offset),
+            u64_from_index(second_extent_offset),
+        ],
         direction_reversed,
-        direction_reversed_offset: direction_reversed_offset as u64,
+        direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
-        solid_operation_offset: solid_operation_offset as u64,
+        solid_operation_offset: u64_from_index(solid_operation_offset),
         start,
-        start_offset: start_offset as u64,
+        start_offset: u64_from_index(start_offset),
     })
 }
 

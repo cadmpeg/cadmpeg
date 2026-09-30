@@ -13,7 +13,7 @@ use super::super::sketch::geometry::{
 use super::super::sketch::intersect::section_point_in_model;
 use super::super::sketch::radii::trim_segment_id;
 use super::super::sketch::skamp::complete_section_segment_rows;
-use super::super::sketch_ids::sketch_section_curve_id;
+use super::super::sketch_ids::sketch_section_curve_id_admitted;
 use super::super::uniqueness::{
     unique_feature_definition_for_transform, unique_feature_section_transform,
 };
@@ -25,6 +25,7 @@ use super::nurbs::{
 use crate::container::ContainerScan;
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
 use crate::decode::source_carriers::SourceUnitCarriers;
+use crate::lane_refusal::JoinedLaneRecords;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
@@ -40,11 +41,22 @@ const EPS_COPLANAR_RESIDUAL: f64 = 1.0e-9;
 const EPS_RADIAL_SPEED: f64 = 1.0e-10;
 const EPS_AXIAL_RATE: f64 = 1.0e-10;
 const EPS_MAJOR_RADIUS: f64 = 1.0e-10;
-use cadmpeg_ir::ids::{CurveId, IdentityKey, ProceduralSurfaceId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition, SketchId};
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
 use std::collections::BTreeSet;
+
+fn push_saved_spline_loss(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    message: impl std::fmt::Display,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let message = ctx.format_retained(format_args!("{message}"), "creo saved spline loss text")?;
+    ctx.reserve_vec(losses, 1, "creo saved spline losses")?;
+    losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
+    Ok(())
+}
 
 pub(in super::super) fn revolved_section_surface(
     transform: &crate::placement::FeatureSectionTransform,
@@ -222,13 +234,19 @@ pub(in super::super) fn placed_section_geometry_curve(
 }
 
 pub(in super::super) fn placed_sketch_curve_ref(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     transform: Option<&crate::placement::FeatureSectionTransform>,
     sketch: &SketchId,
     suffix: impl std::fmt::Display,
     geometry: &SketchGeometry,
-) -> Option<String> {
-    placed_section_geometry_curve(transform?, geometry)?;
-    Some(sketch_section_curve_id(sketch, suffix))
+) -> Result<Option<String>, cadmpeg_core::CodecError> {
+    let Some(transform) = transform else {
+        return Ok(None);
+    };
+    if placed_section_geometry_curve(transform, geometry).is_none() {
+        return Ok(None);
+    }
+    sketch_section_curve_id_admitted(ctx, sketch, suffix).map(Some)
 }
 
 fn unique_feature_surface_row(
@@ -273,65 +291,75 @@ pub(in super::super) fn transfer_saved_spline_curves(
         {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(nurbs) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records();
-                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    if records.is_empty() {
-                        format!(
+                let records = refusal.take_records_checked()?;
+                if records.is_empty() {
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
-                        )
-                    } else {
-                        format!(
+                        ),
+                    )?;
+                } else {
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve: {}",
                             spline.offset,
-                            records.join("; ")
-                        )
-                    },
-                ));
+                            JoinedLaneRecords(&records)
+                        ),
+                    )?;
+                }
                 continue;
             };
-            let suffix_key = spline
-                .entity_id
-                .map_or_else(
-                    || IdentityKey::try_new(format!("offset{}", spline.offset)),
-                    |entity_id| Ok(IdentityKey::from(entity_id)),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let curve_id = CurveId::compose(
+            let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
+                ctx.format_scoped(
+                    format_args!("{entity_id}"),
+                    "creo saved spline identity suffix",
+                )?
+            } else {
+                ctx.format_scoped(
+                    format_args!("offset{}", spline.offset),
+                    "creo saved spline identity suffix",
+                )?
+            };
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx,
                 &crate::identity::FEATDEFS_SAVED_SPLINE_CURVE,
-                IdentityKey::from(definition.identity.id()).colon(suffix_key.clone()),
-            );
+                format_args!("{}:{suffix}", definition.identity.id()),
+                "creo saved spline curve identity",
+            )?;
             if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 continue;
             }
-            let Some(placed) = placed_section_nurbs(transform, &nurbs) else {
+            let Some(placed) = placed_section_nurbs(ctx, transform, &nurbs)? else {
                 continue;
             };
             annotate(
+                ctx,
                 annotations,
                 &curve_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "placed_saved_interpolation_spline",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model curves")?;
             source_carriers.admit_curve(
+                ctx,
                 ir,
                 Curve {
                     id: curve_id,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(placed)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "FeatDefs:saved_spline#{}",
-                            suffix_key.as_str()
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        object_id: crate::identity::source_object_id_checked(
+                            ctx,
+                            format_args!("FeatDefs:saved_spline#{suffix}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -347,12 +375,16 @@ pub(in super::super) fn transfer_saved_spline_curves(
 }
 
 pub(in super::super) fn revolved_nurbs_surface(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     directrix: &NurbsCurve,
     axis: &RevolutionAxis,
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Option<NurbsSurface> {
-    let axis_direction = normalize([axis.direction.x, axis.direction.y, axis.direction.z])?;
+) -> Result<Option<NurbsSurface>, cadmpeg_core::CodecError> {
+    let Some(axis_direction) = normalize([axis.direction.x, axis.direction.y, axis.direction.z])
+    else {
+        return Ok(None);
+    };
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
     let angular_poles = [
         [1.0, 0.0],
@@ -377,9 +409,12 @@ pub(in super::super) fn revolved_nurbs_surface(
         diagonal_weight,
         1.0,
     ];
-    let mut control_points = Vec::with_capacity(directrix.control_points().len() * 9);
-    let mut weights = Vec::with_capacity(directrix.control_points().len() * 9);
-    for (index, point) in directrix.control_points().iter().enumerate() {
+    let mut control_points = Vec::new();
+    let mut weights = Vec::new();
+    for index in 0..directrix.pole_count() {
+        let Some(point) = directrix.pole_rows().point_at(index) else {
+            return Ok(None);
+        };
         let relative = [
             point.x - axis_origin[0],
             point.y - axis_origin[1],
@@ -396,56 +431,79 @@ pub(in super::super) fn revolved_nurbs_surface(
         ];
         let tangent = cross(axis_direction, radial);
         let directrix_weight = directrix
-            .weights()
-            .map_or(1.0, |curve_weights| curve_weights[index].get());
+            .pole_rows()
+            .weight_at(index)
+            .map_or(1.0, |weight| weight);
+        ctx.reserve_vec(&mut control_points, 1, "creo revolved NURBS pole rows")?;
+        ctx.reserve_vec(&mut weights, 1, "creo revolved NURBS weight rows")?;
+        let mut point_row = Vec::new();
+        let mut weight_row = Vec::new();
+        ctx.reserve_vec(
+            &mut point_row,
+            angular_poles.len(),
+            "creo revolved NURBS poles",
+        )?;
+        ctx.reserve_vec(
+            &mut weight_row,
+            angular_weights.len(),
+            "creo revolved NURBS weights",
+        )?;
         for ([radial_scale, tangent_scale], angular_weight) in
             angular_poles.into_iter().zip(angular_weights)
         {
-            control_points.push(Point3::new(
+            point_row.push(Point3::new(
                 center[0] + radial_scale * radial[0] + tangent_scale * tangent[0],
                 center[1] + radial_scale * radial[1] + tangent_scale * tangent[1],
                 center[2] + radial_scale * radial[2] + tangent_scale * tangent[2],
             ));
-            weights.push(directrix_weight * angular_weight);
+            weight_row.push(directrix_weight * angular_weight);
         }
+        control_points.push(point_row);
+        weights.push(weight_row);
     }
-    match NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            directrix.degree(),
-            directrix.knots().to_vec(),
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            2,
-            vec![
-                0.0,
-                0.0,
-                0.0,
-                std::f64::consts::FRAC_PI_2,
-                std::f64::consts::FRAC_PI_2,
-                std::f64::consts::PI,
-                std::f64::consts::PI,
-                3.0 * std::f64::consts::FRAC_PI_2,
-                3.0 * std::f64::consts::FRAC_PI_2,
-                std::f64::consts::TAU,
-                std::f64::consts::TAU,
-                std::f64::consts::TAU,
-            ],
-            false,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-            control_points.chunks(9_usize).map(<[_]>::to_vec).collect(),
-            Some(weights).map(|values| values.chunks(9_usize).map(<[_]>::to_vec).collect()),
-        ),
+    let mut u_knots = Vec::new();
+    ctx.reserve_vec(
+        &mut u_knots,
+        directrix.knots().as_slice().len(),
+        "creo revolved NURBS u knots",
+    )?;
+    u_knots.extend_from_slice(directrix.knots().as_slice());
+    let angular_knots = [
+        0.0,
+        0.0,
+        0.0,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::FRAC_PI_2,
+        std::f64::consts::PI,
+        std::f64::consts::PI,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        3.0 * std::f64::consts::FRAC_PI_2,
+        std::f64::consts::TAU,
+        std::f64::consts::TAU,
+        std::f64::consts::TAU,
+    ];
+    let mut v_knots = Vec::new();
+    ctx.reserve_vec(
+        &mut v_knots,
+        angular_knots.len(),
+        "creo revolved NURBS v knots",
+    )?;
+    v_knots.extend(angular_knots);
+    match NurbsSurface::from_lanes_admitted(
+        ctx,
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(directrix.degree(), u_knots, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(2, v_knots, false),
+        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(control_points, Some(weights)),
         false,
-    ) {
-        Ok(surface) => Some(surface),
+    )? {
+        Ok(surface) => Ok(Some(surface)),
         Err(error) => {
-            refusal.note(
-                format!("creo revolved NURBS surface record for {record}"),
+            refusal.note_checked(
+                ctx,
+                format_args!("creo revolved NURBS surface record for {record}"),
                 &error,
             );
-            None
+            Ok(None)
         }
     }
 }
@@ -551,18 +609,13 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             continue;
         };
         let points = resolved_section_points(ctx, definition)?;
-        let solved = definition
-            .trim_entities
-            .iter()
-            .flat_map(|trim_entities| &trim_entities.rows)
-            .filter_map(|row| trim_segment_id(definition, row))
-            .collect::<BTreeSet<_>>();
-        for segment in complete_section_segment_rows(definition)
+        let solved = extrusion_solved_segment_ids(ctx, definition)?;
+        for segment in complete_section_segment_rows(ctx, definition)?
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let Some(section_geometry) =
-                resolved_section_segment_geometry(definition, &points, segment)
+                resolved_section_segment_geometry(ctx, definition, &points, segment)?
             else {
                 continue;
             };
@@ -578,37 +631,38 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) else {
                 continue;
             };
-            let id = SurfaceId::compose(
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(surface_id),
-            );
+                surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
+                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 segment.offset as u64,
                 "protextrude_section_carrier",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        object_id: crate::identity::source_object_id_checked(
+                            ctx,
+                            format_args!("VisibGeom:{surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -647,37 +701,38 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
             ) {
                 continue;
             }
-            let id = SurfaceId::compose(
+            let id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(native_surface_id),
-            );
+                native_surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
                 continue;
             }
             annotate(
+                ctx,
                 annotations,
                 &id,
                 "FeatDefs",
                 offset as u64,
                 "protextrude_saved_section_carrier",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
                     id,
                     geometry,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{native_surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        object_id: crate::identity::source_object_id_checked(
+                            ctx,
+                            format_args!("VisibGeom:{native_surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -711,10 +766,9 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ),
                 )
                 .then_some((surface_id, internal_id, spline))
-            })
-            .collect::<Vec<_>>();
+            });
         let Some(span) =
-            resolved_feature_extrusion_span(scan, ir, source_carriers, definition, transform)
+            resolved_feature_extrusion_span(ctx, scan, ir, source_carriers, definition, transform)?
         else {
             continue;
         };
@@ -725,80 +779,91 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         for (native_surface_id, internal_id, spline) in splines {
             let mut refusal = crate::lane_refusal::LaneRefusals::new();
             let Some(section_curve) = saved_spline_nurbs(ctx, spline, &mut refusal)? else {
-                let records = refusal.take_records();
-                losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(
-                    if records.is_empty() {
-                        format!(
+                let records = refusal.take_records_checked()?;
+                if records.is_empty() {
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve.",
                             spline.offset
-                        )
-                    } else {
-                        format!(
+                        ),
+                    )?;
+                } else {
+                    push_saved_spline_loss(
+                        ctx,
+                        losses,
+                        format_args!(
                             "Saved section spline at offset {} cannot form a NURBS curve: {}",
                             spline.offset,
-                            records.join("; ")
-                        )
-                    },
-                ));
-                continue;
-            };
-            let Some(placed) = placed_section_nurbs(transform, &section_curve) else {
-                continue;
-            };
-            let Some(directrix) = translated_nurbs_curve(&placed, lower_translation) else {
-                continue;
-            };
-            let mut refusal = crate::lane_refusal::LaneRefusals::new();
-            let surface_record = format!(
-                "surface {native_surface_id} from saved-spline entity {internal_id} at offset {}",
-                spline.offset
-            );
-            let Some(surface) =
-                extruded_nurbs_surface(&directrix, sweep, &surface_record, &mut refusal)
-            else {
-                for record in refusal.take_records() {
-                    losses.push(
-                        crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
-                            "Extruded section spline at offset {} states no surface carrier: {record}",
-                            spline.offset
-                        )),
-                    );
+                            JoinedLaneRecords(&records)
+                        ),
+                    )?;
                 }
                 continue;
             };
-            let suffix_key = IdentityKey::from(internal_id);
-            let curve_id = CurveId::compose(
+            let Some(placed) = placed_section_nurbs(ctx, transform, &section_curve)? else {
+                continue;
+            };
+            let Some(directrix) = translated_nurbs_curve(ctx, &placed, lower_translation)? else {
+                continue;
+            };
+            let mut refusal = crate::lane_refusal::LaneRefusals::new();
+            let Some(surface) = extruded_nurbs_surface(
+                ctx,
+                &directrix,
+                sweep,
+                &format_args!(
+                    "surface {native_surface_id} from saved-spline entity {internal_id} at offset {}",
+                    spline.offset
+                ),
+                &mut refusal,
+            )?
+            else {
+                for record in refusal.take_records_checked()? {
+                    push_saved_spline_loss(ctx, losses, format_args!(
+                        "Extruded section spline at offset {} states no surface carrier: {record}",
+                        spline.offset
+                    ))?;
+                }
+                continue;
+            };
+            let directrix_range = directrix
+                .knots()
+                .first()
+                .zip(directrix.knots().last())
+                .map(|(lower, upper)| (*lower, *upper));
+            let curve_id = crate::identity::compose_checked::<CurveId>(
+                ctx,
                 &crate::identity::FEATURE_EXTRUSION_DIRECTRIX,
-                IdentityKey::from(feature_id).colon(suffix_key.clone()),
-            );
+                format_args!("{feature_id}:{internal_id}"),
+                "creo extrusion directrix identity",
+            )?;
             if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
                 annotate(
+                    ctx,
                     annotations,
                     &curve_id,
                     "FeatDefs",
                     spline.offset as u64,
                     "protextrude_spline_directrix",
                     Exactness::Derived,
-                );
+                )?;
                 ctx.charge_entities(1, "admit Creo model curves")?;
                 source_carriers.admit_curve(
+                    ctx,
                     ir,
                     Curve {
-                        id: curve_id.clone(),
-                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
-                            directrix.clone(),
-                        )),
+                        id: curve_id
+                            .try_clone_for_decode(ctx, "creo construction curve identity copy")?,
+                        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
-                            object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                                "FeatDefs:saved_spline#{}",
-                                suffix_key.as_str()
-                            ))
-                            .ok_or_else(|| {
-                                cadmpeg_core::CodecError::malformed(
-                                    "source object_id must not be empty",
-                                )
-                            })?,
+                            object_id: crate::identity::source_object_id_checked(
+                                ctx,
+                                format_args!("FeatDefs:saved_spline#{internal_id}"),
+                                "creo source object identity",
+                            )?,
                             name: None,
                             color: None,
                             visible: None,
@@ -808,49 +873,54 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     },
                 )?;
             }
-            let surface_id = SurfaceId::compose(
+            let surface_id = crate::identity::compose_checked::<SurfaceId>(
+                ctx,
                 &crate::identity::VISIBGEOM_SURFACE,
-                IdentityKey::from(native_surface_id),
-            );
+                native_surface_id,
+                "creo extrusion surface identity",
+            )?;
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
-            let procedural_id = ProceduralSurfaceId::compose(
+            let procedural_id = crate::identity::compose_checked::<ProceduralSurfaceId>(
+                ctx,
                 &crate::identity::FEATURE_EXTRUSION_CONSTRUCTION,
-                IdentityKey::from(feature_id).colon(suffix_key),
-            );
+                format_args!("{feature_id}:{internal_id}"),
+                "creo extrusion construction identity",
+            )?;
             annotate(
+                ctx,
                 annotations,
                 &surface_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "protextrude_spline_surface",
                 Exactness::Derived,
-            );
+            )?;
             annotate(
+                ctx,
                 annotations,
                 &procedural_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "protextrude_spline_surface_construction",
                 Exactness::Derived,
-            );
+            )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
             source_carriers.admit_surface(
+                ctx,
                 ir,
                 Surface {
-                    id: surface_id.clone(),
+                    id: surface_id
+                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
-                        object_id: cadmpeg_core::text::NonBlankString::new(format!(
-                            "VisibGeom:{native_surface_id}"
-                        ))
-                        .ok_or_else(|| {
-                            cadmpeg_core::CodecError::malformed(
-                                "source object_id must not be empty",
-                            )
-                        })?,
+                        object_id: crate::identity::source_object_id_checked(
+                            ctx,
+                            format_args!("VisibGeom:{native_surface_id}"),
+                            "creo source object identity",
+                        )?,
                         name: None,
                         color: None,
                         visible: None,
@@ -859,18 +929,19 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     }),
                 },
             )?;
-            let Some((&lower_knot, &upper_knot)) =
-                directrix.knots().first().zip(directrix.knots().last())
-            else {
-                losses.push(
-                    crate::loss::CreoLossCode::SectionSplineUnresolved.note(format!(
+            let Some((lower_knot, upper_knot)) = directrix_range else {
+                push_saved_spline_loss(
+                    ctx,
+                    losses,
+                    format_args!(
                     "Extrusion directrix for feature {feature_id} at offset {} has no knot range",
                     spline.offset
-                )),
-                );
+                ),
+                )?;
                 continue;
             };
             source_carriers.admit_procedural_surface(
+                ctx,
                 ir,
                 &surface_id,
                 cadmpeg_ir::geometry::surface_payloads::ExtrusionSurfaceConstruction::try_new(
@@ -893,6 +964,25 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
         }
     }
     Ok(transferred)
+}
+
+fn extrusion_solved_segment_ids(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Result<BTreeSet<u32>, cadmpeg_core::CodecError> {
+    let mut solved = BTreeSet::new();
+    for id in definition
+        .trim_entities
+        .iter()
+        .flat_map(|trim_entities| &trim_entities.rows)
+        .filter_map(|row| trim_segment_id(definition, row))
+    {
+        if !solved.contains(&id) {
+            ctx.charge_collection_items(1, "creo extrusion solved segment ID nodes")?;
+        }
+        solved.insert(id);
+    }
+    Ok(solved)
 }
 
 #[cfg(test)]

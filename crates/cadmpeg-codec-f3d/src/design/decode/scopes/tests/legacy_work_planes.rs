@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 use crate::layout::work_plane_legacy_325_matrix_frame as work_plane_325;
 use crate::layout::work_plane_legacy_class_290_matrix_frame as work_plane_class_290;
@@ -103,7 +105,10 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
                 assert!((actual - expected).abs() < EPS_WORK_PLANE_TEST_VALUE);
             }
         }
-        assert_eq!(decoded.transform_offset, work_plane_325::MATRIX as u64);
+        assert_eq!(
+            decoded.transform_offset,
+            u64_from_index(work_plane_325::MATRIX)
+        );
         assert_eq!(decoded.reference, None);
     }
 }

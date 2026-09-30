@@ -236,14 +236,14 @@ pub(super) struct CreoSketchBucketHeader {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoSketchSection3d {
+pub(super) struct CreoSketchSection3d<'a> {
     pub(super) sketch_plane_entity_id: Option<u32>,
     pub(super) sketch_plane_flip: Option<bool>,
     #[serde(flatten, serialize_with = "serialize_reference_planes")]
-    pub(super) reference_planes: ReferencePlanes,
+    pub(super) reference_planes: &'a ReferencePlanes,
     pub(super) reference_plane_datum_geometry_id: Option<u32>,
     pub(super) orientation: CreoSketchSectionOrientation,
-    pub(super) dimension_ids: Vec<u32>,
+    pub(super) dimension_ids: &'a [u32],
     pub(super) offset: usize,
 }
 
@@ -255,24 +255,34 @@ fn serialize_reference_planes<S: serde::Serializer>(
     let rows = match planes {
         ReferencePlanes::Named(_) => &[][..],
         ReferencePlanes::Positional(rows) => rows.as_slice(),
-    }
-    .iter()
-    .map(|row| CreoSketchReferencePlane {
-        plane_entity_id: row.plane_entity_id,
-        reference_type: row.reference_type,
-        external_reference_id: row.external_reference_id,
-        segment_id: row.segment_id,
-        sub_index: row.sub_index,
-        reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
-    })
-    .collect::<Vec<_>>();
+    };
     let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry(
-        "reference_plane_entity_ids",
-        &planes.entity_ids().collect::<Vec<_>>(),
-    )?;
-    map.serialize_entry("reference_plane_rows", &rows)?;
+    map.serialize_entry("reference_plane_entity_ids", &ReferencePlaneIds(planes))?;
+    map.serialize_entry("reference_plane_rows", &ReferencePlaneRows(rows))?;
     map.end()
+}
+
+struct ReferencePlaneIds<'a>(&'a ReferencePlanes);
+
+impl Serialize for ReferencePlaneIds<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.entity_ids())
+    }
+}
+
+struct ReferencePlaneRows<'a>(&'a [crate::feature::definitions::FeatureSectionReferencePlane]);
+
+impl Serialize for ReferencePlaneRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().map(|row| CreoSketchReferencePlane {
+            plane_entity_id: row.plane_entity_id,
+            reference_type: row.reference_type,
+            external_reference_id: row.external_reference_id,
+            segment_id: row.segment_id,
+            sub_index: row.sub_index,
+            reference_flip: row.reference_flip.map(super::sketch_ids::binary_flag_value),
+        }))
+    }
 }
 
 #[derive(Serialize)]
@@ -294,19 +304,35 @@ pub(super) struct CreoSketchSectionOrientation {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureParameterFrame {
+pub(super) struct CreoFeatureParameterFrame<'a> {
     pub(super) kind: &'static str,
-    pub(super) body: Vec<u8>,
+    pub(super) body: &'a [u8],
     pub(super) decoded_values: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFeatureOutline {
+pub(super) struct CreoFeatureOutline<'a> {
     pub(super) phase: &'static str,
-    pub(super) local_values: Vec<Option<f64>>,
-    pub(super) local_value_bodies: Vec<Vec<u8>>,
+    #[serde(serialize_with = "serialize_feature_outline_values")]
+    pub(super) local_values: &'a [crate::feature::definitions::DecodedField<Option<f64>>],
+    #[serde(serialize_with = "serialize_feature_outline_bodies")]
+    pub(super) local_value_bodies: &'a [crate::feature::definitions::DecodedField<Option<f64>>],
     pub(super) offset: usize,
+}
+
+fn serialize_feature_outline_values<S: serde::Serializer>(
+    fields: &[crate::feature::definitions::DecodedField<Option<f64>>],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(fields.iter().map(|field| field.value))
+}
+
+fn serialize_feature_outline_bodies<S: serde::Serializer>(
+    fields: &[crate::feature::definitions::DecodedField<Option<f64>>],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(fields.iter().map(|field| &field.body))
 }
 
 #[derive(Serialize)]
@@ -337,13 +363,13 @@ pub(super) struct CreoSketchOrderRow {
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum CreoSketchSavedEntity {
+pub(super) enum CreoSketchSavedEntity<'a> {
     Line {
         entity_id: u32,
-        references: Vec<u32>,
-        attributes: Vec<[u8; 5]>,
+        references: &'a [u32],
+        attributes: &'a [[u8; 5]],
         endpoints: [[Option<f64>; 3]; 2],
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Arc {
@@ -352,14 +378,14 @@ pub(super) enum CreoSketchSavedEntity {
         radius: Option<f64>,
         endpoints: [[Option<f64>; 3]; 2],
         parameters: [Option<f64>; 2],
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Circle {
         entity_id: u32,
         center: [Option<f64>; 3],
         radius: Option<f64>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Conic {
@@ -368,23 +394,23 @@ pub(super) enum CreoSketchSavedEntity {
         parameters: [Option<f64>; 2],
         coefficients: [Option<f64>; 2],
         local_system: Option<[f64; 12]>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
     Spline {
         entity_id: Option<u32>,
         declared_point_count: Option<u32>,
-        interpolation_points: Vec<[f64; 3]>,
-        interpolation_points_body: Vec<u8>,
+        interpolation_points: &'a [[f64; 3]],
+        interpolation_points_body: &'a [u8],
         #[serde(flatten)]
-        endpoint_tangents: SplineTangents,
+        endpoint_tangents: SplineTangents<'a>,
         #[serde(flatten)]
-        parameters: SplineParameters,
+        parameters: SplineParameters<'a>,
         offset: usize,
     },
     Dummy {
         entity_id: Option<u32>,
-        body: Vec<u8>,
+        body: &'a [u8],
         offset: usize,
     },
 }
@@ -403,12 +429,12 @@ fn serialize_spline_field<T: Serialize, S: serde::Serializer>(
 }
 
 /// Optional spline endpoint tangents flattened as their value and body keys.
-pub(super) struct SplineTangents(pub(crate) Option<DecodedField<[[f64; 3]; 2]>>);
+pub(super) struct SplineTangents<'a>(pub(crate) Option<&'a DecodedField<[[f64; 3]; 2]>>);
 
-impl Serialize for SplineTangents {
+impl Serialize for SplineTangents<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_spline_field(
-            self.0.as_ref(),
+            self.0,
             serializer,
             "endpoint_tangents",
             "endpoint_tangents_body",
@@ -417,11 +443,11 @@ impl Serialize for SplineTangents {
 }
 
 /// Optional spline parameters flattened as their value and body keys.
-pub(super) struct SplineParameters(pub(crate) Option<DecodedField<Vec<f64>>>);
+pub(super) struct SplineParameters<'a>(pub(crate) Option<&'a DecodedField<Vec<f64>>>);
 
-impl Serialize for SplineParameters {
+impl Serialize for SplineParameters<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serialize_spline_field(self.0.as_ref(), serializer, "parameters", "parameters_body")
+        serialize_spline_field(self.0, serializer, "parameters", "parameters_body")
     }
 }
 
@@ -648,57 +674,73 @@ pub(super) struct CreoSketchRelationTriple {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionLocalSystem {
+pub(super) struct CreoCurveExpressionLocalSystem<'a> {
     pub(super) dimensions: u32,
     pub(super) count: u32,
-    pub(super) body: Vec<u8>,
+    pub(super) body: &'a [u8],
     pub(super) explicit_slots: Option<[f64; 12]>,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionLine {
-    pub(super) text: String,
+pub(super) struct CreoCurveExpressionLine<'a> {
+    pub(super) text: &'a str,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionAssignment {
-    pub(super) target: crate::curve::CurveExpressionTarget,
-    pub(super) expression: String,
-    pub(super) dependencies: Vec<String>,
-    pub(super) value: Option<crate::curve::CurveExpressionValue>,
+pub(super) struct CreoCurveExpressionAssignment<'a> {
+    pub(super) target: &'a crate::curve::CurveExpressionTarget,
+    pub(super) expression: &'a str,
+    pub(super) dependencies: &'a [String],
+    pub(super) value: Option<&'a crate::curve::CurveExpressionValue>,
     pub(super) activation: &'static str,
     pub(super) offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionSolveBlock {
-    pub(super) equations: Vec<CreoCurveExpressionEquation>,
-    pub(super) assignments: Vec<CreoCurveExpressionAssignment>,
-    pub(super) variables: Vec<String>,
-    pub(super) solutions: Vec<Option<crate::curve::CurveExpressionValue>>,
+pub(super) struct CreoCurveExpressionSolveBlock<'a> {
+    pub(super) equations: Vec<CreoCurveExpressionEquation<'a>>,
+    pub(super) assignments: Vec<CreoCurveExpressionAssignment<'a>>,
+    #[serde(serialize_with = "serialize_curve_expression_unknown_names")]
+    pub(super) variables: &'a [crate::curve::SolveUnknown],
+    #[serde(serialize_with = "serialize_curve_expression_unknown_solutions")]
+    pub(super) solutions: &'a [crate::curve::SolveUnknown],
     pub(super) offset: usize,
     pub(super) for_offset: usize,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoCurveExpressionEquation {
-    pub(super) left: String,
-    pub(super) right: String,
-    pub(super) dependencies: Vec<String>,
+pub(super) struct CreoCurveExpressionEquation<'a> {
+    pub(super) left: &'a str,
+    pub(super) right: &'a str,
+    pub(super) dependencies: &'a [String],
     pub(super) offset: usize,
 }
 
-#[derive(Serialize)]
-pub(super) struct CreoFeatureOperationState {
+fn serialize_curve_expression_unknown_names<S: serde::Serializer>(
+    unknowns: &[crate::curve::SolveUnknown],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(unknowns.iter().map(|unknown| &unknown.name))
+}
+
+fn serialize_curve_expression_unknown_solutions<S: serde::Serializer>(
+    unknowns: &[crate::curve::SolveUnknown],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(unknowns.iter().map(|unknown| &unknown.solution))
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct CreoFeatureOperationState<'a> {
     pub(super) id: String,
     pub(super) feature_id: u32,
     pub(super) state_ordinal: usize,
     pub(super) current: bool,
-    pub(super) family: String,
-    #[serde(flatten, serialize_with = "serialize_operation_name")]
-    pub(super) name: crate::feature::operations::OperationName,
+    pub(super) family: &'a str,
+    #[serde(flatten)]
+    pub(super) name: CreoOperationNameRecord<'a>,
     pub(super) recipe: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) recipe_conflict: Option<bool>,
@@ -710,23 +752,13 @@ pub(super) struct CreoFeatureOperationState {
     pub(super) state_offset: usize,
 }
 
-fn serialize_operation_name<S: serde::Serializer>(
-    name: &crate::feature::operations::OperationName,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
-    let mut map = serializer.serialize_map(Some(5))?;
-    map.serialize_entry("display_name_stored", &name.display_name_stored())?;
-    map.serialize_entry("stored_name", &name.stored_name())?;
-    map.serialize_entry("stored_name_bytes", &name.stored_name_bytes())?;
-    map.serialize_entry("identifier_keyword", &name.identifier_keyword())?;
-    map.serialize_entry(
-        "stored_name_prefix",
-        &name
-            .stored_name_prefix()
-            .map(|prefix| char::from(prefix).to_string()),
-    )?;
-    map.end()
+#[derive(Debug, Serialize)]
+pub(super) struct CreoOperationNameRecord<'a> {
+    pub(super) display_name_stored: bool,
+    pub(super) stored_name: Option<String>,
+    pub(super) stored_name_bytes: Option<&'a [u8]>,
+    pub(super) identifier_keyword: Option<&'a str>,
+    pub(super) stored_name_prefix: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -736,19 +768,19 @@ pub(super) struct CreoFeatureSurfaceReplayAssociation {
     pub(super) visible_surface_id: u32,
     pub(super) replay_surface_id: u32,
     pub(super) replay_ordinal: usize,
-    pub(super) surface_family: String,
+    pub(super) surface_family: &'static str,
     pub(super) table_offset: usize,
 }
 
 #[derive(Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub(super) enum CreoFeatureFieldValue {
+pub(super) enum CreoFeatureFieldValue<'a> {
     Empty,
     CompactInt {
         value: u32,
     },
     CompactIntArray {
-        values: Vec<u32>,
+        values: &'a [u32],
     },
     EntityReference {
         entity_id: u32,
@@ -757,11 +789,11 @@ pub(super) enum CreoFeatureFieldValue {
     ScalarArray {
         dimensions: u32,
         count: u32,
-        body: Vec<u8>,
-        decoded_values: Option<Vec<f64>>,
+        body: &'a [u8],
+        decoded_values: Option<&'a [f64]>,
     },
     Raw {
-        bytes: Vec<u8>,
+        bytes: &'a [u8],
     },
 }
 
@@ -772,7 +804,7 @@ pub(super) struct CreoHalfEdgeRef {
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFc05CircleRecord {
+pub(super) struct CreoFc05CircleRecord<'a> {
     pub(super) id: String,
     pub(super) curve_id: u32,
     pub(super) center_row_frame: [f64; 2],
@@ -784,22 +816,38 @@ pub(super) struct CreoFc05CircleRecord {
     pub(super) point_count: usize,
     pub(super) max_residual: f64,
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
 }
 
 #[derive(Serialize)]
-pub(super) struct CreoFc05CylinderCapPairRecord {
+pub(super) struct CreoFc05CylinderCapPairRecord<'a> {
     pub(super) id: String,
     pub(super) surface_id: u32,
     #[serde(flatten, serialize_with = "serialize_cap_edges")]
-    pub(super) cap_edges: Vec<crate::curve::Fc05CapEdge>,
+    pub(super) cap_edges: &'a [crate::curve::Fc05CapEdge],
     pub(super) center_row_frame: [f64; 2],
     pub(super) radius_mm: f64,
     pub(super) reference_direction_row_frame: [f64; 2],
     pub(super) parameter_sign: i8,
-    pub(super) cap_ordinates_row_frame: Vec<f64>,
+    pub(super) cap_ordinates_row_frame: &'a [f64],
     pub(super) offset: usize,
-    pub(super) source_section: String,
+    pub(super) source_section: &'a str,
+}
+
+struct CapEdgeValues<'a, T> {
+    edges: &'a [crate::curve::Fc05CapEdge],
+    value: fn(&crate::curve::Fc05CapEdge) -> T,
+}
+
+impl<T: serde::Serialize> serde::Serialize for CapEdgeValues<'_, T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        let mut values = serializer.serialize_seq(Some(self.edges.len()))?;
+        for edge in self.edges {
+            values.serialize_element(&(self.value)(edge))?;
+        }
+        values.end()
+    }
 }
 
 fn serialize_cap_edges<S: serde::Serializer>(
@@ -810,21 +858,24 @@ fn serialize_cap_edges<S: serde::Serializer>(
     let mut map = serializer.serialize_map(Some(3))?;
     map.serialize_entry(
         "curve_ids",
-        &edges.iter().map(|edge| edge.curve_id).collect::<Vec<_>>(),
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.curve_id,
+        },
     )?;
     map.serialize_entry(
         "cap_plane_ids",
-        &edges
-            .iter()
-            .map(|edge| edge.cap_plane_id)
-            .collect::<Vec<_>>(),
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.cap_plane_id,
+        },
     )?;
     map.serialize_entry(
         "curve_cap_ordinates_row_frame",
-        &edges
-            .iter()
-            .map(|edge| edge.cap_ordinate_row_frame)
-            .collect::<Vec<_>>(),
+        &CapEdgeValues {
+            edges,
+            value: |edge| edge.cap_ordinate_row_frame,
+        },
     )?;
     map.end()
 }
@@ -905,28 +956,6 @@ pub(super) struct CreoTorusRadiusOverrides {
 pub(super) struct CreoConeHalfAngleOverride {
     pub(super) radians: f64,
     pub(super) offset: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterScalar {
-    pub(super) value: f64,
-    pub(super) raw: Vec<u8>,
-    pub(super) offset: usize,
-    pub(super) length: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterReference {
-    pub(super) entity_id: u32,
-    pub(super) offset: usize,
-    pub(super) length: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct CreoCurveParameterOpaqueSpan {
-    pub(super) raw: Vec<u8>,
-    pub(super) offset: usize,
-    pub(super) length: usize,
 }
 
 fn serialize_angle_parameter<S: serde::Serializer>(

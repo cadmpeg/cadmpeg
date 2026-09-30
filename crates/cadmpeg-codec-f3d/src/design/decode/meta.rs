@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design segment metadata and the ordered feature timeline.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_core::container::{ContainerEntry, ContainerRole};
 
 use std::collections::{HashMap, HashSet};
@@ -117,10 +119,7 @@ fn copy_design_type(
     use crate::records::identity::ReferenceRun;
 
     let count = design_type.entities.values().len();
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(count),
-        "f3d design type registered entities",
-    )?;
+    ctx.charge_collection_items(u64_from_index(count), "f3d design type registered entities")?;
     let entities = if let Some(rows) = design_type.entities.located_rows() {
         let mut copied = Vec::new();
         copied.try_reserve(count).map_err(|_| {
@@ -343,7 +342,7 @@ pub(crate) fn decode_component_naming_spaces(
             ));
         }
         ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(by_component.len()),
+            u64_from_index(by_component.len()),
             "f3d component naming spaces output",
         )?;
         out.try_reserve(by_component.len()).map_err(|_| {

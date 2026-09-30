@@ -69,6 +69,12 @@ pub trait CompositeStages: Sized {
         &self,
         edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>>;
+
+    /// Edit owned stage lengths without copying stage operands or boxes.
+    fn try_map_stage_lengths_owned<E>(
+        self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>>;
 }
 
 impl CompositeStages for CompositePattern {
@@ -84,11 +90,18 @@ impl CompositeStages for CompositePattern {
         &self,
         edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
-        let mut stages = self.0.clone();
-        for stage in &mut stages {
-            *stage.pattern = stage.pattern.try_map_lengths(edit)?;
+        self.clone().try_map_stage_lengths_owned(edit)
+    }
+
+    fn try_map_stage_lengths_owned<E>(
+        mut self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        for stage in &mut self.0 {
+            let pattern = std::mem::replace(stage.pattern.as_mut(), StagePatternKind::UNRESOLVED);
+            *stage.pattern = pattern.try_map_lengths_owned(edit)?;
         }
-        Ok(Self(stages))
+        Ok(self)
     }
 }
 
@@ -106,6 +119,12 @@ impl CompositeStages for NoNestedComposite {
         _edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
         match *self {}
+    }
+    fn try_map_stage_lengths_owned<E>(
+        self,
+        _edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        match self {}
     }
 }
 
@@ -144,7 +163,17 @@ impl<C: CompositeStages + Clone> PatternKind<C> {
         &self,
         edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
     ) -> Result<Self, PatternLengthEditError<E>> {
-        let mut transform = self.0.clone();
+        self.clone().try_map_lengths_owned(edit)
+    }
+}
+
+impl<C: CompositeStages> PatternKind<C> {
+    /// Edit an owned pattern without copying retained operands or offset rows.
+    pub fn try_map_lengths_owned<E>(
+        self,
+        edit: &mut impl FnMut(PatternLengthField<'_>) -> Result<(), E>,
+    ) -> Result<Self, PatternLengthEditError<E>> {
+        let mut transform = self.0;
         match &mut transform {
             PatternTransform::Linear {
                 spacing, second, ..
@@ -180,8 +209,15 @@ impl<C: CompositeStages + Clone> PatternKind<C> {
                 edit(PatternLengthField::Point(plane_origin))
                     .map_err(PatternLengthEditError::Field)?;
             }
-            PatternTransform::Composite { stages } => {
-                *stages = stages.try_map_stage_lengths(edit)?;
+            PatternTransform::Composite { .. } => {
+                return match transform {
+                    PatternTransform::Composite { stages } => {
+                        Ok(Self(PatternTransform::Composite {
+                            stages: stages.try_map_stage_lengths_owned(edit)?,
+                        }))
+                    }
+                    other => Ok(Self(other)),
+                };
             }
             PatternTransform::Scale { center, .. } => {
                 if let PatternScaleCenter::Point(point) = center {

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::construction_operand_group_is_retained;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
@@ -291,10 +293,12 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.frame.opaque_index.get(), 180);
     assert_eq!(group.frame.opaque_scalar().get(), 0.125);
     assert!(group.frame.variant);
-    assert_eq!(group.paired_byte_offset, paired_at as u64);
+    assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
 
     let mut whole_body_bytes = bytes.clone();
-    whole_body_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    whole_body_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body =
         parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -324,7 +328,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&flagged, &scope, 0, &RecordFrame::from(&record))
             .complete()
             .expect("operation-flagged counted operand group");
-    assert_eq!(flagged.frame.member_count_offset, flagged_count_at as u64);
+    assert_eq!(
+        flagged.frame.member_count_offset,
+        u64_from_index(flagged_count_at)
+    );
     assert_eq!(
         flagged
             .members()
@@ -336,7 +343,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
-    start_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    start_face_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -416,7 +425,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             });
     }
     let mut to_face_bytes = bytes.clone();
-    to_face_bytes[group.role_offset() as usize..group.role_offset() as usize + 8]
+    to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
     let mut legacy_to_face = parse_construction_operand_group(
         &to_face_bytes,
@@ -574,7 +584,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignExtrudeFaceRole::Termination
         ))
     );
-    assert_eq!(auxiliary.paired_byte_offset, auxiliary_paired_at as u64);
+    assert_eq!(
+        auxiliary.paired_byte_offset,
+        u64_from_index(auxiliary_paired_at)
+    );
 
     let mut split_scope = scope.clone();
     split_scope
@@ -967,7 +980,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1008,7 +1021,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1037,7 +1050,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1123,7 +1136,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1197,7 +1210,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = 1165;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1242,7 +1255,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     let mut surface_scope = delete_scope.clone();
-    let reference_bytes = 11 * surface_scope.reference_members().len() as u64;
+    let reference_bytes = 11 * u64_from_index(surface_scope.reference_members().len());
     surface_scope
         .try_edit(|draft| {
             draft.payload = crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
@@ -1252,7 +1265,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1300,7 +1313,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1325,7 +1338,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1369,7 +1382,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.kind_offset = draft.byte_offset + base_kind + reference_bytes;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
@@ -1400,7 +1413,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1442,7 +1455,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 draft.kind_offset = draft.byte_offset + 135 + reference_bytes;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
@@ -1541,7 +1554,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -1686,7 +1699,7 @@ fn legacy_move_body_groups_accept_the_unterminated_true_flag_pair() {
         );
         assert_eq!(group.role(), DesignOperandRole::BODIES_A);
         assert_eq!(group.frame.variant, flag_pair == [1, 1]);
-        assert_eq!(group.paired_byte_offset, paired_at as u64);
+        assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
     }
 }
 

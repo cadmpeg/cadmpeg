@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry record patchers and the `patch_*_definition` byte-patcher family.
 
+use cadmpeg_core::convert::truncate_f64_to_u8;
+
 use std::collections::BTreeMap;
 
 use cadmpeg_core::bytes::assemble_u32_be;
@@ -192,7 +194,8 @@ fn patch_asm_geometry(
                 .get(&crate::ids::brep_entity_id(body.index))
                 .and_then(|transform| {
                     body.ref_at(5)
-                        .map(|reference| (reference as usize, *transform))
+                        .and_then(|reference| usize::try_from(reference).ok())
+                        .map(|reference| (reference, *transform))
                 })
         })
         .collect::<BTreeMap<_, _>>();
@@ -788,7 +791,15 @@ fn patch_asm_geometry(
 
 fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
     let channels = [color.r(), color.g(), color.b()];
-    let encoded = channels.map(|channel| (channel * 255.0).round() as u8);
+    let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
+    let [Some(red), Some(green), Some(blue)] = encoded else {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} requires exactly representable 8-bit RGB channels",
+            record.head(),
+            record.index
+        )));
+    };
+    let encoded = [red, green, blue];
     let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
@@ -799,3 +810,6 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     }
     Ok(encoded)
 }
+
+#[cfg(test)]
+mod tests;

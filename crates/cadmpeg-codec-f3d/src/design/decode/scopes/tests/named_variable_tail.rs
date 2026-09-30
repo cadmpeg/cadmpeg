@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::records::decal::DesignRecordHeader;
@@ -77,7 +79,7 @@ fn parameter_scope_parses_named_variable_tail() {
             .collect::<Vec<_>>(),
         [55]
     );
-    assert_eq!(scope.frame_length(), paired_at as u64);
+    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
 
     let mut owner_scope = scope.clone();
     owner_scope

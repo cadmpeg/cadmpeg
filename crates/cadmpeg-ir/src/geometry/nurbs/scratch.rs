@@ -21,15 +21,30 @@ pub(crate) fn reserve_exact<T>(
     additional: usize,
     operation: &'static str,
 ) -> Result<(), ResourceLimit> {
-    output.try_reserve_exact(additional).map_err(|_| {
-        let requested = cadmpeg_core::decode::u64_from_index(additional);
-        ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            requested,
-            requested,
-            operation,
-        )
-    })
+    output
+        .try_reserve_exact(additional)
+        .map_err(|_| allocation_refusal(additional, operation))
+}
+
+/// Reserve amortized scratch capacity for vectors that grow one item at a time.
+pub(crate) fn reserve<T>(
+    output: &mut Vec<T>,
+    additional: usize,
+    operation: &'static str,
+) -> Result<(), ResourceLimit> {
+    output
+        .try_reserve(additional)
+        .map_err(|_| allocation_refusal(additional, operation))
+}
+
+fn allocation_refusal(additional: usize, operation: &'static str) -> ResourceLimit {
+    let requested = cadmpeg_core::decode::u64_from_index(additional);
+    ResourceLimit::allocation_failed(
+        ResourceDimension::Codec(operation),
+        requested,
+        requested,
+        operation,
+    )
 }
 
 #[cfg(test)]

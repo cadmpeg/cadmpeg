@@ -7,15 +7,12 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_core::decode::id_from_index;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
 use crate::curve::CurveTopologyRow;
-
-/// Return rows whose native curve identifier occurs exactly once.
-pub(crate) fn uniquely_identified_rows(rows: &[CurveTopologyRow]) -> Vec<&CurveTopologyRow> {
-    crate::identity::uniquely_identified_rows(rows, |row| row.id)
-}
 
 /// One of the two native curve suffix sides.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -131,25 +128,50 @@ pub(crate) struct HalfEdgeVertexIncidence {
 /// when one or both successor end relations are unresolved. Callers that need
 /// a complete oriented edge must use [`edge_vertex_pairs`] instead.
 pub(crate) fn edge_start_vertex_pairs(
+    ctx: &DecodeContext<'_>,
     incidence: &[HalfEdgeVertexIncidence],
-) -> BTreeMap<u32, [u32; 2]> {
-    let mut by_curve = BTreeMap::<u32, [Vec<u32>; 2]>::new();
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+    let mut by_curve = BTreeMap::<u32, [SingleSide<u32>; 2]>::new();
     for binding in incidence {
-        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
-            .push(binding.start_vertex_id);
+        let sides = match by_curve.entry(binding.half_edge.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo start-vertex pair group nodes")?;
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
+        };
+        sides[binding.half_edge.side.index()].push(binding.start_vertex_id);
     }
-    by_curve
-        .into_iter()
-        .filter_map(|(curve_id, sides)| {
-            let [first] = sides[0].as_slice() else {
-                return None;
-            };
-            let [second] = sides[1].as_slice() else {
-                return None;
-            };
-            Some((curve_id, [*first, *second]))
-        })
-        .collect()
+    let mut pairs = BTreeMap::new();
+    for (curve_id, sides) in by_curve {
+        if let (Some(first), Some(second)) = (sides[0].sole(), sides[1].sole()) {
+            ctx.charge_collection_items(1, "creo start-vertex pair nodes")?;
+            pairs.insert(curve_id, [*first, *second]);
+        }
+    }
+    Ok(pairs)
+}
+
+enum SingleSide<T> {
+    Empty,
+    One(T),
+    Many,
+}
+
+impl<T> SingleSide<T> {
+    fn push(&mut self, value: T) {
+        *self = match std::mem::replace(self, Self::Empty) {
+            Self::Empty => Self::One(value),
+            Self::One(_) | Self::Many => Self::Many,
+        };
+    }
+
+    fn sole(&self) -> Option<&T> {
+        match self {
+            Self::One(value) => Some(value),
+            Self::Empty | Self::Many => None,
+        }
+    }
 }
 
 /// Return every non-null face incident to a vertex orbit.
@@ -158,69 +180,95 @@ pub(crate) fn edge_start_vertex_pairs(
 /// edge contribute face carriers at the endpoint, even when only one side is a
 /// member of the outgoing orbit.
 pub(crate) fn vertex_incident_faces(
+    ctx: &DecodeContext<'_>,
     vertices: &[TopologicalVertex],
     edges: &[HalfEdge],
-) -> BTreeMap<u32, BTreeSet<u32>> {
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge.face_id))
-        .collect::<BTreeMap<_, _>>();
-    vertices
-        .iter()
-        .map(|vertex| {
-            let faces = vertex
-                .half_edges
-                .iter()
-                .flat_map(|half_edge| {
-                    [
-                        *half_edge,
-                        HalfEdgeId {
-                            curve_id: half_edge.curve_id,
-                            side: half_edge.side.flip(),
-                        },
-                    ]
-                })
-                .filter_map(|half_edge| by_id.get(&half_edge).copied().flatten())
-                .map(NonZeroU32::get)
-                .collect();
-            (vertex.id, faces)
-        })
-        .collect()
+) -> Result<BTreeMap<u32, BTreeSet<u32>>, CodecError> {
+    let mut by_id = BTreeMap::new();
+    for edge in edges {
+        match by_id.entry(edge.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(edge.face_id);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo incident-face half-edge lookup nodes")?;
+                entry.insert(edge.face_id);
+            }
+        }
+    }
+    let mut by_vertex = BTreeMap::new();
+    for vertex in vertices {
+        let mut faces = BTreeSet::new();
+        for half_edge in &vertex.half_edges {
+            for side in [
+                *half_edge,
+                HalfEdgeId {
+                    curve_id: half_edge.curve_id,
+                    side: half_edge.side.flip(),
+                },
+            ] {
+                if let Some(face) = by_id.get(&side).copied().flatten().map(NonZeroU32::get) {
+                    if !faces.contains(&face) {
+                        ctx.charge_collection_items(1, "creo incident face nodes")?;
+                        faces.insert(face);
+                    }
+                }
+            }
+        }
+        match by_vertex.entry(vertex.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(faces);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo incident-face vertex nodes")?;
+                entry.insert(faces);
+            }
+        }
+    }
+    Ok(by_vertex)
 }
 
 /// Resolve a curve's side-0 start and side-1 start as its oriented endpoint
 /// pair when at least one face loop supplies the corresponding end relation.
 /// Any supplied relation must agree with the opposite side's start vertex.
-pub(crate) fn edge_vertex_pairs(incidence: &[HalfEdgeVertexIncidence]) -> BTreeMap<u32, [u32; 2]> {
-    let mut by_curve = BTreeMap::<u32, [Vec<&HalfEdgeVertexIncidence>; 2]>::new();
+pub(crate) fn edge_vertex_pairs(
+    ctx: &DecodeContext<'_>,
+    incidence: &[HalfEdgeVertexIncidence],
+) -> Result<BTreeMap<u32, [u32; 2]>, CodecError> {
+    let mut by_curve = BTreeMap::<u32, [SingleSide<&HalfEdgeVertexIncidence>; 2]>::new();
     for binding in incidence {
-        by_curve.entry(binding.half_edge.curve_id).or_default()[binding.half_edge.side.index()]
-            .push(binding);
+        let sides = match by_curve.entry(binding.half_edge.curve_id) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo edge-vertex pair group nodes")?;
+                entry.insert([SingleSide::Empty, SingleSide::Empty])
+            }
+        };
+        sides[binding.half_edge.side.index()].push(binding);
     }
-    by_curve
-        .into_iter()
-        .filter_map(|(curve_id, sides)| {
-            let [forward] = sides[0].as_slice() else {
-                return None;
-            };
-            let [reverse] = sides[1].as_slice() else {
-                return None;
-            };
-            forward
+    let mut pairs = BTreeMap::new();
+    for (curve_id, sides) in by_curve {
+        let (Some(forward), Some(reverse)) = (sides[0].sole(), sides[1].sole()) else {
+            continue;
+        };
+        if forward
+            .end_vertex_id
+            .is_some_and(|end| end != reverse.start_vertex_id)
+            || reverse
                 .end_vertex_id
-                .is_none_or(|end| end == reverse.start_vertex_id)
-                .then_some(())?;
-            reverse
-                .end_vertex_id
-                .is_none_or(|end| end == forward.start_vertex_id)
-                .then_some(())?;
-            (forward.end_vertex_id.is_some() || reverse.end_vertex_id.is_some())
-                .then_some((curve_id, [forward.start_vertex_id, reverse.start_vertex_id]))
-        })
-        .collect()
+                .is_some_and(|end| end != forward.start_vertex_id)
+            || (forward.end_vertex_id.is_none() && reverse.end_vertex_id.is_none())
+        {
+            continue;
+        }
+        ctx.charge_collection_items(1, "creo edge-vertex pair nodes")?;
+        pairs.insert(curve_id, [forward.start_vertex_id, reverse.start_vertex_id]);
+    }
+    Ok(pairs)
 }
 
 /// What one half-edge set states about its topological vertices.
+#[derive(Debug)]
 pub(crate) struct VertexOrbits {
     /// Topological vertex identities, one per admitted half-edge orbit.
     pub(crate) vertices: Vec<TopologicalVertex>,
@@ -243,20 +291,39 @@ pub(crate) struct VertexOrbits {
 /// [`VertexOrbits::unstatable_orbits`] by its seed half-edge and refused at its
 /// own lane. The rest of
 /// the file's topology is unaffected, so it is not a whole-file refusal.
-pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge))
-        .collect::<BTreeMap<_, _>>();
+pub(crate) fn vertex_orbits(
+    ctx: &DecodeContext<'_>,
+    edges: &[HalfEdge],
+) -> Result<VertexOrbits, CodecError> {
+    let mut by_id = BTreeMap::new();
+    for edge in edges {
+        match by_id.entry(edge.id) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                entry.insert(edge);
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "creo vertex-orbit half-edge lookup nodes")?;
+                entry.insert(edge);
+            }
+        }
+    }
     let mut predecessors = BTreeMap::<HalfEdgeId, Vec<HalfEdgeId>>::new();
     for edge in edges {
         if let Some(next) = edge.next {
-            predecessors.entry(next).or_default().push(edge.id);
+            let previous = match predecessors.entry(next) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo predecessor group nodes")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.reserve_vec(previous, 1, "creo predecessor group members")?;
+            previous.push(edge.id);
         }
     }
     let mut vertex_adjacency = BTreeMap::<HalfEdgeId, BTreeSet<HalfEdgeId>>::new();
     for half_edge in by_id.keys().copied() {
-        vertex_adjacency.entry(half_edge).or_default();
+        adjacency_for(ctx, &mut vertex_adjacency, half_edge)?;
         let Some(previous) = predecessors.get(&half_edge) else {
             continue;
         };
@@ -270,14 +337,16 @@ pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
         if !by_id.contains_key(&twin_previous) {
             continue;
         }
-        vertex_adjacency
-            .entry(half_edge)
-            .or_default()
-            .insert(twin_previous);
-        vertex_adjacency
-            .entry(twin_previous)
-            .or_default()
-            .insert(half_edge);
+        let adjacent = adjacency_for(ctx, &mut vertex_adjacency, half_edge)?;
+        if !adjacent.contains(&twin_previous) {
+            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
+            adjacent.insert(twin_previous);
+        }
+        let adjacent = adjacency_for(ctx, &mut vertex_adjacency, twin_previous)?;
+        if !adjacent.contains(&half_edge) {
+            ctx.charge_collection_items(1, "creo vertex adjacency links")?;
+            adjacent.insert(half_edge);
+        }
     }
     let mut visited = BTreeSet::new();
     let mut vertices = Vec::new();
@@ -287,104 +356,189 @@ pub(crate) fn vertex_orbits(edges: &[HalfEdge]) -> VertexOrbits {
             continue;
         }
         let mut orbit = BTreeSet::new();
-        let mut pending = vec![start];
+        let mut pending = Vec::new();
+        ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges")?;
+        pending.push(start);
         while let Some(half_edge) = pending.pop() {
-            if !visited.insert(half_edge) {
+            if visited.contains(&half_edge) {
                 continue;
             }
+            ctx.charge_collection_items(1, "creo visited vertex-orbit edges")?;
+            visited.insert(half_edge);
+            ctx.charge_collection_items(1, "creo vertex orbit member nodes")?;
             orbit.insert(half_edge);
-            pending.extend(
-                vertex_adjacency
-                    .get(&half_edge)
-                    .into_iter()
-                    .flatten()
-                    .filter(|next| !visited.contains(next))
-                    .copied(),
-            );
+            for next in vertex_adjacency
+                .get(&half_edge)
+                .into_iter()
+                .flatten()
+                .filter(|next| !visited.contains(next))
+                .copied()
+            {
+                ctx.reserve_vec(&mut pending, 1, "creo vertex orbit pending edges")?;
+                pending.push(next);
+            }
         }
         let Some(id) = id_from_index(vertices.len()).and_then(|position| position.checked_add(1))
         else {
             // `start` is the half-edge the orbit was grown from, so it names
             // the orbit no identifier could be stated for.
+            ctx.reserve_vec(&mut unstatable_orbits, 1, "creo unstatable vertex orbits")?;
             unstatable_orbits.push(start);
             continue;
         };
-        vertices.push(TopologicalVertex {
-            id,
-            half_edges: orbit.into_iter().collect(),
-        });
+        let mut half_edges = Vec::new();
+        ctx.reserve_vec(&mut half_edges, orbit.len(), "creo vertex orbit half-edges")?;
+        half_edges.extend(orbit);
+        ctx.reserve_vec(&mut vertices, 1, "creo topological vertices")?;
+        vertices.push(TopologicalVertex { id, half_edges });
     }
-    let start_vertex = vertices
-        .iter()
-        .flat_map(|vertex| {
-            vertex
-                .half_edges
-                .iter()
-                .map(move |half_edge| (*half_edge, vertex.id))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let incidence = edges
-        .iter()
-        .filter_map(|edge| {
-            Some(HalfEdgeVertexIncidence {
+    let mut start_vertex = BTreeMap::new();
+    for vertex in &vertices {
+        for half_edge in &vertex.half_edges {
+            match start_vertex.entry(*half_edge) {
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    entry.insert(vertex.id);
+                }
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo start-vertex lookup nodes")?;
+                    entry.insert(vertex.id);
+                }
+            }
+        }
+    }
+    let mut incidence = Vec::new();
+    for edge in edges {
+        if let Some(start_vertex_id) = start_vertex.get(&edge.id) {
+            ctx.reserve_vec(&mut incidence, 1, "creo half-edge vertex incidence")?;
+            incidence.push(HalfEdgeVertexIncidence {
                 half_edge: edge.id,
-                start_vertex_id: *start_vertex.get(&edge.id)?,
+                start_vertex_id: *start_vertex_id,
                 end_vertex_id: edge.next.and_then(|next| start_vertex.get(&next).copied()),
-            })
-        })
-        .collect();
-    VertexOrbits {
+            });
+        }
+    }
+    Ok(VertexOrbits {
         vertices,
         incidence,
         unstatable_orbits,
-    }
+    })
+}
+
+fn adjacency_for<'a>(
+    ctx: &DecodeContext<'_>,
+    adjacency: &'a mut BTreeMap<HalfEdgeId, BTreeSet<HalfEdgeId>>,
+    id: HalfEdgeId,
+) -> Result<&'a mut BTreeSet<HalfEdgeId>, CodecError> {
+    Ok(match adjacency.entry(id) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "creo vertex adjacency nodes")?;
+            entry.insert(BTreeSet::new())
+        }
+    })
 }
 
 /// Group bounded face references connected by uniquely identified curve
 /// topology rows.
 ///
 /// A curve contributes to a component when either of its sides names a face.
-pub(crate) fn face_components(rows: &[CurveTopologyRow]) -> Vec<FaceComponent> {
-    let rows = uniquely_identified_rows(rows);
+pub(crate) fn face_components(
+    ctx: &DecodeContext<'_>,
+    rows: &[CurveTopologyRow],
+) -> Result<Vec<FaceComponent>, CodecError> {
+    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     let mut face_curves = BTreeMap::<u32, BTreeSet<u32>>::new();
     for row in &rows {
         let [left, right] = row.faces;
         for face in [left, right].into_iter().flatten().map(NonZeroU32::get) {
-            adjacency.entry(face).or_default();
-            face_curves.entry(face).or_default().insert(row.id);
+            face_set(ctx, &mut adjacency, face, "creo face adjacency nodes")?;
+            let curves = face_set(ctx, &mut face_curves, face, "creo face curve group nodes")?;
+            if !curves.contains(&row.id) {
+                ctx.charge_collection_items(1, "creo face curve member nodes")?;
+                curves.insert(row.id);
+            }
         }
         if let (Some(left), Some(right)) = (left, right) {
             if left != right {
-                adjacency.entry(left.get()).or_default().insert(right.get());
-                adjacency.entry(right.get()).or_default().insert(left.get());
+                let neighbors =
+                    face_set(ctx, &mut adjacency, left.get(), "creo face adjacency nodes")?;
+                if !neighbors.contains(&right.get()) {
+                    ctx.charge_collection_items(1, "creo face adjacency links")?;
+                    neighbors.insert(right.get());
+                }
+                let neighbors = face_set(
+                    ctx,
+                    &mut adjacency,
+                    right.get(),
+                    "creo face adjacency nodes",
+                )?;
+                if !neighbors.contains(&left.get()) {
+                    ctx.charge_collection_items(1, "creo face adjacency links")?;
+                    neighbors.insert(left.get());
+                }
             }
         }
     }
     let mut seen = BTreeSet::new();
     let mut components = Vec::new();
-    for start in adjacency.keys().copied().collect::<Vec<_>>() {
-        if !seen.insert(start) {
+    for start in adjacency.keys().copied() {
+        if seen.contains(&start) {
             continue;
         }
-        let mut pending = vec![start];
+        ctx.charge_collection_items(1, "creo seen component faces")?;
+        seen.insert(start);
+        let mut pending = Vec::new();
+        ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
+        pending.push(start);
         let mut faces = BTreeSet::new();
         let mut curves = BTreeSet::new();
         while let Some(face) = pending.pop() {
+            ctx.charge_collection_items(1, "creo component face nodes")?;
             faces.insert(face);
-            curves.extend(face_curves.get(&face).into_iter().flatten().copied());
+            for curve in face_curves.get(&face).into_iter().flatten().copied() {
+                if !curves.contains(&curve) {
+                    ctx.charge_collection_items(1, "creo component curve nodes")?;
+                    curves.insert(curve);
+                }
+            }
             for neighbour in adjacency.get(&face).into_iter().flatten().copied() {
-                if seen.insert(neighbour) {
+                if !seen.contains(&neighbour) {
+                    ctx.charge_collection_items(1, "creo seen component faces")?;
+                    seen.insert(neighbour);
+                    ctx.reserve_vec(&mut pending, 1, "creo pending component faces")?;
                     pending.push(neighbour);
                 }
             }
         }
+        let mut face_ids = Vec::new();
+        ctx.reserve_vec(&mut face_ids, faces.len(), "creo component face IDs")?;
+        face_ids.extend(faces);
+        let mut curve_ids = Vec::new();
+        ctx.reserve_vec(&mut curve_ids, curves.len(), "creo component curve IDs")?;
+        curve_ids.extend(curves);
+        ctx.reserve_vec(&mut components, 1, "creo face components")?;
         components.push(FaceComponent {
-            face_ids: faces.into_iter().collect(),
-            curve_ids: curves.into_iter().collect(),
+            face_ids,
+            curve_ids,
         });
     }
-    components
+    Ok(components)
+}
+
+fn face_set<'a>(
+    ctx: &DecodeContext<'_>,
+    groups: &'a mut BTreeMap<u32, BTreeSet<u32>>,
+    id: u32,
+    operation: &'static str,
+) -> Result<&'a mut BTreeSet<u32>, CodecError> {
+    Ok(match groups.entry(id) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, operation)?;
+            entry.insert(BTreeSet::new())
+        }
+    })
 }
 
 /// Select the model body count using the settled metadata precedence.
@@ -410,48 +564,65 @@ pub(crate) fn selected_body_count(
 /// half-edge identity cannot distinguish their sides.
 ///
 /// Ambiguous or missing successors remain `None` and cannot form loops.
-pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
-    let rows = uniquely_identified_rows(rows);
+pub(crate) fn build(
+    ctx: &DecodeContext<'_>,
+    rows: &[CurveTopologyRow],
+) -> Result<(Vec<HalfEdge>, Vec<Loop>), CodecError> {
+    let rows = crate::identity::uniquely_identified_rows_checked(ctx, rows, |row| row.id)?;
     let mut face_sides: BTreeMap<Option<NonZeroU32>, Vec<HalfEdgeId>> = BTreeMap::new();
     for row in &rows {
         for side in [Side::Zero, Side::One] {
-            face_sides
-                .entry(row.faces[side.index()])
-                .or_default()
-                .push(HalfEdgeId {
-                    curve_id: row.id,
-                    side,
-                });
+            let sides = match face_sides.entry(row.faces[side.index()]) {
+                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "creo face-side group nodes")?;
+                    entry.insert(Vec::new())
+                }
+            };
+            ctx.reserve_vec(sides, 1, "creo face-side group members")?;
+            sides.push(HalfEdgeId {
+                curve_id: row.id,
+                side,
+            });
         }
     }
     let mut edges = Vec::new();
     for row in rows {
+        ctx.reserve_vec(&mut edges, 2, "creo topology half-edges")?;
         for side in [Side::Zero, Side::One] {
             let face_id = row.faces[side.index()];
-            let candidates = face_sides
+            let mut candidates = face_sides
                 .get(&face_id)
                 .into_iter()
                 .flatten()
                 .filter(|id| id.curve_id == row.next_edges[side.index()])
-                .copied()
-                .collect::<Vec<_>>();
+                .copied();
+            let next = match (candidates.next(), candidates.next()) {
+                (Some(candidate), None) => Some(candidate),
+                _ => None,
+            };
             edges.push(HalfEdge {
                 id: HalfEdgeId {
                     curve_id: row.id,
                     side,
                 },
                 face_id,
-                next: (candidates.len() == 1)
-                    .then(|| candidates.first().copied())
-                    .flatten(),
+                next,
             });
         }
     }
-    edges.sort_by_key(|edge| edge.id);
-    let by_id = edges
-        .iter()
-        .map(|edge| (edge.id, edge))
-        .collect::<BTreeMap<_, _>>();
+    crate::sort::stable_sort_by_key(
+        ctx,
+        edges.as_mut_slice(),
+        |edge| edge.id,
+        "creo build edges ordering",
+    )?;
+    let by_id = |id: HalfEdgeId| {
+        edges
+            .binary_search_by_key(&id, |edge| edge.id)
+            .ok()
+            .map(|index| &edges[index])
+    };
     let mut consumed = BTreeSet::new();
     let mut loops = Vec::new();
     for edge in &edges {
@@ -462,30 +633,36 @@ pub(crate) fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
         let mut seen = BTreeSet::new();
         let mut current = edge.id;
         loop {
-            if !seen.insert(current) {
+            if seen.contains(&current) {
                 if current == edge.id {
+                    for id in ring.iter().copied() {
+                        if !consumed.contains(&id) {
+                            ctx.charge_collection_items(1, "creo consumed topology half-edges")?;
+                            consumed.insert(id);
+                        }
+                    }
+                    ctx.reserve_vec(&mut loops, 1, "creo topology loops")?;
                     loops.push(Loop {
                         face_id: edge.face_id,
-                        half_edges: ring.clone(),
+                        half_edges: ring,
                     });
-                    consumed.extend(ring);
                 }
                 break;
             }
+            ctx.charge_collection_items(1, "creo topology ring visit nodes")?;
+            seen.insert(current);
+            ctx.reserve_vec(&mut ring, 1, "creo topology ring half-edges")?;
             ring.push(current);
-            let Some(next) = by_id.get(&current).and_then(|entry| entry.next) else {
+            let Some(next) = by_id(current).and_then(|entry| entry.next) else {
                 break;
             };
-            if by_id
-                .get(&next)
-                .is_none_or(|entry| entry.face_id != edge.face_id)
-            {
+            if by_id(next).is_none_or(|entry| entry.face_id != edge.face_id) {
                 break;
             }
             current = next;
         }
     }
-    (edges, loops)
+    Ok((edges, loops))
 }
 
 #[cfg(test)]

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
@@ -30,7 +32,7 @@ pub(super) fn fixed_kind_path_operations(
     let mut loft_scope = scope.clone();
     loft_scope
         .try_edit(|draft| {
-            draft.byte_offset = loft_start as u64;
+            draft.byte_offset = u64_from_index(loft_start);
             draft.payload = crate::records::feature::scope::DesignFeatureKind::Loft
                 .try_into()
                 .unwrap();
@@ -51,7 +53,7 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
-                operation_offset: (loft_start + 29) as u64,
+                operation_offset: u64_from_index(loft_start + 29),
             }
         ))
     );
@@ -60,7 +62,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (loft_start + 29) as u64,
+                operation_offset: u64_from_index(loft_start + 29),
             },
         ));
         loft_scope
@@ -134,7 +136,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: (loft_start + 29) as u64,
+                operation_offset: u64_from_index(loft_start + 29),
             },
         ));
         loft_scope
@@ -230,7 +232,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Loft(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (loft_start + 29) as u64,
+                operation_offset: u64_from_index(loft_start + 29),
             },
         ));
         loft_scope
@@ -313,7 +315,7 @@ pub(super) fn fixed_kind_path_operations(
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -327,7 +329,7 @@ pub(super) fn fixed_kind_path_operations(
                 .enumerate()
                 .map(|(index, value)| crate::records::identity::Located {
                     value,
-                    offset: index as u64 * 11,
+                    offset: u64_from_index(index) * 11,
                 })
                 .collect(),
         )
@@ -365,7 +367,7 @@ pub(super) fn fixed_kind_path_operations(
     let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632_251_157_578_453, 0.0];
     let sweep_scalar_start = bytes.len();
     for (ordinal, value) in sweep_values.into_iter().enumerate() {
-        let record_index = 80 + ordinal as u32;
+        let record_index = 80 + u32::try_from(ordinal).expect("fixture value fits u32");
         let mut scalar = vec![0; 100];
         scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
         scalar[4..7].copy_from_slice(b"277");
@@ -373,7 +375,7 @@ pub(super) fn fixed_kind_path_operations(
         scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
         scalar[24] = 1;
         scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
-        scalar[35] = ordinal as u8;
+        scalar[35] = u8::try_from(ordinal).expect("fixture value fits u8");
         scalar[40..48].copy_from_slice(&value.to_le_bytes());
         scalar.extend_from_slice(&3u32.to_le_bytes());
         scalar.extend_from_slice(b"261");
@@ -383,7 +385,7 @@ pub(super) fn fixed_kind_path_operations(
     let mut sweep_scope = scope.clone();
     sweep_scope
         .try_edit(|draft| {
-            draft.byte_offset = sweep_start as u64;
+            draft.byte_offset = u64_from_index(sweep_start);
             draft.payload = crate::records::feature::scope::DesignFeatureKind::Sweep
                 .try_into()
                 .unwrap();
@@ -406,11 +408,11 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (sweep_start + 25) as u64,
+                operation_offset: u64_from_index(sweep_start + 25),
                 values: crate::test_support::reals(sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
                 }),
             }
         ))
@@ -467,11 +469,11 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (sweep_start + 25) as u64,
+                operation_offset: u64_from_index(sweep_start + 25),
                 values: crate::test_support::reals([0.0, 1.0, 0.0, 1.0, 0.0, 0.0]),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
                 }),
             },
         ));
@@ -512,11 +514,11 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (sweep_start + 25) as u64,
+                operation_offset: u64_from_index(sweep_start + 25),
                 values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
                 }),
             },
         ));
@@ -672,11 +674,11 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(DesignPathFeatureConstruction::Sweep(
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: (sweep_start + 25) as u64,
+                operation_offset: u64_from_index(sweep_start + 25),
                 values: crate::test_support::reals(complete_sweep_values),
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (sweep_scalar_start + ordinal * 111 + 40) as u64
+                    u64_from_index(sweep_scalar_start + ordinal * 111 + 40)
                 }),
             },
         ));
@@ -711,7 +713,7 @@ pub(super) fn fixed_kind_path_operations(
     let pipe_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
     let pipe_scalar_start = bytes.len();
     for (ordinal, value) in pipe_values.into_iter().enumerate() {
-        let record_index = 170 + ordinal as u32;
+        let record_index = 170 + u32::try_from(ordinal).expect("fixture value fits u32");
         let mut scalar = vec![0; 100];
         scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
         scalar[4..7].copy_from_slice(b"277");
@@ -719,7 +721,7 @@ pub(super) fn fixed_kind_path_operations(
         scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
         scalar[24] = 1;
         scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
-        scalar[35] = ordinal as u8;
+        scalar[35] = u8::try_from(ordinal).expect("fixture value fits u8");
         scalar[40..48].copy_from_slice(&value.to_le_bytes());
         scalar.extend_from_slice(&3u32.to_le_bytes());
         scalar.extend_from_slice(b"261");
@@ -729,7 +731,7 @@ pub(super) fn fixed_kind_path_operations(
     let mut pipe_scope = scope.clone();
     pipe_scope
         .try_edit(|draft| {
-            draft.byte_offset = pipe_start as u64;
+            draft.byte_offset = u64_from_index(pipe_start);
             draft.payload = crate::records::feature::scope::DesignFeatureKind::Pipe
                 .try_into()
                 .unwrap();
@@ -752,16 +754,16 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (pipe_start + 25) as u64,
+                operation_offset: u64_from_index(pipe_start + 25),
                 section_shape:
                     crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: (pipe_start + 29) as u64,
+                section_shape_offset: u64_from_index(pipe_start + 29),
                 filled: true,
-                filled_offset: (pipe_start + 30) as u64,
+                filled_offset: u64_from_index(pipe_start + 30),
                 values: crate::test_support::reals(pipe_values),
                 record_indexes: [170, 171, 172, 173],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (pipe_scalar_start + ordinal * 111 + 40) as u64
+                    u64_from_index(pipe_scalar_start + ordinal * 111 + 40)
                 }),
             }
         ))
@@ -786,7 +788,7 @@ pub(super) fn fixed_kind_path_operations(
                         "f3d:Design/BulkStream.dat:parameter-owner#{}",
                         owner_pipe_record_indexes[ordinal]
                     ),
-                    byte_offset: (10_000 + ordinal as u64) - 40,
+                    byte_offset: (10_000 + u64_from_index(ordinal)) - 40,
                     frame_length: 103,
                     class_tag: crate::records::references::DesignClassTag::try_from(
                         "342".to_owned(),
@@ -794,11 +796,11 @@ pub(super) fn fixed_kind_path_operations(
                     .unwrap(),
                     record_index: owner_pipe_record_indexes[ordinal],
                     scope_record_index: scope.record_index,
-                    local_ordinal: ordinal as u32,
+                    local_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     evaluated_value: value,
-                    evaluated_value_offset: 10_000 + ordinal as u64,
+                    evaluated_value_offset: 10_000 + u64_from_index(ordinal),
                     parameter_record_index: owner_pipe_record_indexes[ordinal] + 1,
-                    owned_ordinal: ordinal as u32,
+                    owned_ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                     variant: None,
                     companion_record_index: owner_pipe_record_indexes[ordinal] + 2,
                 },
@@ -810,7 +812,7 @@ pub(super) fn fixed_kind_path_operations(
     owner_pipe_scope.id = "f3d:Design/BulkStream.dat:scope#12".into();
     owner_pipe_scope
         .try_edit(|draft| {
-            draft.byte_offset = owner_pipe_start as u64;
+            draft.byte_offset = u64_from_index(owner_pipe_start);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -846,12 +848,14 @@ pub(super) fn fixed_kind_path_operations(
         Some(DesignPathFeatureConstruction::Pipe(
             crate::records::feature::path_features::DesignPipeConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (owner_pipe_start + fixed_pipe_layout::OPERATION) as u64,
+                operation_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::OPERATION),
                 section_shape:
                     crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: (owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE) as u64,
+                section_shape_offset: u64_from_index(
+                    owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE
+                ),
                 filled: true,
-                filled_offset: (owner_pipe_start + fixed_pipe_layout::FILLED) as u64,
+                filled_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::FILLED),
                 values: crate::test_support::reals(owner_pipe_values),
                 record_indexes: owner_pipe_record_indexes,
                 value_offsets: [10_000, 10_001, 10_002, 10_003],
@@ -892,9 +896,11 @@ pub(super) fn fixed_kind_path_operations(
         bytes.extend_from_slice(&legacy_pipe);
         let legacy_scalar_start = bytes.len();
         let legacy_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
-        let first_record_index = 180 + pair_ordinal as u32 * 4;
+        let first_record_index =
+            180 + u32::try_from(pair_ordinal).expect("fixture value fits u32") * 4;
         for (ordinal, value) in legacy_values.into_iter().enumerate() {
-            let record_index = first_record_index + ordinal as u32;
+            let record_index =
+                first_record_index + u32::try_from(ordinal).expect("fixture value fits u32");
             let mut scalar = vec![0; 100];
             scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
             scalar[4..7].copy_from_slice(b"277");
@@ -902,7 +908,7 @@ pub(super) fn fixed_kind_path_operations(
             scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
             scalar[24] = 1;
             scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
-            scalar[35] = ordinal as u8;
+            scalar[35] = u8::try_from(ordinal).expect("fixture value fits u8");
             scalar[40..48].copy_from_slice(&value.to_le_bytes());
             scalar.extend_from_slice(&3u32.to_le_bytes());
             scalar.extend_from_slice(b"261");
@@ -912,7 +918,7 @@ pub(super) fn fixed_kind_path_operations(
         let mut legacy_scope = scope.clone();
         legacy_scope
             .try_edit(|draft| {
-                draft.byte_offset = legacy_pipe_start as u64;
+                draft.byte_offset = u64_from_index(legacy_pipe_start);
                 draft.reference_count_offset = draft.byte_offset + 9;
                 draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
                 draft.layout_fixture_references();
@@ -950,13 +956,16 @@ pub(super) fn fixed_kind_path_operations(
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: (legacy_pipe_start + legacy_pipe_layout::OPERATION) as u64,
+                    operation_offset: u64_from_index(
+                        legacy_pipe_start + legacy_pipe_layout::OPERATION
+                    ),
                     section_shape:
                         crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                    section_shape_offset: (legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE)
-                        as u64,
+                    section_shape_offset: u64_from_index(
+                        legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE
+                    ),
                     filled: true,
-                    filled_offset: (legacy_pipe_start + legacy_pipe_layout::FILLED) as u64,
+                    filled_offset: u64_from_index(legacy_pipe_start + legacy_pipe_layout::FILLED),
                     values: crate::test_support::reals(legacy_values),
                     record_indexes: [
                         first_record_index,
@@ -965,7 +974,7 @@ pub(super) fn fixed_kind_path_operations(
                         first_record_index + 3,
                     ],
                     value_offsets: std::array::from_fn(|ordinal| {
-                        (legacy_scalar_start + ordinal * 111 + 40) as u64
+                        u64_from_index(legacy_scalar_start + ordinal * 111 + 40)
                     }),
                 }
             ))

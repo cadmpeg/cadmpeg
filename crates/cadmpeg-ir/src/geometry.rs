@@ -186,7 +186,7 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
-    /// Copy a decoded surface through the caller's collection budget.
+    /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
@@ -201,6 +201,7 @@ impl SolvedSurfaceGeometry {
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polygonal(value) => Self::Polygonal(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
                 charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedSurface {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
@@ -209,7 +210,10 @@ impl SolvedSurfaceGeometry {
                 })
             }
             Self::Unknown { record } => Self::Unknown {
-                record: record.clone(),
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
             },
         })
     }
@@ -334,6 +338,27 @@ pub enum SurfaceGeometry {
 }
 
 impl SurfaceGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
@@ -427,7 +452,7 @@ pub enum SolvedCurveGeometry {
 }
 
 impl SolvedCurveGeometry {
-    /// Copy a decoded curve through the caller's collection budget.
+    /// Copy retained geometry through the caller's decode budget.
     pub fn try_clone_for_decode(
         &self,
         ctx: &DecodeContext<'_>,
@@ -445,8 +470,8 @@ impl SolvedCurveGeometry {
                 self_intersect,
             } => {
                 charge_decode_copy::<CompositeCurveSegment>(segments.len(), ctx, operation)?;
-                let mut copied = Vec::new();
-                copied.try_reserve_exact(segments.len()).map_err(|_| {
+                let mut copy = Vec::new();
+                copy.try_reserve_exact(segments.len()).map_err(|_| {
                     cadmpeg_core::CodecError::ResourceLimit(
                         cadmpeg_core::decode::ResourceLimit::allocation_failed(
                             cadmpeg_core::decode::ResourceDimension::Codec(operation),
@@ -457,16 +482,22 @@ impl SolvedCurveGeometry {
                     )
                 })?;
                 for segment in segments {
-                    copied.push(segment.clone());
+                    copy.push(CompositeCurveSegment {
+                        curve: segment.curve.try_clone_for_decode(ctx, operation)?,
+                        same_sense: segment.same_sense,
+                        transition: segment.transition,
+                    });
                 }
                 Self::Composite {
-                    segments: CompositeCurveSegments(copied),
+                    segments: CompositeCurveSegments::try_from(copy)
+                        .map_err(CodecError::malformed)?,
                     self_intersect: *self_intersect,
                 }
             }
             Self::Nurbs(value) => Self::Nurbs(value.try_clone_for_decode(ctx, operation)?),
             Self::Polyline(value) => Self::Polyline(value.try_clone_for_decode(ctx, operation)?),
             Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
                 charge_decode_copy::<Self>(1, ctx, operation)?;
                 Self::Transformed(PlacedCurve {
                     basis: Box::new(value.basis.try_clone_for_decode(ctx, operation)?),
@@ -475,7 +506,10 @@ impl SolvedCurveGeometry {
                 })
             }
             Self::Unknown { record } => Self::Unknown {
-                record: record.clone(),
+                record: record
+                    .as_ref()
+                    .map(|id| id.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
             },
         })
     }
@@ -602,6 +636,27 @@ pub enum CurveGeometry {
 }
 
 impl CurveGeometry {
+    /// Copy retained geometry through the caller's decode budget.
+    pub fn try_clone_for_decode(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
+        Ok(match self {
+            Self::Procedural {
+                construction,
+                cache,
+            } => Self::Procedural {
+                construction: construction.try_clone_for_decode(ctx, operation)?,
+                cache: cache
+                    .as_ref()
+                    .map(|geometry| geometry.try_clone_for_decode(ctx, operation))
+                    .transpose()?,
+            },
+            Self::Solved(geometry) => Self::Solved(geometry.try_clone_for_decode(ctx, operation)?),
+        })
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralCurveId> {

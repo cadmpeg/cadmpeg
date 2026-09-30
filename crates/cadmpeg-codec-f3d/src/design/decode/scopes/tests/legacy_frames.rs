@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
@@ -95,7 +97,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = shell_369_261::LEN as u64;
+            draft.frame_length = u64_from_index(shell_369_261::LEN);
             draft.reference_members =
                 crate::records::identity::ReferenceRun::unlocated(vec![9_000, 200, 201]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
@@ -112,7 +114,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             outward: false,
             thickness_offset,
             outward_offset: 21,
-        })) if thickness.get() == 0.25 && thickness_offset == (scalar_start + 40) as u64
+        })) if thickness.get() == 0.25 && thickness_offset == u64_from_index(scalar_start + 40)
     ));
 
     let mut wrong_pair = scope.clone();
@@ -168,7 +170,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        work_plane_class_322_332::MATRIX as u64
+        u64_from_index(work_plane_class_322_332::MATRIX)
     );
     assert_eq!(decoded.reference, None);
 
@@ -232,7 +234,10 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
         }
     }
-    assert_eq!(decoded.transform_offset, work_plane_337::MATRIX as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(work_plane_337::MATRIX)
+    );
     assert_eq!(decoded.reference, None);
 }
 
@@ -303,7 +308,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         frame[43..47].copy_from_slice(&form.to_le_bytes());
         let mut transform =
             crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
-        transform[0][3] = f64::from(ordinal as u32);
+        transform[0][3] = f64::from(u32::try_from(ordinal).expect("fixture value fits u32"));
         for (cell, value) in transform.into_iter().flatten().enumerate() {
             let at = 48 + cell * 8;
             frame[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -342,8 +347,8 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
         assert_eq!(decoded.transform, transform.try_into().unwrap());
         assert_eq!(decoded.transform_record_index, record_index);
         assert_eq!(u32::from(decoded.form), form);
-        assert_eq!(decoded.form_offset, (frame_at + 43) as u64);
-        assert_eq!(decoded.transform_offset, (frame_at + 48) as u64);
+        assert_eq!(decoded.form_offset, u64_from_index(frame_at + 43));
+        assert_eq!(decoded.transform_offset, u64_from_index(frame_at + 48));
 
         if class_tag == "456" {
             let paired_class_at = frame_at + 253 + 4;
@@ -430,7 +435,7 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 .unwrap();
         scope
             .try_edit(|draft| {
-                draft.frame_length = scope_length as u64;
+                draft.frame_length = u64_from_index(scope_length);
                 draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                     carrier_record_index,
                     support_record_index,
@@ -606,7 +611,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             value,
             record_index: 82,
             value_offset,
-        })) if value.get() == -2.5 && value_offset == (along_start + 40) as u64
+        })) if value.get() == -2.5 && value_offset == u64_from_index(along_start + 40)
     ));
     assert!(matches!(
         fixed.taper_angle,
@@ -614,6 +619,6 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
             value,
             record_index: 80,
             value_offset,
-        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == (taper_start + 40) as u64
+        }) if value.get() == -0.013_962_634_015_954_637 && value_offset == u64_from_index(taper_start + 40)
     ));
 }

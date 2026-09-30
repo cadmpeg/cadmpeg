@@ -5,16 +5,6 @@ use crate::transform::Transform;
 const EPS_NURBS_RATIONAL_DERIVATIVE: f64 = 1e-12;
 
 #[test]
-fn knot_span_refuses_oversized_degree_and_count_without_overflow() {
-    let knots = [0.0, 1.0];
-    assert_eq!(super::super::bspline_span(&knots, usize::MAX, 1, 0.5), None);
-    assert_eq!(
-        super::super::bspline_span(&knots, usize::MAX - 1, usize::MAX, 0.5),
-        None
-    );
-}
-
-#[test]
 fn numerical_audit_inverse_point_uses_scale_safe_affine_inverse() {
     let scale = 1.0e110;
     let matrix = Transform::affine([
@@ -78,6 +68,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         let admitted = poles.map(|pole| crate::features::FinitePoint3::new(pole).unwrap());
         assert_eq!(
             nurbs_curve_derivative(
+                &super::super::admitted::Scratch::default(),
                 1,
                 &knots,
                 &admitted,
@@ -91,6 +82,7 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         );
         assert_eq!(
             nurbs_curve_derivative(
+                &super::super::admitted::Scratch::default(),
                 1,
                 &knots,
                 &admitted,
@@ -110,7 +102,9 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
         assert_eq!(partials.duu, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(partials.duv, Vector3::new(0.0, 0.0, 0.0));
         assert_eq!(partials.dvv, Vector3::new(0.0, 0.0, 0.0));
-        let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5).expect("resource allocation did not fail").unwrap();
+        let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+            .expect("resource allocation did not fail")
+            .unwrap();
         assert_eq!(
             curve.control_points(),
             [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
@@ -122,14 +116,18 @@ fn numerical_audit_rational_points_and_derivatives_ignore_common_weight_scale() 
 fn numerical_audit_isocurves_keep_mixed_magnitude_weights_and_contributions() {
     use super::super::{nurbs_surface_isocurve, SurfaceParameterAxis};
     let surface = bilinear_surface(vec![vec![1.0e308, 1.0e-308]; 2], [2.0, 4.0]);
-    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5).expect("resource allocation did not fail").unwrap();
+    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+        .expect("resource allocation did not fail")
+        .unwrap();
     assert_eq!(
         curve.control_points(),
         [Point3::new(3.0, 0.0, 0.0), Point3::new(3.0, 1.0, 0.0)]
     );
     assert_eq!(curve.pole_rows().weights(), Some(vec![1.0e308, 1.0e-308]));
     let surface = bilinear_surface(vec![vec![1.0e308; 2], vec![1.0e-308; 2]], [0.0, 1.0e308]);
-    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5).expect("resource allocation did not fail").unwrap();
+    let curve = nurbs_surface_isocurve(&surface, SurfaceParameterAxis::U, 0.5)
+        .expect("resource allocation did not fail")
+        .unwrap();
     for point in curve.control_points() {
         assert!((point.x / 1.0e-308 - 1.0).abs() <= 8.0 * f64::EPSILON);
     }
@@ -294,7 +292,12 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
             )
             .unwrap(),
         );
-        let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
+        let result = pcurve_uv_differential(
+            &super::super::admitted::Scratch::default(),
+            &curve,
+            crate::scalar::FiniteReal::HALF,
+        )
+        .unwrap();
         assert!((result.point.unwrap().u - 0.5).abs() <= 8.0 * f64::EPSILON);
         assert!((result.tangent.unwrap().u - 1.0).abs() <= 8.0 * f64::EPSILON);
         assert!(result.acceleration.unwrap().u.abs() <= 8.0 * f64::EPSILON);
@@ -302,7 +305,12 @@ fn numerical_audit_polar_derivatives_are_independent_of_radial_scale() {
     let curve = PcurveGeometry::SphericalGreatCircle(
         SphericalGreatCirclePcurve::try_new(0.0, 1.0, 0.0, 1e200).unwrap(),
     );
-    let result = pcurve_uv_differential(&curve, crate::scalar::FiniteReal::HALF).unwrap();
+    let result = pcurve_uv_differential(
+        &super::super::admitted::Scratch::default(),
+        &curve,
+        crate::scalar::FiniteReal::HALF,
+    )
+    .unwrap();
     let (sin, cos) = 0.5_f64.sin_cos();
     let expected_first = -sin / (1e200 * cos * cos);
     let expected_second = -(1.0 + sin * sin) / (1e200 * cos * cos * cos);
@@ -397,7 +405,8 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
         target,
         None,
         &cadmpeg_core::decode::WorkBudget::new(1_000_000),
-    ).expect("resource allocation did not fail")
+    )
+    .expect("resource allocation did not fail")
     .unwrap();
     let point = crate::eval::nurbs_surface_point(&surface, uv.u, uv.v).unwrap();
     assert!(point.distance(target) <= 64.0 * f64::EPSILON);

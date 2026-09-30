@@ -3,25 +3,24 @@
 
 use super::{
     declared_solver_rows, extruded_segment_surface, placed_section_curve_geometry,
-    section_segment_intersection_carrier, section_skamp_constraints,
+    section_skamp_constraints,
 };
 use crate::decode::sketch::coordinates::{resolved_section_coordinates, resolved_section_points};
+use crate::decode::sketch::geometry::resolved_section_segment_geometry as resolved_section_segment_geometry_admitted;
+use crate::decode::sketch::geometry::saved_section_missing_line_geometry as saved_section_missing_line_geometry_admitted;
 use crate::decode::sketch::geometry::{
-    is_full_circle_geometry, resolved_section_segment_geometry, saved_profile_chains,
-    saved_section_arc, saved_section_arc_carrier, saved_section_circle_values,
+    is_full_circle_geometry, saved_profile_chains, saved_section_circle_values,
     saved_section_entity_geometry, saved_section_line_geometry,
-    saved_section_missing_line_geometry, saved_section_segment_point_coordinates,
-    SectionArcCarrier,
 };
-use crate::decode::sketch::intersect::resolved_trim_vertex_coordinates;
+
 use crate::decode::sketch::radii::{resolved_section_radii, trim_segment_id};
 use crate::decode::sketch_transfer::constraints::{
     joined_relation_incidence_entities, relation_incidence_entities, section_dimension_constraints,
 };
 use crate::decode::sketch_transfer::identity::{
     ambiguous_section_segment_external_ids, materialized_saved_section_external_ids,
-    saved_section_external_id, section_entity_external_ids, semantic_saved_section_entities,
-    unique_saved_section_internal_ids, unresolved_saved_section_entity,
+    saved_section_external_id, section_entity_external_ids, unique_saved_section_internal_ids,
+    unresolved_saved_section_entity,
 };
 use crate::decode::sketch_transfer::loci::{
     section_skamp_incidence_locus, section_skamp_point_locus,
@@ -42,6 +41,26 @@ use cadmpeg_ir::sketches::{
     SketchId,
 };
 use std::collections::{BTreeMap, BTreeSet};
+
+fn saved_section_missing_line_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+) -> Option<(usize, SketchGeometry)> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        saved_section_missing_line_geometry_admitted(ctx, definition)
+    })
+    .expect("test missing-line admission")
+}
+
+fn resolved_section_segment_geometry(
+    definition: &crate::feature::definitions::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::definitions::FeatureSegment,
+) -> Option<SketchGeometry> {
+    crate::decode::with_test_decode_ctx(|ctx| {
+        resolved_section_segment_geometry_admitted(ctx, definition, points, segment)
+    })
+    .expect("test segment admission")
+}
 
 #[test]
 fn saved_line_joins_through_order_table() {
@@ -126,7 +145,8 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        section_entity_external_ids(&definition),
+        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &definition))
+            .expect("service section identities"),
         BTreeSet::from([42])
     );
     assert_eq!(
@@ -210,7 +230,8 @@ fn saved_line_joins_through_order_table() {
     )
     .is_none());
     assert_eq!(
-        section_entity_external_ids(&incomplete),
+        crate::decode::with_test_decode_ctx(|ctx| section_entity_external_ids(ctx, &incomplete))
+            .expect("service section identities"),
         BTreeSet::from([42])
     );
     assert!(
@@ -222,17 +243,21 @@ fn saved_line_joins_through_order_table() {
         .expect("test spline allocation")
         .is_empty()
     );
-    let (native_entity, offset) = unresolved_saved_section_entity(
-        &incomplete,
-        &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
-        &incomplete
-            .saved_section
-            .as_ref()
-            .expect("saved section")
-            .entities[0],
-        &unique_saved_section_internal_ids(&incomplete),
-        &BTreeSet::new(),
-    )
+    let (native_entity, offset) = crate::decode::with_test_decode_ctx(|ctx| {
+        unresolved_saved_section_entity(
+            ctx,
+            &incomplete,
+            &SketchId::mint("creo:model:sketch#5").expect("valid test fixture"),
+            &incomplete
+                .saved_section
+                .as_ref()
+                .expect("saved section")
+                .entities[0],
+            &unique_saved_section_internal_ids(ctx, &incomplete)?,
+            &BTreeSet::new(),
+        )
+    })
+    .expect("service saved entity admission")
     .expect("valid test fixture");
     assert_eq!(offset, 20);
     assert_eq!(
@@ -278,8 +303,16 @@ fn saved_line_joins_through_order_table() {
     assert_eq!(
         saved_section_external_id(
             definition.order_table.as_ref().expect("order table"),
-            &unique_saved_section_internal_ids(&definition),
-            &ambiguous_section_segment_external_ids(&definition),
+            &crate::decode::with_test_decode_ctx(|ctx| unique_saved_section_internal_ids(
+                ctx,
+                &definition
+            ))
+            .expect("service saved identities"),
+            &crate::decode::with_test_decode_ctx(|ctx| ambiguous_section_segment_external_ids(
+                ctx,
+                &definition
+            ))
+            .expect("service ambiguous identities"),
             3,
         ),
         Some(42)
@@ -466,11 +499,13 @@ fn saved_line_joins_through_order_table() {
         operand.field.as_ref().map(|field| field.name.as_str()) == Some("equation_id")
     }));
     assert_eq!(
-        relation_incidence_entities(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+            ctx,
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
-        ),
+        ))
+        .expect("service incidence admission"),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
@@ -787,19 +822,31 @@ fn saved_line_joins_through_order_table() {
         .expect("relations")
         .skamps()[0]
         .items[1];
-    assert!(section_skamp_point_locus(
-        &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-        point_item
-    )
-    .is_some());
-    assert!(section_skamp_incidence_locus(
-        &solver_families,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-        line_item,
-        Some(&solver_geometry)
-    )
-    .is_some());
+    assert!(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
+            section_skamp_point_locus(
+                ctx,
+                refusal,
+                &solver_families,
+                &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+                point_item,
+            )
+        })
+        .is_some()
+    );
+    assert!(
+        crate::decode::sketch_transfer::loci::with_test_locus(|ctx, refusal| {
+            section_skamp_incidence_locus(
+                ctx,
+                refusal,
+                &solver_families,
+                &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+                line_item,
+                Some(&solver_geometry),
+            )
+        })
+        .is_some()
+    );
     assert!(
         matches!(
             solver_constraints[0].0.definition.kind(),
@@ -962,12 +1009,16 @@ fn saved_line_joins_through_order_table() {
         .header_mut()
         .expect("skamp header")
         .declared_count = 2;
-    assert!(relation_incidence_entities(
-        &duplicate_incidence,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-        7,
-    )
-    .is_empty());
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+            ctx,
+            &duplicate_incidence,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+            7,
+        ))
+        .expect("service incidence admission")
+        .is_empty()
+    );
     constrained
         .relations
         .as_mut()
@@ -977,18 +1028,24 @@ fn saved_line_joins_through_order_table() {
         .expect("skamp table")
         .rows_mut()[0]
         .status = 34;
-    assert!(relation_incidence_entities(
-        &constrained,
-        &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
-        7,
-    )
-    .is_empty());
-    assert_eq!(
-        joined_relation_incidence_entities(
+    assert!(
+        crate::decode::with_test_decode_ctx(|ctx| relation_incidence_entities(
+            ctx,
             &constrained,
             &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
             7,
-        ),
+        ))
+        .expect("service incidence admission")
+        .is_empty()
+    );
+    assert_eq!(
+        crate::decode::with_test_decode_ctx(|ctx| joined_relation_incidence_entities(
+            ctx,
+            &constrained,
+            &SketchId::mint("creo:model:sketch#5".to_string()).expect("valid test fixture"),
+            7,
+        ))
+        .expect("service joined incidence admission"),
         vec![
             SketchEntityId::mint("creo:featdefs:sketch_entity#5:42".to_string())
                 .expect("valid test fixture"),
@@ -1483,406 +1540,6 @@ fn saved_profile_mates_refuse_collection_limit() {
 }
 
 #[test]
-fn saved_arc_joins_through_order_table() {
-    let segment = crate::feature::definitions::FeatureSegment {
-        kind: crate::feature::definitions::FeatureSegmentKind::Arc([7, 9]),
-        directions: [None; 3],
-        center_id: Some(8),
-        arc_orientation: Some(0),
-        vertical_horizontal: None,
-        radius_ref: None,
-        radius2_ref: None,
-        external_id: 42,
-        body: Vec::new(),
-        offset: 40,
-    };
-    let definition = crate::feature::definitions::FeatureDefinition {
-        identity: crate::feature::definitions::DefinitionIdentity::Parsed {
-            schema_id: std::num::NonZeroU32::new(5),
-            owner_feature_id: Some(6),
-        },
-        body: Vec::new(),
-        parameter_frames: Vec::new(),
-        outlines: Vec::new(),
-        variables: None,
-        segments: None,
-        trim_entities: None,
-        trim_vertices: None,
-        order_table: Some(crate::feature::definitions::FeatureOrderTable {
-            declared_count: 1,
-            has_prototype: false,
-            entity_ref: None,
-            rows: vec![crate::feature::definitions::FeatureOrderRow {
-                external_id: 42,
-                internal_id: 3,
-                bitmask: 0,
-                offset: 10,
-            }],
-            offset: 8,
-        }),
-        section_3d: None,
-        dimensions: None,
-        relations: None,
-        saved_section: Some(crate::feature::definitions::FeatureSavedSection {
-            entities: vec![crate::feature::definitions::FeatureSavedEntity::Arc(
-                crate::feature::definitions::FeatureSavedArc {
-                    entity_id: 3,
-                    center: [Some(0.0), Some(0.0), Some(0.0)],
-                    radius: Some(2.0),
-                    endpoints: [
-                        [Some(0.0), Some(-2.0), Some(0.0)],
-                        [Some(-2.0), Some(0.0), Some(0.0)],
-                    ],
-                    parameters: [None; 2],
-                    body: Vec::new(),
-                    offset: 20,
-                },
-            )],
-            offset: 18,
-        }),
-        offset: 0,
-    };
-
-    assert_eq!(
-        saved_section_arc(&definition, &segment),
-        Some(crate::decode::sketch::geometry::SavedSectionArc {
-            center: cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0.0, 0.0))
-                .expect("finite center fixture"),
-            radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive length fixture"),
-            start_angle: Angle::new(std::f64::consts::PI).expect("finite angle fixture"),
-            end_angle: Angle::new(3.0 * std::f64::consts::FRAC_PI_2).expect("finite angle fixture"),
-        })
-    );
-    assert_eq!(
-        saved_section_segment_point_coordinates(&definition, &segment),
-        Some(vec![(7, [0.0, -2.0]), (9, [-2.0, 0.0]), (8, [0.0, 0.0]),])
-    );
-    let mut coordinate_definition = definition.clone();
-    coordinate_definition.variables = Some(crate::feature::definitions::test_support::with_points(
-        crate::feature::definitions::FeatureVariableTable {
-            declared_count: 0,
-            entity_ref: None,
-            rows: Vec::new(),
-            offset: 30,
-        },
-        [7, 8, 9]
-            .map(
-                |point_id| crate::feature::definitions::FeatureSectionPoint {
-                    point_id,
-                    u: None,
-                    v: None,
-                },
-            )
-            .to_vec(),
-    ));
-    coordinate_definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
-        declared_count: 1,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (vec![segment.clone()])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 38,
-    });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| resolved_section_points(
-            ctx,
-            &coordinate_definition
-        ))
-        .expect("test section solve"),
-        BTreeMap::from([(7, [0.0, -2.0]), (8, [0.0, 0.0]), (9, [-2.0, 0.0]),])
-    );
-    assert!(resolved_section_segment_geometry(
-        &definition,
-        &BTreeMap::from([(7, [0.0, -2.0]), (8, [0.0, 0.0]), (9, [-2.0, 0.0])]),
-        &segment,
-    )
-    .is_some());
-    assert!(resolved_section_segment_geometry(
-        &definition,
-        &BTreeMap::from([(7, [0.0, -3.0]), (8, [0.0, 0.0]), (9, [-3.0, 0.0])]),
-        &segment,
-    )
-    .is_none());
-    let mut duplicate_order_row = definition.clone();
-    duplicate_order_row
-        .order_table
-        .as_mut()
-        .expect("order table")
-        .rows
-        .push(crate::feature::definitions::FeatureOrderRow {
-            external_id: 42,
-            internal_id: 4,
-            bitmask: 0,
-            offset: 11,
-        });
-    assert_eq!(saved_section_arc(&duplicate_order_row, &segment), None);
-    let mut duplicate_saved_arc = definition.clone();
-    let duplicate = duplicate_saved_arc
-        .saved_section
-        .as_ref()
-        .expect("saved section")
-        .entities[0]
-        .clone();
-    duplicate_saved_arc
-        .saved_section
-        .as_mut()
-        .expect("saved section")
-        .entities
-        .push(duplicate);
-    assert_eq!(saved_section_arc(&duplicate_saved_arc, &segment), None);
-
-    let segment_table = crate::feature::definitions::FeatureSegmentTable {
-        declared_count: 2,
-        has_elided_prototype: true,
-        entity_ref: None,
-        rows: (vec![segment.clone()])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 38,
-    };
-    let mut elided_prototype = definition.clone();
-    elided_prototype.segments = Some(segment_table.clone());
-    let order = elided_prototype.order_table.as_mut().expect("order table");
-    order.has_prototype = true;
-    order.declared_count = 2;
-    let mut prototype = elided_prototype
-        .saved_section
-        .as_ref()
-        .expect("saved section")
-        .entities[0]
-        .clone();
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut prototype {
-        arc.center = [None; 3];
-        arc.radius = None;
-        arc.endpoints = [[None; 3]; 2];
-        arc.offset = 18;
-    }
-    elided_prototype
-        .saved_section
-        .as_mut()
-        .expect("saved section")
-        .entities
-        .insert(0, prototype);
-    assert!(saved_section_arc(&elided_prototype, &segment).is_some());
-    assert_eq!(
-        semantic_saved_section_entities(&elided_prototype).count(),
-        1
-    );
-
-    let mut complete_elided_prototype = elided_prototype.clone();
-    let complete_arc = complete_elided_prototype
-        .saved_section
-        .as_ref()
-        .expect("saved section")
-        .entities[1]
-        .clone();
-    complete_elided_prototype
-        .saved_section
-        .as_mut()
-        .expect("saved section")
-        .entities[0] = complete_arc;
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) =
-        &mut complete_elided_prototype
-            .saved_section
-            .as_mut()
-            .expect("saved section")
-            .entities[0]
-    {
-        arc.offset = 18;
-    }
-    assert_eq!(
-        semantic_saved_section_entities(&complete_elided_prototype).count(),
-        1
-    );
-
-    let mut unique_at_table_origin = definition.clone();
-    unique_at_table_origin.segments = Some(segment_table);
-    let order = unique_at_table_origin
-        .order_table
-        .as_mut()
-        .expect("order table");
-    order.has_prototype = true;
-    order.declared_count = 2;
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut unique_at_table_origin
-        .saved_section
-        .as_mut()
-        .expect("saved section")
-        .entities[0]
-    {
-        arc.offset = 18;
-    }
-    assert!(saved_section_arc(&unique_at_table_origin, &segment).is_some());
-
-    let mut trimmed = definition;
-    trimmed.segments = Some(crate::feature::definitions::FeatureSegmentTable {
-        declared_count: 1,
-        has_elided_prototype: false,
-        entity_ref: None,
-        rows: (vec![segment])
-            .into_iter()
-            .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-            .collect(),
-        offset: 38,
-    });
-    trimmed.trim_entities = Some(crate::feature::definitions::FeatureTrimEntityTable {
-        declared_count: None,
-        entity_ref: None,
-        entry_ref: None,
-        buckets: Vec::new(),
-        rows: vec![crate::feature::definitions::FeatureTrimEntity {
-            external_id: 42,
-            mode: Some(0),
-            vertices: [1, 2],
-            kind: crate::feature::definitions::TrimEntityKind::Arc { center_vertex: 3 },
-            offset: 30,
-        }],
-        solved_external_ids: vec![42],
-        offset: 28,
-    });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
-                &trimmed,
-                &BTreeMap::new(),
-                &radii,
-            ))
-        })
-        .expect("test section geometry"),
-        BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
-    );
-    let mut conflicting_vertex = trimmed.clone();
-    conflicting_vertex.trim_vertices = Some(crate::feature::definitions::FeatureTrimVertexTable {
-        declared_count: None,
-        entity_ref: None,
-        entry_ref: None,
-        buckets: Vec::new(),
-        rows: vec![
-            crate::feature::definitions::FeatureTrimVertex {
-                vertex_id: 1,
-                entities: vec![42, 43],
-                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
-                    cadmpeg_ir::math::Point2::new(0.0, -2.0),
-                ),
-                offset: 31,
-            },
-            crate::feature::definitions::FeatureTrimVertex {
-                vertex_id: 1,
-                entities: vec![42, 44],
-                section_coordinates: cadmpeg_ir::units::FinitePoint2::new(
-                    cadmpeg_ir::math::Point2::new(9.0, 9.0),
-                ),
-                offset: 32,
-            },
-        ],
-        offset: 30,
-    });
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            let radii =
-                crate::decode::sketch::radii::resolved_section_radii(ctx, &conflicting_vertex)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
-                &conflicting_vertex,
-                &BTreeMap::new(),
-                &radii,
-            ))
-        })
-        .expect("test section geometry"),
-        BTreeMap::from([(2, [-2.0, 0.0])])
-    );
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
-        .saved_section
-        .as_mut()
-        .expect("test definition has a saved section")
-        .entities[0]
-    {
-        arc.center[1] = None;
-        arc.radius = None;
-    }
-    let segment = &trimmed
-        .segments
-        .as_ref()
-        .expect("test definition has a segment table")
-        .rows
-        .ordinary()
-        .cloned()
-        .collect::<Vec<_>>()[0];
-    assert_eq!(
-        saved_section_arc_carrier(&trimmed, segment).map(SectionArcCarrier::raw),
-        Some(([0.0, 0.0], 2.0))
-    );
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
-        .saved_section
-        .as_mut()
-        .expect("test definition has a saved section")
-        .entities[0]
-    {
-        arc.center[1] = Some(0.0);
-        arc.radius = Some(2.0);
-    }
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
-        .saved_section
-        .as_mut()
-        .expect("test definition has a saved section")
-        .entities[0]
-    {
-        arc.endpoints[0] = [None; 3];
-    } else {
-        panic!("test entity is an arc");
-    }
-    assert_eq!(
-        crate::decode::with_test_decode_ctx(|ctx| {
-            let radii = crate::decode::sketch::radii::resolved_section_radii(ctx, &trimmed)?;
-            Ok::<_, cadmpeg_core::CodecError>(resolved_trim_vertex_coordinates(
-                &trimmed,
-                &BTreeMap::new(),
-                &radii,
-            ))
-        })
-        .expect("test section geometry"),
-        BTreeMap::from([(2, [-2.0, 0.0])])
-    );
-    if let crate::feature::definitions::FeatureSavedEntity::Arc(arc) = &mut trimmed
-        .saved_section
-        .as_mut()
-        .expect("test definition has a saved section")
-        .entities[0]
-    {
-        arc.endpoints[1] = [None; 3];
-    }
-    let segment = &trimmed
-        .segments
-        .as_ref()
-        .expect("test definition has a segment table")
-        .rows
-        .ordinary()
-        .cloned()
-        .collect::<Vec<_>>()[0];
-    assert!(saved_section_arc(&trimmed, segment).is_none());
-    assert_eq!(
-        section_segment_intersection_carrier(
-            &trimmed,
-            &crate::decode::with_test_decode_ctx(|ctx| resolved_section_radii(ctx, &trimmed))
-                .expect("test section solve"),
-            &BTreeMap::new(),
-            segment,
-        ),
-        Some(
-            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
-                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
-                radius: Length::new(2.0).expect("finite length fixture"),
-                start_angle: Angle::new(0.0).expect("finite angle fixture"),
-                end_angle: Angle::new(std::f64::consts::TAU).expect("finite angle fixture"),
-            })
-            .expect("valid test fixture")
-        )
-    );
-}
-
-#[test]
 fn placed_extrusion_line_defines_plane() {
     let transform = crate::placement::FeatureSectionTransform::new(
         5,
@@ -1928,3 +1585,5 @@ fn placed_extrusion_line_defines_plane() {
         )))
     );
 }
+
+mod saved_arcs;

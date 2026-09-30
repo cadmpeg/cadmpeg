@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact surface extend, offset, boundary, stitch and ruled-surface operation scopes.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::take_reference;
@@ -424,7 +426,7 @@ fn exact_surface_boundary_operation(
         return Ok(None);
     };
     ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(edge_record_indices.len()),
+        u64_from_index(edge_record_indices.len()),
         "f3d surface boundary edges",
     )?;
     let mut edges = Vec::new();
@@ -518,10 +520,9 @@ pub(super) fn exact_ruled_surface_operation(
                 return None;
             }
             cursor = cursor.checked_add(4)?;
-            if let Err(error) = ctx.charge_collection_items(
-                cadmpeg_core::decode::u64_from_index(count),
-                "f3d ruled surface references",
-            ) {
+            if let Err(error) =
+                ctx.charge_collection_items(u64_from_index(count), "f3d ruled surface references")
+            {
                 return Some(Err(error));
             }
             let mut records = Vec::new();
@@ -565,7 +566,7 @@ pub(super) fn exact_ruled_surface_operation(
         };
         cursor = next;
         if let Err(error) = ctx.charge_collection_items(
-            cadmpeg_core::decode::u64_from_index(trailing_edge_groups.len()),
+            u64_from_index(trailing_edge_groups.len()),
             "f3d ruled surface merged edge groups",
         ) {
             return Some(Err(error));
@@ -606,11 +607,11 @@ pub(super) fn exact_ruled_surface_operation(
         }
         Some(Ok(DesignRuledSurfaceOperation {
             method,
-            method_offset: method_offset as u64,
+            method_offset: u64_from_index(method_offset),
             corner,
-            corner_offset: corner_offset as u64,
+            corner_offset: u64_from_index(corner_offset),
             alternate_face,
-            alternate_face_offset: alternate_face_offset as u64,
+            alternate_face_offset: u64_from_index(alternate_face_offset),
             angle_owner_record_index,
             distance_owner_record_index,
             edge_group_record_indices,
