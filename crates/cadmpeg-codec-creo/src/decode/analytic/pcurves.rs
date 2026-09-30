@@ -436,28 +436,37 @@ fn pcurve_plane_carrier_status(
     let (CarrierEquation::Plane(face_plane), CarrierEquation::Plane(other_plane)) =
         (face_carrier, other_carrier)
     else {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPair));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::UnsupportedPair,
+        ));
     };
     if dot(
         cross(face_plane.normal, other_plane.normal),
         cross(face_plane.normal, other_plane.normal),
     ) <= PCURVE_CARRIER_PARALLEL_EPS_SQUARED
     {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::ParallelPlanePair,
+        ));
     }
     if !matches!(
         surface,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ) || linear_pcurve_carrier(surface, endpoints)?.is_none()
     {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::UnsupportedPath));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::UnsupportedPath,
+        ));
     }
     for fraction in PCURVE_CARRIER_SAMPLE_PARAMETERS {
         let uv = [
             endpoints[0][0].mul_add(1.0 - fraction, endpoints[1][0] * fraction),
             endpoints[0][1].mul_add(1.0 - fraction, endpoints[1][1] * fraction),
         ];
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]))? else {
+        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+            surface, uv[0], uv[1],
+        ))?
+        else {
             return Ok(PcurveCarrierStatus::Rejected);
         };
         let point = [point.x, point.y, point.z];
@@ -480,13 +489,19 @@ fn pcurve_path_carrier_status(
     let other_id = faces[1 - face_index];
     let Some(surface) = face_id.and_then(|id| unique_model_surface(&ir.model.surfaces, id.get()))
     else {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingSurface));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::MissingSurface,
+        ));
     };
     let Some(face_carrier) = face_id.and_then(|id| carriers.get(&id.get())).copied() else {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::MissingCarrier,
+        ));
     };
     let Some(other_carrier) = other_id.and_then(|id| carriers.get(&id.get())).copied() else {
-        return Ok(PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::MissingCarrier));
+        return Ok(PcurveCarrierStatus::Unknown(
+            PcurveCarrierUnknownReason::MissingCarrier,
+        ));
     };
     pcurve_plane_carrier_status(
         source_carriers.surface_geometry(surface),
@@ -528,12 +543,13 @@ fn pcurve_endpoint_carrier_status(
         if !valid {
             break;
         }
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::surface_point(
-            ctx,
-            source_carriers.surface_geometry(surface),
-            uv[0],
-            uv[1],
-        )?)?
+        let Some(point) =
+            cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::admitted::surface_point(
+                ctx,
+                source_carriers.surface_geometry(surface),
+                uv[0],
+                uv[1],
+            )?)?
         else {
             valid = false;
             break;
@@ -590,7 +606,10 @@ fn support_cone_witness_matches(
     plane: PlaneEquation,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     for uv in endpoints {
-        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]))? else {
+        let Some(point) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+            geometry, uv[0], uv[1],
+        ))?
+        else {
             return Ok(false);
         };
         if !point_on_carrier([point.x, point.y, point.z], CarrierEquation::Plane(plane)) {
@@ -1269,12 +1288,17 @@ fn linear_pcurve_carrier(
     Ok(match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]))
-                    .map(|point| point.map(|point| [point.x, point.y, point.z]))
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                    surface, uv[0], uv[1],
+                ))
+                .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
-            let first = require_some!(first?);
-            let second = require_some!(second?);
-            let direction = require_some!(normalize(std::array::from_fn(|axis| second[axis] - first[axis])));
+            let [Some(first), Some(second)] = [first?, second?] else {
+                return Ok(None);
+            };
+            let direction = require_some!(normalize(std::array::from_fn(
+                |axis| second[axis] - first[axis]
+            )));
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 require_some!(cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::from(first),
@@ -1326,12 +1350,17 @@ fn linear_pcurve_carrier(
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(_)) if { start[0] == end[0] } => {
             let [first, second] = endpoints.map(|uv| {
-                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]))
-                    .map(|point| point.map(|point| [point.x, point.y, point.z]))
+                cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::surface_point(
+                    surface, uv[0], uv[1],
+                ))
+                .map(|point| point.map(|point| [point.x, point.y, point.z]))
             });
-            let first = require_some!(first?);
-            let second = require_some!(second?);
-            let direction = require_some!(normalize(std::array::from_fn(|axis| second[axis] - first[axis])));
+            let [Some(first), Some(second)] = [first?, second?] else {
+                return Ok(None);
+            };
+            let direction = require_some!(normalize(std::array::from_fn(
+                |axis| second[axis] - first[axis]
+            )));
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 require_some!(cadmpeg_ir::geometry::analytic::LineCurve::try_new(
                     Point3::from(first),
@@ -1408,7 +1437,11 @@ fn linear_pcurve_carrier(
             let ring = radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    require_some!(FinitePoint3::new(offset_point(center, *axis, radius * start[1].sin()))),
+                    require_some!(FinitePoint3::new(offset_point(
+                        center,
+                        *axis,
+                        radius * start[1].sin()
+                    ))),
                     signed_reference_frame(*sphere_surface.frame(), ring),
                     require_some!(PositiveLength::new(ring.abs())),
                 ),
@@ -1450,7 +1483,11 @@ fn linear_pcurve_carrier(
             let ring = major_radius + minor_radius * start[1].cos();
             (ring.abs() > 0.0).then_some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(
-                    require_some!(FinitePoint3::new(offset_point(center, *axis, minor_radius * start[1].sin()))),
+                    require_some!(FinitePoint3::new(offset_point(
+                        center,
+                        *axis,
+                        minor_radius * start[1].sin()
+                    ))),
                     signed_reference_frame(*torus_surface.frame(), ring),
                     require_some!(PositiveLength::new(ring.abs())),
                 ),
@@ -1463,7 +1500,8 @@ fn linear_pcurve_carrier(
             let axis = torus_surface.frame().axis().as_raw();
             let ref_direction = torus_surface.frame().reference().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            let minor_radius = require_some!(PositiveLength::try_from(torus_surface.minor_radius()).ok());
+            let minor_radius =
+                require_some!(PositiveLength::try_from(torus_surface.minor_radius()).ok());
             let transverse = cross(
                 [axis.x, axis.y, axis.z],
                 [ref_direction.x, ref_direction.y, ref_direction.z],
@@ -1474,7 +1512,11 @@ fn linear_pcurve_carrier(
                 start[0].cos() * ref_direction.z + start[0].sin() * transverse[2],
             );
             let normal = cross([radial.x, radial.y, radial.z], [axis.x, axis.y, axis.z]);
-            let center = require_some!(FinitePoint3::new(offset_point(center, radial, major_radius)));
+            let center = require_some!(FinitePoint3::new(offset_point(
+                center,
+                radial,
+                major_radius
+            )));
             let frame = require_some!(OrthonormalFrame3::new(Vector3::from(normal), radial));
             Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                 cadmpeg_ir::geometry::analytic::CircleCurve::new(center, frame, minor_radius),
@@ -1517,7 +1559,9 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             let mut evaluable = true;
             for uv in endpoints {
                 match cadmpeg_ir::eval::surface_point(geometry, uv[0], uv[1]) {
-                    Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => return Err(limit.into()),
+                    Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                        return Err(limit.into())
+                    }
                     Err(cadmpeg_ir::eval::EvaluationFailure::NoValue) => {
                         evaluable = false;
                         break;
@@ -1624,8 +1668,12 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
                 break;
             }
             for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                let point = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(candidate, parameter))?;
-                if !point.is_some_and(|point| curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])) {
+                let point = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::curve_point(
+                    candidate, parameter,
+                ))?;
+                if !point.is_some_and(|point| {
+                    curve_contains_points(geometry, [[point.x, point.y, point.z]; 2])
+                }) {
                     compatible = false;
                     break;
                 }
@@ -1906,7 +1954,10 @@ pub(super) fn native_pcurve_midpoint(
     let [first, second] =
         endpoints.map(|uv| cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv[0], uv[1]));
     let ([Some(first), Some(second)], [Some(start), Some(end)]) = (
-        [cadmpeg_ir::eval::finite_or_refusal(first?)?, cadmpeg_ir::eval::finite_or_refusal(second?)?],
+        [
+            cadmpeg_ir::eval::finite_or_refusal(first?)?,
+            cadmpeg_ir::eval::finite_or_refusal(second?)?,
+        ],
         edge_points.map(finite_model_point),
     ) else {
         return Ok(None);
@@ -1981,7 +2032,10 @@ fn oriented_native_pcurve_endpoints(
     // point.
     let [first, second] =
         endpoints.map(|uv| cadmpeg_ir::eval::admitted::surface_point(ctx, surface, uv[0], uv[1]));
-    let mapped = [cadmpeg_ir::eval::finite_or_refusal(first?)?, cadmpeg_ir::eval::finite_or_refusal(second?)?];
+    let mapped = [
+        cadmpeg_ir::eval::finite_or_refusal(first?)?,
+        cadmpeg_ir::eval::finite_or_refusal(second?)?,
+    ];
     let ([Some(first), Some(second)], [Some(start), Some(end)]) =
         (mapped, traversal.map(finite_model_point))
     else {
@@ -3288,7 +3342,8 @@ mod tests {
                 face_carrier,
                 crossing_carrier,
                 [[0.0, 0.0], [0.0, 1.0]],
-            ).expect("evaluation resources"),
+            )
+            .expect("evaluation resources"),
             PcurveCarrierStatus::Validated,
         );
         assert_eq!(
@@ -3297,7 +3352,8 @@ mod tests {
                 face_carrier,
                 crossing_carrier,
                 [[0.0, 0.0], [1.0, 0.0]],
-            ).expect("evaluation resources"),
+            )
+            .expect("evaluation resources"),
             PcurveCarrierStatus::Rejected,
         );
         assert_eq!(
@@ -3309,7 +3365,8 @@ mod tests {
                     normal: [0.0, 0.0, 1.0],
                 }),
                 [[0.0, 0.0], [0.0, 1.0]],
-            ).expect("evaluation resources"),
+            )
+            .expect("evaluation resources"),
             PcurveCarrierStatus::Unknown(PcurveCarrierUnknownReason::ParallelPlanePair),
         );
     }
@@ -3408,19 +3465,23 @@ mod tests {
         };
         let endpoints = [[0.0, 0.5], [std::f64::consts::PI, 0.5]];
 
-        assert!(!support_cone_witness_matches(&current, endpoints, plane).expect("evaluation resources"));
-        assert!(support_cone_witness_matches(&mirrored, endpoints, plane).expect("evaluation resources"));
+        assert!(!support_cone_witness_matches(&current, endpoints, plane)
+            .expect("evaluation resources"));
+        assert!(support_cone_witness_matches(&mirrored, endpoints, plane)
+            .expect("evaluation resources"));
         let perpendicular_endpoints = [[std::f64::consts::PI, 0.5]; 2];
         assert!(support_cone_witness_matches(
             &current,
             perpendicular_endpoints,
             perpendicular_plane
-        ).expect("evaluation resources"));
+        )
+        .expect("evaluation resources"));
         assert!(support_cone_witness_matches(
             &mirrored,
             perpendicular_endpoints,
             perpendicular_plane
-        ).expect("evaluation resources"));
+        )
+        .expect("evaluation resources"));
     }
 
     #[test]
