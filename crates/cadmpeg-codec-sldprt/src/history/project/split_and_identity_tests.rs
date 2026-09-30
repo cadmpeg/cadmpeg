@@ -5,7 +5,7 @@
 use crate::history::bind::bind_definition_sketch;
 use crate::history::bind::derive_feature_outputs;
 use crate::history::project::modify::project_fillet;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::neutral_feature_id_charged;
 use crate::history::project::project_features;
 use crate::history::project::project_configurations_charged;
 use crate::history::project::project_semantic_notes;
@@ -83,7 +83,7 @@ fn split_face_path_uses_the_prebound_source_sketch() {
     );
     assert_eq!(
         split_feature.dependencies.as_slice(),
-        vec![neutral_feature_id(&sketch.id)]
+        vec![neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), &sketch.id).unwrap()]
     );
 }
 

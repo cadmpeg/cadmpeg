@@ -1,8 +1,8 @@
 //! Compact edge-selection and reference-list tests.
 
 use super::super::super::component_paths::{
-    compact_edge_path_value, compact_edge_path_value_charged,
-    compact_edge_selection_set_value, compact_edge_selection_set_value_charged,
+    compact_edge_path_value_charged,
+    compact_edge_selection_set_value_charged,
 };
 use super::super::super::{CLASS_MARKER, LEGACY_SKETCH_MARKER};
 use crate::classification::FeatureClass;
@@ -644,9 +644,9 @@ fn compact_edge_selection_preserves_an_idless_path_entry() {
         producer_feature_refs: vec!["producer".into()],
         terminal_feature_ref: Some("producer".into()),
     };
-    assert_eq!(compact_edge_path_value(&selection), "4,_,4,0");
+    assert_eq!(compact_edge_path_value_charged(&cadmpeg_test_support::service_decode_context(), &selection).unwrap(), "4,_,4,0");
     assert_eq!(
-        compact_edge_selection_set_value(&[&selection]),
+        compact_edge_selection_set_value_charged(&cadmpeg_test_support::service_decode_context(), &[&selection]).unwrap(),
         "sldprt:feature-input:edge-ids:4,_,4,0"
     );
     let arena = cadmpeg_core::decode::DecodeArena::new();

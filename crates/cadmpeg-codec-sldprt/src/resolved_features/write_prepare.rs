@@ -5,7 +5,7 @@ use super::hashes::{constraint_hash, lane_hash, sketch_hash};
 use super::markers::{
     admit_sketch_input_entities, marker_spatial_coordinate_offset, reference_cells_charged,
     relation_bindings_charged, spatial_relation_marker_coordinates, spatial_sketches,
-    spatial_vertex_offsets,
+    spatial_vertex_offsets_charged,
 };
 use super::names::{class_declarations, object_names};
 use super::scalars::{feature_object_name, named_scalars_charged};
@@ -107,6 +107,12 @@ fn patch_spatial_sketches(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let bytes = native.feature_input_lanes.iter()
+        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     for sketch in &ir.model.spatial_sketches {
         let owners = ir
             .model
@@ -238,7 +244,8 @@ fn patch_spatial_sketches(
             .iter()
             .enumerate()
             .filter(|(_, lane)| sketch.native_ref.as_deref().is_none_or(|id| id == lane.id))
-            .filter_map(|(lane_index, lane)| {
+            .map(|(lane_index, lane)| -> Result<Option<(usize, Vec<usize>)>, cadmpeg_core::CodecError> {
+                let bounds = (|| {
                 let name = feature_object_name(record, lane)?;
                 let object_start = usize::try_from(name.offset).ok()?;
                 let object_end = native
@@ -251,24 +258,28 @@ fn patch_spatial_sketches(
                     .min()
                     .and_then(|offset| usize::try_from(offset).ok())
                     .unwrap_or(lane.native_payload.len());
-                let offsets =
-                    spatial_vertex_offsets(lane.native_payload.get(object_start..object_end)?);
+                    Some((object_start, object_end))
+                })();
+                let Some((object_start, object_end)) = bounds else { return Ok(None); };
+                let Some(object) = lane.native_payload.get(object_start..object_end) else { return Ok(None); };
+                let offsets = spatial_vertex_offsets_charged(&ctx, object)?;
                 if native_line_entities
                     .len()
                     .checked_mul(2)
                     .is_none_or(|expected| offsets.len() != expected)
                 {
-                    return None;
+                    return Ok(None);
                 }
-                Some((
+                Ok(Some((
                     lane_index,
                     offsets
                         .into_iter()
                         .map(|offset| object_start + offset)
                         .collect::<Vec<_>>(),
-                ))
+                )))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?
+            .into_iter().flatten().collect::<Vec<_>>();
         let [(lane_index, offsets)] = candidates.as_slice() else {
             return Err(cadmpeg_core::CodecError::NotImplemented(format!(
                 "SLDPRT spatial sketch {} does not resolve to one feature object with two vertices per line",

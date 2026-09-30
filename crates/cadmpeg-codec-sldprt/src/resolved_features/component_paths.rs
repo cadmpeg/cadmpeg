@@ -613,64 +613,6 @@ fn copy_dissected_sketch_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::sketches::
     cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
-fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
-    let mut value = String::from("sldprt:feature-input:edge-ids:");
-    for (index, edge_id) in local_edge_ids.iter().enumerate() {
-        if index != 0 {
-            value.push(',');
-        }
-        value.push_str(&edge_id.to_string());
-    }
-    value
-}
-
-pub(super) fn compact_edge_path_value(selection: &FeatureInputEdgeSelection) -> String {
-    if selection.components.is_empty() || !selection.references.is_empty() {
-        return selection
-            .local_edge_ids
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-    }
-    selection
-        .components
-        .iter()
-        .map(|component| {
-            component
-                .local_id
-                .map_or_else(|| "_".into(), |id| id.to_string())
-        })
-        .collect::<Vec<_>>()
-        .join(",")
-}
-
-pub(crate) fn compact_edge_selection_set_value(
-    selections: &[&FeatureInputEdgeSelection],
-) -> String {
-    if let [selection] = selections {
-        if selection
-            .components
-            .iter()
-            .any(|component| component.local_id.is_none())
-        {
-            return format!(
-                "sldprt:feature-input:edge-ids:{}",
-                compact_edge_path_value(selection)
-            );
-        }
-        return compact_edge_selection_value(&selection.local_edge_ids);
-    }
-    let mut value = String::from("sldprt:feature-input:edge-selection-vectors:");
-    for (selection_index, selection) in selections.iter().enumerate() {
-        if selection_index != 0 {
-            value.push(';');
-        }
-        value.push_str(&compact_edge_path_value(selection));
-    }
-    value
-}
-
 fn append_compact_edge_path_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &mut String,
@@ -756,17 +698,6 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     Ok(value)
 }
 
-pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
-    let mut value = String::from("sldprt:feature-input:body-ids:");
-    for (index, body_id) in local_body_ids.iter().enumerate() {
-        if index != 0 {
-            value.push(',');
-        }
-        value.push_str(&body_id.to_string());
-    }
-    value
-}
-
 pub(crate) fn compact_body_selection_value_charged(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     local_body_ids: &[u32],
@@ -792,7 +723,6 @@ pub(crate) fn compact_body_selection_value_charged(
 pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
     value.starts_with("sldprt:feature-input:body-ids:")
 }
-
 
 fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "retain SLDPRT adjacent profile identity")?;
