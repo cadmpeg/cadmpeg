@@ -1615,10 +1615,11 @@ pub(crate) fn project_marker_backed_sketches(
                             } else if let (Some(center), Some((major_axis, major, minor))) = (
                                 marker.coordinates_m.and_then(|_| project(marker)),
                                 coordinate_ellipse_axes(
+                                    ctx,
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,
-                                ),
+                                )?,
                             ) {
                                 let axis = transform.apply_axes(quantize(
                                     Point2::new(major_axis[0], major_axis[1]),

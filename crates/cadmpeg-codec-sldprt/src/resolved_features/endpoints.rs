@@ -22,7 +22,8 @@ use crate::records::{
     FeatureInputLane, FeatureInputOperandKind, FeatureInputScalarRole, SketchInputEntity,
     SketchInputKind,
 };
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
@@ -3605,86 +3606,71 @@ fn extended_terminal_wide_repeated_circle_record(payload: &[u8], offset: usize) 
             && class_declaration_at(payload, offset.saturating_add(128)))
 }
 
+fn charge_endpoint_work(ctx: &DecodeContext<'_>, len: usize, factor: u64, operation: &'static str) -> Result<(), CodecError> {
+    let work = u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(factor))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
+
+fn ellipse_axis_bounds(mut values: [f64; 4]) -> Option<[f64; 2]> {
+    values.sort_unstable_by(f64::total_cmp);
+    let first = values[0];
+    let mut second = None;
+    for value in values.into_iter().skip(1) {
+        let preceding = second.unwrap_or(first);
+        if same_dimension_length(value, preceding) { continue; }
+        if second.is_some() { return None; }
+        second = Some(value);
+    }
+    Some([first, second?])
+}
+
 pub(super) fn coordinate_ellipse_axes(
-    payload: &[u8],
-    ellipse: &SketchInputEntity,
-    markers: &[&SketchInputEntity],
-) -> Option<([f64; 2], f64, f64)> {
-    let offset = usize::try_from(ellipse.offset()).ok()?;
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(2)
-        || !marker_is_geometry_locus(payload, offset)
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || !sketch_marker_prefix_at(payload, offset.checked_add(134)?)
-    {
-        return None;
+    ctx: &DecodeContext<'_>, payload: &[u8], ellipse: &SketchInputEntity, markers: &[&SketchInputEntity],
+) -> Result<Option<([f64; 2], f64, f64)>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT ellipse coordinate roster";
+    ctx.charge_work(64, OPERATION)?;
+    let eligibility = (|| {
+        let offset = usize::try_from(ellipse.offset()).ok()?;
+        let following_offset = offset.checked_add(134)?;
+        if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len()) != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+            || marker_native_code(payload, offset) != Some(2) || !marker_is_geometry_locus(payload, offset)
+            || marker_profile_curve_role(payload, offset) != Some(1) || !sketch_marker_prefix_at(payload, following_offset) { return None; }
+        Some((ellipse.coordinates_m?.get(), ellipse.offset().checked_add(134)?))
+    })();
+    let Some(([center_u, center_v], following_offset)) = eligibility else { return Ok(None); };
+    let mut following = Vec::new();
+    for marker in markers {
+        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
+        charge_endpoint_work(ctx, ellipse.feature_ref.as_deref().map_or(0, str::len), 2, OPERATION)?;
+        ctx.charge_work(64, OPERATION)?;
+        if marker.feature_ref != ellipse.feature_ref || marker.offset() <= ellipse.offset() || marker.coordinates_m.is_none()
+            || !matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint) { continue; }
+        if following.len() == following.capacity() { charge_endpoint_work(ctx, following.len(), 4, OPERATION)?; }
+        ctx.reserve_collection_vec(&mut following, 1, OPERATION)?;
+        following.push(*marker);
     }
-    let [center_u, center_v] = ellipse.coordinates_m?.get();
-    let mut following = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.feature_ref == ellipse.feature_ref
-                && marker.offset() > ellipse.offset()
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                )
-        })
-        .collect::<Vec<_>>();
+    let factor = u64::from(following.len().checked_ilog2().unwrap_or(0)).checked_add(1).and_then(|levels| levels.checked_mul(64))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    charge_endpoint_work(ctx, following.len(), factor, OPERATION)?;
     following.sort_unstable_by_key(|marker| marker.offset());
-    let corners = following.get(..4)?;
-    if corners[0].offset() != ellipse.offset().checked_add(134)? {
-        return None;
-    }
-    let mut u = corners
-        .iter()
-        .filter_map(|marker| marker.coordinates_m.map(|point| point[0]))
-        .collect::<Vec<_>>();
-    let mut v = corners
-        .iter()
-        .filter_map(|marker| marker.coordinates_m.map(|point| point[1]))
-        .collect::<Vec<_>>();
-    u.sort_by(f64::total_cmp);
-    u.dedup_by(|left, right| same_dimension_length(*left, *right));
-    v.sort_by(f64::total_cmp);
-    v.dedup_by(|left, right| same_dimension_length(*left, *right));
-    let ([u_min, u_max], [v_min, v_max]) = (u.as_slice(), v.as_slice()) else {
-        return None;
-    };
-    let products = [
-        [*u_min, *v_min],
-        [*u_min, *v_max],
-        [*u_max, *v_min],
-        [*u_max, *v_max],
-    ];
-    if !products.iter().all(|product| {
-        corners.iter().any(|corner| {
-            corner.coordinates_m.is_some_and(|point| {
-                same_dimension_length(point[0], product[0])
-                    && same_dimension_length(point[1], product[1])
-            })
-        })
-    }) {
-        return None;
-    }
-    if !same_dimension_length((*u_min + *u_max) * 0.5, center_u)
-        || !same_dimension_length((*v_min + *v_max) * 0.5, center_v)
-    {
-        return None;
-    }
-    let u_radius = (*u_max - *u_min) * 0.5;
-    let v_radius = (*v_max - *v_min) * 0.5;
-    if u_radius <= 0.0 || v_radius <= 0.0 || same_dimension_length(u_radius, v_radius) {
-        return None;
-    }
-    if u_radius > v_radius {
-        Some(([1.0, 0.0], u_radius, v_radius))
-    } else {
-        Some(([0.0, 1.0], v_radius, u_radius))
-    }
+    ctx.charge_work(512, OPERATION)?;
+    Ok((|| {
+        let corners: [&SketchInputEntity; 4] = following.get(..4)?.try_into().ok()?;
+        if corners[0].offset() != following_offset { return None; }
+        let [Some(first), Some(second), Some(third), Some(fourth)] = corners.map(|marker| marker.coordinates_m.map(cadmpeg_ir::units::FiniteVector::get)) else { return None; };
+        let coordinates = [first, second, third, fourth];
+        let [u_min, u_max] = ellipse_axis_bounds(coordinates.map(|point| point[0]))?;
+        let [v_min, v_max] = ellipse_axis_bounds(coordinates.map(|point| point[1]))?;
+        let products = [[u_min, v_min], [u_min, v_max], [u_max, v_min], [u_max, v_max]];
+        if !products.iter().all(|product| coordinates.iter().any(|point|
+            same_dimension_length(point[0], product[0]) && same_dimension_length(point[1], product[1]))) { return None; }
+        if !same_dimension_length((u_min + u_max) * 0.5, center_u) || !same_dimension_length((v_min + v_max) * 0.5, center_v) { return None; }
+        let u_radius = (u_max - u_min) * 0.5;
+        let v_radius = (v_max - v_min) * 0.5;
+        if u_radius <= 0.0 || v_radius <= 0.0 || same_dimension_length(u_radius, v_radius) { return None; }
+        if u_radius > v_radius { Some(([1.0, 0.0], u_radius, v_radius)) } else { Some(([0.0, 1.0], v_radius, u_radius)) }
+    })())
 }
 
 fn coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
