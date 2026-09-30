@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
 use crate::records::feature::extrude::DesignExtrudeOperation;

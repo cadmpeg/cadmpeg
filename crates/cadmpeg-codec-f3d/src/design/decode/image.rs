@@ -167,7 +167,7 @@ pub(super) fn decode_scoped_images<T>(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use std::io::{Cursor, Write};
 
@@ -192,7 +192,10 @@ use cadmpeg_core::decode::{u64_from_index};
             for (limit, operation) in [
                 (0, "f3d embedded image data"),
                 (u64_from_index(DATA.len()), "f3d embedded image name"),
-                (u64_from_index(DATA.len() + NAME.len()), "f3d native stream key"),
+                (
+                    u64_from_index(DATA.len() + NAME.len()),
+                    "f3d native stream key",
+                ),
             ] {
                 let arena = DecodeArena::new();
                 let mut policy = DecodePolicy::default();

@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::codec::write::Encoder;
-use cadmpeg_ir::codec::write::EncodeInput;
-use cadmpeg_ir::codec::write::target::TargetRequest;
-use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_test_support::edit;
-use crate::F3dCodec;
 use crate::test_support::smbh_blends_test::synthetic_partial_rb_blend_spl_sur_smbh;
 use crate::test_support::smbh_blends_test::synthetic_rb_blend_spl_sur_smbh;
 use crate::test_support::smbh_curves_test::with_legacy_subtype;
 use crate::test_support::zip_test::f3d_with_smbh;
+use crate::F3dCodec;
+use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeInput;
+use cadmpeg_ir::codec::write::Encoder;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_test_support::edit;
 use std::io::Cursor;
 
 #[test]

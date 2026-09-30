@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body-recipe operands, operand groups, owners and persistent references.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
@@ -208,7 +208,8 @@ impl DesignBodyRecipeOperand {
         u64::from(self.frame.index(3))
     }
     fn nested_record_index_offset(&self) -> u64 {
-        self.frame.offset(26 + u64_from_index(self.references.len()) * 12)
+        self.frame
+            .offset(26 + u64_from_index(self.references.len()) * 12)
     }
     pub(crate) fn next_record_index(&self) -> u32 {
         self.frame.index(4)

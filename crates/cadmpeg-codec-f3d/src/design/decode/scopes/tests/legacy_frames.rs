@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
@@ -234,7 +234,10 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
         }
     }
-    assert_eq!(decoded.transform_offset, u64_from_index(work_plane_337::MATRIX));
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(work_plane_337::MATRIX)
+    );
     assert_eq!(decoded.reference, None);
 }
 

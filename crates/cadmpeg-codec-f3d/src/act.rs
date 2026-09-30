@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fusion ACT entity table and change-version channel groups.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -451,7 +451,8 @@ fn decode_table(
             &mut entries,
             TableEntry {
                 record_index,
-                row: ActTableRow::new(u64_from_index(index_offset)).map_err(CodecError::malformed)?,
+                row: ActTableRow::new(u64_from_index(index_offset))
+                    .map_err(CodecError::malformed)?,
                 entity_id,
             },
             "collect F3D ACT table entries",
@@ -881,7 +882,7 @@ fn marker_value(bytes: &[u8], position: usize, frame_end: usize) -> Option<(u32,
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::{decode_channel_group, merge_entities, ChannelGroup, RecordFrame, TableEntry};
     use crate::records::act::ActTableRow;

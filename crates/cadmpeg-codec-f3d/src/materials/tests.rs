@@ -104,7 +104,9 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
             super::push_lp(&mut logical, value).unwrap();
         }
         if instance.is_empty() {
-            instance.extend_from_slice(&(u32::try_from(super::PAGE_SIZE).expect("fixture value fits u32")).to_le_bytes());
+            instance.extend_from_slice(
+                &(u32::try_from(super::PAGE_SIZE).expect("fixture value fits u32")).to_le_bytes(),
+            );
             instance.extend_from_slice(&[0; STREAM_HEADER_LEN - 4]);
         }
         let body = &logical[RECORD_MARKER.len()..];

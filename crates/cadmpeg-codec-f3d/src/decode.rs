@@ -14,7 +14,7 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
@@ -3052,8 +3052,9 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.sketch_entities,
             &self.ir.model.spatial_sketch_entities,
         )?;
-        let arrangement_budget =
-            ctx.work_budget(u64_from_index(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK));
+        let arrangement_budget = ctx.work_budget(u64_from_index(
+            crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK,
+        ));
         crate::design::profile_select::bind_sweep_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {

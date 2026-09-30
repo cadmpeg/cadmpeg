@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::records::decal::DesignRecordHeader;
@@ -32,11 +32,15 @@ fn class_296_one_sided_to_face_extrude_scope_requires_exact_frame_shape() {
             .copy_from_slice(&2u32.to_le_bytes());
         bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
             .copy_from_slice(&0u32.to_le_bytes());
-        bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
-            .copy_from_slice(&(u32::try_from(reference_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4].copy_from_slice(
+            &(u32::try_from(reference_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for reference in 0..reference_count {
             bytes.push(1);
-            bytes.extend_from_slice(&(RECORD_INDEX + 1 + u32::try_from(reference).expect("fixture value fits u32")).to_le_bytes());
+            bytes.extend_from_slice(
+                &(RECORD_INDEX + 1 + u32::try_from(reference).expect("fixture value fits u32"))
+                    .to_le_bytes(),
+            );
             bytes.extend_from_slice(&[0; 6]);
         }
         bytes.extend_from_slice(&1u32.to_le_bytes());
@@ -145,8 +149,9 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
         .copy_from_slice(&1u32.to_le_bytes());
     bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&0u32.to_le_bytes());
-    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
-        .copy_from_slice(&(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4].copy_from_slice(
+        &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in REFERENCE_MEMBERS {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -208,7 +213,10 @@ fn class_296_symmetric_distance_extrude_scope_requires_exact_frame_shape() {
                 u64_from_index(layout::SECOND_SIDE_EXTENT),
             ],
             extent: Some(DesignExtrudeExtent::SymmetricDistance),
-            direction_face_extend_offsets: [u64_from_index(layout::DIRECTION), u64_from_index(layout::FACE_EXTEND),],
+            direction_face_extend_offsets: [
+                u64_from_index(layout::DIRECTION),
+                u64_from_index(layout::FACE_EXTEND),
+            ],
             direction_reversed: false,
             direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
             solid_operation: true,
@@ -281,8 +289,9 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
         .copy_from_slice(&2u32.to_le_bytes());
     bytes[layout::SECOND_SIDE_EXTENT..layout::SECOND_SIDE_EXTENT + 4]
         .copy_from_slice(&0u32.to_le_bytes());
-    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
-        .copy_from_slice(&(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4].copy_from_slice(
+        &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in REFERENCE_MEMBERS {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -344,7 +353,10 @@ fn class_296_two_sided_to_faces_extrude_scope_requires_exact_frame_shape() {
                 u64_from_index(layout::SECOND_SIDE_EXTENT),
             ],
             extent: Some(DesignExtrudeExtent::TwoSidedToFaces),
-            direction_face_extend_offsets: [u64_from_index(layout::DIRECTION), u64_from_index(layout::FACE_EXTEND)],
+            direction_face_extend_offsets: [
+                u64_from_index(layout::DIRECTION),
+                u64_from_index(layout::FACE_EXTEND)
+            ],
             direction_reversed: false,
             direction_reversed_offset: u64_from_index(layout::DIRECTION_REVERSED),
             solid_operation: true,
@@ -445,8 +457,10 @@ fn class_296_legacy_one_sided_extrude_scopes_require_exact_frame_shape() {
             .copy_from_slice(&first_extent.to_le_bytes());
         bytes[reference_count_offset - 4..reference_count_offset]
             .copy_from_slice(&0u32.to_le_bytes());
-        bytes[reference_count_offset..reference_count_offset + 4]
-            .copy_from_slice(&(u32::try_from(reference_members.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes[reference_count_offset..reference_count_offset + 4].copy_from_slice(
+            &(u32::try_from(reference_members.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
 
         for reference in reference_members {
             bytes.push(1);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::parse_construction_operand_dual_transform;
 use crate::design::decode::operands::parse_construction_operand_flag;
@@ -277,7 +277,10 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     );
     assert_eq!(compact.scope_record_index_offset(), 35);
     assert_eq!(compact.nested_record_index_offset(), 46);
-    assert_eq!(compact.following_byte_offset(), u64_from_index(compact_following_at));
+    assert_eq!(
+        compact.following_byte_offset(),
+        u64_from_index(compact_following_at)
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     collect_brep_references, insert_brep_adjacency, insert_brep_string, persistent_design_links,

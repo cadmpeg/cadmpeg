@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Design sketch placements, headers, relations, and geometry.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
     DesignSketchFrame, DesignSketchFrameForm, SketchPlacementMatrix,
@@ -191,10 +191,7 @@ fn entity_meta_scope<'a>(
         .len()
         .checked_add("MetaStream.dat".len())
         .ok_or_else(|| ctx.refuse_codec_limit("f3d entity meta scope length", 0, 1))?;
-    let reservation = ctx.reserve_scoped(
-        u64_from_index(meta_len),
-        "f3d entity meta scope",
-    )?;
+    let reservation = ctx.reserve_scoped(u64_from_index(meta_len), "f3d entity meta scope")?;
     let mut meta_scope = String::new();
     meta_scope
         .try_reserve_exact(meta_len)
@@ -225,7 +222,8 @@ pub(in crate::design) fn copy_scoped_stream<'a>(
     ctx: &'a DecodeContext<'_>,
     stream: &str,
 ) -> Result<(cadmpeg_core::decode::ScopedReservation<'a>, String), CodecError> {
-    let reservation = ctx.reserve_scoped(u64_from_index(stream.len()), "f3d scoped stream identity")?;
+    let reservation =
+        ctx.reserve_scoped(u64_from_index(stream.len()), "f3d scoped stream identity")?;
     let mut copy = String::new();
     copy.try_reserve(stream.len())
         .map_err(|_| ctx.refuse_codec_limit("f3d scoped stream allocation", 0, 1))?;
@@ -268,7 +266,8 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
             .try_reserve(1)
             .map_err(|_| ctx.refuse_codec_limit("f3d indexed stream cache allocation", 0, 1))?;
     }
-    let _key_bytes = ctx.reserve_scoped(u64_from_index(stream.len()), "f3d indexed stream lookup")?;
+    let _key_bytes =
+        ctx.reserve_scoped(u64_from_index(stream.len()), "f3d indexed stream lookup")?;
     let mut key = String::new();
     key.try_reserve(stream.len())
         .map_err(|_| ctx.refuse_codec_limit("f3d indexed stream key allocation", 0, 1))?;
@@ -683,7 +682,12 @@ fn decode_sketch_visibility_member(
     if bytes.get(member_at + visibility_member::TAIL_MARKER) != Some(&1) {
         return None;
     }
-    DesignSketchVisibility::new(stream_ordinal, u64_from_index(stream_ordinal_offset), visible).ok()
+    DesignSketchVisibility::new(
+        stream_ordinal,
+        u64_from_index(stream_ordinal_offset),
+        visible,
+    )
+    .ok()
 }
 
 /// Byte length of a member-run head carrying an explicit 4×4 transform.
@@ -1009,7 +1013,13 @@ fn decode_persistent_references_from_stream(
                         "f3d persistent reference ID allocation",
                     )?,
                     byte_offset: u64_from_index(offset),
-                    value_offset: u32::try_from(value_offset - offset).map_err(|_| ctx.refuse_codec_limit("f3d persistent reference relative offset", u64::from(u32::MAX), u64_from_index(value_offset - offset)))?,
+                    value_offset: u32::try_from(value_offset - offset).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "f3d persistent reference relative offset",
+                            u64::from(u32::MAX),
+                            u64_from_index(value_offset - offset),
+                        )
+                    })?,
                     kind,
                     value,
                 },
@@ -1061,7 +1071,14 @@ fn decode_lost_edge_references_from_stream(
         };
         if after_tag != header_offset + 7
             || bytes.get(header_offset + 11..header_offset + 25) != Some(&[0; 14])
-            || View::u32_le_at(bytes, header_offset + 25) != Some(u32::try_from(marker.len()).map_err(|_| ctx.refuse_codec_limit("f3d lost edge marker length", u64::from(u32::MAX), u64_from_index(marker.len())))?)
+            || View::u32_le_at(bytes, header_offset + 25)
+                != Some(u32::try_from(marker.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "f3d lost edge marker length",
+                        u64::from(u32::MAX),
+                        u64_from_index(marker.len()),
+                    )
+                })?)
         {
             continue;
         }
@@ -1259,10 +1276,7 @@ fn parse_sketch_member_run(
     if run_end > bytes.len() {
         return Ok(empty);
     }
-    ctx.charge_collection_items(
-        u64_from_index(capacity),
-        "f3d sketch member run",
-    )?;
+    ctx.charge_collection_items(u64_from_index(capacity), "f3d sketch member run")?;
     let mut members = Vec::new();
     members
         .try_reserve(capacity)
@@ -1330,10 +1344,7 @@ fn parse_legacy_sketch_member_run(
     let Some((paired_at, count)) = parsed else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        u64_from_index(count),
-        "f3d legacy sketch member run",
-    )?;
+    ctx.charge_collection_items(u64_from_index(count), "f3d legacy sketch member run")?;
     let mut members = Vec::new();
     members
         .try_reserve(count)
@@ -1654,10 +1665,7 @@ fn insert_charged_u32(
 }
 
 fn copy_entity_module_text(ctx: &DecodeContext<'_>, module: &str) -> Result<String, CodecError> {
-    ctx.charge_retained(
-        u64_from_index(module.len()),
-        "f3d entity module text",
-    )?;
+    ctx.charge_retained(u64_from_index(module.len()), "f3d entity module text")?;
     let mut text = String::new();
     text.try_reserve_exact(module.len())
         .map_err(|_| ctx.refuse_codec_limit("f3d entity module text allocation", 0, 1))?;
@@ -1921,7 +1929,13 @@ fn admit_sketch_relation(
     for row in parsed.auxiliary_references {
         auxiliary_references.push(crate::records::identity::Located {
             value: row.value,
-            offset: u32::try_from(row.offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation auxiliary offset", u64::from(u32::MAX), u64_from_index(row.offset)))?,
+            offset: u32::try_from(row.offset).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "f3d sketch relation auxiliary offset",
+                    u64::from(u32::MAX),
+                    u64_from_index(row.offset),
+                )
+            })?,
         });
     }
     let relation = SketchRelation::try_new(crate::records::sketch_relations::SketchRelationDraft {
@@ -1936,10 +1950,22 @@ fn admit_sketch_relation(
         record_index: record.record_index,
         class_tag: record.class_tag.clone(),
         byte_offset: record.byte_offset,
-        state_offset: u32::try_from(parsed.state_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation state offset", u64::from(u32::MAX), u64_from_index(parsed.state_offset)))?,
+        state_offset: u32::try_from(parsed.state_offset).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "f3d sketch relation state offset",
+                u64::from(u32::MAX),
+                u64_from_index(parsed.state_offset),
+            )
+        })?,
         owner_reference: parsed.owner_reference,
         owner_entity_id: None,
-        owner_reference_offset: u32::try_from(parsed.owner_reference_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation owner offset", u64::from(u32::MAX), u64_from_index(parsed.owner_reference_offset)))?,
+        owner_reference_offset: u32::try_from(parsed.owner_reference_offset).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "f3d sketch relation owner offset",
+                u64::from(u32::MAX),
+                u64_from_index(parsed.owner_reference_offset),
+            )
+        })?,
         auxiliary_references: crate::records::identity::ReferenceRun::located(auxiliary_references),
         rectangular_counted_reference_count,
         members,
@@ -2810,8 +2836,11 @@ fn decode_txt_tag_sketch_text_tail(
         for _ in 0..references {
             take_reference(payload, &mut cursor)?;
         }
-        let font_weight =
-            i32::try_from(View::u32_le_at(payload, cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?)?).ok()?;
+        let font_weight = i32::try_from(View::u32_le_at(
+            payload,
+            cursor.checked_add(TXT_TAG_FONT_WEIGHT_AT)?,
+        )?)
+        .ok()?;
         matches!(font_weight, 400 | 500 | 750).then_some(())?;
         cursor = cursor.checked_add(TXT_TAG_MEMBER_RUN + SKETCH_TEXT_TRAILING_RUN)?;
         let owner = take_reference(payload, &mut cursor)?;
@@ -3574,7 +3603,13 @@ fn decode_sketch_curve_identities_from_stream(
             owner_reference: trailing_sketch_owner_reference(payload),
             class_tag: frame.class_tag,
             byte_offset: u64_from_index(frame.start),
-            geometry_offset: u32::try_from(geometry_offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch curve geometry offset", u64::from(u32::MAX), u64_from_index(geometry_offset)))?,
+            geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "f3d sketch curve geometry offset",
+                    u64::from(u32::MAX),
+                    u64_from_index(geometry_offset),
+                )
+            })?,
             entity_genesis,
             primary_id,
             secondary_id,
@@ -3691,9 +3726,9 @@ fn charged_sketch_scalar_values(
     }
     ctx.charge_collection_items(u64_from_index(count), operation)?;
     let mut values = Vec::new();
-    values
-        .try_reserve_exact(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d sketch scalar allocation", 0, u64_from_index(count)))?;
+    values.try_reserve_exact(count).map_err(|_| {
+        ctx.refuse_codec_limit("f3d sketch scalar allocation", 0, u64_from_index(count))
+    })?;
     for index in 0..count {
         let at = offset + index * 8;
         let value = View::f64_le_at(payload, at)
@@ -3742,10 +3777,17 @@ fn parse_sketch_surface(
         return Ok(None);
     };
     let point_count = frame.coordinate_count / 3;
-    ctx.charge_collection_items(u64_from_index(point_count), "f3d sketch surface scaled points")?;
+    ctx.charge_collection_items(
+        u64_from_index(point_count),
+        "f3d sketch surface scaled points",
+    )?;
     let mut points = Vec::new();
     points.try_reserve_exact(point_count).map_err(|_| {
-        ctx.refuse_codec_limit("f3d sketch surface point allocation", 0, u64_from_index(point_count))
+        ctx.refuse_codec_limit(
+            "f3d sketch surface point allocation",
+            0,
+            u64_from_index(point_count),
+        )
     })?;
     for (ordinal, values) in coordinates.chunks_exact(3).enumerate() {
         let Some(source) = FinitePoint3::new(Point3::new(values[0], values[1], values[2])) else {
@@ -3763,10 +3805,17 @@ fn parse_sketch_surface(
     control_points
         .try_reserve_exact(frame.u_count)
         .map_err(|_| {
-            ctx.refuse_codec_limit("f3d sketch surface row allocation", 0, u64_from_index(frame.u_count))
+            ctx.refuse_codec_limit(
+                "f3d sketch surface row allocation",
+                0,
+                u64_from_index(frame.u_count),
+            )
         })?;
     for row in points.chunks(frame.v_count) {
-        ctx.charge_collection_items(u64_from_index(frame.v_count), "f3d sketch surface row points")?;
+        ctx.charge_collection_items(
+            u64_from_index(frame.v_count),
+            "f3d sketch surface row points",
+        )?;
         let mut row_points = Vec::new();
         row_points.try_reserve_exact(frame.v_count).map_err(|_| {
             ctx.refuse_codec_limit(
@@ -3868,7 +3917,10 @@ pub(crate) fn bind_sketch_graph(
         }
         sketch_owners.insert((scope, suffix), entity.entity_id.as_str());
     }
-    ctx.charge_collection_items(u64_from_index(relations.len()), "f3d sketch graph scoped relations")?;
+    ctx.charge_collection_items(
+        u64_from_index(relations.len()),
+        "f3d sketch graph scoped relations",
+    )?;
     let mut scoped_relations = Vec::new();
     scoped_relations
         .try_reserve_exact(relations.len())
@@ -3900,7 +3952,10 @@ pub(crate) fn bind_sketch_graph(
                     ),
                 )
             })?;
-        ctx.charge_retained(u64_from_index(owner.len()), "f3d sketch relation owner text")?;
+        ctx.charge_retained(
+            u64_from_index(owner.len()),
+            "f3d sketch relation owner text",
+        )?;
         let mut owner_text = String::new();
         owner_text.try_reserve_exact(owner.len()).map_err(|_| {
             ctx.refuse_codec_limit(
@@ -4090,8 +4145,10 @@ pub(crate) fn bind_sketch_graph(
                 format_args!("invalid sketch relation id {}", relation.id),
             )
         })?;
-        let _scope_reservation =
-            ctx.reserve_scoped(u64_from_index(scope.len()), "f3d sketch relation scope text")?;
+        let _scope_reservation = ctx.reserve_scoped(
+            u64_from_index(scope.len()),
+            "f3d sketch relation scope text",
+        )?;
         let mut owned_scope = String::new();
         owned_scope.try_reserve_exact(scope.len()).map_err(|_| {
             ctx.refuse_codec_limit(
@@ -4589,7 +4646,10 @@ fn admit_source_sketch_nurbs(
         ));
     };
     let point_count = coordinates.len() / 3;
-    ctx.charge_collection_items(u64_from_index(point_count), "f3d sketch NURBS control points")?;
+    ctx.charge_collection_items(
+        u64_from_index(point_count),
+        "f3d sketch NURBS control points",
+    )?;
     let mut control_points = Vec::new();
     control_points.try_reserve_exact(point_count).map_err(|_| {
         ctx.refuse_codec_limit(
@@ -5259,10 +5319,9 @@ fn parse_text_glyph_run(
         if !(1..=4096).contains(&count) {
             return None;
         }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(count),
-            "f3d sketch text glyph transforms",
-        ) {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(count), "f3d sketch text glyph transforms")
+        {
             return Some(Err(error));
         }
         let mut transforms = Vec::new();
@@ -5397,7 +5456,10 @@ fn decode_reference_list(
     if remaining_bytes < required_bytes {
         return Ok(None);
     }
-    ctx.charge_collection_items(u64_from_index(declared_count), "f3d sketch header references")?;
+    ctx.charge_collection_items(
+        u64_from_index(declared_count),
+        "f3d sketch header references",
+    )?;
     let mut references = Vec::new();
     references.try_reserve_exact(declared_count).map_err(|_| {
         ctx.refuse_codec_limit(

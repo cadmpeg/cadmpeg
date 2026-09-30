@@ -1077,7 +1077,9 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
         record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
         owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
         timestamp_micros,
-        timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(companion_prefix::TIMESTAMP_MICROS))),
+        timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
+            companion_prefix::TIMESTAMP_MICROS,
+        ))),
     })
 }
 

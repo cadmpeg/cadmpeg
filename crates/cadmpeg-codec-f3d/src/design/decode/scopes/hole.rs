@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact hole constructions and hole face selections.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
@@ -248,10 +248,9 @@ fn hole_construction_frame_at(
         if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
             return None;
         }
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(input_count),
-            "f3d Hole input records",
-        ) {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(input_count), "f3d Hole input records")
+        {
             return Some(Err(error));
         }
         let mut input_records = Vec::new();

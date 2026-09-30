@@ -75,10 +75,16 @@ fn source_carrier(
     indexed_header(&mut bytes, class_tag, record_index);
     bytes.resize(scalar_offset + 16, 0);
     write_marked_reference(&mut bytes, 21, scope_record_index);
-    bytes[32..36].copy_from_slice(&(u32::try_from(source_count).expect("fixture value fits u32")).to_le_bytes());
+    bytes[32..36].copy_from_slice(
+        &(u32::try_from(source_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for ordinal in 0..source_count {
         let offset = 36 + ordinal * 11;
-        write_marked_reference(&mut bytes, offset, 200 + u32::try_from(ordinal).expect("fixture value fits u32"));
+        write_marked_reference(
+            &mut bytes,
+            offset,
+            200 + u32::try_from(ordinal).expect("fixture value fits u32"),
+        );
     }
     bytes[scalar_offset..scalar_offset + 4].copy_from_slice(&discriminator.to_le_bytes());
     bytes[scalar_offset + 4..scalar_offset + 12].copy_from_slice(&0.125f64.to_le_bytes());
@@ -111,7 +117,10 @@ fn face_source_carriers_use_generation_keyed_prefixes() {
         assert_eq!(
             references,
             (0..source_count)
-                .map(|ordinal| (36 + ordinal * 11, 200 + u32::try_from(ordinal).expect("fixture value fits u32")))
+                .map(|ordinal| (
+                    36 + ordinal * 11,
+                    200 + u32::try_from(ordinal).expect("fixture value fits u32")
+                ))
                 .collect::<Vec<_>>()
         );
     }

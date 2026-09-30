@@ -134,7 +134,12 @@ fn owned_parameters(parameters: &[DesignParameter; 5]) -> Vec<(u32, &DesignParam
     parameters
         .iter()
         .enumerate()
-        .map(|(ordinal, parameter)| (u32::try_from(ordinal).expect("fixture value fits u32"), parameter))
+        .map(|(ordinal, parameter)| {
+            (
+                u32::try_from(ordinal).expect("fixture value fits u32"),
+                parameter,
+            )
+        })
         .collect()
 }
 

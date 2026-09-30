@@ -10,7 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::{
     active_brep_face_matches_source, bind_historical_entity_versions,
@@ -1424,7 +1424,8 @@ fn reverse_history_builds_complete_entity_version_maps() {
                 changes: vec![AsmEntityChange {
                     id: format!("change-{node_index}"),
                     parent: board_id,
-                    byte_offset: u64::try_from(node_index).expect("fixture reference is nonnegative"),
+                    byte_offset: u64::try_from(node_index)
+                        .expect("fixture reference is nonnegative"),
                     kind: match (old_ref, new_ref) {
                         (Some(old), Some(new)) => AsmEntityChangeKind::Update { old, new },
                         (None, Some(new)) => AsmEntityChangeKind::Insert { new },

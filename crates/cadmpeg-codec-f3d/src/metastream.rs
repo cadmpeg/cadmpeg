@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Shared Fusion `MetaStream` segment framing.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -621,7 +621,7 @@ pub(crate) fn parse(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::{MetaStream, RecordIndexEntry};
     use crate::test_support::streams_test::{design_metastream, design_metastream_with_records};
@@ -819,11 +819,13 @@ use cadmpeg_core::decode::{u64_from_index};
         lp_utf16(&mut bytes, "bbbbbbbb-cccc-dddd-eeee-ffffffffffff");
         bytes.extend_from_slice(&2u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
-        let retained_before_urn = u64_from_index("ACT".len()
-            + "00000000-0000-0000-0000-000000000000".len()
-            + "FusionACTSegmentType".len()
-            + "Fusion".len()
-            + "11111111-2222-3333-4444-555555555555".len());
+        let retained_before_urn = u64_from_index(
+            "ACT".len()
+                + "00000000-0000-0000-0000-000000000000".len()
+                + "FusionACTSegmentType".len()
+                + "Fusion".len()
+                + "11111111-2222-3333-4444-555555555555".len(),
+        );
         let error = refused(&bytes, u64::MAX, retained_before_urn);
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1111,13 +1113,17 @@ use cadmpeg_core::decode::{u64_from_index};
 
         // Every reported offset addresses the field it names.
         let string_at = |offset: u64, length: usize| {
-            std::str::from_utf8(&bytes[usize::try_from(offset).expect("fixture offset fits address space")..usize::try_from(offset).expect("fixture offset fits address space") + length])
-                .expect("ASCII field")
-                .to_owned()
+            std::str::from_utf8(
+                &bytes[usize::try_from(offset).expect("fixture offset fits address space")
+                    ..usize::try_from(offset).expect("fixture offset fits address space") + length],
+            )
+            .expect("ASCII field")
+            .to_owned()
         };
         let u32_at = |offset: u64| {
             u32::from_le_bytes(
-                bytes[usize::try_from(offset).expect("fixture offset fits address space")..usize::try_from(offset).expect("fixture offset fits address space") + 4]
+                bytes[usize::try_from(offset).expect("fixture offset fits address space")
+                    ..usize::try_from(offset).expect("fixture offset fits address space") + 4]
                     .try_into()
                     .expect("4-byte field"),
             )
@@ -1144,7 +1150,9 @@ use cadmpeg_core::decode::{u64_from_index};
             {
                 assert_eq!(
                     u64::from_le_bytes(
-                        bytes[usize::try_from(*offset).expect("fixture offset fits address space")..usize::try_from(*offset).expect("fixture offset fits address space") + 8]
+                        bytes[usize::try_from(*offset).expect("fixture offset fits address space")
+                            ..usize::try_from(*offset).expect("fixture offset fits address space")
+                                + 8]
                             .try_into()
                             .expect("8-byte field")
                     ),

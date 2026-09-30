@@ -18,7 +18,15 @@ fn body_transform_reference_refuses_32_bit_wrap() {
         Record {
             index: 1,
             name: "body".to_owned(),
-            tokens: vec![Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(-1), Token::Ref(4_294_967_296)].into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(4_294_967_296),
+            ]
+            .into(),
             offset: 0,
             len: 0,
         },
@@ -26,7 +34,8 @@ fn body_transform_reference_refuses_32_bit_wrap() {
     let transforms = BTreeMap::from([("f3d:brep:entity#1".to_owned(), Transform::identity())]);
     let mut bytes = Vec::new();
     patch_framed_geometry(
-        &mut bytes, &records,
+        &mut bytes,
+        &records,
         &GeometryEdits {
             positions: &BTreeMap::new(),
             lines: &BTreeMap::new(),
@@ -53,7 +62,9 @@ fn body_transform_reference_refuses_32_bit_wrap() {
             face_sidedness: &BTreeMap::new(),
             tolerant_edges: &BTreeMap::new(),
             tolerant_vertices: &BTreeMap::new(),
-        }, 1.0,
-    ).expect("an unaddressable reference names no transform record");
+        },
+        1.0,
+    )
+    .expect("an unaddressable reference names no transform record");
     assert!(bytes.is_empty());
 }

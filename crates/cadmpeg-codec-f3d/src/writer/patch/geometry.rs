@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Geometry record patchers and the `patch_*_definition` byte-patcher family.
 
-use cadmpeg_core::convert::{truncate_f64_to_u8};
+use cadmpeg_core::convert::truncate_f64_to_u8;
 
 use std::collections::BTreeMap;
 
@@ -794,7 +794,9 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
     let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
     let [Some(red), Some(green), Some(blue)] = encoded else {
         return Err(CodecError::NotImplemented(format!(
-            "{} record {} requires exactly representable 8-bit RGB channels", record.head(), record.index
+            "{} record {} requires exactly representable 8-bit RGB channels",
+            record.head(),
+            record.index
         )));
     };
     let encoded = [red, green, blue];

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::compact_feature_reference;
 use super::exact_legacy_mirror_scope_count;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
@@ -670,10 +670,7 @@ fn direct_utf16_role_until_tail(
         return Ok(None);
     };
     let count = (end - start) / 2;
-    ctx.charge_retained(
-        u64_from_index(count),
-        "f3d component carrier role text",
-    )?;
+    ctx.charge_retained(u64_from_index(count), "f3d component carrier role text")?;
     let mut role = String::new();
     role.try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit("f3d component carrier role allocation", 0, 1))?;

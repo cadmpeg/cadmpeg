@@ -8,7 +8,7 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
-use cadmpeg_core::convert::{f32_from_f64};
+use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use crate::records::references::DesignVisualToken;
@@ -361,7 +361,11 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
 
 fn page_logical(logical: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&u32::try_from(PAGE_SIZE).map_err(|_| CodecError::malformed("Protein page size exceeds u32"))?.to_le_bytes());
+    bytes.extend_from_slice(
+        &u32::try_from(PAGE_SIZE)
+            .map_err(|_| CodecError::malformed("Protein page size exceeds u32"))?
+            .to_le_bytes(),
+    );
     bytes.extend_from_slice(&[0xff; 8]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
     let first = logical.len().min(PAGE_SIZE - 4);
@@ -1679,7 +1683,8 @@ fn body_node_candidate(
     const APPEARANCE_MARKER: &str = "C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C";
     let Some(marker) = strings[..=visual_index]
         .iter()
-        .rposition(|(_, value)| value == APPEARANCE_MARKER) else {
+        .rposition(|(_, value)| value == APPEARANCE_MARKER)
+    else {
         return Ok(None);
     };
     // The marker is preceded by at most three candidate strings; a marker
@@ -1697,7 +1702,11 @@ fn body_node_candidate(
         folded
             .try_reserve(candidate.len())
             .map_err(|_| ctx.refuse_codec_limit(operation, 0, length))?;
-        folded.extend(candidate.chars().map(|character| character.to_ascii_lowercase()));
+        folded.extend(
+            candidate
+                .chars()
+                .map(|character| character.to_ascii_lowercase()),
+        );
         let Some(&entity) = nodes.get(&folded) else {
             continue;
         };

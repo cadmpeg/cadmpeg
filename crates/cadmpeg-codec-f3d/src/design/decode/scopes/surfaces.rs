@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact surface extend, offset, boundary, stitch and ruled-surface operation scopes.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
@@ -520,10 +520,9 @@ pub(super) fn exact_ruled_surface_operation(
                 return None;
             }
             cursor = cursor.checked_add(4)?;
-            if let Err(error) = ctx.charge_collection_items(
-                u64_from_index(count),
-                "f3d ruled surface references",
-            ) {
+            if let Err(error) =
+                ctx.charge_collection_items(u64_from_index(count), "f3d ruled surface references")
+            {
                 return Some(Err(error));
             }
             let mut records = Vec::new();

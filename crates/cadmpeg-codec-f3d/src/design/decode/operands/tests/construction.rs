@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::construction_operand_group_is_retained;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
@@ -296,7 +296,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(group.paired_byte_offset, u64_from_index(paired_at));
 
     let mut whole_body_bytes = bytes.clone();
-    whole_body_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+    whole_body_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0004_0000_0000u64.to_le_bytes());
     let whole_body =
         parse_construction_operand_group(&whole_body_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -326,7 +328,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         parse_construction_operand_group(&flagged, &scope, 0, &RecordFrame::from(&record))
             .complete()
             .expect("operation-flagged counted operand group");
-    assert_eq!(flagged.frame.member_count_offset, u64_from_index(flagged_count_at));
+    assert_eq!(
+        flagged.frame.member_count_offset,
+        u64_from_index(flagged_count_at)
+    );
     assert_eq!(
         flagged
             .members()
@@ -338,7 +343,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(flagged.role(), DesignOperandRole::BODIES_B);
 
     let mut start_face_bytes = bytes.clone();
-    start_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+    start_face_bytes[usize::try_from(group.role_offset())
+        .expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0005_0000_0000u64.to_le_bytes());
     let retained_role_five =
         parse_construction_operand_group(&start_face_bytes, &scope, 0, &RecordFrame::from(&record))
@@ -418,7 +425,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             });
     }
     let mut to_face_bytes = bytes.clone();
-    to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
+    to_face_bytes[usize::try_from(group.role_offset()).expect("fixture offset fits address space")
+        ..usize::try_from(group.role_offset()).expect("fixture offset fits address space") + 8]
         .copy_from_slice(&0x0000_0012_0000_0000u64.to_le_bytes());
     let mut legacy_to_face = parse_construction_operand_group(
         &to_face_bytes,
@@ -576,7 +584,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignExtrudeFaceRole::Termination
         ))
     );
-    assert_eq!(auxiliary.paired_byte_offset, u64_from_index(auxiliary_paired_at));
+    assert_eq!(
+        auxiliary.paired_byte_offset,
+        u64_from_index(auxiliary_paired_at)
+    );
 
     let mut split_scope = scope.clone();
     split_scope

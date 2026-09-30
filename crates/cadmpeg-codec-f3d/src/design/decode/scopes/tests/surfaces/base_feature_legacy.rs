@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::u64_from_index;
-use cadmpeg_test_support::bytes::put_u32;
-use cadmpeg_test_support::bytes::put_u64;
 use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
+use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_test_support::bytes::put_u32;
+use cadmpeg_test_support::bytes::put_u64;
 
 #[test]
 fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
@@ -74,8 +74,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             kind_length,
             crate::layout::base_feature_class_377_prefix::KIND_LENGTH_VALUE,
         );
-        bytes[kind..feature_ordinal]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32")[4..]);
+        bytes[kind..feature_ordinal].copy_from_slice(
+            &crate::bytes::lp_utf16_bytes("Base Feature")
+                .expect("fixture UTF-16 code-unit count fits u32")[4..],
+        );
         put_u32(bytes, feature_ordinal, ordinal);
 
         let mut scope = DesignParameterScope::empty(
@@ -150,9 +152,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         bytes[compact::AUXILIARY_GROUP_MARKER] = 1;
         put_u64_reference(&mut bytes, compact::AUXILIARY_REFERENCE_MARKER, 202);
         bytes[compact::ENVELOPE_GUID_CODE_UNIT_COUNT..compact::ZERO_RUN_AFTER_GUID]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes(
-                "fcec56e3-832f-4468-88a4-d710e62e629f",
-            ).expect("fixture UTF-16 code-unit count fits u32"));
+            .copy_from_slice(
+                &crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
+                    .expect("fixture UTF-16 code-unit count fits u32"),
+            );
         let _ = put_kind_tail(
             &mut bytes,
             (
@@ -269,12 +272,18 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         &[u64_from_index(compact::AUXILIARY_RECORD)]
     );
     assert_eq!(*scope_reference, 196);
-    assert_eq!(*scope_reference_offset, u64_from_index(compact::SCOPE_REFERENCE));
+    assert_eq!(
+        *scope_reference_offset,
+        u64_from_index(compact::SCOPE_REFERENCE)
+    );
     assert_eq!(
         envelope_guid.as_str(),
         "fcec56e3-832f-4468-88a4-d710e62e629f"
     );
-    assert_eq!(*envelope_guid_offset, u64_from_index(compact::ENVELOPE_GUID));
+    assert_eq!(
+        *envelope_guid_offset,
+        u64_from_index(compact::ENVELOPE_GUID)
+    );
     assert_eq!(
         serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
         true
@@ -362,9 +371,10 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
         304,
     );
     expanded_bytes[expanded::ENVELOPE_GUID_CODE_UNIT_COUNT..expanded::ZERO_RUN_AFTER_GUID]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes(
-            "00000000-0000-0000-0000-000000000000",
-        ).expect("fixture UTF-16 code-unit count fits u32"));
+        .copy_from_slice(
+            &crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000")
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
     let mut expanded_scope = put_kind_tail(
         &mut expanded_bytes,
         (

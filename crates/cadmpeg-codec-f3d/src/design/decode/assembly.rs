@@ -483,7 +483,7 @@ fn exact_legacy_as_built_face_selection(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::exact_legacy_as_built_face_selection;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};

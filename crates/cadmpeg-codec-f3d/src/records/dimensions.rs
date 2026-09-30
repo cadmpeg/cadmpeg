@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Design dimension recipe records: loci, annotation frames and presentation frames.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::Located;
 use super::recipes::ConstructionRecipeKind;
@@ -967,7 +967,9 @@ impl Serialize for AnnotationOperands<'_> {
                 .enumerate()
                 .map(|(ordinal, operand)| DesignDimensionAnnotationOperand {
                     geometry_record_index: operand.geometry_record_index,
-                    geometry_reference_offset: self.0.byte_offset + 25 + u64_from_index(ordinal) * 15,
+                    geometry_reference_offset: self.0.byte_offset
+                        + 25
+                        + u64_from_index(ordinal) * 15,
                     role: operand.role,
                     role_offset: self.0.byte_offset + 35 + u64_from_index(ordinal) * 15,
                 }),

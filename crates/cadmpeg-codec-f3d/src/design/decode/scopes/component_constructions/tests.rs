@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_component_insert_construction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -195,7 +195,10 @@ fn run_component_insert_scope_fixture(
     assert_eq!(construction.relation_record_index, 20);
     assert_eq!(construction.carrier_record_index, 10);
     assert_eq!(construction.neutron_role, role);
-    assert_eq!(construction.neutron_role_offset, u64_from_index(role_at + 4));
+    assert_eq!(
+        construction.neutron_role_offset,
+        u64_from_index(role_at + 4)
+    );
     assert_eq!(*construction.transform(), transform.try_into().unwrap());
     assert_eq!(
         construction.transform_offset(),
@@ -437,7 +440,9 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let component_guid = "11111111-2222-3333-4444-555555555555";
@@ -573,7 +578,9 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let component_guid = "11111111-2222-3333-4444-555555555555";
@@ -713,7 +720,9 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let component_guid = "11111111-2222-3333-4444-555555555555";
@@ -846,7 +855,9 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         bytes.extend_from_slice(&record_index.to_le_bytes());
     };
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let component_guid = "11111111-2222-3333-4444-555555555555";
@@ -986,12 +997,21 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
 
     let external_role = "cccccccc-dddd-eeee-ffff-000000000000_urn:adsk.test:asset";
     let mut external_bytes = bytes[..155].to_vec();
-    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role).expect("fixture UTF-16 code-unit count fits u32"));
+    external_bytes.extend_from_slice(
+        &crate::bytes::lp_utf16_bytes(external_role)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     external_bytes.extend_from_slice(&[0, 4, 0, 0, 0, 0, 1, 0, 0, 0]);
     external_bytes.extend_from_slice(&bytes[241..525]);
-    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role).expect("fixture UTF-16 code-unit count fits u32"));
+    external_bytes.extend_from_slice(
+        &crate::bytes::lp_utf16_bytes(external_role)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     external_bytes.extend_from_slice(&bytes[601..607]);
-    external_bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(external_role).expect("fixture UTF-16 code-unit count fits u32"));
+    external_bytes.extend_from_slice(
+        &crate::bytes::lp_utf16_bytes(external_role)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     external_bytes.extend_from_slice(&bytes[683..695]);
     let carrier_shift = external_bytes.len() - 695;
     external_bytes.extend_from_slice(&bytes[695..]);
@@ -1055,16 +1075,24 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
             ..carrier_at
                 + crate::layout::component_insert_carrier_334_prefix::COMPONENT_IDENTITY
                 + 76]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32"));
+            .copy_from_slice(
+                &crate::bytes::lp_utf16_bytes(component_guid)
+                    .expect("fixture UTF-16 code-unit count fits u32"),
+            );
         let role_at = carrier_at + crate::layout::component_insert_carrier_334_prefix::NEUTRON_ROLE;
         bytes.extend(role.encode_utf16().flat_map(u16::to_le_bytes));
         bytes.extend_from_slice(&[0, 0x21, 0, 0, 0, 0, 1, 0, 0, 0]);
-        bytes.extend_from_slice(&crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend_from_slice(
+            &crate::bytes::lp_utf16_bytes(component_guid)
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
         assert_eq!(
             role_at
                 + role.encode_utf16().count() * 2
                 + 10
-                + crate::bytes::lp_utf16_bytes(component_guid).expect("fixture UTF-16 code-unit count fits u32").len(),
+                + crate::bytes::lp_utf16_bytes(component_guid)
+                    .expect("fixture UTF-16 code-unit count fits u32")
+                    .len(),
             bytes.len()
         );
 
@@ -1087,8 +1115,10 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
         bytes[scope_at + 34..scope_at + 38].copy_from_slice(&20_u32.to_le_bytes());
         if frame_length == 257 {
             bytes[scope_at + 44..scope_at + 46].copy_from_slice(&[1, 1]);
-            bytes[scope_at + 46..scope_at + 122]
-                .copy_from_slice(&crate::bytes::lp_utf16_bytes(null_guid).expect("fixture UTF-16 code-unit count fits u32"));
+            bytes[scope_at + 46..scope_at + 122].copy_from_slice(
+                &crate::bytes::lp_utf16_bytes(null_guid)
+                    .expect("fixture UTF-16 code-unit count fits u32"),
+            );
             bytes[scope_at + 125..scope_at + 129].copy_from_slice(&1_u32.to_le_bytes());
             bytes[scope_at + 129] = 1;
             bytes[scope_at + 130..scope_at + 134].copy_from_slice(&20_u32.to_le_bytes());
@@ -1100,8 +1130,10 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
                 let at = scope_at + 46 + ordinal * 8;
                 bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
             }
-            bytes[scope_at + 174..scope_at + 250]
-                .copy_from_slice(&crate::bytes::lp_utf16_bytes(null_guid).expect("fixture UTF-16 code-unit count fits u32"));
+            bytes[scope_at + 174..scope_at + 250].copy_from_slice(
+                &crate::bytes::lp_utf16_bytes(null_guid)
+                    .expect("fixture UTF-16 code-unit count fits u32"),
+            );
             bytes[scope_at + 253..scope_at + 257].copy_from_slice(&1_u32.to_le_bytes());
             bytes[scope_at + 257] = 1;
             bytes[scope_at + 258..scope_at + 262].copy_from_slice(&20_u32.to_le_bytes());
@@ -1203,7 +1235,8 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 fn class_414_component_insert_admits_shifted_identity_and_matrix_prologues() {
     let relation_record_index = 20_u32;
     let occurrence_identity = 17_u64;
-    let null_guid = crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000").expect("fixture UTF-16 code-unit count fits u32");
+    let null_guid = crate::bytes::lp_utf16_bytes("00000000-0000-0000-0000-000000000000")
+        .expect("fixture UTF-16 code-unit count fits u32");
 
     let mut identity = vec![0_u8; 267];
     identity[21..29].copy_from_slice(&occurrence_identity.to_le_bytes());

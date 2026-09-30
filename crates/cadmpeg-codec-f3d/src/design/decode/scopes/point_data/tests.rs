@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_work_point_construction as exact_work_point_construction_with_ctx;
 use super::POINT_DATA_TYPE_GUID;
@@ -84,7 +84,9 @@ fn work_point_stream(
     bytes.extend_from_slice(&12u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 11]);
 
-    bytes.extend_from_slice(&(u32::try_from(class_tag.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(class_tag.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     bytes.extend_from_slice(class_tag.as_bytes());
     bytes.extend_from_slice(&55u32.to_le_bytes());
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -220,7 +222,8 @@ fn work_point_position_does_not_depend_on_the_segment_local_class_tag() {
             "class tag {class_tag}"
         );
         assert_eq!(
-            frame.position_offset, u64_from_index(position_at),
+            frame.position_offset,
+            u64_from_index(position_at),
             "class tag {class_tag}"
         );
     }
@@ -265,7 +268,8 @@ fn work_point_position_reads_every_class_version_that_stores_one() {
             "class version {version}"
         );
         assert_eq!(
-            frame.position_offset, u64_from_index(position_at),
+            frame.position_offset,
+            u64_from_index(position_at),
             "class version {version}"
         );
     }

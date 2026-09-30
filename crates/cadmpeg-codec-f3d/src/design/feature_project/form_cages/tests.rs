@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use super::{
     distinct_form_cage_ids, form_cage_lists, form_cage_objects, form_cage_serializers,

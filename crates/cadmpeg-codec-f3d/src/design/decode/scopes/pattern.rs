@@ -2,7 +2,7 @@
 //! Exact rectangular and circular pattern constructions and their axes.
 
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_u32};
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
@@ -60,7 +60,8 @@ pub(super) fn exact_rectangular_pattern_construction(
         }
         let exact_count = |value: f64| {
             (value > 0.0 && value <= f64::from(u32::MAX) && value.fract() == 0.0)
-                .then(|| truncate_f64_to_u32(value)).flatten()
+                .then(|| truncate_f64_to_u32(value))
+                .flatten()
         };
         let u_count_value = exact_count(u_count.evaluated_value().get())?;
         let v_count_value = exact_count(v_count.evaluated_value().get())?;
@@ -282,10 +283,9 @@ fn exact_rectangular_pattern_instances(
         let [run] = runs.as_slice() else {
             return None;
         };
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(count),
-            "f3d rectangular pattern instances",
-        ) {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(count), "f3d rectangular pattern instances")
+        {
             return Some(Err(error));
         }
         let mut instances = Vec::new();

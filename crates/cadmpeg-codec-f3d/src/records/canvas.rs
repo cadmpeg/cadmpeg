@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::references::DesignClassTag;
 use cadmpeg_ir::features::{FeatureUnitPlaneFrame, FinitePoint3};

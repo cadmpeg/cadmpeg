@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
@@ -185,7 +185,10 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         [0.0, 0.0, 1.0],
     );
-    assert_eq!(construction.direction_offset, u64_from_index(position_at + 24));
+    assert_eq!(
+        construction.direction_offset,
+        u64_from_index(position_at + 24)
+    );
     assert_f64_array(
         construction
             .point_parameters
@@ -378,7 +381,10 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         "8e685642-4d68-4909-96d0-0dd4437491b6"
     );
     assert_eq!(selection.identity_record_index, 103);
-    assert_eq!(selection.identity_record_offset, u64_from_index(identity_at));
+    assert_eq!(
+        selection.identity_record_offset,
+        u64_from_index(identity_at)
+    );
     assert_eq!(selection.primary_identity, 246);
     assert_eq!(
         selection.primary_identity_offset,

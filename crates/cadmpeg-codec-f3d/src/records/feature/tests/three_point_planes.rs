@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::feature::work_geometry::{
     DesignVertexRecipe, DesignVertexResolution as Resolution, DesignWorkPlaneConstruction as Plane,
@@ -29,7 +29,8 @@ fn three_point_planes_reject_every_partial_resolution_at_both_admission_routes()
         let mut inputs = inputs();
         for (ordinal, input) in inputs.iter_mut().enumerate() {
             if mask & (1 << ordinal) != 0 {
-                input.resolution = Resolution::new(4, i64::try_from(ordinal).expect("fixture value fits i64"));
+                input.resolution =
+                    Resolution::new(4, i64::try_from(ordinal).expect("fixture value fits i64"));
             }
         }
         let wire = serde_json::json!({"kind": "three_point", "placement_record_index": 9, "inputs": inputs});

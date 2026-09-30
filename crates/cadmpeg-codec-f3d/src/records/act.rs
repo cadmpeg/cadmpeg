@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! ACT registry records: tables, channels, entities and the root component and layout.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;

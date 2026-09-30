@@ -2,7 +2,7 @@
 //! Synthetic Design and ACT MetaStream/BulkStream payloads.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::test_support::{
     indexed_header, lp_ascii, lp_utf16, push_marked_reference, push_reference_u64,
@@ -43,7 +43,10 @@ fn segment_metastream(
     lp_ascii(&mut out, short_name);
     out.extend_from_slice(&0u32.to_le_bytes());
     let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
-    out.extend_from_slice(&(u32::try_from(asset_guid.encode_utf16().count()).expect("fixture value fits u32")).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(asset_guid.encode_utf16().count()).expect("fixture value fits u32"))
+            .to_le_bytes(),
+    );
     for unit in asset_guid.encode_utf16() {
         out.extend_from_slice(&unit.to_le_bytes());
     }
@@ -52,13 +55,17 @@ fn segment_metastream(
     lp_ascii(&mut out, full_name);
     lp_ascii(&mut out, add_in);
     out.extend_from_slice(&[0; 8]);
-    out.extend_from_slice(&(u32::try_from(types.len()).expect("fixture value fits u32")).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(types.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (type_guid, base_type_guid, version, module, entity_ids) in types {
         lp_ascii(&mut out, type_guid);
         lp_ascii(&mut out, base_type_guid);
         out.extend_from_slice(&version.to_le_bytes());
         lp_ascii(&mut out, module);
-        out.extend_from_slice(&(u32::try_from(entity_ids.len()).expect("fixture value fits u32")).to_le_bytes());
+        out.extend_from_slice(
+            &(u32::try_from(entity_ids.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for entity_id in *entity_ids {
             out.extend_from_slice(&entity_id.to_le_bytes());
         }
@@ -67,7 +74,9 @@ fn segment_metastream(
     // index, then the next-entity counter, the flag, and an empty property
     // block.
     out.extend_from_slice(&0_u32.to_le_bytes());
-    out.extend_from_slice(&(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes());
+    out.extend_from_slice(
+        &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (entity_id, bulk_offset) in records {
         out.extend_from_slice(&entity_id.to_le_bytes());
         out.extend_from_slice(&bulk_offset.to_le_bytes());
@@ -1302,11 +1311,15 @@ pub(super) fn generated_design_surface_stitch_bulkstream() -> (Vec<u8>, Vec<(u64
     group.extend_from_slice(&1_u32.to_le_bytes());
     let property_name = b"SurfaceStitchGapSettingX";
     assert_eq!(property_name.len(), 24);
-    group.extend_from_slice(&(u32::try_from(property_name.len()).expect("fixture value fits u32")).to_le_bytes());
+    group.extend_from_slice(
+        &(u32::try_from(property_name.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     group.extend_from_slice(property_name);
     let property_type = b"IntrinsicMetaTypeuint64";
     assert_eq!(property_type.len(), 23);
-    group.extend_from_slice(&(u32::try_from(property_type.len()).expect("fixture value fits u32")).to_le_bytes());
+    group.extend_from_slice(
+        &(u32::try_from(property_type.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     group.extend_from_slice(property_type);
     group.extend_from_slice(&[0; 8]);
     assert_eq!(group.len(), 88);

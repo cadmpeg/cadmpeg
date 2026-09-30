@@ -10,7 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};
 
@@ -1114,7 +1114,11 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             .expect("compound component curve")
             .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
             cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                cadmpeg_ir::math::Point3::new(f64_from_index(ordinal).expect("fixture index is exact in f64"), -1.0, 2.0),
+                cadmpeg_ir::math::Point3::new(
+                    f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                    -1.0,
+                    2.0,
+                ),
                 cadmpeg_ir::math::Vector3::new(2.0, 3.0, -4.0)
                     .unit()
                     .unwrap(),
@@ -1165,7 +1169,10 @@ fn generated_compound_intcurve_decodes_and_writes_source_less() {
             panic!("compound line component was not lowered to NURBS")
         };
         assert_eq!(curve.degree(), 1);
-        let range = [f64_from_index(ordinal).expect("fixture index is exact in f64") * 0.5, f64_from_index(ordinal + 1).expect("fixture index is exact in f64") * 0.5];
+        let range = [
+            f64_from_index(ordinal).expect("fixture index is exact in f64") * 0.5,
+            f64_from_index(ordinal + 1).expect("fixture index is exact in f64") * 0.5,
+        ];
         assert_eq!(
             curve.knots().as_slice(),
             [range[0], range[0], range[1], range[1]]
@@ -1346,7 +1353,9 @@ fn generated_embedded_offset_supports_decode_and_write_source_less() {
                 (*context_parameter_range) = [-2.0, 5.0];
                 for (side, discontinuities) in (*context_discontinuities).iter_mut().enumerate() {
                     for (ordinal, value) in discontinuities.iter_mut().enumerate() {
-                        *value = 0.125 * f64_from_index(side + ordinal + 1).expect("fixture index is exact in f64");
+                        *value = 0.125
+                            * f64_from_index(side + ordinal + 1)
+                                .expect("fixture index is exact in f64");
                     }
                 }
                 *discontinuity_flag = false;

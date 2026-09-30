@@ -9,11 +9,9 @@ fn refuses_wrapped_offset(
     use crate::records::sketch_relations::SketchRelationDefinition;
 
     let payload = super::relation_record(&[(300, 0)], &[], 201, 1, &[300]);
-    let mut parsed = super::tested_parse_classed_sketch_relation(
-        &payload,
-        super::SketchRelationClass::Plain,
-    )
-    .expect("plain fixture relation parses");
+    let mut parsed =
+        super::tested_parse_classed_sketch_relation(&payload, super::SketchRelationClass::Plain)
+            .expect("plain fixture relation parses");
     mutate(&mut parsed);
     let header = DesignRecordHeader {
         id: "f3d:BulkStream.dat:design-record-header#0".to_owned(),
@@ -26,11 +24,19 @@ fn refuses_wrapped_offset(
     crate::test_support::with_decode_context(|ctx| {
         let mut output = Vec::new();
         let error = super::admit_sketch_relation(
-            ctx, &mut output, "BulkStream.dat", &header, &payload, parsed, definition,
+            ctx,
+            &mut output,
+            "BulkStream.dat",
+            &header,
+            &payload,
+            parsed,
+            definition,
         )
         .expect_err("offset above u32 must be refused before it wraps");
-        assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.operation == operation));
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == operation)
+        );
         assert!(output.is_empty());
     });
 }
@@ -57,10 +63,14 @@ fn sketch_relation_return_offset_refuses_u32_wrap() {
 #[cfg(target_pointer_width = "64")]
 fn sketch_relation_auxiliary_offset_refuses_u32_wrap() {
     refuses_wrapped_offset(
-        |parsed| parsed.auxiliary_references.push(crate::records::identity::Located {
-            value: 300,
-            offset: 1_usize << 32,
-        }),
+        |parsed| {
+            parsed
+                .auxiliary_references
+                .push(crate::records::identity::Located {
+                    value: 300,
+                    offset: 1_usize << 32,
+                });
+        },
         "f3d sketch relation auxiliary offset",
     );
 }

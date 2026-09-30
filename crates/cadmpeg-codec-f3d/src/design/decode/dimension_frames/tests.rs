@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{
     contiguous_i32_program, find_dimension_locus_groups, find_dimension_locus_pair,
@@ -349,7 +349,10 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     assert_eq!(references[0].selector, 1);
     assert_eq!(references[0].selector_offset, 1_022);
     assert_eq!(references[0].token, "13");
-    assert_eq!(references[0].token_offset, 1_000 + u64_from_index(first_token_at));
+    assert_eq!(
+        references[0].token_offset,
+        1_000 + u64_from_index(first_token_at)
+    );
     assert_eq!(references[0].design_reference, 331);
     assert_eq!(
         references[0].design_reference_offset,
@@ -358,7 +361,10 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     assert_eq!(references[1].selector, 2);
     assert_eq!(references[1].selector_offset, 1_048);
     assert_eq!(references[1].token, "9");
-    assert_eq!(references[1].token_offset, 1_000 + u64_from_index(second_token_at));
+    assert_eq!(
+        references[1].token_offset,
+        1_000 + u64_from_index(second_token_at)
+    );
     assert_eq!(references[1].design_reference, 303);
     assert_eq!(
         references[1].design_reference_offset,
@@ -1287,7 +1293,10 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
             .collect::<Vec<_>>(),
         [376, 354]
     );
-    assert_eq!(frame.paired_byte_offset(), u64_from_index(paired_byte_offset));
+    assert_eq!(
+        frame.paired_byte_offset(),
+        u64_from_index(paired_byte_offset)
+    );
     assert_eq!(frame.owner_reference, 201);
 
     let leading = parse_dimension_annotation_frame(
@@ -1366,7 +1375,10 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     assert_eq!(frame.class_tag.as_str(), "314");
     assert_eq!(frame.record_index, 332);
     assert_eq!(frame.frame_length, u64_from_index(paired_offset));
-    assert_eq!(frame.presentation_byte_offset, u64_from_index(presentation_offset));
+    assert_eq!(
+        frame.presentation_byte_offset,
+        u64_from_index(presentation_offset)
+    );
     assert_eq!(frame.presentation_bytes, [0xaa, 0xbb, 0xcc]);
     assert_eq!(frame.operands[0].geometry_record_index.get(), 306);
     assert_eq!(frame.operands[1].geometry_record_index.get(), 331);

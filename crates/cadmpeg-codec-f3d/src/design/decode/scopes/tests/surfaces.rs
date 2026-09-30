@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
-
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 use crate::design::decode::scopes::surfaces::{
@@ -372,7 +371,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     ];
     for guid in related_guids {
-        let encoded = crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
+        let encoded =
+            crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
         snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
         cursor += encoded.len();
     }
@@ -397,7 +397,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     cursor += 4;
     let third_guid = "00000000-0000-0000-0000-000000000000";
-    let encoded = crate::bytes::lp_utf16_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
+    let encoded =
+        crate::bytes::lp_utf16_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     cursor += 3;
@@ -410,7 +411,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
     cursor += 4;
-    let encoded = crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32");
+    let encoded = crate::bytes::lp_utf16_bytes("Base Feature")
+        .expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
@@ -637,7 +639,9 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         let frame_length = 262 + 52 * body_count;
         let mut bytes = vec![0u8; frame_length];
         bytes[19] = 1;
-        bytes[20..24].copy_from_slice(&(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[20..24].copy_from_slice(
+            &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let mut cursor = 24;
         for ordinal in 0..body_count {
             let value = 101 + u64_from_index(ordinal);
@@ -652,11 +656,15 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             cursor += 15;
         }
         bytes[cursor] = 1;
-        bytes[cursor + 7..cursor + 11].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[cursor + 7..cursor + 11].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 11;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         bytes[cursor] = 0;
@@ -664,11 +672,15 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         bytes[cursor] = 1;
         bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
         cursor += 11;
-        bytes[cursor..cursor + 4].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[cursor..cursor + 4].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 4;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         let mut scope = DesignParameterScope::empty(
@@ -840,7 +852,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     let frame_length = 261 + 52 * body_count;
     let mut bytes = vec![0u8; frame_length];
     bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+    bytes[20..24].copy_from_slice(
+        &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let mut cursor = 24;
     for value in [101u64, 102] {
         bytes[cursor] = 1;
@@ -853,7 +867,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         cursor += 15;
     }
     bytes[cursor] = 1;
-    bytes[cursor + 7..cursor + 11].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+    bytes[cursor + 7..cursor + 11].copy_from_slice(
+        &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     cursor += 11;
     for value in [201u32, 202] {
         bytes[cursor] = 1;
@@ -865,7 +881,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     bytes[cursor] = 1;
     bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
     cursor += 11;
-    bytes[cursor..cursor + 4].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+    bytes[cursor..cursor + 4].copy_from_slice(
+        &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     cursor += 4;
     for value in [401u32, 402] {
         bytes[cursor] = 1;
@@ -936,7 +954,9 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         let frame_length = 262 + 52 * body_count;
         let mut bytes = vec![0u8; frame_length];
         bytes[19] = 1;
-        bytes[20..24].copy_from_slice(&(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[20..24].copy_from_slice(
+            &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let mut cursor = 24;
         for ordinal in 0..body_count {
             let value = 101 + u64_from_index(ordinal);
@@ -951,11 +971,15 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
             cursor += 15;
         }
         bytes[cursor] = 1;
-        bytes[cursor + 7..cursor + 11].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[cursor + 7..cursor + 11].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 11;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         bytes[cursor] = 0;
@@ -963,11 +987,15 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         bytes[cursor] = 1;
         bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
         cursor += 11;
-        bytes[cursor..cursor + 4].copy_from_slice(&(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes());
+        bytes[cursor..cursor + 4].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 4;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         let mut scope = DesignParameterScope::empty(
@@ -1181,7 +1209,8 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
     bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
         .copy_from_slice(&202u32.to_le_bytes());
-    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f").expect("fixture UTF-16 code-unit count fits u32");
+    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
+        .expect("fixture UTF-16 code-unit count fits u32");
     bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
     bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
         .copy_from_slice(&class_377::REFERENCE_COUNT_VALUE.to_le_bytes());
@@ -1193,8 +1222,10 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         .copy_from_slice(&20u32.to_le_bytes());
     bytes[class_377::KIND_LENGTH..class_377::KIND]
         .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
-    bytes[class_377::KIND..class_377::FEATURE_ORDINAL]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature").expect("fixture UTF-16 code-unit count fits u32")[4..]);
+    bytes[class_377::KIND..class_377::FEATURE_ORDINAL].copy_from_slice(
+        &crate::bytes::lp_utf16_bytes("Base Feature")
+            .expect("fixture UTF-16 code-unit count fits u32")[4..],
+    );
     bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]
         .copy_from_slice(&1u32.to_le_bytes());
     bytes[class_377::PREVIOUS_HISTORY_STATE_ID..class_377::PREVIOUS_HISTORY_STATE_ID + 4]
@@ -1288,12 +1319,18 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         u64_from_index(class_377::PARAMETER_BODY_RECORD)
     );
     assert_eq!(*auxiliary_record, 202);
-    assert_eq!(*auxiliary_record_offset, u64_from_index(class_377::AUXILIARY_RECORD));
+    assert_eq!(
+        *auxiliary_record_offset,
+        u64_from_index(class_377::AUXILIARY_RECORD)
+    );
     assert_eq!(
         envelope_guid.as_str(),
         "fcec56e3-832f-4468-88a4-d710e62e629f"
     );
-    assert_eq!(*envelope_guid_offset, u64_from_index(class_377::ENVELOPE_GUID));
+    assert_eq!(
+        *envelope_guid_offset,
+        u64_from_index(class_377::ENVELOPE_GUID)
+    );
     assert_eq!(
         *tag_body_based_on_faces_offset,
         u64_from_index(class_377::TAG_BODY_BASED_ON_FACES_VALUE)

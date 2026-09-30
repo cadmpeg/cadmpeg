@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
@@ -851,7 +851,9 @@ pub(super) fn fixed_kind_path_operations(
                 operation_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::OPERATION),
                 section_shape:
                     crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                section_shape_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE),
+                section_shape_offset: u64_from_index(
+                    owner_pipe_start + fixed_pipe_layout::SECTION_SHAPE
+                ),
                 filled: true,
                 filled_offset: u64_from_index(owner_pipe_start + fixed_pipe_layout::FILLED),
                 values: crate::test_support::reals(owner_pipe_values),
@@ -894,9 +896,11 @@ pub(super) fn fixed_kind_path_operations(
         bytes.extend_from_slice(&legacy_pipe);
         let legacy_scalar_start = bytes.len();
         let legacy_values: [f64; 4] = [1.0, 1.0, 0.6, 0.15];
-        let first_record_index = 180 + u32::try_from(pair_ordinal).expect("fixture value fits u32") * 4;
+        let first_record_index =
+            180 + u32::try_from(pair_ordinal).expect("fixture value fits u32") * 4;
         for (ordinal, value) in legacy_values.into_iter().enumerate() {
-            let record_index = first_record_index + u32::try_from(ordinal).expect("fixture value fits u32");
+            let record_index =
+                first_record_index + u32::try_from(ordinal).expect("fixture value fits u32");
             let mut scalar = vec![0; 100];
             scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
             scalar[4..7].copy_from_slice(b"277");
@@ -952,10 +956,14 @@ pub(super) fn fixed_kind_path_operations(
             Some(DesignPathFeatureConstruction::Pipe(
                 crate::records::feature::path_features::DesignPipeConstruction {
                     operation: DesignExtrudeOperation::NewBody,
-                    operation_offset: u64_from_index(legacy_pipe_start + legacy_pipe_layout::OPERATION),
+                    operation_offset: u64_from_index(
+                        legacy_pipe_start + legacy_pipe_layout::OPERATION
+                    ),
                     section_shape:
                         crate::records::feature::surface_ops::DesignPipeSectionShape::Circular,
-                    section_shape_offset: u64_from_index(legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE),
+                    section_shape_offset: u64_from_index(
+                        legacy_pipe_start + legacy_pipe_layout::SECTION_SHAPE
+                    ),
                     filled: true,
                     filled_offset: u64_from_index(legacy_pipe_start + legacy_pipe_layout::FILLED),
                     values: crate::test_support::reals(legacy_values),

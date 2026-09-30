@@ -5,7 +5,7 @@
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args
 )]
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::exact_surface_trim_operation;
 use crate::records::feature::scope::DesignParameterScope;

@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_test_support::EditableDecodeResult;
 

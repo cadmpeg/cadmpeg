@@ -2,7 +2,7 @@
 #![cfg_attr(test, allow(clippy::needless_range_loop))]
 //! Project sketch constraint relations.
 
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
 
 use crate::design::dimensions::{
     exact_atomic_constraint, exact_coincident_loci, exact_offset_constraint, relation_kind_name,

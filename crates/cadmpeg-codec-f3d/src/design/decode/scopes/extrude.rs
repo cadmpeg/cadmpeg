@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact extrude admission frames.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::legacy_class_397;
 use super::legacy_class_415;
@@ -1143,7 +1143,10 @@ fn exact_current_extrude_prologue(
         ],
         first_side_target_ordinal,
         extent,
-        direction_face_extend_offsets: [u64_from_index(direction_offset), u64_from_index(face_extend_offset)],
+        direction_face_extend_offsets: [
+            u64_from_index(direction_offset),
+            u64_from_index(face_extend_offset),
+        ],
         direction_reversed,
         direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
@@ -1710,7 +1713,10 @@ fn exact_legacy_shifted_extrude_prologue(
             u64_from_index(side_extent_discriminator_offsets[1]),
         ],
         extent: Some(extent),
-        direction_face_extend_offsets: [u64_from_index(first_extent_offset), u64_from_index(second_extent_offset)],
+        direction_face_extend_offsets: [
+            u64_from_index(first_extent_offset),
+            u64_from_index(second_extent_offset),
+        ],
         direction_reversed,
         direction_reversed_offset: u64_from_index(direction_reversed_offset),
         solid_operation,
