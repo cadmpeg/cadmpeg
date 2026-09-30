@@ -270,9 +270,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     )
     .is_empty());
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::project_spatial_dimension_constraints(
-            Some(ctx),
-            &crate::design::dimensions::DimensionConstraintInputs {
+        crate::design::dimensions::project_spatial_dimension_constraints(ctx, &crate::design::dimensions::DimensionConstraintInputs {
                 placements: std::slice::from_ref(&placement),
                 parameters: std::slice::from_ref(&parameter),
                 owners: std::slice::from_ref(&owner),
@@ -285,11 +283,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
                 points: &points,
                 curves: &[],
                 entities: &[],
-            },
-            std::slice::from_ref(&spatial_sketch),
-            &spatial_entities,
-            0.0,
-        )
+            }, std::slice::from_ref(&spatial_sketch), &spatial_entities, 0.0)
         .map(|_| ())
     });
 }

@@ -277,7 +277,7 @@ fn assert_exact_pair_variant_refusal(
             _ => panic!("unsupported exact pair limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -449,7 +449,7 @@ fn assert_recipe_group_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation =>
@@ -492,7 +492,7 @@ fn assert_recipe_projection_refusal(operation: &'static str, dimension: Resource
             _ => panic!("unsupported recipe projection limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -532,7 +532,7 @@ fn assert_companion_projection_refusal(operation: &'static str, dimension: Resou
             _ => panic!("unsupported companion projection limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -614,7 +614,7 @@ fn parallel_group_parameter_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation =>
@@ -791,7 +791,7 @@ fn assert_native_auxiliary_refusal(
             _ => panic!("unsupported native auxiliary limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -830,7 +830,7 @@ fn assert_native_fallback_refusal(
             _ => panic!("unsupported native fallback limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -883,7 +883,7 @@ fn assert_exact_group_variant_refusal(
             _ => panic!("unsupported exact group limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -963,7 +963,7 @@ fn assert_radial_extension_refusal(operation: &'static str, dimension: ResourceD
             _ => panic!("unsupported radial extension limit"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation =>
             {
@@ -1139,7 +1139,7 @@ fn assert_projected_companion_refusal(kind: &str, operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation =>
@@ -1293,7 +1293,7 @@ fn exact_null_pair_constraint_reference_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation =>
@@ -1337,7 +1337,7 @@ fn exact_radial_parameter_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation =>
@@ -1480,12 +1480,7 @@ fn assert_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(
-            Some(&ctx),
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            1.0e-6,
-        ) {
+        match project_dimension_constraints(&ctx, &fixture.inputs(), std::slice::from_ref(&fixture.spatial), 1.0e-6) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension == ResourceDimension::CollectionItems =>
@@ -1562,7 +1557,7 @@ fn dimension_recipe_companion_index_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation =>
@@ -1605,13 +1600,13 @@ fn planar_dimension_output_refuses_collection_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = retain_planar_dimension_constraints(Some(&ctx), &[], &[], vec![constraint.clone()])
+    let error = retain_planar_dimension_constraints(&ctx, &[], &[], vec![constraint.clone()])
         .unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.operation == "f3d planar dimension output"
             && failure.dimension == ResourceDimension::CollectionItems));
     let output =
-        retain_planar_dimension_constraints(None, &[], &[], vec![constraint.clone()]).unwrap();
+        crate::test_support::with_decode_context(|decode_ctx| retain_planar_dimension_constraints(decode_ctx, &[], &[], vec![constraint.clone()])).unwrap();
     assert_eq!(output, [constraint]);
 }
 
@@ -1653,7 +1648,7 @@ fn assert_companion_refusal(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let pairs = [pair];
-    let result = container_only_dimension_companions(Some(&ctx), &pairs, &[], &[], &[], &[]);
+    let result = container_only_dimension_companions(&ctx, &pairs, &[], &[], &[], &[]);
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.operation == operation
             && failure.dimension == ResourceDimension::CollectionItems));
@@ -1706,7 +1701,7 @@ fn parameterized_offset_companion_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_dimension_constraints(Some(&ctx), &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
+        match project_dimension_constraints(&ctx, &inputs, &[], EPS_NATIVE_FALLBACK_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d parameterized offset companion" =>
             {
@@ -1755,7 +1750,7 @@ fn assert_counted_offset_refusal(
     }
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::dimensions::exact_counted_offset(Some(&ctx), &loci, &entities,
+        crate::design::dimensions::exact_counted_offset(&ctx, &loci, &entities,
             &std::collections::HashMap::new(), EPS_NATIVE_FALLBACK_LINEAR).transpose(),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == operation && failure.dimension == dimension

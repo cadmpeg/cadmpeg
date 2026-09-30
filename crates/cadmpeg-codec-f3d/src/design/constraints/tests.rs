@@ -103,7 +103,7 @@ fn constraint_index_refuses_each_collection_growth() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut index = std::collections::HashMap::new();
         assert!(matches!(
-            super::insert_constraint_index(Some(&ctx), &mut index, "input-key", 1, operation),
+            (&ctx).insert_hash_map(&mut index, "input-key", 1, operation).map(|_| ()),
             Err(CodecError::ResourceLimit(limit)) if limit.operation == operation
         ));
         assert!(index.is_empty());
@@ -211,14 +211,7 @@ fn assert_projected_constraint_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::project_sketch_constraints(
-            Some(&ctx),
-            &placements,
-            &[],
-            (&points, &[], &[]),
-            &relations,
-            &entities,
-        ) {
+        match super::project_sketch_constraints(&ctx, &placements, &[], (&points, &[], &[]), &relations, &entities) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected collection refusal at {operation}: {other:?}"),
@@ -238,14 +231,7 @@ fn assert_projected_constraint_retained_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::project_sketch_constraints(
-            Some(&ctx),
-            &placements,
-            &[],
-            (&points, &[], &[]),
-            &relations,
-            &entities,
-        ) {
+        match super::project_sketch_constraints(&ctx, &placements, &[], (&points, &[], &[]), &relations, &entities) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected retained refusal at {operation}: {other:?}"),
@@ -486,13 +472,7 @@ fn rectangular_pattern_projects_adjacent_spacing_and_parameter() {
         rectangular_point_relation(3, 1.5, RectangularPatternDistanceForm::AdjacentSpacing);
     let parameters = rectangular_parameters(3, 1.5);
     let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-        exact_rectangular_pattern(
-            &relation,
-            "native",
-            &parameters,
-            &[&seed, &second, &third],
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], decode_ctx))
         .unwrap()
     else {
         panic!("rectangular pattern did not resolve");
@@ -517,13 +497,7 @@ fn rectangular_pattern_projects_total_span_and_keeps_span_parameter() {
         rectangular_point_relation(3, 3.0, RectangularPatternDistanceForm::SeedToFinalSpan);
     let parameters = rectangular_parameters(3, 3.0);
     let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-        exact_rectangular_pattern(
-            &relation,
-            "native",
-            &parameters,
-            &[&seed, &second, &third],
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], decode_ctx))
         .unwrap()
     else {
         panic!("total-span rectangular pattern did not resolve");
@@ -549,13 +523,7 @@ fn rectangular_pattern_does_not_change_distance_form_to_match_geometry() {
         let relation = rectangular_point_relation(3, distance, distance_form);
         let parameters = rectangular_parameters(3, distance);
         assert_eq!(
-            exact_rectangular_pattern(
-                &relation,
-                "native",
-                &parameters,
-                &[&seed, &second, &third],
-                None,
-            )
+            crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], decode_ctx))
             .unwrap(),
             None
         );
@@ -572,7 +540,7 @@ fn rectangular_pattern_requires_the_retained_counted_reference_count() {
     let parameters = rectangular_parameters(2, 1.5);
 
     assert_eq!(
-        exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], None)
+        crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], decode_ctx))
             .unwrap(),
         None
     );
@@ -589,7 +557,7 @@ fn rectangular_pattern_transfers_two_instances_in_both_distance_forms() {
         let relation = rectangular_point_relation(2, 1.5, distance_form);
         let parameters = rectangular_parameters(2, 1.5);
         let Some(SketchConstraintDefinitionInput::RectangularPattern { pattern }) =
-            exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], None)
+            crate::test_support::with_decode_context(|decode_ctx| exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second], decode_ctx))
                 .unwrap()
         else {
             panic!("two-instance rectangular pattern did not resolve");
@@ -698,14 +666,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
     let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
-        exact_circular_pattern(
-            &relation(std::f64::consts::PI),
-            "native",
-            &[],
-            &members,
-            &returned,
-            None,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| exact_circular_pattern(&relation(std::f64::consts::PI), "native", &[], &members, &returned, decode_ctx))
         .unwrap()
     else {
         panic!("partial circular pattern did not resolve");
@@ -742,14 +703,7 @@ fn circular_pattern_resolves_full_and_partial_instance_distributions() {
     let full_members = [&center, &seed, &full_middle, &full_last];
     let full_returned = [&seed, &full_middle, &full_last, &center];
     assert!(matches!(
-        exact_circular_pattern(
-            &relation(std::f64::consts::TAU),
-            "native",
-            &[],
-            &full_members,
-            &full_returned,
-            None,
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_circular_pattern(&relation(std::f64::consts::TAU), "native", &[], &full_members, &full_returned, decode_ctx)).unwrap(),
         Some(SketchConstraintDefinitionInput::CircularPattern { ref pattern })
             if scalar_close(pattern.instances()[0].angle.get(), std::f64::consts::TAU / 3.0)
     ));
@@ -841,7 +795,7 @@ fn circular_pattern_resolves_independently_of_relation_ordinals() {
     let members = [&center, &seed, &middle, &last];
     let returned = [&seed, &middle, &last, &center];
     let Some(SketchConstraintDefinitionInput::CircularPattern { pattern }) =
-        exact_circular_pattern(&relation, "native", &[], &members, &returned, None).unwrap()
+        crate::test_support::with_decode_context(|decode_ctx| exact_circular_pattern(&relation, "native", &[], &members, &returned, decode_ctx)).unwrap()
     else {
         panic!("role-agnostic circular pattern did not resolve");
     };
@@ -931,7 +885,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
     })
     .unwrap();
     let projected = std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
-    let definition = exact_text_relation(&relation, "scope", &projected, None)
+    let definition = crate::test_support::with_decode_context(|decode_ctx| exact_text_relation(&relation, "scope", &projected, decode_ctx))
         .unwrap()
         .expect("typed text path");
     assert!(matches!(
@@ -962,7 +916,7 @@ fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
             }),
         )
         .unwrap();
-        assert!(exact_text_relation(&relation, "scope", &projected, None)
+        assert!(crate::test_support::with_decode_context(|decode_ctx| exact_text_relation(&relation, "scope", &projected, decode_ctx))
             .unwrap()
             .is_none());
     }

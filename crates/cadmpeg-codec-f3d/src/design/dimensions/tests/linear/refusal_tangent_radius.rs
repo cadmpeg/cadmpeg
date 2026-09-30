@@ -113,14 +113,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("synthetic tangent dimension");
     assert!(matches!(
-        crate::design::dimensions::presentation_dimension_definition(None,
-            "stream",
-            &frame(vec![operand(306), operand(331)]),
-            &projected,
-            &tangent_span,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"),
-            EPS_REFUSAL_LINEAR,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::presentation_dimension_definition(decode_ctx, "stream", &frame(vec![operand(306), operand(331)]), &projected, &tangent_span, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").expect("identity grammar"), EPS_REFUSAL_LINEAR)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance { entities, .. })
             if entities.len() == 2
     ));
@@ -135,16 +128,8 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("synthetic tangent radius dimension");
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::presentation_dimension_definition(
-            Some(ctx),
-            "stream",
-            &frame(vec![operand(796)]),
-            &projected,
-            &tangent_radius,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16")
-                .expect("identity grammar"),
-            EPS_REFUSAL_LINEAR,
-        )
+        crate::design::dimensions::presentation_dimension_definition(ctx, "stream", &frame(vec![operand(796)]), &projected, &tangent_radius, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d16")
+                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

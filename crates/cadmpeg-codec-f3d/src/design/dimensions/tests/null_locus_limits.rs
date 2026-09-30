@@ -49,15 +49,7 @@ fn fixture(operation: &'static str) {
     );
     let parameter = ParameterId::mint("synthetic:test:parameter#null-angle").unwrap();
     super::assert_dimension_refusal(operation, ResourceDimension::RetainedBytes, |ctx| {
-        crate::design::dimensions::null_locus_dimension_definition(
-            Some(ctx),
-            &pair,
-            &entity,
-            "Angular Dimension-2",
-            std::f64::consts::FRAC_PI_4,
-            parameter.clone(),
-            0.0,
-        )
+        crate::design::dimensions::null_locus_dimension_definition(ctx, &pair, &entity, "Angular Dimension-2", std::f64::consts::FRAC_PI_4, parameter.clone(), 0.0)
         .transpose()
         .map(|_| ())
     });

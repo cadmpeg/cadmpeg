@@ -35,10 +35,10 @@ fn relation_kind_text_refuses_retained_limit_and_preserves_order() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(expected.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(relation_kind_name(&relation, Some(&ctx)),
+    assert!(matches!(relation_kind_name(&relation, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d sketch constraint native kind"));
-    assert_eq!(relation_kind_name(&relation, None).unwrap(), expected);
+    assert_eq!(crate::test_support::with_decode_context(|decode_ctx| relation_kind_name(&relation, decode_ctx)).unwrap(), expected);
 }
 
 #[test]
@@ -48,7 +48,7 @@ fn relation_kind_temporary_collection_is_removed() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        relation_kind_name(&relation(0), Some(&ctx)).unwrap(),
+        relation_kind_name(&relation(0), &ctx).unwrap(),
         "coincident"
     );
     assert_eq!(

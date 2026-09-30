@@ -124,15 +124,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::annotation_offset_dimension_definition(
-            Some(ctx),
-            &frame,
-            (&parameter, &parameter_id),
-            stream,
-            &[source_curve.clone(), result_curve.clone()],
-            &projected,
-            EPS_REFUSAL_LINEAR,
-        )
+        crate::design::dimensions::annotation_offset_dimension_definition(ctx, &frame, (&parameter, &parameter_id), stream, &[source_curve.clone(), result_curve.clone()], &projected, EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

@@ -32,7 +32,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .unwrap(),
     );
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        exact_counted_dimension_relation(Some(ctx), &[&circle, &arc]).map(|_| ())
+        exact_counted_dimension_relation(ctx, &[&circle, &arc]).map(|_| ())
     });
 }
 

@@ -58,15 +58,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ];
 
     super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::spatial_reflection_symmetry(
-            Some(ctx),
-            "Linear Dimension-6",
-            Some(0),
-            &operands,
-            Some("stream:dimension#1"),
-            &sketch,
-            &by_record,
-        )
+        crate::design::dimensions::spatial_reflection_symmetry(ctx, "Linear Dimension-6", Some(0), &operands, Some("stream:dimension#1"), &sketch, &by_record)
         .transpose()
         .map(|_| ())
     });

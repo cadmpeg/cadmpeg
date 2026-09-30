@@ -79,7 +79,7 @@ fn assert_refusal(
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_atomic_constraint(kind, &references, Some(&ctx)) {
+        match exact_atomic_constraint(kind, &references, &ctx) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>
             {

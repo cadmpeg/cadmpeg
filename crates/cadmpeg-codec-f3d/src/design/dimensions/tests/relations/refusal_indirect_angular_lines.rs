@@ -52,13 +52,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ]);
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        indirect_angular_lines(
-            Some(ctx),
-            "native",
-            &[&point, &explicit],
-            std::f64::consts::FRAC_PI_4,
-            &projected,
-        )
+        indirect_angular_lines(ctx, "native", &[&point, &explicit], std::f64::consts::FRAC_PI_4, &projected)
         .map(|_| ())
     });
 }

@@ -25,13 +25,7 @@ fn assert_rectangular_refusal(dimension: Limit, operation: &'static str) {
             Limit::Work => policy.limits.max_work_units = limit,
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_rectangular_pattern(
-            &relation,
-            "native",
-            &parameters,
-            &[&seed, &second, &third],
-            Some(&ctx),
-        ) {
+        match exact_rectangular_pattern(&relation, "native", &parameters, &[&seed, &second, &third], &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected refusal at {operation}: {other:?}"),

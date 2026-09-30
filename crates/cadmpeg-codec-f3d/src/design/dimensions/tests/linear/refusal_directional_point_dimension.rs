@@ -19,7 +19,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        directional_point_dimension(Some(ctx), &[&first, &second], 2.0, parameter.clone(), 0.0)
+        directional_point_dimension(ctx, &[&first, &second], 2.0, parameter.clone(), 0.0)
             .transpose()
             .map(|_| ())
     });

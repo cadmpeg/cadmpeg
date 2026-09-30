@@ -44,15 +44,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             .expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::symmetric_parallel_line_dimension_definition(
-            Some(ctx),
-            &first,
-            &second,
-            (1, 1),
-            &parameter,
-            parameter_id.clone(),
-            EPS_REFUSAL_LINEAR,
-        )
+        crate::design::dimensions::symmetric_parallel_line_dimension_definition(ctx, &first, &second, (1, 1), &parameter, parameter_id.clone(), EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

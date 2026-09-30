@@ -85,13 +85,7 @@ fn counted_offset_return_run_pairs_sources_and_results() {
     );
 
     let entities = HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
-    let definition = exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]),
-        &entities,
-        &HashMap::new(),
-        1.0e-6,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 3, 1), (2, 2, 4), (3, 0, 2), (4, 0, 3)]), &entities, &HashMap::new(), 1.0e-6))
     .transpose()
     .unwrap()
     .expect("counted offset graph");
@@ -123,12 +117,7 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     let secondary_ids = HashMap::from([(1, 0), (2, 42)]);
 
     assert!(matches!(
-        exact_counted_offset(None,
-            &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
-            &entities,
-            &secondary_ids,
-            1.0e-6,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 4, 1), (2, 1, 2)]), &entities, &secondary_ids, 1.0e-6)).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -139,13 +128,7 @@ fn counted_offset_accepts_primary_to_generated_identity_partition() {
     ));
 
     let ambiguous_ids = HashMap::from([(1, 0), (2, 0)]);
-    assert!(exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 4, 1), (2, 1, 2)]),
-        &entities,
-        &ambiguous_ids,
-        1.0e-6,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 4, 1), (2, 1, 2)]), &entities, &ambiguous_ids, 1.0e-6))
     .transpose()
     .unwrap()
     .is_none());
@@ -194,12 +177,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     );
     let entities = HashMap::from([(1, &source), (2, &result)]);
     assert!(matches!(
-        exact_counted_offset(None,
-            &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
-            &entities,
-            &HashMap::new(),
-            1.0e-6,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 3, 1), (2, 0, 2)]), &entities, &HashMap::new(), 1.0e-6)).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -234,13 +212,7 @@ fn counted_offset_accepts_fitted_nurbs_with_exact_endpoint_frames() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &skewed)]);
-    assert!(exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 3, 1), (2, 0, 2)]),
-        &entities,
-        &HashMap::new(),
-        1.0e-6,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 3, 1), (2, 0, 2)]), &entities, &HashMap::new(), 1.0e-6))
     .transpose()
     .unwrap()
     .is_none());
@@ -272,13 +244,7 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
-    let definition = exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
-        &entities,
-        &HashMap::new(),
-        1.0e-6,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 7, 1), (2, 0, 2)]), &entities, &HashMap::new(), 1.0e-6))
     .transpose()
     .unwrap()
     .expect("concentric arc offset");
@@ -303,13 +269,7 @@ fn counted_offset_accepts_trimmed_concentric_arcs() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &mismatched)]);
-    assert!(exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
-        &entities,
-        &HashMap::new(),
-        1.0e-6,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 7, 1), (2, 0, 2)]), &entities, &HashMap::new(), 1.0e-6))
     .transpose()
     .unwrap()
     .is_none());
@@ -333,12 +293,7 @@ fn counted_offset_accepts_concentric_full_circles() {
     let entities = HashMap::from([(1, &source), (2, &result)]);
 
     assert!(matches!(
-        exact_counted_offset(None,
-            &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
-            &entities,
-            &HashMap::new(),
-            TEST_LINEAR_TOLERANCE,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 7, 1), (2, 0, 2)]), &entities, &HashMap::new(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -351,12 +306,7 @@ fn counted_offset_accepts_concentric_full_circles() {
 
     let reversed_entities = HashMap::from([(1, &result), (2, &source)]);
     assert!(matches!(
-        exact_counted_offset(None,
-            &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
-            &reversed_entities,
-            &HashMap::new(),
-            TEST_LINEAR_TOLERANCE,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 7, 1), (2, 0, 2)]), &reversed_entities, &HashMap::new(), TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
         Some(crate::design::dimensions::CountedOffset {
             pairs,
             distance,
@@ -374,13 +324,7 @@ fn counted_offset_accepts_concentric_full_circles() {
     })
     .unwrap();
     let entities = HashMap::from([(1, &source), (2, &displaced)]);
-    assert!(exact_counted_offset(
-        None,
-        &offset_loci(&[(1, 7, 1), (2, 0, 2)]),
-        &entities,
-        &HashMap::new(),
-        TEST_LINEAR_TOLERANCE,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_counted_offset(decode_ctx, &offset_loci(&[(1, 7, 1), (2, 0, 2)]), &entities, &HashMap::new(), TEST_LINEAR_TOLERANCE))
     .transpose()
     .unwrap()
     .is_none());
@@ -547,14 +491,7 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
         .collect::<HashMap<_, _>>();
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
-    let definition = spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0x20), &operands),
-        (&parameter, 3.0, -3.0),
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0x20), &operands), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&sketch), &by_record))
     .transpose()
     .unwrap()
     .expect("counted spatial offset");
@@ -574,25 +511,11 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
             && normal == Vector3::new(0.0, 0.0, 1.0)
             && actual_parameter == parameter) && actual_distance.get() == 3.0
     ));
-    assert!(spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0), &operands),
-        (&parameter, 3.0, -3.0),
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0), &operands), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&sketch), &by_record))
     .transpose()
     .unwrap()
     .is_none());
-    assert!(spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0x20), &operands),
-        (&parameter, 3.0, -2.0),
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0x20), &operands), (&parameter, 3.0, -2.0), &sketch_id, std::slice::from_ref(&sketch), &by_record))
     .transpose()
     .unwrap()
     .is_none());
@@ -609,40 +532,19 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     let first_return = sources.len() + results.len() + 1;
     non_permutation[first_return].object_index = Some(99);
     non_permutation[first_return].native_ref = outside_source.native_ref.clone();
-    assert!(spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0x20), &non_permutation),
-        (&parameter, 3.0, -3.0),
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0x20), &non_permutation), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&sketch), &by_record))
     .transpose()
     .unwrap()
     .is_none());
     let mut wrong_operand_kind = operands.clone();
     wrong_operand_kind[0].native_kind = cadmpeg_core::text::NonBlankString::new("point").unwrap();
-    assert!(spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0x20), &wrong_operand_kind),
-        (&parameter, 3.0, -3.0),
-        &sketch_id,
-        std::slice::from_ref(&sketch),
-        &by_record,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0x20), &wrong_operand_kind), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&sketch), &by_record))
     .transpose()
     .unwrap()
     .is_none());
     let mut ambiguous_sketch = sketch.clone();
     ambiguous_sketch.profiles.push(sketch.profiles[0].clone());
-    assert!(spatial_counted_offset_dimension_definition(
-        None,
-        ("Linear Dimension-1", Some(0x20), &operands),
-        (&parameter, 3.0, -3.0),
-        &sketch_id,
-        std::slice::from_ref(&ambiguous_sketch),
-        &by_record,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| spatial_counted_offset_dimension_definition(decode_ctx, ("Linear Dimension-1", Some(0x20), &operands), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&ambiguous_sketch), &by_record))
     .transpose()
     .unwrap()
     .is_none());
@@ -770,11 +672,7 @@ fn counted_roles_require_matching_solved_geometry() {
         .unwrap(),
     );
     assert!(matches!(
-        crate::design::dimensions::counted_role_relation_at_tolerance(None,
-            &[&tangent_circle, &rounded_tangent_arc],
-            &[crate::records::sketch_relations::SketchConstraintKind::Tangent],
-            TEST_LINEAR_TOLERANCE,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::counted_role_relation_at_tolerance(decode_ctx, &[&tangent_circle, &rounded_tangent_arc], &[crate::records::sketch_relations::SketchConstraintKind::Tangent], TEST_LINEAR_TOLERANCE)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { first, second })
             if &first == tangent_circle.id() && &second == rounded_tangent_arc.id()
     ));

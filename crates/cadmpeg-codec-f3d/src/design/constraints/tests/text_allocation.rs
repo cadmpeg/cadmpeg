@@ -103,7 +103,7 @@ fn assert_text_refusal(frame: bool, retained: bool, operation: &'static str) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_text_relation(&relation, "scope", &projected, Some(&ctx)) {
+        match exact_text_relation(&relation, "scope", &projected, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected refusal at {operation}: {other:?}"),

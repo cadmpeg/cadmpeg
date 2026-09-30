@@ -36,13 +36,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
             .expect("identity grammar");
 
     assert!(matches!(
-        owner_scoped_line_length_dimension_definition(None,
-            std::slice::from_ref(&first),
-            &sketch,
-            &parameter,
-            &parameter_id,
-            EPS_REFUSAL_LINEAR,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_line_length_dimension_definition(decode_ctx, std::slice::from_ref(&first), &sketch, &parameter, &parameter_id, EPS_REFUSAL_LINEAR)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Start(ref entity),
             second: SketchLocus::End(ref other),
@@ -55,14 +49,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![first.clone(), second.clone()]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        owner_scoped_line_length_dimension_definition(
-            Some(ctx),
-            &selected,
-            &sketch,
-            &parameter,
-            &parameter_id,
-            EPS_REFUSAL_LINEAR,
-        )
+        owner_scoped_line_length_dimension_definition(ctx, &selected, &sketch, &parameter, &parameter_id, EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

@@ -19,13 +19,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        radial_dimension_definition(
-            Some(ctx),
-            &entity,
-            "Radius Dimension-2",
-            0.5,
-            radius_parameter.clone(),
-        )
+        radial_dimension_definition(ctx, &entity, "Radius Dimension-2", 0.5, radius_parameter.clone())
         .transpose()
         .map(|_| ())
     });

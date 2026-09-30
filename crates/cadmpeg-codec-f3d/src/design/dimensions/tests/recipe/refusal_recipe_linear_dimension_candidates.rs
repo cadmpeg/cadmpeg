@@ -41,15 +41,8 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ));
     }
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::recipe_linear_dimension_candidates(
-            Some(ctx),
-            &entities,
-            &sketch,
-            2.0,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"),
-            0.0,
-        )
+        crate::design::dimensions::recipe_linear_dimension_candidates(ctx, &entities, &sketch, 2.0, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"), 0.0)
         .map(|_| ())
     });
 }

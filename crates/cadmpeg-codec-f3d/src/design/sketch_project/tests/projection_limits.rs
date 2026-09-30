@@ -67,7 +67,7 @@ fn sketch_placement_indices_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        project_sketch_design(Some(&ctx), std::slice::from_ref(&placement), &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
+        project_sketch_design(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d planar sketch placement index"
@@ -75,7 +75,7 @@ fn sketch_placement_indices_refuse_collection_limit() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        project_spatial_sketch_design(Some(&ctx), &[placement], &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
+        project_spatial_sketch_design(&ctx, &[placement], &[], &[], &[], &[], EPS_PROJECTION_LIMITS_E6),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial sketch placement index"
@@ -92,7 +92,7 @@ fn spatial_sketch_curve_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        project_spatial_sketch_design(Some(&ctx), &[], &[], &[curve], &[], &[], EPS_PROJECTION_LIMITS_E6),
+        project_spatial_sketch_design(&ctx, &[], &[], &[curve], &[], &[], EPS_PROJECTION_LIMITS_E6),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial sketch curve index"
@@ -110,25 +110,19 @@ fn spline_segment_index_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut segments = std::collections::HashMap::new();
     assert!(matches!(
-        crate::design::sketch_project::record_spline_segment(Some(&ctx), &mut segments, "Design", 10, points),
+        crate::design::sketch_project::record_spline_segment(&ctx, &mut segments, "Design", 10, points),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial sketch spline segment index"
     ));
     assert!(segments.is_empty());
     let mut segments = std::collections::HashMap::new();
-    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points)
+    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, points))
         .unwrap();
-    crate::design::sketch_project::record_spline_segment(None, &mut segments, "Design", 10, points)
+    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, points))
         .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&Some(points)));
-    crate::design::sketch_project::record_spline_segment(
-        None,
-        &mut segments,
-        "Design",
-        10,
-        [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-    )
+    crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::record_spline_segment(decode_ctx, &mut segments, "Design", 10, [Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)]))
     .unwrap();
     assert_eq!(segments.get(&("Design", 10)), Some(&None));
 }
@@ -146,18 +140,18 @@ fn spatial_spline_member_index_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::sketch_project::distinct_return_member_indices(Some(&ctx), &members),
+        crate::design::sketch_project::distinct_return_member_indices(&ctx, &members),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial spline member index"
     ));
-    assert!(crate::design::sketch_project::distinct_return_member_indices(None, &members).unwrap());
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &members)).unwrap());
     let duplicates = [
         SketchRelationReturnMember::from_index(10),
         SketchRelationReturnMember::from_index(10),
     ];
     assert!(
-        !crate::design::sketch_project::distinct_return_member_indices(None, &duplicates).unwrap()
+        !crate::test_support::with_decode_context(|decode_ctx| crate::design::sketch_project::distinct_return_member_indices(decode_ctx, &duplicates)).unwrap()
     );
 }
 
@@ -172,9 +166,7 @@ fn spatial_spline_segment_candidate_refuses_collection_limit() {
     let mut segments = Vec::new();
     let candidate = (10, [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)]);
     assert!(matches!(
-        crate::design::sketch_project::push_project_item(
-            Some(&ctx), &mut segments, candidate, "f3d spatial spline segment candidates",
-        ),
+        (&ctx).push_vec(&mut segments, candidate, "f3d spatial spline segment candidates"),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial spline segment candidates"
@@ -227,7 +219,7 @@ fn spatial_constraint_indices_refuse_collection_limits() {
         assert!(
             matches!(
                 project_spatial_sketch_constraints(
-                    Some(&ctx), placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
+                    &ctx, placements, &[], &[], std::slice::from_ref(&curve), &[], entities,
                 ),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
@@ -248,7 +240,7 @@ fn spatial_geometry_owner_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::sketch_project::spatial_geometry_owners(Some(&ctx), &[], &[curve]),
+        crate::design::sketch_project::spatial_geometry_owners(&ctx, &[], &[curve]),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial geometry owner"
@@ -306,7 +298,7 @@ fn text_frame_owner_indices_refuse_collection_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                crate::design::sketch_project::text_frame_curve_records(Some(&ctx), &[], curves, texts),
+                crate::design::sketch_project::text_frame_curve_records(&ctx, &[], curves, texts),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -349,7 +341,7 @@ fn spatial_surface_owner_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        project_spatial_sketch_design(Some(&ctx), &[], &[], &[], &[surface], &[], EPS_PROJECTION_LIMITS_E6),
+        project_spatial_sketch_design(&ctx, &[], &[], &[], &[surface], &[], EPS_PROJECTION_LIMITS_E6),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d spatial surface owner"
@@ -375,7 +367,7 @@ fn spatial_surface_lanes_refuse_each_collection_limit() {
         assert!(
             matches!(
                 project_spatial_sketch_design(
-                    Some(&ctx), std::slice::from_ref(&placement), &[], &[],
+                    &ctx, std::slice::from_ref(&placement), &[], &[],
                     std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6,
                 ),
                 Err(CodecError::ResourceLimit(failure))
@@ -398,15 +390,7 @@ fn spatial_sketch_id_index_copy_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_sketch_design(
-            Some(&ctx),
-            std::slice::from_ref(&placement),
-            &[],
-            &[],
-            std::slice::from_ref(&surface),
-            &[],
-            EPS_PROJECTION_LIMITS_E6,
-        ) {
+        match project_spatial_sketch_design(&ctx, std::slice::from_ref(&placement), &[], &[], std::slice::from_ref(&surface), &[], EPS_PROJECTION_LIMITS_E6) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial sketch id index copy" =>
             {
@@ -435,7 +419,7 @@ fn sketch_nurbs_lanes_refuse_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                crate::design::sketch_project::collect_project_items(Some(&ctx), [1.0_f64], operation),
+                (&ctx).collect_vec([1.0_f64], operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -494,7 +478,7 @@ fn text_frame_curve_records_refuse_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::sketch_project::text_frame_curve_records(Some(&ctx), &[relation], &[curve], &[text]),
+        crate::design::sketch_project::text_frame_curve_records(&ctx, &[relation], &[curve], &[text]),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d text frame curve record"
@@ -539,7 +523,7 @@ fn projected_sketch_text_copies_refuse_retained_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(
             matches!(
-                crate::design::sketch_project::copy_project_text(Some(&ctx), "input", operation),
+                (&ctx).copy_retained_text("input", operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::RetainedBytes
                         && failure.operation == operation
@@ -571,7 +555,7 @@ fn projected_sketch_entries_refuse_collection_limit() {
         let mut entries = Vec::new();
         assert!(
             matches!(
-                crate::design::sketch_project::push_project_item(Some(&ctx), &mut entries, 1, operation),
+                (&ctx).push_vec(&mut entries, 1, operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.dimension == ResourceDimension::CollectionItems
                         && failure.operation == operation
@@ -604,7 +588,7 @@ fn spatial_constraint_sketch_membership_refuses_work_limit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        project_spatial_sketch_constraints(Some(&ctx), std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),
+        project_spatial_sketch_constraints(&ctx, std::slice::from_ref(&placement), &[], &[], &[], &[], &[entity]),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::WorkUnits
                 && failure.operation == "f3d spatial constraint sketch membership work"
@@ -627,7 +611,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         policy.limits.max_retained_bytes = 4;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         assert!(matches!(
-            crate::design::sketch_project::copy_project_text(Some(&ctx), "input", operation),
+            (&ctx).copy_retained_text("input", operation),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation
@@ -644,7 +628,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut items = Vec::new();
         assert!(matches!(
-            crate::design::sketch_project::push_project_item(Some(&ctx), &mut items, 1, operation),
+            (&ctx).push_vec(&mut items, 1, operation),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation
@@ -658,7 +642,7 @@ fn spatial_constraint_copies_and_output_refuse_matching_limits() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut members = std::collections::HashSet::new();
         assert!(matches!(
-            crate::design::sketch_project::insert_project_set(Some(&ctx), &mut members, 1, operation),
+            (&ctx).insert_hash_set(&mut members, 1, operation).map(|_| ()),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation

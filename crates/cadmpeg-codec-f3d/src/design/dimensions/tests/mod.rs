@@ -20,7 +20,7 @@ fn project_dimension_constraints(
     inputs: &crate::design::dimensions::DimensionConstraintInputs<'_>,
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
-    crate::design::dimensions::project_dimension_constraints(None, inputs, spatial_sketches, 1.0e-6)
+    crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::project_dimension_constraints(decode_ctx, inputs, spatial_sketches, 1.0e-6))
         .expect("resource allocation did not fail")
 }
 
@@ -29,13 +29,7 @@ fn project_spatial_dimension_constraints(
     spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
-    crate::design::dimensions::project_spatial_dimension_constraints(
-        None,
-        inputs,
-        spatial_sketches,
-        spatial_entities,
-        1.0e-6,
-    )
+    crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::project_spatial_dimension_constraints(decode_ctx, inputs, spatial_sketches, spatial_entities, 1.0e-6))
     .expect("resource allocation did not fail")
 }
 
