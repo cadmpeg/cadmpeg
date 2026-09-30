@@ -98,7 +98,7 @@ fn surface_selection_face_bindings<'a>(
                 None => View::u32_le_at(&component.type_signature, 4).and_then(|source| FeatureSourceId::try_from(source).ok()),
             }?;
             faces_by_identity.get(&(feature_source_id, component.local_id?)).copied().flatten()
-        }).map(|face| copy_selection_id(ctx, face)).transpose()?;
+        }).map(|face| copy_selection_id(ctx, face.as_str())).transpose()?;
         let native = crate::resolved_features::terminations::compact_surface_selection_value(ctx, &selection.components)?;
         let key = (copy_selection_text(ctx, &selection.feature_ref)?, native);
         reserve_selection_map(ctx, &mut bindings)?;
@@ -167,7 +167,7 @@ pub(crate) fn bind_topology_selections(
             ctx.charge_work(cadmpeg_core::decode::u64_from_index(history.features.len()), "find SLDPRT topology selection scope")?;
         }
         if let Some(scope) = feature.native_ref.as_deref().and_then(|native_ref| histories.iter().flat_map(|history| &history.features).find(|record| record.id == native_ref)).and_then(|record| record.properties.get("Scope")) {
-            if let Some(outputs) = resolve_ids(ctx, scope, &body_ids)? {
+            if let Some(outputs) = resolve_ids(ctx, scope, &body_ids, cadmpeg_ir::ids::BodyId::as_str)? {
                 feature.evaluation.set_outputs(cadmpeg_ir::features::DistinctMembers::try_from_charged(outputs, ctx)?);
             }
         }
@@ -510,7 +510,7 @@ fn resolve_planar_face_selection(
     let mut matching = Vec::new();
     for face in candidates {
         ctx.reserve_collection_vec(&mut matching, 1, "collect SLDPRT topology selection identities")?;
-        matching.push(copy_selection_id(ctx, face)?);
+        matching.push(copy_selection_id(ctx, face.as_str())?);
     }
     if (has_native && !matching.is_empty()) || (!has_native && matching.len() == 1) {
         let old = std::mem::replace(selection, FaceSelection::Unresolved);
@@ -544,7 +544,7 @@ fn resolve_offset_plane_face_selection(
 fn resolve_planar_profile_ref(ctx: &DecodeContext<'_>, profile: &mut PlanarProfileRef, faces: &HashMap<&str, Option<&cadmpeg_ir::ids::FaceId>>) -> Result<(), CodecError> {
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let PlanarProfileRef::Native(native) = profile {
-        if let Some(ids) = resolve_ids(ctx, native, faces)? { *profile = PlanarProfileRef::Faces(ids); }
+        if let Some(ids) = resolve_ids(ctx, native, faces, cadmpeg_ir::ids::FaceId::as_str)? { *profile = PlanarProfileRef::Faces(ids); }
     }
     Ok(())
 }
@@ -558,8 +558,8 @@ fn resolve_profile_ref(ctx: &DecodeContext<'_>, profile: &mut ProfileRef, faces:
 fn resolve_path_ref(ctx: &DecodeContext<'_>, path: &mut PathRef, edges: &HashMap<&str, Option<&cadmpeg_ir::ids::EdgeId>>, curves: &HashMap<&str, Option<&cadmpeg_ir::ids::CurveId>>) -> Result<(), CodecError> {
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let PathRef::Native(native) = path {
-        if let Some(ids) = resolve_ids(ctx, native, edges)? { *path = PathRef::Edges(ids); }
-        else if let Some(ids) = resolve_ids(ctx, native, curves)? { *path = PathRef::Curves(ids); }
+        if let Some(ids) = resolve_ids(ctx, native, edges, cadmpeg_ir::ids::EdgeId::as_str)? { *path = PathRef::Edges(ids); }
+        else if let Some(ids) = resolve_ids(ctx, native, curves, cadmpeg_ir::ids::CurveId::as_str)? { *path = PathRef::Curves(ids); }
     }
     Ok(())
 }
@@ -582,8 +582,9 @@ fn selection_ids<'a, Id: 'a>(
     Ok(ids)
 }
 
-fn resolve_ids<Id: std::fmt::Display + TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
+fn resolve_ids<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(
     ctx: &DecodeContext<'_>, native: &str, ids: &HashMap<&str, Option<&Id>>,
+    as_str: impl Fn(&Id) -> &str,
 ) -> Result<Option<Vec<Id>>, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(native.len()), "resolve SLDPRT topology selection tokens")?;
     let mut resolved = Vec::new();
@@ -591,7 +592,7 @@ fn resolve_ids<Id: std::fmt::Display + TryFrom<String, Error = cadmpeg_ir::ids::
         ctx.charge_work(1, "resolve SLDPRT topology selection tokens")?;
         let Some(Some(id)) = ids.get(token) else { return Ok(None); };
         ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT topology selection identities")?;
-        resolved.push(copy_selection_id(ctx, *id)?);
+        resolved.push(copy_selection_id(ctx, as_str(id))?);
     }
     Ok((!resolved.is_empty()).then_some(resolved))
 }
@@ -599,14 +600,14 @@ fn resolve_ids<Id: std::fmt::Display + TryFrom<String, Error = cadmpeg_ir::ids::
 fn resolve_face_selection(ctx: &DecodeContext<'_>, selection: &mut FaceSelection, context: &FaceSelectionContext<'_>) -> Result<(), CodecError> {
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let FaceSelection::Native(native) = selection {
-        let mut faces = resolve_ids(ctx, native, context.ids)?;
+        let mut faces = resolve_ids(ctx, native, context.ids, cadmpeg_ir::ids::FaceId::as_str)?;
         if faces.is_none() {
             if let Some(feature_ref) = context.feature_ref {
                 ctx.charge_work(cadmpeg_core::decode::u64_from_index(context.surface_selection_faces.len()), "resolve SLDPRT surface selection owner")?;
                 if let Some(Some(face)) = context.surface_selection_faces.iter().find_map(|((owner, key), value)| (owner == feature_ref && key == native).then_some(value)) {
                     let mut copied = Vec::new();
                     ctx.reserve_collection_vec(&mut copied, 1, "collect SLDPRT topology selection identities")?;
-                    copied.push(copy_selection_id(ctx, face)?);
+                    copied.push(copy_selection_id(ctx, face.as_str())?);
                     faces = Some(copied);
                 }
             }
@@ -646,7 +647,7 @@ fn history_feature_sources<'a>(ctx: &DecodeContext<'_>, histories: &'a [FeatureH
 fn resolve_edge_selection(ctx: &DecodeContext<'_>, selection: &mut EdgeSelection, ids: &HashMap<&str, Option<&cadmpeg_ir::ids::EdgeId>>) -> Result<(), CodecError> {
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let EdgeSelection::Native(native) = selection {
-        if let Some(edges) = resolve_ids(ctx, native, ids)? {
+        if let Some(edges) = resolve_ids(ctx, native, ids, cadmpeg_ir::ids::EdgeId::as_str)? {
             let old = std::mem::replace(selection, EdgeSelection::Unresolved);
             if let EdgeSelection::Native(native) = old { *selection = EdgeSelection::Resolved { edges, native }; }
         }
@@ -657,7 +658,7 @@ fn resolve_edge_selection(ctx: &DecodeContext<'_>, selection: &mut EdgeSelection
 fn resolve_body_selection(ctx: &DecodeContext<'_>, selection: &mut BodySelection, ids: &HashMap<&str, Option<&cadmpeg_ir::ids::BodyId>>) -> Result<(), CodecError> {
     ctx.charge_work(1, "bind SLDPRT topology selections")?;
     if let BodySelection::Native(native) = selection {
-        let bodies = match resolve_ids(ctx, native, ids)? {
+        let bodies = match resolve_ids(ctx, native, ids, cadmpeg_ir::ids::BodyId::as_str)? {
             Some(bodies) => match cadmpeg_ir::features::DistinctMembers::try_from_charged(bodies, ctx) {
                 Ok(bodies) => Some(bodies),
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
@@ -678,9 +679,11 @@ fn copy_selection_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, C
     ctx.format_retained(format_args!("{value}"), "retain SLDPRT topology selection identity")
 }
 
-fn copy_selection_id<Id: std::fmt::Display + TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(ctx: &DecodeContext<'_>, id: &Id) -> Result<Id, CodecError> {
+fn copy_selection_id<Id: TryFrom<String, Error = cadmpeg_ir::ids::IdentityError>>(ctx: &DecodeContext<'_>, id: &str) -> Result<Id, CodecError> {
+    let work = cadmpeg_core::decode::u64_from_index(id.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT topology selection identity", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, "retain SLDPRT topology selection identity")?;
     let text = ctx.format_retained(format_args!("{id}"), "retain SLDPRT topology selection identity")?;
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "retain SLDPRT topology selection identity")?;
     Id::try_from(text).map_err(CodecError::malformed)
 }
 

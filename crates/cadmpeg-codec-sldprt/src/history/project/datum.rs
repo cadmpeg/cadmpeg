@@ -22,6 +22,9 @@ use crate::history::literals::{
 };
 
 fn copy_reference_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT datum and curve reference", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, "retain SLDPRT datum and curve reference")?;
     ctx.format_retained(format_args!("{text}"), "retain SLDPRT datum and curve reference")
 }
 

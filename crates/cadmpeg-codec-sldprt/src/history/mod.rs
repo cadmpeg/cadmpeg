@@ -62,6 +62,9 @@ fn copy_history_text(
     source: &str,
     operation: &'static str,
 ) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(source.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
     ctx.reserve_retained_string(&mut copy, source.len(), operation)?;
     copy.push_str(source);

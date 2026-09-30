@@ -722,6 +722,9 @@ impl From<CodecError> for PmiParseError {
 }
 
 fn copy_pmi_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
     ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
     copy.push_str(text);
