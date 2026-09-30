@@ -2302,41 +2302,39 @@ fn ordered_compact_line_profile(
             lines.len() as u64,
         )
     })?;
-    let profile = (|| {
-        let first = lines.first()?;
-        used[0] = true;
-        profile.push(SketchEntityUse {
-            entity: first.0.clone(),
-            reversed: false,
-        });
-        let origin = first.3;
-        let mut current = first.4;
-        while profile.len() < lines.len() {
-            let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
-                if used[index] {
-                    None
-                } else if line.3 == current {
-                    Some((index, false, line.4))
-                } else if line.4 == current {
-                    Some((index, true, line.3))
-                } else {
-                    None
-                }
-            });
-            let candidate = candidates.next()?;
-            if candidates.next().is_some() {
-                return None;
+    let Some(first) = lines.first() else { return Ok(None); };
+    used[0] = true;
+    profile.push(SketchEntityUse {
+        entity: super::transforms::copy_sketch_entity_identity(ctx, &first.0, "SLDPRT compact line profile")?,
+        reversed: false,
+    });
+    let origin = first.3;
+    let mut current = first.4;
+    while profile.len() < lines.len() {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(lines.len()), "scan SLDPRT compact line profile adjacency")?;
+        let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
+            if used[index] {
+                None
+            } else if line.3 == current {
+                Some((index, false, line.4))
+            } else if line.4 == current {
+                Some((index, true, line.3))
+            } else {
+                None
             }
-            used[candidate.0] = true;
-            profile.push(SketchEntityUse {
-                entity: lines[candidate.0].0.clone(),
-                reversed: candidate.1,
-            });
-            current = candidate.2;
+        });
+        let Some(candidate) = candidates.next() else { return Ok(None); };
+        if candidates.next().is_some() {
+            return Ok(None);
         }
-        (current == origin).then_some(profile)
-    })();
-    Ok(profile)
+        used[candidate.0] = true;
+        profile.push(SketchEntityUse {
+            entity: super::transforms::copy_sketch_entity_identity(ctx, &lines[candidate.0].0, "SLDPRT compact line profile")?,
+            reversed: candidate.1,
+        });
+        current = candidate.2;
+    }
+    Ok((current == origin).then_some(profile))
 }
 
 pub(super) fn complete_ordered_compact_line_profile(
