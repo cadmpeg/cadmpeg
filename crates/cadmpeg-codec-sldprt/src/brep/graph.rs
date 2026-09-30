@@ -4982,7 +4982,10 @@ enum NurbsPcurveFailure {
 
 impl From<cadmpeg_ir::geometry::nurbs::NurbsError> for NurbsPcurveFailure {
     fn from(error: cadmpeg_ir::geometry::nurbs::NurbsError) -> Self {
-        Self::Carrier(error)
+        match error {
+            cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) => Self::Resource(limit.into()),
+            error => Self::Carrier(error),
+        }
     }
 }
 

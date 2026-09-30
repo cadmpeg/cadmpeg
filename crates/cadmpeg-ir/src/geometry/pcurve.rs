@@ -100,7 +100,27 @@ impl<P: PoleValue<FinitePoint2>> PcurveNurbsPoles<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<PcurveNurbsPoles<FinitePoint2>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        match self {
+            Self::Polynomial { points } => {
+                let mut output = Vec::new();
+                super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR admitted polynomial poles")?;
+                for point in points {
+                    output.push(point.admit().ok_or_else(non_finite_control_point)?);
+                }
+                Ok(PcurveNurbsPoles::Polynomial { points: output })
+            }
+            Self::Rational { points } => {
+                let mut output = Vec::new();
+                super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR admitted rational poles")?;
+                for pole in points {
+                    output.push(WeightedPole2 {
+                        point: pole.point.admit().ok_or_else(non_finite_control_point)?,
+                        weight: pole.weight,
+                    });
+                }
+                Ok(PcurveNurbsPoles::Rational { points: output })
+            }
+        }
     }
 }
 
@@ -310,17 +330,12 @@ fn weighted_poles_2<P, W>(
     weights: Vec<W>,
     mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
 ) -> Result<Vec<WeightedPole2<P>>, NurbsError> {
-    points
-        .into_iter()
-        .zip(weights)
-        .enumerate()
-        .map(|(index, (point, value))| {
-            Ok(WeightedPole2 {
-                point,
-                weight: weight(index, value)?,
-            })
-        })
-        .collect()
+    let mut output = Vec::new();
+    super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR weighted pcurve poles")?;
+    for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
+        output.push(WeightedPole2 { point, weight: weight(index, value)? });
+    }
+    Ok(output)
 }
 
 /// Parameter-space line with a finite origin and nonzero direction.

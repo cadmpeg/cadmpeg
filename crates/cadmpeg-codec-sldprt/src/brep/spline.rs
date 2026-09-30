@@ -954,6 +954,7 @@ pub(crate) fn scan_curve_carriers(
         charge_items(ctx, points.len(), "admit Parasolid curve poles")?;
         let nurbs = match NurbsCurve::from_lanes(descriptor.degree, knots, points, weights, false) {
             Ok(nurbs) => nurbs,
+            Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => return Err(limit.into()),
             Err(error) => {
                 charge_items(ctx, 1, "collect Parasolid spline refusals")?;
                 let note = crate::loss::spline_lane_refusal(
@@ -1282,6 +1283,7 @@ pub(crate) fn scan_surface_carriers(
             false,
         ) {
             Ok(nurbs) => nurbs,
+            Err(cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit)) => return Err(limit.into()),
             Err(error) => {
                 charge_items(ctx, 1, "collect Parasolid spline refusals")?;
                 let note = crate::loss::spline_lane_refusal(
