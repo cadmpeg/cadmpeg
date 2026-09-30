@@ -1150,7 +1150,7 @@ pub(crate) fn decode_design_body_bindings(
                         blob_name: ctx.copy_retained_text(&record.blob_name, "f3d body-binding blob name")?,
                         blob_name_offset: u64_from_index(record.blob_name_offset),
                         body: body
-                            .map(|id| crate::brep::copy_body_id(ctx, id))
+                            .map(|id| (id).try_clone_for_decode(ctx, "copy F3D BREP body ID"))
                             .transpose()?,
                     })
                     .map_err(CodecError::Malformed)?;

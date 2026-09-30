@@ -78,32 +78,9 @@ fn unique_feature_match<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
     matches.next().is_none().then_some(first)
 }
 
-fn temporary_feature_text<'a>(
-    ctx: &'a DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<(String, Option<cadmpeg_core::decode::ScopedReservation<'a>>), CodecError> {
-    let mut reservation = ctx.reserve_scoped(0, operation)?;
-    let copy = ctx.copy_scoped_text(text, &mut reservation, operation)?;
-    let reservation = Some(reservation);
-    Ok((copy, reservation))
-}
 
-fn temporary_feature_id<'a>(
-    ctx: &'a DecodeContext<'_>,
-    id: &cadmpeg_ir::features::FeatureId,
-    operation: &'static str,
-) -> Result<
-    (
-        cadmpeg_ir::features::FeatureId,
-        Option<cadmpeg_core::decode::ScopedReservation<'a>>,
-    ),
-    CodecError,
-> {
-    let (text, reservation) = temporary_feature_text(ctx, id.as_str(), operation)?;
-    let id = cadmpeg_ir::features::FeatureId::try_from(text).map_err(CodecError::malformed)?;
-    Ok((id, reservation))
-}
+
+
 
 
 
@@ -1589,7 +1566,7 @@ face_operands,
         parameter.dependencies.clear();
         for identifier in expression_identifiers(&parameter.expression) {
             let (identifier, _identifier_reservation) =
-                temporary_feature_text(ctx, identifier, "f3d expression identifier lookup")?;
+                (ctx).format_scoped(format_args!("{}", identifier), "f3d expression identifier lookup")?;
             let alias_key = (scope, identifier);
             let preceding_owned = || {
                 let consumer = parameter.owner.as_ref()?;
@@ -1605,13 +1582,9 @@ face_operands,
                 candidates.next().is_none().then_some(candidate)
             };
             let candidate = if let Some(owner) = &parameter.owner {
-                let (owner_key, _owner_reservation) =
-                    temporary_feature_id(ctx, owner, "f3d expression owner lookup")?;
-                let (feature_identifier, _feature_identifier_reservation) = temporary_feature_text(
-                    ctx,
-                    &alias_key.1,
-                    "f3d expression feature identifier lookup",
-                )?;
+                let owner_key =
+                    (owner).try_clone_for_decode(ctx, "f3d expression owner lookup")?;
+                let (feature_identifier, _feature_identifier_reservation) = (ctx).format_scoped(format_args!("{}", &alias_key.1), "f3d expression feature identifier lookup")?;
                 match feature_aliases.get(&(scope, owner_key, feature_identifier)) {
                     Some(None) => None,
                     Some(Some(local)) => Some(local),

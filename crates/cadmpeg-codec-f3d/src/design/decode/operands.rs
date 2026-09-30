@@ -18,8 +18,7 @@ use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scop
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
-    cached_borrowed_record_offsets, cached_owned_record_offsets, copy_scoped_stream,
-    indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
+    cached_borrowed_record_offsets, cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset, next_indexed_record_offset_with_index,
     IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id_charged;
@@ -377,7 +376,7 @@ pub(crate) fn bind_work_point_input_carriers(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
+        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -559,7 +558,7 @@ pub(crate) fn bind_work_plane_constructions(
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
-        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
+        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
@@ -625,7 +624,7 @@ pub(crate) fn bind_vertex_recipe_candidates(
     tags: &[PersistentSubentityTag],
 ) -> Result<(), CodecError> {
     for scope in scopes {
-        let (_scope_reservation, scope_id) = copy_scoped_stream(ctx, &scope.id)?;
+        let (_scope_reservation, scope_id) = (ctx).format_scoped(format_args!("{}", &scope.id), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         if let Some(construction) = scope.work_plane_construction_mut() {
             for reference in construction.recipe_references_mut() {
                 bind_recipe_reference_candidates_charged(ctx, reference, tags, Some(&scope_id))?;

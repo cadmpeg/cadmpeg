@@ -8,7 +8,7 @@ use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
 use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::{
-    cached_owned_record_offsets, copy_scoped_stream, IndexedRecordOffsets,
+    cached_owned_record_offsets, IndexedRecordOffsets,
 };
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::design::design_feature_family;
@@ -270,7 +270,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(stream) = native_stream(&scopes[index].id) else {
             continue;
         };
-        let (_stream_reservation, stream) = copy_scoped_stream(ctx, stream)?;
+        let (_stream_reservation, stream) = (ctx).format_scoped(format_args!("{}", stream), "f3d scoped stream identity").map(|(text, reservation)| (reservation, text))?;
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
         else {
             continue;
