@@ -696,7 +696,8 @@ fn revolution_line_reference_inputs(
             }
             let mut unique_source = None;
             let mut conflicting_source = false;
-            for offset in object_start..handle_start.saturating_sub(15) {
+            let Some(source_end) = handle_start.checked_sub(15) else { continue; };
+            for offset in object_start..source_end {
                 ctx.charge_work(1, "scan SLDPRT revolution profile sources")?;
                 if let Some(source) = source_cell(offset) {
                     if unique_source.is_some_and(|known| known != source) {
