@@ -5,6 +5,7 @@ use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::decode::DecodeContext;
+use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
@@ -228,56 +229,20 @@ pub(crate) struct CopyPasteRecordLocation {
 }
 
 impl DesignCopyPasteBodiesOperation {
-    pub(crate) fn try_new(
-        bodies: Vec<DesignCopiedBody>,
-        body_group_record_index: u32,
-        body_group_class_tag: DesignClassTag,
-        body_group_byte_offset: u64,
-        relation_record_index: u32,
-        relation_class_tag: DesignClassTag,
-        relation_byte_offset: u64,
-    ) -> Result<Self, String> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(|error| error.to_string())?;
-        Self::try_new_inner(
-            &ctx,
-            bodies,
-            CopyPasteRecordLocation {
-                record_index: body_group_record_index,
-                class_tag: body_group_class_tag,
-                byte_offset: body_group_byte_offset,
-            },
-            CopyPasteRecordLocation {
-                record_index: relation_record_index,
-                class_tag: relation_class_tag,
-                byte_offset: relation_byte_offset,
-            },
-        )
-        .map_err(|error| match error {
-            CopyPasteBodiesError::Payload(message) => message,
-            CopyPasteBodiesError::Resource(error) => error.to_string(),
-        })
-    }
-
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
-        Self::try_new_inner(ctx, bodies, body_group, relation).map_err(|error| match error {
+        Self::try_new_inner(RecordAdmission::Charged(ctx), bodies, body_group, relation).map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
             CopyPasteBodiesError::Resource(error) => error,
         })
     }
 
     fn try_new_inner(
-        ctx: &DecodeContext<'_>,
+        admission: RecordAdmission<'_, '_>,
         bodies: Vec<DesignCopiedBody>,
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
@@ -305,7 +270,7 @@ impl DesignCopyPasteBodiesOperation {
                 }
                 {
                     let operation = "index F3D copied body suffixes";
-                    ctx.reserve_set(&mut suffixes, 1, operation)
+                    admission.reserve_set(&mut suffixes, 1, operation)
                         .map_err(CopyPasteBodiesError::Resource)?;
                 }
                 suffixes.insert(suffix);
@@ -372,7 +337,8 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 "copied_body_entity_suffix_offsets must match body_operand_record_indices".into(),
             );
         }
-        let bodies = wire
+        let mut bodies = DecodeContext::admitted_vec(count, "reconstruct F3D copied bodies").map_err(|error| error.to_string())?;
+        bodies.extend(wire
             .body_operand_record_indices
             .into_iter()
             .zip(wire.body_operand_record_offsets)
@@ -401,16 +367,11 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                     }
                 },
             )
-            .collect();
-        Self::try_new(
-            bodies,
-            wire.body_group_record_index,
-            wire.body_group_class_tag.try_into()?,
-            wire.body_group_byte_offset,
-            wire.relation_record_index,
-            wire.relation_class_tag.try_into()?,
-            wire.relation_byte_offset,
-        )
+            );
+        Self::try_new_inner(RecordAdmission::Admitted, bodies, CopyPasteRecordLocation { record_index: wire.body_group_record_index, class_tag: wire.body_group_class_tag.try_into()?, byte_offset: wire.body_group_byte_offset }, CopyPasteRecordLocation { record_index: wire.relation_record_index, class_tag: wire.relation_class_tag.try_into()?, byte_offset: wire.relation_byte_offset }).map_err(|error| match error {
+            CopyPasteBodiesError::Payload(message) => message,
+            CopyPasteBodiesError::Resource(error) => error.to_string(),
+        })
     }
 }
 

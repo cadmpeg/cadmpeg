@@ -354,7 +354,11 @@ fn sketch_relation_wire_entry_uses_default_limits() {
         + 1;
     oversized.members = vec![1; count];
     oversized.member_offsets.clear();
-    let error: super::SketchRelationPayloadError = SketchRelation::try_from(oversized).unwrap_err();
+    let error: super::SketchRelationPayloadError = {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::default()).unwrap();
+        super::SketchRelationPayloadError(SketchRelation::from_wire_charged(&ctx, oversized).unwrap_err().to_string())
+    };
     let expected = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
         dimension: cadmpeg_core::decode::ResourceDimension::CollectionItems,
         reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,

@@ -11,6 +11,7 @@ use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
 use cadmpeg_core::decode::DecodeContext;
+use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use serde::Serialize;
@@ -173,14 +174,14 @@ impl DesignExtrudeSelectionGroup {
         ctx: &DecodeContext<'_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_inner(ctx, wire).map_err(|error| match error {
+        Self::from_wire_inner(RecordAdmission::Charged(ctx), wire).map_err(|error| match error {
             ExtrudeSelectionWireError::Payload(message) => CodecError::Malformed(message),
             ExtrudeSelectionWireError::Resource(error) => error,
         })
     }
 
     fn from_wire_inner(
-        ctx: &DecodeContext<'_>,
+        admission: RecordAdmission<'_, '_>,
         wire: DesignExtrudeSelectionGroupWire,
     ) -> Result<Self, ExtrudeSelectionWireError> {
         if wire.members.len() != wire.member_offsets.len() {
@@ -194,7 +195,7 @@ impl DesignExtrudeSelectionGroup {
             }
             {
                 let operation = "index F3D extrude selection members";
-                ctx.reserve_set(&mut unique, 1, operation)
+                admission.reserve_set(&mut unique, 1, operation)
                     .map_err(ExtrudeSelectionWireError::Resource)?;
             }
             unique.insert(member);
@@ -220,7 +221,7 @@ impl DesignExtrudeSelectionGroup {
             NonZeroU32::new(wire.opaque_index).ok_or("opaque_index must be nonzero")?;
         let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(wire.opaque_scalar)
             .ok_or("opaque_scalar must be finite")?;
-        let mut members = ctx
+        let mut members = admission
             .collection_vec(wire.members.len(), "admit F3D extrude selection members")
             .map_err(ExtrudeSelectionWireError::Resource)?;
         members.extend(
@@ -250,14 +251,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     type Error = String;
 
     fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(|error| error.to_string())?;
-        Self::from_wire_inner(&ctx, wire).map_err(|error| match error {
+Self::from_wire_inner(RecordAdmission::Admitted, wire).map_err(|error| match error {
             ExtrudeSelectionWireError::Payload(message) => message,
             ExtrudeSelectionWireError::Resource(error) => error.to_string(),
         })

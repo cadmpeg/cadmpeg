@@ -2,6 +2,7 @@
 //! Admitted configuration documents and their authored variant order.
 
 use cadmpeg_core::decode::DecodeContext;
+use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -102,7 +103,7 @@ impl ConfigurationScalar {
 
 impl ConfigurationVariant {
     fn admit(
-        ctx: &DecodeContext<'_>,
+        admission: RecordAdmission<'_, '_>,
         entry_name: &str,
         name: &str,
         value: Value,
@@ -127,7 +128,7 @@ impl ConfigurationVariant {
                             )));
                         }
                     };
-                    ctx.insert_btree_map(
+                    admission.insert_btree_map(
                         &mut admitted,
                         key,
                         value,
@@ -156,7 +157,7 @@ impl ConfigurationVariant {
                         return Err(suppressed_error());
                     };
                     {
-                        ctx.reserve_vec(
+                        admission.reserve_vec(
                             &mut suppressed,
                             1,
                             "admit suppressed configuration member",
@@ -440,21 +441,6 @@ pub(crate) enum DesignConfigurationKind {
 }
 
 impl DesignConfiguration {
-    pub(crate) fn try_new(
-        entry_name: String,
-        kind: DesignConfigurationKind,
-        variant_order: Vec<String>,
-        payload: Map<String, Value>,
-    ) -> Result<Self, CodecError> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )?;
-        Self::try_new_with_context(&ctx, entry_name, kind, variant_order, payload)
-    }
-
     pub(crate) fn try_new_charged(
         ctx: &DecodeContext<'_>,
         entry_name: String,
@@ -462,11 +448,11 @@ impl DesignConfiguration {
         variant_order: Vec<String>,
         payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
-        Self::try_new_with_context(ctx, entry_name, kind, variant_order, payload)
+        Self::try_new_with_admission(RecordAdmission::Charged(ctx), entry_name, kind, variant_order, payload)
     }
 
-    fn try_new_with_context(
-        ctx: &DecodeContext<'_>,
+    fn try_new_with_admission(
+        admission: RecordAdmission<'_, '_>,
         entry_name: String,
         kind: DesignConfigurationKind,
         variant_order: Vec<String>,
@@ -530,8 +516,8 @@ impl DesignConfiguration {
             Some(variants) => {
                 let mut admitted = BTreeMap::new();
                 for (name, value) in variants {
-                    let value = ConfigurationVariant::admit(ctx, &entry_name, &name, value)?;
-                    ctx.insert_btree_map(
+                    let value = ConfigurationVariant::admit(admission, &entry_name, &name, value)?;
+                    admission.insert_btree_map(
                         &mut admitted,
                         name,
                         value,
@@ -544,7 +530,7 @@ impl DesignConfiguration {
                     let mut entries = Vec::new();
                     for variant in variants {
                         {
-                            ctx.reserve_vec(&mut entries, 1, "order configuration variants")?;
+                            admission.reserve_vec(&mut entries, 1, "order configuration variants")?;
                         }
                         entries.push(variant);
                     }
@@ -554,7 +540,7 @@ impl DesignConfiguration {
                     for name in variant_order {
                         let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
                         {
-                            ctx.reserve_vec(&mut entries, 1, "order configuration variants")?;
+                            admission.reserve_vec(&mut entries, 1, "order configuration variants")?;
                         }
                         entries.push(variant);
                     }
@@ -707,7 +693,7 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
         let Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        let mut record = Self::try_new(wire.entry_name, wire.kind, wire.variant_order, payload)
+        let mut record = Self::try_new_with_admission(RecordAdmission::Admitted, wire.entry_name, wire.kind, wire.variant_order, payload)
             .map_err(|error| error.to_string())?;
         record.identity_scope = scope;
         Ok(record)

@@ -158,7 +158,7 @@ fn annotation_return_run_refuses_collection_limit() {
 #[test]
 fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
     let original = draft(100);
-    let frame = Frame::try_new(original.clone()).unwrap();
+    let frame = crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, original.clone())).map_err(|error| error.to_string()).unwrap();
     assert_eq!(frame.clone().into_draft(), original);
     assert_eq!(
         frame
@@ -177,7 +177,7 @@ fn annotation_frame_preserves_nulls_duplicate_geometry_and_return_order() {
         operand.geometry_record_index = None;
     }
     all_null.return_members.clear();
-    assert!(Frame::try_new(all_null).is_ok());
+    assert!(crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, all_null)).map_err(|error| error.to_string()).is_ok());
 }
 
 #[test]
@@ -185,7 +185,7 @@ fn annotation_frame_borrowed_wire_matches_owned_wire_bytes() {
     for companion in [None, Some(1)] {
         let mut input = draft(100);
         input.companion_record_index = companion;
-        let frame = Frame::try_new(input).unwrap();
+        let frame = crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, input)).map_err(|error| error.to_string()).unwrap();
         let owned = super::DesignDimensionAnnotationFrameWire::from(frame.clone());
         assert_eq!(
             serde_json::to_vec(&frame).unwrap(),
@@ -201,7 +201,7 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
         id: &'static str,
         value: &'a Frame,
     }
-    let frame = Frame::try_new(draft(100)).unwrap();
+    let frame = crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, draft(100))).map_err(|error| error.to_string()).unwrap();
     let record = NestedRecord {
         id: "f3d:native:annotation-frame#0",
         value: &frame,
@@ -216,7 +216,7 @@ fn annotation_frame_native_retained_limit_refuses_before_clone() {
 
 #[test]
 fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
-    let frame = Frame::try_new(draft(100)).unwrap();
+    let frame = crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, draft(100))).map_err(|error| error.to_string()).unwrap();
     let wire = serde_json::to_value(&frame).unwrap();
     for field in [
         "annotation_byte_offset",
@@ -253,26 +253,26 @@ fn annotation_frame_rejects_stale_offsets_and_changed_multisets() {
         .contains("return_members"));
     let mut empty = draft(100);
     empty.operands.clear();
-    assert!(Frame::try_new(empty).unwrap_err().contains("operands"));
+    assert!(crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, empty)).map_err(|error| error.to_string()).unwrap_err().contains("operands"));
 }
 
 #[test]
 fn annotation_frame_rejects_unrepresentable_extents() {
     let valid = draft(u64::MAX - 320);
     assert_eq!(
-        Frame::try_new(valid.clone())
+        crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, valid.clone())).map_err(|error| error.to_string())
             .unwrap()
             .owner_reference_offset(),
         u64::MAX
     );
     let mut overflow = valid;
     overflow.frame_length += 1;
-    assert!(Frame::try_new(overflow)
+    assert!(crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, overflow)).map_err(|error| error.to_string())
         .unwrap_err()
         .contains("owner_reference_offset"));
     let mut overflow = draft(0);
     overflow.byte_offset = u64::MAX;
-    assert!(Frame::try_new(overflow)
+    assert!(crate::test_support::with_decode_context(|ctx| Frame::try_new_charged(ctx, overflow)).map_err(|error| error.to_string())
         .unwrap_err()
         .contains("annotation_byte_offset"));
 }
