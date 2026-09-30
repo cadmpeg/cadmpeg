@@ -1045,7 +1045,7 @@ fn configuration_lane_inherits_hole_construction_without_replacing_positions() {
         allow_multi_profile_faces: None,
     });
 
-    inherit_configuration_hole_semantics(&mut local, &base, false).unwrap();
+    inherit_configuration_hole_semantics(&cadmpeg_test_support::service_decode_context(), &mut local, &base, false).unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         placements,

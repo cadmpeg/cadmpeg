@@ -384,7 +384,7 @@ pub(crate) fn project_configuration_design_states(
                         let mut result = Ok(());
                         feature.evaluation.edit(|definition, _| {
                             result = inherit_configuration_hole_semantics(
-                                definition, base_definition, inherit_placements,
+                                ctx, definition, base_definition, inherit_placements,
                             );
                         });
                         result?;
@@ -914,12 +914,13 @@ fn inherit_configuration_shared_semantics(
         }
         return Ok(());
     }
-    inherit_configuration_hole_semantics(definition, base_definition, true)?;
+    inherit_configuration_hole_semantics(ctx, definition, base_definition, true)?;
 
     Ok(())
 }
 
 fn inherit_configuration_hole_semantics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
     inherit_placements: bool,
@@ -940,7 +941,8 @@ fn inherit_configuration_hole_semantics(
     else {
         return Ok(());
     };
-    let mut construction = shape.construction().clone();
+    const OPERATION: &str = "copy SLDPRT configuration hole construction";
+    let mut construction = shape.construction().try_clone_charged(ctx, OPERATION)?;
     let mut exit_kind = *shape.exit_kind();
     let mut diameter = shape.diameter();
     let FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -993,7 +995,8 @@ fn inherit_configuration_hole_semantics(
                 kind.clone_from(base_kind);
             }
             if specification.is_none() {
-                specification.clone_from(base_specification);
+                *specification = base_specification.as_deref()
+                    .map(|value| value.try_clone_boxed_charged(ctx, OPERATION)).transpose()?;
             }
         }
         (construction, base_construction)
@@ -1004,7 +1007,7 @@ fn inherit_configuration_hole_semantics(
                         if kind.is_unresolved()
                 ) =>
         {
-            construction.clone_from(base_construction);
+            *construction = base_construction.try_clone_charged(ctx, OPERATION)?;
         }
         _ => {}
     }

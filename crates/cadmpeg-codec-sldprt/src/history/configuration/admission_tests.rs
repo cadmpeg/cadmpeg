@@ -379,3 +379,77 @@ fn configuration_sketch_projection_refuses_ownership_retained_limit() {
 fn configuration_sketch_projection_refuses_ownership_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_spatial_ownership);
 }
+
+fn run_hole_construction(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape, HoleSpecification, HoleThreadDepth, ThreadHand};
+    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation, LinearTermination};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let clearance = HoleSpecification::Clearance {
+        standard: cadmpeg_core::nonblank_literal!("ISO"), designation: Some("M6".into()),
+        fit: Some("Close".into()), modeled: false, cosmetic: true, hand: ThreadHand::Right,
+        depth: HoleThreadDepth::HoleDepth, clearance: Some(cadmpeg_ir::scalar::Length::new(0.1).unwrap()),
+    };
+    let threaded = HoleSpecification::Threaded {
+        standard: cadmpeg_core::nonblank_literal!("ISO"), designation: Some("M6x1".into()),
+        class: Some("6H".into()), modeled: true, cosmetic: false,
+        pitch: Some(cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap()),
+        major_diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(6.0).unwrap()),
+        hand: ThreadHand::Left, depth: HoleThreadDepth::TappedStandard, clearance: None,
+    };
+    let hole = |specification, complete: bool| FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile: None, profile_filter: None, face: None, direction: None, placements: None,
+        shape: HoleShape::new(HoleConstruction::Form { kind: HoleKind::Simple, specification }, None,
+            complete.then(|| cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap())).unwrap(),
+        extent: complete.then(|| LinearTermination::Blind {
+            length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap(),
+        }), bottom: None, taper_angle: None, allow_multi_profile_faces: None,
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut configuration = design_configuration("hole", 0, Some(0), None);
+    for (ordinal, name, base_specification, local_specification) in [
+        (0, "clearance", Some(Box::new(clearance.clone())), None),
+        (1, "threaded", None, Some(Box::new(threaded.clone()))),
+    ] {
+        let id = FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap();
+        ir.model.features.push(Feature {
+            id: id.clone(), ordinal, name: None, suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(), source_tag: None,
+            source_text: None, source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(hole(base_specification, true)), native_ref: None,
+        });
+        configuration.feature_states.insert(id, ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() },
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(), definition: hole(local_specification, false),
+        });
+    }
+    ir.model.configurations.push(configuration);
+    let mut expected = ir.clone();
+    for (name, specification) in [("clearance", clearance), ("threaded", threaded)] {
+        expected.model.configurations[0].feature_states
+            .get_mut(&FeatureId::mint(format!("synthetic:test:id#{name}")).unwrap()).unwrap()
+            .definition = hole(Some(Box::new(specification)), true);
+    }
+    let losses = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[], &mut cadmpeg_ir::Annotations::default(),
+    )?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_construction_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_construction);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_construction_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_construction);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_construction_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_construction);
+}
