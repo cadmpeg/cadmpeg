@@ -1030,6 +1030,15 @@ macro_rules! local_id_type {
         }
 
         impl $name {
+            /// Copies an admitted local identity within the decode budget.
+            pub fn try_clone_for_decode(
+                &self,
+                ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                operation: &'static str,
+            ) -> Result<Self, cadmpeg_core::CodecError> {
+                Ok(Self(ctx.copy_retained_text(self.as_str(), operation)?))
+            }
+
             /// Mint a non-empty identity that has no whitespace.
             pub fn mint(value: impl Into<String>) -> Result<Self, $crate::ids::IdentityError> {
                 let value = value.into();
