@@ -969,7 +969,8 @@ fn inherit_configuration_hole_semantics(
         .as_ref()
         .is_none_or(|face| !complete_configuration_face_selection(face));
     if missing_face {
-        face.clone_from(base_face);
+        *face = base_face.as_ref()
+            .map(|value| value.try_clone_charged(ctx, "copy SLDPRT configuration hole face")).transpose()?;
     }
     if profile.is_none() {
         profile.clone_from(base_profile);
@@ -978,7 +979,16 @@ fn inherit_configuration_hole_semantics(
         profile_filter.clone_from(base_profile_filter);
     }
     if inherit_placements && placements.is_none() {
-        placements.clone_from(base_placements);
+        if let Some(base_placements) = base_placements {
+            const OPERATION: &str = "copy SLDPRT configuration hole placements";
+            let work = base_placements.len().checked_mul(std::mem::size_of::<cadmpeg_ir::features::holes::HolePlacement>())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            let mut copied = Vec::new();
+            ctx.reserve_collection_vec(&mut copied, base_placements.len(), OPERATION)?;
+            copied.extend(base_placements.iter().cloned());
+            *placements = Some(copied);
+        }
     }
     match (&mut construction, base_construction) {
         (

@@ -453,3 +453,68 @@ fn configuration_sketch_projection_refuses_hole_construction_retained_limit() {
 fn configuration_sketch_projection_refuses_hole_construction_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_construction);
 }
+
+fn run_hole_operands(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HolePlacement, HoleShape};
+    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState, FaceSelection, Feature, FeatureDefinition, FeatureDirection3, FeatureEvaluation, FeatureId, FeatureOperation, FinitePoint3};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let hole = |operands: bool| FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile: None, profile_filter: None,
+        face: operands.then(|| FaceSelection::Resolved {
+            faces: vec![cadmpeg_ir::ids::FaceId::mint("synthetic:test:id#face-first").unwrap(),
+                cadmpeg_ir::ids::FaceId::mint("synthetic:test:id#face-second").unwrap()],
+            native: "retained face selection".into(),
+        }), direction: None,
+        placements: operands.then(|| vec![
+            HolePlacement::Directed {
+                position: FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).unwrap(),
+                direction: FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+            },
+            HolePlacement::Axis {
+                origin: FinitePoint3::new(Point3::new(4.0, 5.0, 6.0)).unwrap(),
+                axis: FeatureDirection3::new(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            },
+        ]),
+        shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None).unwrap(),
+        extent: None, bottom: None, taper_angle: None, allow_multi_profile_faces: None,
+    });
+    let id = FeatureId::mint("synthetic:test:id#hole-operands").unwrap();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: id.clone(), ordinal: 0, name: None, suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::new(), source_tag: None,
+        source_text: None, source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(hole(true)), native_ref: None,
+    });
+    let mut configuration = design_configuration("hole-operands", 0, Some(0), None);
+    configuration.feature_states.insert(id.clone(), ConfigurationFeatureState {
+        evaluation: ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() },
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(), definition: hole(false),
+    });
+    ir.model.configurations.push(configuration);
+    let mut expected = ir.clone();
+    expected.model.configurations[0].feature_states.get_mut(&id).unwrap().definition = hole(true);
+    let losses = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[], &mut cadmpeg_ir::Annotations::default(),
+    )?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_operand_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_operands);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_operand_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_operands);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_operand_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_operands);
+}
