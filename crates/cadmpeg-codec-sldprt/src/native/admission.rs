@@ -7,14 +7,13 @@ use cadmpeg_ir::NativeConvertError;
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::hash::Hash;
 
-pub(super) fn collect_index_set<T: Eq + Hash>(
+pub(super) fn collect_index_set<'a>(
     ctx: &DecodeContext<'_>,
     count: usize,
-    items: impl Iterator<Item = T>,
+    items: impl Iterator<Item = &'a str>,
     operation: &'static str,
-) -> Result<HashSet<T>, NativeConvertError> {
+) -> Result<HashSet<&'a str>, NativeConvertError> {
     ctx.charge_collection_items(
         u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
@@ -24,16 +23,21 @@ pub(super) fn collect_index_set<T: Eq + Hash>(
     result
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    result.extend(items);
+    for key in items {
+        let work = cadmpeg_core::decode::u64_from_index(key.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        result.insert(key);
+    }
     Ok(result)
 }
 
-pub(super) fn collect_index_map<K: Eq + Hash, V>(
+pub(super) fn collect_index_map<'a, V>(
     ctx: &DecodeContext<'_>,
     count: usize,
-    items: impl Iterator<Item = (K, V)>,
+    items: impl Iterator<Item = (&'a str, V)>,
     operation: &'static str,
-) -> Result<HashMap<K, V>, NativeConvertError> {
+) -> Result<HashMap<&'a str, V>, NativeConvertError> {
     ctx.charge_collection_items(
         u64::try_from(count)
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
@@ -43,15 +47,28 @@ pub(super) fn collect_index_map<K: Eq + Hash, V>(
     result
         .try_reserve(count)
         .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-    result.extend(items);
+    for (key, value) in items {
+        let work = cadmpeg_core::decode::u64_from_index(key.len()).checked_mul(2).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+        result.insert(key, value);
+    }
     Ok(result)
 }
 
-struct FormattedByteCount(usize);
+struct FormattedByteCount<'ctx, 'arena> {
+    ctx: &'ctx DecodeContext<'arena>,
+    bytes: usize,
+    failure: Option<cadmpeg_core::CodecError>,
+}
 
-impl fmt::Write for FormattedByteCount {
+impl fmt::Write for FormattedByteCount<'_, '_> {
     fn write_str(&mut self, text: &str) -> fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(fmt::Error)?;
+        if let Err(error) = self.ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "format SLDPRT native validation error") {
+            self.failure = Some(error);
+            return Err(fmt::Error);
+        }
+        self.bytes = self.bytes.checked_add(text.len()).ok_or(fmt::Error)?;
         Ok(())
     }
 }
@@ -60,14 +77,17 @@ pub(super) fn invalid_owner(
     ctx: &DecodeContext<'_>,
     message: fmt::Arguments<'_>,
 ) -> Result<NativeConvertError, NativeConvertError> {
-    let mut count = FormattedByteCount(0);
-    fmt::write(&mut count, message).map_err(|_| {
-        ctx.refuse_codec_limit("format SLDPRT native validation error", u64::MAX - 1, u64::MAX)
-    })?;
+    let mut count = FormattedByteCount { ctx, bytes: 0, failure: None };
+    if fmt::write(&mut count, message).is_err() {
+        return Err(count.failure.unwrap_or_else(|| {
+            ctx.refuse_codec_limit("format SLDPRT native validation error", u64::MAX - 1, u64::MAX)
+        }).into());
+    }
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.bytes), "format SLDPRT native validation error")?;
     let mut text = String::new();
     ctx.reserve_retained_string(
         &mut text,
-        count.0,
+        count.bytes,
         "format SLDPRT native validation error",
     )?;
     fmt::write(&mut text, message).map_err(|_| {

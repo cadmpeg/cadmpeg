@@ -45,6 +45,9 @@ pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ExtractedStream>, CodecError> {
+    let scan_work = cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(64)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(scan_work, "scan Parasolid stream candidates")?;
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
     let starts = if wrapped_prefix {
@@ -84,9 +87,7 @@ pub(crate) fn extract_streams_with_offsets(
             chained_wrapped_stream(payload, magic_at, ctx)?
         };
         if let Some(stream) = stream {
-            if !out
-                .iter()
-                .any(|existing| existing.payload == stream.payload)
+            if !stream_payload_present(ctx, &out, &stream.payload)?
             {
                 ctx.charge_collection_items(1, "collect wrapped Parasolid streams")?;
                 out.try_reserve(1).map_err(|_| {
@@ -160,9 +161,7 @@ pub(crate) fn extract_streams_with_offsets(
                     Err(_) => None,
             };
             if let Some(stream) = inner {
-                    if !out
-                        .iter()
-                        .any(|existing| existing.payload == stream.payload)
+                    if !stream_payload_present(ctx, &out, &stream.payload)?
                     {
                         ctx.charge_collection_items(1, "collect nested Parasolid streams")?;
                         out.try_reserve(1).map_err(|_| {
@@ -175,6 +174,19 @@ pub(crate) fn extract_streams_with_offsets(
         i += 1;
     }
     Ok(out)
+}
+
+fn stream_payload_present(
+    ctx: &DecodeContext<'_>,
+    streams: &[ExtractedStream],
+    payload: &[u8],
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "compare Parasolid stream candidates";
+    let bytes = streams.iter().try_fold(cadmpeg_core::decode::u64_from_index(streams.len()), |bytes, known| {
+        bytes.checked_add(cadmpeg_core::decode::u64_from_index(known.payload.len().min(payload.len())))
+    }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(bytes, OPERATION)?;
+    Ok(streams.iter().any(|known| known.payload == payload))
 }
 
 fn has_wrapped_prefix(payload: &[u8]) -> bool {
@@ -429,6 +441,7 @@ pub(crate) fn stream_header(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Option<StreamHeader>, CodecError> {
+    ctx.charge_work(256, "decode Parasolid stream header")?;
     let Some((description_bytes, token, schema_end)) = (|| {
         let sig = parasolid_offset(payload)?;
         let desc_len_at = sig + 4;
@@ -450,6 +463,9 @@ pub(crate) fn stream_header(
     })() else {
         return Ok(None);
     };
+    let header_work = cadmpeg_core::decode::u64_from_index(description_bytes.len()).checked_mul(4)
+        .ok_or_else(|| ctx.refuse_codec_limit("decode Parasolid stream header", u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(header_work, "decode Parasolid stream header")?;
     let description_len = lossy_utf8_len(description_bytes).ok_or_else(|| {
         ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
     })?;
@@ -548,6 +564,7 @@ pub(crate) fn mesh_polyline_from_header(
     payload: &[u8],
     header: &StreamHeader,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "scan Parasolid mesh coordinates")?;
     let schema = header.schema.value();
     if !schema.as_bytes().ends_with(b"_13006") {
         return Ok(None);
@@ -572,6 +589,7 @@ pub(crate) fn mesh_polyline_from_header(
             continue;
         };
         let point_count = scalar_count / 3;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "decode Parasolid mesh coordinates")?;
         ctx.charge_collection_items(
             u64::try_from(point_count).map_err(|_| {
                 ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)

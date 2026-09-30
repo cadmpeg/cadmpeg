@@ -19,15 +19,6 @@ impl<T> DigestPartition<T> {
         mut keep: impl FnMut(&T) -> bool,
         operation: &'static str,
     ) -> Result<Self, CodecError> {
-        let mut kept_count = 0usize;
-        for item in source {
-            if keep(item) {
-                kept_count = kept_count.checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-                })?;
-            }
-        }
-        let excluded_count = source.len() - kept_count;
         let work = source.len().checked_mul(3).ok_or_else(|| {
             ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
         })?;
@@ -37,6 +28,15 @@ impl<T> DigestPartition<T> {
             })?,
             operation,
         )?;
+        let mut kept_count = 0usize;
+        for item in source {
+            if keep(item) {
+                kept_count = kept_count.checked_add(1).ok_or_else(|| {
+                    ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
+                })?;
+            }
+        }
+        let excluded_count = source.len() - kept_count;
         let mut kept = Vec::new();
         let mut excluded = Vec::new();
         let mut kept_positions = Vec::new();
