@@ -71,10 +71,8 @@ pub(super) fn linked_single_arc_entity(
         return None;
     }
     let entities = linked_single_entities(marker, markers_by_id, loci_by_marker)?;
-    let [entity] = entities.as_slice() else {
-        return None;
-    };
-    Some(entity.clone())
+    if entities.len() != 1 { return None; }
+    entities.into_iter().next()
 }
 
 pub(super) fn linked_single_ellipse_entity(
@@ -96,7 +94,7 @@ pub(super) fn linked_single_ellipse_entity(
                 SketchGeometryDefinition::Ellipse { .. }
             )
         })?;
-    Some(entity.clone())
+    entities.into_iter().next()
 }
 
 pub(super) fn linked_midpoint_operands(
@@ -170,7 +168,7 @@ pub(super) fn linked_single_entities(
             return None;
         };
         if !result.contains(entity) {
-            result.push(entity.clone());
+            result.push(entities.into_iter().next()?);
         }
     }
     Some(result)
@@ -562,8 +560,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = curve(0);
             let second = curve(1);
             match (first, second) {
-                (Some(first), None) => Some((first.clone(), unique_partner(&first)?)),
-                (None, Some(second)) => Some((unique_partner(&second)?, second.clone())),
+                (Some(first), None) => { let partner = unique_partner(&first)?; Some((first, partner)) },
+                (None, Some(second)) => Some((unique_partner(&second)?, second)),
                 _ => None,
             }
         })
@@ -594,15 +592,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let first = curve(0);
             let second = curve(1);
             match (first, second) {
-                (Some(first), None) => Some((
-                    first.clone(),
-                    unique_dynamic_profile_line_angle_entity(
-                        sketch,
-                        &first,
-                        parameter,
-                        sketch_entities,
-                    )?,
-                )),
+                (Some(first), None) => {
+                    let partner = unique_dynamic_profile_line_angle_entity(sketch, &first, parameter, sketch_entities)?;
+                    Some((first, partner))
+                },
                 (None, Some(second)) => Some((
                     unique_dynamic_profile_line_angle_entity(
                         sketch,
@@ -610,7 +603,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         parameter,
                         sketch_entities,
                     )?,
-                    second.clone(),
+                    second,
                 )),
                 _ => None,
             }
@@ -683,15 +676,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         markers_by_id,
                     )
                     .or_else(|| {
-                        Some((
-                            known.clone(),
-                            unique_profile_distance_locus(
-                                sketch,
-                                &known,
-                                parameter,
-                                sketch_entities,
-                            )?,
-                        ))
+                        let partner = unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?;
+                        Some((known, partner))
                     })?,
                     (None, Some(known)) => doubled_profile_distance_loci(
                         relation,
@@ -796,16 +782,16 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
-                    (Some(known), None) => (
-                        known.clone(),
-                        unique_profile_axis_distance_locus(
+                    (Some(known), None) => {
+let partner = unique_profile_axis_distance_locus(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
                             axis,
-                        )?,
-                    ),
+                        )?;
+(known, partner)
+},
                     (None, Some(known)) => (
                         unique_profile_axis_distance_locus(
                             sketch,
@@ -875,15 +861,15 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (point, line) {
                     (Some(point), Some(line)) => (point, line),
-                    (Some(point), None) => (
-                        point.clone(),
-                        unique_profile_point_line_entity(
+                    (Some(point), None) => {
+let partner = unique_profile_point_line_entity(
                             sketch,
                             &point,
                             parameter,
                             sketch_entities,
-                        )?,
-                    ),
+                        )?;
+(point, partner)
+},
                     (None, Some(line)) => (
                         unique_profile_line_point_locus(sketch, &line, parameter, sketch_entities)?,
                         line,
@@ -957,9 +943,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
-                    (Some(known), None) => (
-                        known.clone(),
-                        if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id)
+                    (Some(known), None) => {
+let partner = if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id)
                         {
                             unique_marker_line_distance_entity(
                                 marker.id(),
@@ -977,8 +962,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                                 parameter,
                                 sketch_entities,
                             )?
-                        },
-                    ),
+                        };
+(known, partner)
+},
                     (None, Some(known)) => (
                         if let Some(marker) = relation_line_point_marker(relation, 0, markers_by_id)
                         {
@@ -1060,15 +1046,15 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
-                    (Some(known), None) => (
-                        known.clone(),
-                        unique_profile_line_angle_entity(
+                    (Some(known), None) => {
+let partner = unique_profile_line_angle_entity(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
-                        )?,
-                    ),
+                        )?;
+(known, partner)
+},
                     (None, Some(known)) => (
                         unique_profile_line_angle_entity(
                             sketch,
@@ -1330,10 +1316,8 @@ fn sole_locus_pair(
             .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
     });
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 // Find the unique profile locus pair whose spanned dimension, measured by
@@ -1374,7 +1358,8 @@ fn unique_repaired_profile_pair(
         .filter_map(|known| {
             let mut pair = [known.clone(), partner(known)?];
             pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-            Some((pair[0].clone(), pair[1].clone()))
+            let [first, second] = pair;
+            Some((first, second))
         })
         .collect::<Vec<_>>();
     sole_locus_pair(candidates)
@@ -1406,10 +1391,8 @@ fn unique_profile_measured_locus(
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 pub(super) fn unique_profile_distance_locus(
@@ -1491,10 +1474,8 @@ pub(super) fn doubled_profile_distance_loci(
             )
         })
         .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_repaired_profile_distance_loci_pair(
@@ -1593,13 +1574,11 @@ pub(super) fn canonical_profile_loci(
 // Reduce candidate entity matches to the sole survivor by natural order:
 // sort, drop duplicates, and yield the value only when exactly one remains.
 // Serves both single-entity and entity-pair resolvers.
-fn sole_sorted<T: Ord + Clone>(mut candidates: Vec<T>) -> Option<T> {
+fn sole_sorted<T: Ord>(mut candidates: Vec<T>) -> Option<T> {
     candidates.sort();
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 // Find the unique sketch entity, other than `known`, for which `matches`
@@ -1664,7 +1643,8 @@ fn unique_repaired_entity_pair(
         .filter_map(|known| {
             let mut pair = [known.clone(), partner(known)?];
             pair.sort();
-            Some((pair[0].clone(), pair[1].clone()))
+            let [first, second] = pair;
+            Some((first, second))
         })
         .collect::<Vec<_>>();
     sole_sorted(candidates)
@@ -1907,7 +1887,7 @@ fn unique_dynamic_marker_point_pair(
         if measure(first, second)
             .is_some_and(|value| same_relation_dimension_length(value, expected.get()))
         {
-            return Some((first.clone(), second.clone()));
+            return known_first.zip(known_second);
         }
     }
     let candidates = |index: usize, known: Option<SketchLocus>| {
@@ -1941,7 +1921,8 @@ fn unique_dynamic_marker_point_pair(
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-                pairs.push((pair[0].clone(), pair[1].clone()));
+                let [first, second] = pair;
+                pairs.push((first, second));
             }
         }
     }
@@ -2153,10 +2134,8 @@ fn unique_dynamic_roster_point_line_pair(
             .then_with(|| left_line.cmp(right_line))
     });
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_roster_point_line_pair(
@@ -2207,10 +2186,8 @@ fn unique_roster_point_line_pair(
             .then_with(|| left_line.cmp(right_line))
     });
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_dynamic_marker_point_line_pair(
@@ -2272,10 +2249,8 @@ fn unique_dynamic_marker_point_line_pair(
     pairs.dedup_by(|(left_point, left_line), (right_point, right_line)| {
         left_point == right_point && left_line == right_line
     });
-    let [pair] = pairs.as_slice() else {
-        return None;
-    };
-    Some(pair.clone())
+    if pairs.len() != 1 { return None; }
+    pairs.into_iter().next()
 }
 
 fn unique_dynamic_marker_line_distance_pair(
@@ -2323,7 +2298,8 @@ fn unique_dynamic_marker_line_distance_pair(
             {
                 let mut pair = [first.clone(), second.clone()];
                 pair.sort();
-                pairs.push((pair[0].clone(), pair[1].clone()));
+                let [first, second] = pair;
+                pairs.push((first, second));
             }
         }
     }
@@ -2668,10 +2644,8 @@ fn unique_profile_point_line_entity(
         .collect::<Vec<_>>();
     candidates.sort();
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_profile_line_point_locus(
@@ -2696,10 +2670,8 @@ fn unique_profile_line_point_locus(
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_profile_point_line_pair(
@@ -2741,10 +2713,8 @@ fn unique_profile_point_line_pair(
             .then_with(|| left_line.cmp(right_line))
     });
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_repaired_profile_point_line_pair(
@@ -2771,10 +2741,8 @@ fn unique_repaired_profile_point_line_pair(
             .then_with(|| left_line.cmp(right_line))
     });
     candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 pub(super) fn profile_locus_point(
@@ -3088,10 +3056,8 @@ fn marker_center_dimensioned_entity(
             .then_some(entity.id().clone())
         })
         .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    if candidates.len() != 1 { return None; }
+    candidates.into_iter().next()
 }
 
 fn unique_dimensioned_circle_entity(
@@ -3292,10 +3258,8 @@ fn single_marker_entity(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchEntityId> {
     let entities = marker_entities(marker_id, markers_by_id, loci_by_marker);
-    let [entity] = entities.as_slice() else {
-        return None;
-    };
-    Some(entity.clone())
+    if entities.len() != 1 { return None; }
+    entities.into_iter().next()
 }
 
 fn single_marker_circular_entity(
@@ -3321,10 +3285,8 @@ fn single_marker_circular_entity(
         .collect::<Vec<_>>();
     entities.sort();
     entities.dedup();
-    let [entity] = entities.as_slice() else {
-        return None;
-    };
-    Some(entity.clone())
+    if entities.len() != 1 { return None; }
+    entities.into_iter().next()
 }
 
 pub(super) fn single_marker_line_entity(
@@ -3342,8 +3304,8 @@ pub(super) fn single_marker_line_entity(
     );
     entities.sort();
     entities.dedup();
-    if let [entity] = entities.as_slice() {
-        return Some(entity.clone());
+    if entities.len() == 1 {
+        return entities.into_iter().next();
     }
     let marker = markers_by_id.get(marker_id)?;
     let links = marker
@@ -3388,7 +3350,7 @@ pub(super) fn single_marker_line_entity(
     let Some(sketch) = sketch_entities
         .iter()
         .find(|entity| entity.id() == first_entity)
-        .map(|entity| entity.sketch.clone())
+        .map(|entity| &entity.sketch)
     else {
         return unique_line_containing_marker_point(
             marker_id,
@@ -3400,7 +3362,7 @@ pub(super) fn single_marker_line_entity(
     if sketch_entities
         .iter()
         .find(|entity| entity.id() == second_entity)
-        .is_none_or(|entity| entity.sketch != sketch)
+        .is_none_or(|entity| entity.sketch != *sketch)
     {
         return unique_line_containing_marker_point(
             marker_id,
@@ -3423,7 +3385,7 @@ pub(super) fn single_marker_line_entity(
         sketch_entities
             .iter()
             .filter(|entity| {
-                entity.sketch == sketch
+                entity.sketch == *sketch
                     && matches!(
                         *entity.geometry.definition(),
                         SketchGeometryDefinition::Line { .. }
@@ -3464,11 +3426,11 @@ fn unique_line_containing_marker_point(
     let sketch = sketch_entities
         .iter()
         .find(|entity| entity.id() == locus_entity(&locus))
-        .map(|entity| entity.sketch.clone())?;
+        .map(|entity| &entity.sketch)?;
     sole_sorted(
         sketch_entities
             .iter()
-            .filter(|entity| entity.sketch == sketch)
+            .filter(|entity| entity.sketch == *sketch)
             .filter(|entity| {
                 matches!(
                     *entity.geometry.definition(),
