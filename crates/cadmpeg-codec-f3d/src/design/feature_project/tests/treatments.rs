@@ -177,25 +177,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-                native: &[],
-                owners: &[],
                 scopes: std::slice::from_ref(&scope),
                 timelines: std::slice::from_ref(&timeline),
                 construction_groups: &groups,
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
                 entity_selection_operands: std::slice::from_ref(selection),
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
-            }))
+..Default::default()
+}))
         .expect("authored Draft timeline")
     };
 
@@ -695,9 +682,6 @@ owners: &chord_owners,
 scopes,
 construction_groups: &operand_groups[..1],
 fillet_radius_groups: &chord_assignments,
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -743,9 +727,6 @@ owners: &chord_only_owners,
 scopes,
 construction_groups: &operand_groups[..1],
 fillet_radius_groups: &chord_only_assignments,
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -792,9 +773,6 @@ owners: &asymmetric_owners,
 scopes,
 construction_groups: &operand_groups[..1],
 fillet_radius_groups: &asymmetric_assignments,
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -826,9 +804,6 @@ owners: &owners,
 scopes,
 construction_groups: &operand_groups,
 fillet_radius_groups: &assignments,
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -1149,9 +1124,6 @@ owners: &variable_owners,
 scopes,
 construction_groups: &operand_groups[1..],
 fillet_radius_groups: &variable_assignments,
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -1195,10 +1167,6 @@ native: &variable_parameters,
 owners: &variable_owners,
 scopes,
 construction_groups: &operand_groups[1..],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -1286,25 +1254,9 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
             tangency_weight_parameter_record_index: None,
         };
         let inputs = crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
-            scopes: &[],
-            timelines: &[],
-            construction_groups: &[],
             fillet_radius_groups: std::slice::from_ref(&assignment),
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        };
+..Default::default()
+};
         assert!(matches!(
             crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fillet_arm(decode_ctx, &inputs, &scope, &parameters, "f3d:native")),
             Ok(FeatureDefinition::Operation(

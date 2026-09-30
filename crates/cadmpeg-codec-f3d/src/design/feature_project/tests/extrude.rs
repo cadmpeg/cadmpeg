@@ -541,10 +541,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: std::slice::from_ref(&owned_along),
 owners: std::slice::from_ref(&owner),
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
 placements: std::slice::from_ref(&placement),
 timelines: &timelines,
 ..Default::default()
@@ -595,10 +591,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: std::slice::from_ref(&owned_along),
 owners: std::slice::from_ref(&owner),
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
 placements: std::slice::from_ref(&placement),
 timelines: &timelines,
 ..Default::default()
@@ -665,10 +657,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: std::slice::from_ref(&owned_along),
 owners: std::slice::from_ref(&owner),
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
 placements: std::slice::from_ref(&placement),
 timelines: &timelines,
 ..Default::default()

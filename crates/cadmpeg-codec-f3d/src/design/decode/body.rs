@@ -1282,13 +1282,7 @@ fn typed_browser_node_hidden_flags(
     let presentations = crate::design::decode::presentation::body_presentations(ctx, bytes, meta)?;
     let mut nodes_by_entity = HashMap::<u64, Vec<_>>::new();
     for node in &nodes {
-        if !nodes_by_entity.contains_key(&node.entity_suffix) {
-
-            ctx.reserve_map(&mut nodes_by_entity, 1, "f3d browser visibility entities")?;
-        }
-        let candidates = nodes_by_entity.entry(node.entity_suffix).or_default();
-        ctx.reserve_vec(candidates, 1, "f3d browser visibility candidates")?;
-        candidates.push(node);
+        ctx.push_hash_group(&mut nodes_by_entity, node.entity_suffix, node, "f3d browser visibility entities", "f3d browser visibility candidates")?;
     }
 
     let mut out = HashMap::new();

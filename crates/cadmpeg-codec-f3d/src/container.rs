@@ -557,11 +557,7 @@ pub(crate) fn scan<'a>(
     let mut scope_entry_indices = std::collections::HashMap::<String, Vec<usize>>::new();
     for (index, entry) in entries.iter().enumerate() {
         let scope = crate::ids::native_scope_charged(ctx, &entry.name)?;
-        if !scope_entry_indices.contains_key(&scope) {
-            ctx.reserve_map(&mut scope_entry_indices, 1, "index F3D native scopes")?;
-        }
-        let indices = scope_entry_indices.entry(scope).or_default();
-        ctx.push_vec(indices, index, "index F3D scope entries")?;
+        ctx.push_hash_group(&mut scope_entry_indices, scope, index, "index F3D native scopes", "index F3D scope entries")?;
     }
 
     let mut scan = ContainerScan {

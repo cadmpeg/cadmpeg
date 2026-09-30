@@ -66,11 +66,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: &parameters,
 owners: &owners,
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -91,10 +86,6 @@ native: &parameters,
 owners: &owners,
 scopes,
 construction_groups: std::slice::from_ref(&group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -115,25 +106,9 @@ fn assert_chamfer_collection_refusal(limit: u64, operation: &str) {
     let parameter = localized_fillet_parameter(10, 11, "Distance", Some("mm"), 0.1);
     let group = localized_fillet_group(100, 0, vec![200]);
     let inputs = crate::design::feature_project::ProjectInputs {
-        native: &[],
-        owners: &[],
-        scopes: &[],
-        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = limit;

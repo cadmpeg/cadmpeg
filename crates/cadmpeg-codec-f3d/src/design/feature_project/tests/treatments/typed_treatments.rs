@@ -245,10 +245,6 @@ owners: &[
         ],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -305,10 +301,6 @@ native: &distance_angle_parameters,
 owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -349,10 +341,6 @@ native: &distance_angle_parameters,
 owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -384,11 +372,7 @@ owners: &[
             owner(114, 32, 115, 2),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
 face_operands: &hole_face_operands,
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -425,11 +409,6 @@ owners: &[
             owner(114, 32, 115, 2),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -461,11 +440,6 @@ owners: &[
             owner(134, 32, 135, 4),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -499,11 +473,6 @@ owners: &[
             owner(134, 32, 135, 4),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -531,10 +500,6 @@ native: &[
 owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -555,10 +520,6 @@ native: &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
 owners: &[owner(54, 22, 55, 0)],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -581,11 +542,6 @@ native: &[
         ],
 owners: &[owner(44, 12, 45, 0), owner(46, 12, 47, 1)],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -604,11 +560,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: &[parameter(44, 45, "Radius", "d1", "0 mm", 0.0)],
 owners: &[owner(44, 12, 45, 0)],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -636,10 +587,6 @@ owners: &[
         ],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -662,10 +609,6 @@ native: &[
 owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
 scopes,
 construction_groups: std::slice::from_ref(&chamfer_edge_group),
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -699,10 +642,6 @@ native: &[
 owners: &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
 scopes,
 construction_groups: &construction_groups,
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });

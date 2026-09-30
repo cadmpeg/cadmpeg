@@ -122,13 +122,7 @@ pub(crate) fn decode_edge_operands(
     let mut stream_offsets: HashMap<&str, Vec<u64>> = HashMap::new();
     for header in record_headers {
         if let Some(stream) = native_stream(&header.id) {
-            if !stream_offsets.contains_key(stream) {
-
-                ctx.reserve_map(&mut stream_offsets, 1, "f3d edge operand offset stream")?;
-            }
-            let offsets = stream_offsets.entry(stream).or_default();
-            ctx.reserve_vec(offsets, 1, "f3d edge operand stream offset")?;
-            offsets.push(header.byte_offset);
+            ctx.push_hash_group(&mut stream_offsets, stream, header.byte_offset, "f3d edge operand offset stream", "f3d edge operand stream offset")?;
         }
     }
     for offsets in stream_offsets.values_mut() {

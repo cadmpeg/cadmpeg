@@ -547,13 +547,7 @@ pub(crate) fn admit_history_bound_scope_variants(
     for (index, scope) in scopes.iter().enumerate() {
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
-        if !groups.contains_key(&key) {
-
-            ctx.reserve_map(&mut groups, 1, "f3d scope admission groups")?;
-        }
-        let indices = groups.entry(key).or_default();
-        ctx.reserve_vec(indices, 1, "f3d scope admission group indices")?;
-        indices.push(index);
+        ctx.push_hash_group(&mut groups, key, index, "f3d scope admission groups", "f3d scope admission group indices")?;
     }
 
     for indices in groups.values() {

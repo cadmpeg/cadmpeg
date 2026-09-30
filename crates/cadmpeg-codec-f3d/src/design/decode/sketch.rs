@@ -60,12 +60,7 @@ impl IndexedRecordOffsets {
     ) -> Result<Self, CodecError> {
         let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
         for header in indexed_record_offsets(bytes) {
-            if !by_record_index.contains_key(&header.record_index) {
-                ctx.reserve_map(&mut by_record_index, 1, "f3d indexed record key")?;
-            }
-            let offsets = by_record_index.entry(header.record_index).or_default();
-            ctx.reserve_vec(offsets, 1, "f3d indexed record offset")?;
-            offsets.push(header.offset);
+            ctx.push_hash_group(&mut by_record_index, header.record_index, header.offset, "f3d indexed record key", "f3d indexed record offset")?;
         }
         Ok(Self { by_record_index })
     }

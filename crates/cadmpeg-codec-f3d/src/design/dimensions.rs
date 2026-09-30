@@ -1367,12 +1367,7 @@ fn project_all_dimension_constraints(
         };
         if !projected_dimension_companions.contains(&(scope, record.companion_record_index)) {
             let key = (scope, record.companion_record_index);
-            if !recipes_by_companion.contains_key(&key) {
-                {
-                    ctx.admit_btree_entry(&recipes_by_companion, &key, "f3d dimension recipe group")?;
-                }
-            }
-            ctx.push_vec(recipes_by_companion.entry(key).or_default(), record, "f3d dimension recipe group member")?;
+            ctx.push_btree_group(&mut recipes_by_companion, key, record, "f3d dimension recipe group", "f3d dimension recipe group member")?;
         }
     }
     for records in recipes_by_companion.values_mut() {
