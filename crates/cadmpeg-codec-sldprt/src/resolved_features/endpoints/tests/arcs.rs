@@ -1604,7 +1604,7 @@ fn extended_geometry_116_arc_uses_relation_tail_and_center_index() {
 
     payload[58..60].copy_from_slice(&1u16.to_le_bytes());
     let (circle_center, radius) =
-        equal_index_coordinate_roster_full_circle(&payload, &curve, &markers)
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &curve, &markers).unwrap()
             .expect("116-byte equal-index circle");
     assert_eq!(circle_center, [9.0, 9.0]);
     assert!((radius - 145.0_f64.sqrt()).abs() < 1.0e-12);
@@ -1656,7 +1656,7 @@ fn extended_geometry_terminal_circle_uses_dimension_tail() {
     let markers = [&circle, &witness, &center, &radial];
 
     assert_eq!(
-        equal_index_coordinate_roster_full_circle(&payload, &circle, &markers),
+        equal_index_coordinate_roster_full_circle(&cadmpeg_test_support::service_decode_context(), &payload, &circle, &markers).unwrap(),
         Some(([0.0, 0.0], 1.0))
     );
 }
