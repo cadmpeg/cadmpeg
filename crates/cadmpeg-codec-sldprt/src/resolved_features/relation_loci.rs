@@ -1170,7 +1170,20 @@ let partner = resolved_or_none!(unique_profile_line_angle_entity(
                     None => return Ok(None),
                 }));
             }
-            let resolved_entity = sketch_entities
+            const SCAN: &str = "scan SLDPRT dimensional circle identities";
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch_entities.len()), SCAN)?;
+            let scan_work = sketch_entities.iter().try_fold(0u64, |work, entity| {
+                let bytes = [entity.sketch.as_str().len(), sketch.as_str().len(),
+                    entity.geometry_ref.as_deref().map_or(0, str::len), relation.id.len()];
+                bytes.into_iter().try_fold(work, |work, count| {
+                    cadmpeg_core::decode::u64_from_index(count).checked_add(1)
+                        .and_then(|bytes| bytes.checked_mul(8))
+                        .and_then(|bytes| work.checked_add(bytes))
+                        .ok_or_else(|| ctx.refuse_codec_limit(SCAN, u64::MAX - 1, u64::MAX))
+                })
+            })?;
+            ctx.charge_work(scan_work, SCAN)?;
+            let resolved_entity = if let Some(entity) = sketch_entities
                 .iter()
                 .find(|entity| {
                     entity.sketch == *sketch
@@ -1180,9 +1193,9 @@ let partner = resolved_or_none!(unique_profile_line_angle_entity(
                             SketchGeometryDefinition::Circle { .. }
                                 | SketchGeometryDefinition::Arc { .. }
                         )
-                })
-                .map(|entity| entity.id().clone())
-                .or_else(|| {
+                }) {
+                Some(super::transforms::copy_sketch_entity_identity(ctx, entity.id(), "retain SLDPRT dimensional circle identity")?)
+            } else {
                     marker(0).and_then(|marker| {
                         marker_center_dimensioned_entity(marker, sketch, sketch_entities, parameter)
                             .or_else(|| {
@@ -1198,7 +1211,7 @@ let partner = resolved_or_none!(unique_profile_line_angle_entity(
                                 }
                             })
                     })
-                });
+            };
             let authoritative = resolved_entity.is_some();
             let entity = resolved_or_none!(resolved_entity
                 .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)));
