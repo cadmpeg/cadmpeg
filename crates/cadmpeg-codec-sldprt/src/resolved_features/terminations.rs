@@ -824,7 +824,7 @@ pub(crate) fn project_surface_sweep_profiles(
                         for marker in wrapper + 4..marker_end {
                             ctx.charge_work(1, "project SLDPRT surface sweep profile")?;
                             if lane.native_payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
-                            if let Some(components) = component_reference_curve_path_at(&lane.native_payload, marker) {
+                            if let Some(components) = component_reference_curve_path_at(ctx, &lane.native_payload, marker)? {
                                 ctx.reserve_collection_vec(&mut candidates, 1, "project SLDPRT surface sweep profile")?;
                                 candidates.push((marker, components));
                             }

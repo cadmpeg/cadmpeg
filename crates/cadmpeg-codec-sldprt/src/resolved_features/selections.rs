@@ -3246,65 +3246,65 @@ pub(super) fn component_profile_source_at(payload: &[u8], prefix: usize) -> Opti
 }
 
 pub(super) fn component_reference_curve_path_at(
-    payload: &[u8],
-    marker: usize,
-) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    let prefix = marker.checked_sub(8)?;
-    let prefix_end = marker.checked_sub(4)?;
-    let marker_end = marker.checked_add(16)?;
-    let trailer_end = marker_end.checked_add(2)?;
-    if payload.get(marker..marker_end)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(prefix..prefix_end)? != [0x04, 0x02, 0, 0]
-        || payload.get(marker_end..trailer_end)? != [0, 0]
-    {
-        return None;
-    }
-    let count = usize::try_from(View::u32_le_at(payload, marker.checked_sub(12)?)?)
-        .ok()
-        .filter(|count| (1..=64).contains(count))?;
-    let parse = |count: usize| {
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT component reference curve path";
+    ctx.charge_work(32, OPERATION)?;
+    let count = (|| {
+        let prefix = marker.checked_sub(8)?;
+        let prefix_end = marker.checked_sub(4)?;
+        let marker_end = marker.checked_add(16)?;
+        let trailer_end = marker_end.checked_add(2)?;
+        if payload.get(marker..marker_end)? != COMPACT_EDGE_VECTOR_MARKER
+            || payload.get(prefix..prefix_end)? != [0x04, 0x02, 0, 0]
+            || payload.get(marker_end..trailer_end)? != [0, 0] { return None; }
+        usize::try_from(View::u32_le_at(payload, marker.checked_sub(12)?)?)
+            .ok().filter(|count| (1..=64).contains(count))
+    })();
+    let Some(count) = count else { return Ok(None); };
+    let parse = |count: usize| -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
         let mut cursor = marker + 18;
-        let signature: [u8; 12] = payload.get(cursor + 4..cursor + 16)?.try_into().ok()?;
-        let mut components = Vec::with_capacity(count);
+        let signature = payload.get(cursor + 4..cursor + 16)
+            .and_then(|bytes| <[u8; 12]>::try_from(bytes).ok());
+        let Some(signature) = signature else { return Ok(None); };
+        let mut components = Vec::new();
+        ctx.reserve_collection_vec(&mut components, count, OPERATION)?;
         for index in 0..count {
+            ctx.charge_work(64, OPERATION)?;
             if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
-                return None;
+                return Ok(None);
             }
-            components.push(FeatureInputComponentPathEntry {
+            let entry = (|| Some(FeatureInputComponentPathEntry {
                 instance: Some(View::u16_le_at(payload, cursor)?),
                 type_signature: signature,
                 local_id: Some(View::u32_le_at(payload, cursor + 16)?),
-            });
+            }))();
+            let Some(entry) = entry else { return Ok(None); };
+            components.push(entry);
             cursor += 20;
             if index + 1 != count {
-                let gaps = [0usize, 6]
-                    .into_iter()
-                    .filter(|gap| {
-                        payload.get(cursor + gap + 4..cursor + gap + 16)
-                            == Some(signature.as_slice())
-                            && match *gap {
-                                0 => true,
-                                6 => {
-                                    payload.get(cursor..cursor + 2) != Some(&[0, 0])
-                                        && payload.get(cursor + 2..cursor + 6) == Some(&[0; 4])
-                                }
-                                _ => false,
-                            }
-                    })
-                    .collect::<Vec<_>>();
-                let [gap] = gaps.as_slice() else {
-                    return None;
+                let gap_valid = |gap: usize| {
+                    payload.get(cursor + gap + 4..cursor + gap + 16)
+                        == Some(signature.as_slice())
+                        && (gap == 0 || (payload.get(cursor..cursor + 2) != Some(&[0, 0])
+                            && payload.get(cursor + 2..cursor + 6) == Some(&[0; 4])))
+                };
+                let gap = match (gap_valid(0), gap_valid(6)) {
+                    (true, false) => 0,
+                    (false, true) => 6,
+                    _ => return Ok(None),
                 };
                 cursor += gap;
             }
         }
-        Some((components, cursor))
+        Ok(Some((components, cursor)))
     };
-    parse(count).map(|(components, _)| components).or_else(|| {
-        let (components, end) = (count > 1).then(|| parse(count - 1)).flatten()?;
-        (payload.get(end..end + 12) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]))
-            .then_some(components)
-    })
+    if let Some((components, _)) = parse(count)? { return Ok(Some(components)); }
+    if count <= 1 { return Ok(None); }
+    let Some((components, end)) = parse(count - 1)? else { return Ok(None); };
+    ctx.charge_work(12, OPERATION)?;
+    Ok((payload.get(end..end + 12) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]))
+        .then_some(components))
 }
 
 pub(super) fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
