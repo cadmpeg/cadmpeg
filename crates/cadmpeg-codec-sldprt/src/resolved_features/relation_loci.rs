@@ -3586,6 +3586,47 @@ where K: Eq + std::hash::Hash {
     Ok(result)
 }
 
+fn reserve_profile_locus_set_slot<K>(
+    ctx: &DecodeContext<'_>,
+    set: &mut HashSet<K>,
+    key: &K,
+    source_key_bytes: u64,
+    query_bytes: u64,
+    operation: &'static str,
+) -> Result<bool, cadmpeg_core::CodecError>
+where K: Eq + std::hash::Hash {
+    ctx.charge_work(source_key_bytes.checked_add(query_bytes).and_then(|work| work.checked_mul(4))
+        .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(set.len()).checked_add(1)?
+            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<K>()))?))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    let new_key = !set.contains(key);
+    if new_key {
+        ctx.charge_collection_items(1, operation)?;
+        set.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    }
+    Ok(new_key)
+}
+
+fn append_profile_endpoint_locus(
+    ctx: &DecodeContext<'_>,
+    loci: &mut Vec<SketchLocus>,
+    entity: &SketchEntityId,
+    role: super::transforms::SketchLocusRole,
+    source_entity_bytes: u64,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    ctx.charge_work(source_entity_bytes.checked_add(cadmpeg_core::decode::u64_from_index(entity.as_str().len()))
+        .and_then(|work| work.checked_mul(4))
+        .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(loci.len()).checked_add(1)?
+            .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>()))?))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+    if !loci.iter().any(|locus| role.matches(locus) && locus_entity(locus) == entity) {
+        ctx.reserve_collection_vec(loci, 1, operation)?;
+        loci.push(role.copy_locus(ctx, entity, operation)?);
+    }
+    Ok(())
+}
+
 fn collect_profile_locus_set<K>(
     ctx: &DecodeContext<'_>,
     entries: impl IntoIterator<Item = K>,
@@ -3597,15 +3638,7 @@ where K: Eq + std::hash::Hash {
     let mut key_bytes = 0u64;
     for key in entries {
         let bytes = cadmpeg_core::decode::u64_from_index(key_len(&key));
-        let work = key_bytes.checked_add(bytes)
-            .and_then(|work| work.checked_mul(4))
-            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(result.len())
-                .checked_add(1)?.checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<K>()))?))
-            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(work, operation)?;
-        if !result.contains(&key) {
-            ctx.charge_collection_items(1, operation)?;
-            result.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        if reserve_profile_locus_set_slot(ctx, &mut result, &key, key_bytes, bytes, operation)? {
             key_bytes = key_bytes.checked_add(bytes)
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
             result.insert(key);
@@ -3783,34 +3816,54 @@ pub(super) fn profile_loci_by_marker(
         loci.push(role.copy_locus(ctx, entity.id(), RESULT_OPERATION)?);
         result.insert(marker, loci);
     }
+    const ENDPOINT_OPERATION: &str = "build SLDPRT endpoint marker locus results";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch_entities.len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(qualified_point_markers.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?, ENDPOINT_OPERATION)?;
+    let source_entity_bytes = sketch_entities.iter().try_fold(0u64, |sum, entity| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()))
+    }).and_then(|bytes| bytes.checked_mul(3))
+        .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let qualified_marker_bytes = qualified_point_markers.iter().try_fold(0u64, |sum, marker| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?;
     let mut endpoint_marker_keys = HashSet::new();
     for entity in sketch_entities {
-        let [start, end] = entity.endpoint_refs.as_slice() else {
-            continue;
-        };
-        for (marker, locus) in [
-            (start, SketchLocus::Start(entity.id().clone())),
-            (end, SketchLocus::End(entity.id().clone())),
+        let [start, end] = entity.endpoint_refs.as_slice() else { continue; };
+        for (marker, role) in [
+            (start, super::transforms::SketchLocusRole::Start),
+            (end, super::transforms::SketchLocusRole::End),
         ] {
-            if !markers_by_id.contains_key(marker.as_str()) {
-                continue;
-            }
-            endpoint_marker_keys.insert(marker.clone());
-            let loci = result.entry(marker.clone()).or_default();
-            if !loci.contains(&locus) {
-                loci.push(locus.clone());
-            }
-            if qualified_point_markers.contains(marker.as_str()) {
-                let qualified_key = qualified_point_marker_key(marker);
-                endpoint_marker_keys.insert(qualified_key.clone());
-                let loci = result.entry(qualified_key).or_default();
-                if !loci.contains(&locus) {
-                    loci.push(locus);
-                }
+            ctx.charge_work(marker_key_bytes.checked_add(qualified_marker_bytes)
+                .and_then(|bytes| bytes.checked_add(cadmpeg_core::decode::u64_from_index(marker.len())))
+                .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?, ENDPOINT_OPERATION)?;
+            if !markers_by_id.contains_key(marker.as_str()) { continue; }
+            let qualified = qualified_point_markers.contains(marker.as_str());
+            for qualified_key in [false, true] {
+                if qualified_key && !qualified { continue; }
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.len()).checked_add(32)
+                    .and_then(|work| work.checked_mul(8))
+                    .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?, ENDPOINT_OPERATION)?;
+                let key = if qualified_key {
+                    ctx.format_retained(format_args!("{marker}:qualified-point"), ENDPOINT_OPERATION)?
+                } else {
+                    ctx.format_retained(format_args!("{marker}"), ENDPOINT_OPERATION)?
+                };
+                reserve_profile_locus_set_slot(ctx, &mut endpoint_marker_keys, &key, result_key_byte_bound,
+                    cadmpeg_core::decode::u64_from_index(key.len()), ENDPOINT_OPERATION)?;
+                endpoint_marker_keys.insert(ctx.format_retained(format_args!("{key}"), ENDPOINT_OPERATION)?);
+                reserve_profile_locus_map_slot(ctx, &mut result, &key, result_key_byte_bound,
+                    cadmpeg_core::decode::u64_from_index(key.len()), ENDPOINT_OPERATION)?;
+                append_profile_endpoint_locus(ctx, result.entry(key).or_default(), entity.id(), role,
+                    source_entity_bytes, ENDPOINT_OPERATION)?;
             }
         }
     }
     for marker in endpoint_marker_keys {
+        ctx.charge_work(result_key_byte_bound.checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(ENDPOINT_OPERATION, u64::MAX - 1, u64::MAX))?, ENDPOINT_OPERATION)?;
         if let Some(loci) = result.get_mut(&marker) {
             canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }

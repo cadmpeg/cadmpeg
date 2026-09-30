@@ -265,7 +265,13 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
     markers.push(point);
     markers.push(SketchInputEntity::new("canonical-point", "lane", 0, 0, SketchInputKind::Point));
     let mut lane = relation_lane();
-    lane.relation_instances.clear();
+    lane.relation_instances[0].operands = vec![FeatureInputOperand {
+        offset: 0,
+        reference_ref: "canonical-reference".into(),
+        kind: FeatureInputOperandKind::D6,
+        entity_index: 0,
+        entity_ref: Some("canonical-point".into()),
+    }];
     lane.sketch_entities = markers;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
