@@ -518,3 +518,112 @@ fn configuration_sketch_projection_refuses_hole_operand_retained_limit() {
 fn configuration_sketch_projection_refuses_hole_operand_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_operands);
 }
+
+fn profile_termination_operands() -> (Vec<cadmpeg_ir::features::PlanarProfileRef>, Vec<cadmpeg_ir::features::LinearTermination>) {
+    use cadmpeg_ir::features::{FaceSelection, FeatureId, GeneratedCurveRef, GeneratedVertexRef, LinearTermination, PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion, VertexSelection};
+    use cadmpeg_ir::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId, HistoricalVertexId};
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
+    let sketch = SketchId::mint("synthetic:test:id#profile-sketch").unwrap();
+    let entity = SketchEntityId::mint("synthetic:test:id#profile-entity").unwrap();
+    let owner = FeatureId::mint("synthetic:test:id#profile-owner").unwrap();
+    let state = FeatureInputTopologyId::mint("synthetic:test:id#profile-state").unwrap();
+    let faces = vec![FaceId::mint("synthetic:test:id#profile-face").unwrap()];
+    let boundary = SketchProfileBoundaryUse {
+        entity: entity.clone(), parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap(),
+        reversed: true,
+    };
+    let planar = vec![
+        PlanarProfileRef::Unresolved("unresolved profile".into()),
+        PlanarProfileRef::Native("native profile".into()),
+        PlanarProfileRef::Sketch(sketch.clone()),
+        PlanarProfileRef::SketchProfiles { sketch: sketch.clone(), profiles: vec![0, 2].try_into().unwrap() },
+        PlanarProfileRef::SketchRegions { sketch: sketch.clone(), regions: vec![
+            SketchProfileRegion::loops(0, vec![1, 3]).unwrap(),
+            SketchProfileRegion::trimmed(vec![boundary.clone()], vec![vec![boundary.clone()], vec![boundary]]).unwrap(),
+        ].try_into().unwrap() },
+        PlanarProfileRef::SketchEntities { sketch: sketch.clone(), entities: vec![entity].try_into().unwrap() },
+        PlanarProfileRef::SketchSelection { sketch, selections: vec!["native first".into(), "native second".into()].try_into().unwrap() },
+        PlanarProfileRef::HistoricalFaces { state: state.clone(), faces: vec![HistoricalFaceId::mint("synthetic:test:id#historical-face").unwrap()].try_into().unwrap(),
+            native: vec!["historical first".into(), "historical second".into()].try_into().unwrap() },
+        PlanarProfileRef::Feature(owner.clone()),
+        PlanarProfileRef::Generated { curves: vec![
+            GeneratedCurveRef { feature: owner.clone(), local_id: "curve first".to_string().try_into().unwrap() },
+            GeneratedCurveRef { feature: owner.clone(), local_id: "curve second".to_string().try_into().unwrap() },
+        ].try_into().unwrap(), native: "generated profile".to_string().try_into().unwrap() },
+        PlanarProfileRef::Faces(faces.clone()),
+    ];
+    let terminations = vec![
+        LinearTermination::Unresolved {},
+        LinearTermination::Blind { length: cadmpeg_ir::scalar::NonZeroLength::new(12.0).unwrap() },
+        LinearTermination::ThroughAll {}, LinearTermination::ThroughNext {},
+        LinearTermination::ToFirst {}, LinearTermination::ToLast {},
+        LinearTermination::ToFace { face: FaceSelection::Resolved { faces, native: "terminating face".into() }, offset: Some(cadmpeg_ir::scalar::Length::new(-2.0).unwrap()) },
+        LinearTermination::OffsetFromFace { face: FaceSelection::Native("offset face".into()), offset: cadmpeg_ir::scalar::PositiveLength::new(3.0).unwrap() },
+        LinearTermination::ToShape { target: FaceSelection::Native("target shape".into()) },
+        LinearTermination::ToVertex { vertex: VertexSelection::Unresolved },
+        LinearTermination::ToVertex { vertex: VertexSelection::generated(GeneratedVertexRef {
+            feature: owner, local_id: "generated vertex".to_string().try_into().unwrap(),
+        }, "vertex native".into()).unwrap() },
+        LinearTermination::ToVertex { vertex: VertexSelection::historical(state, HistoricalVertexId::mint("synthetic:test:id#historical-vertex").unwrap(), "historical vertex".into()).unwrap() },
+        LinearTermination::ToVertex { vertex: VertexSelection::native("native vertex".into()).unwrap() },
+    ];
+    (planar, terminations)
+}
+
+fn run_hole_profile_termination(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind, HoleShape};
+    use cadmpeg_ir::features::{ConfigurationEvaluation, ConfigurationFeatureState, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let (profiles, terminations) = profile_termination_operands();
+    let hole = |profile, extent| FeatureDefinition::Operation(FeatureOperation::Hole {
+        profile, profile_filter: None, face: None, direction: None, placements: None,
+        shape: HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, None).unwrap(),
+        extent, bottom: None, taper_angle: None, allow_multi_profile_faces: None,
+    });
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut configuration = design_configuration("profile-termination", 0, Some(0), None);
+    for index in 0..profiles.len().max(terminations.len()) {
+        let id = FeatureId::mint(format!("synthetic:test:id#hole-profile-{index}")).unwrap();
+        ir.model.features.push(Feature {
+            id: id.clone(), ordinal: u64::try_from(index).unwrap(), name: None, suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(), source_tag: None,
+            source_text: None, source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(hole(
+                Some(profiles[index % profiles.len()].clone()), Some(terminations[index % terminations.len()].clone()),
+            )), native_ref: None,
+        });
+        configuration.feature_states.insert(id, ConfigurationFeatureState {
+            evaluation: ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() },
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(), definition: hole(None, None),
+        });
+    }
+    ir.model.configurations.push(configuration);
+    let mut expected = ir.clone();
+    for feature in &expected.model.features {
+        expected.model.configurations[0].feature_states.get_mut(&feature.id).unwrap()
+            .definition = feature.evaluation.definition().clone();
+    }
+    let losses = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[], &mut cadmpeg_ir::Annotations::default(),
+    )?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_profile_termination_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_hole_profile_termination);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_profile_termination_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_hole_profile_termination);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_hole_profile_termination_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_profile_termination);
+}
