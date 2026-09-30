@@ -981,7 +981,6 @@ fn compact_body_component_entries_at(
     if count == 0 {
         return None;
     }
-    let mut candidates = Vec::new();
     let mixed = |count| {
         let (components, end) = compact_mixed_component_path(payload, cursor, count, true)?;
         components
@@ -992,20 +991,12 @@ fn compact_body_component_entries_at(
     let parse = |count| {
         compact_heterogeneous_component_path(payload, cursor, count).or_else(|| mixed(count))
     };
-    if let Some((components, _)) = parse(count) {
-        candidates.push(components);
-    } else if count > 1 {
-        if let Some((components, end)) = parse(count - 1) {
-            if compact_body_null_slot_at(payload, end) {
-                candidates.push(components);
-            }
-        }
+    if let Some((components, _)) = parse(count) { return Some(components); }
+    if count > 1 {
+        let (components, end) = parse(count - 1)?;
+        return compact_body_null_slot_at(payload, end).then_some(components);
     }
-    candidates.dedup();
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    None
 }
 
 fn compact_body_null_slot_at(payload: &[u8], end: usize) -> bool {
@@ -1339,8 +1330,9 @@ pub(super) fn compact_extrusion_to_vertex_at(
                 .is_some_and(|bytes| bytes == [0xa9, 0x80] || bytes == [0x2b, 0x80])
             && payload.get(body + 4..body + 9) == Some(&[2, 0, 0, 0, 0])
     };
-    let candidates = compact_termination_reference_candidates(payload, child, end, true);
-    let [marker] = candidates.as_slice() else {
+    let ReferenceOffsets::One(marker) = unique_reference_offset(
+        compact_termination_reference_offsets(payload, child, end, true),
+    ) else {
         return None;
     };
     let kind = if (payload.get(child..child + point_declaration.len()) == Some(point_declaration)
@@ -1364,7 +1356,7 @@ pub(super) fn compact_extrusion_to_vertex_at(
     } else {
         return None;
     };
-    Some((*marker, kind))
+    Some((marker, kind))
 }
 
 pub(super) fn compact_extrusion_offset_from_face_at(
@@ -1381,8 +1373,8 @@ pub(super) fn compact_extrusion_offset_from_face_at(
     }
     let resume = compact_extrusion_dimension_child_at(payload, offset + 26)?;
     let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
-    let mut candidates = Vec::new();
-    for anchor in resume..end.saturating_sub(2) {
+    let mut candidates = ReferenceOffsets::Empty;
+    for anchor in resume..end.checked_sub(2)? {
         if payload.get(anchor..anchor + 3) != Some(&[1, 1, 0]) {
             continue;
         }
@@ -1393,23 +1385,19 @@ pub(super) fn compact_extrusion_offset_from_face_at(
             child
         };
         // The reference body opens with lane tokens followed by the selector.
-        let open_start = body.saturating_add(2);
-        let open_end = end.min(body.saturating_add(9));
+        let open_start = body.checked_add(2)?;
+        let open_end = body.checked_add(9)?.min(end);
         for open in (open_start..open_end).filter(|cursor| {
-            (*cursor).saturating_add(7) <= end
+            cursor.checked_add(7).is_some_and(|stop| stop <= end)
                 && payload.get(cursor - 1).is_some_and(|byte| byte & 0x80 != 0)
                 && payload.get(*cursor..cursor + 7) == Some(&[2, 0, 0, 0, 0x40, 0, 0])
         }) {
-            candidates.extend(compact_termination_reference_candidates(
-                payload, open, end, true,
-            ));
+            for marker in compact_termination_reference_offsets(payload, open, end, true) {
+                candidates.insert(marker);
+            }
         }
     }
-    let candidates = distinct_offsets(candidates);
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(*candidate)
+    match candidates { ReferenceOffsets::One(marker) => Some(marker), _ => None }
 }
 
 pub(super) fn compact_extrusion_to_face_at(
@@ -1454,19 +1442,19 @@ pub(super) fn compact_extrusion_to_face_at(
     // always after the header; an undeclared legacy child still needs the
     // body offset as its fallback anchor.
     let search_start = if declared {
-        body_offset.saturating_add(11)
+        body_offset.checked_add(11)?
     } else {
         body_offset
     };
-    let compact_candidates = distinct_offsets(compact_termination_reference_candidates(
+    let compact_candidates = unique_reference_offset(compact_termination_reference_offsets(
         payload,
         search_start,
         end,
         declared,
     ));
-    match compact_candidates.as_slice() {
-        [candidate] => Some(*candidate),
-        [] if declared && compact_tokenized_single_face_child_at(payload, body_offset) => {
+    match compact_candidates {
+        ReferenceOffsets::One(candidate) => Some(candidate),
+        ReferenceOffsets::Empty if declared && compact_tokenized_single_face_child_at(payload, body_offset) => {
             // A declared single-face child is still a complete native
             // selection when its compact body header validates but its
             // component path uses an unknown layout. Preserve that child as
@@ -1474,13 +1462,13 @@ pub(super) fn compact_extrusion_to_face_at(
             // to-face termination.
             Some(body_offset)
         }
-        [] if declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+        ReferenceOffsets::Empty if declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
             // Some declared children retain the older counted path directly
             // in the body and do not carry a modern marker. Preserve that
             // complete legacy selection when no modern marker is present.
             Some(body_offset)
         }
-        [] if !declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
+        ReferenceOffsets::Empty if !declared && legacy_single_face_reference_path_at(payload, body_offset).is_some() => {
             // Legacy streams place the path directly in the child body and
             // have no compact marker to identify. Keep that form as a
             // fallback only after the modern marker search is empty.
@@ -1490,30 +1478,36 @@ pub(super) fn compact_extrusion_to_face_at(
     }
 }
 
-fn compact_termination_reference_candidates(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    require_path: bool,
-) -> Vec<usize> {
-    let Some(end) = super::DeclaredEnd::of(end, payload.len()).map(super::DeclaredEnd::get) else {
-        return Vec::new();
-    };
-    (start..end)
-        .filter(|marker| {
-            if require_path {
-                compact_termination_reference_at(payload, *marker)
-            } else {
-                compact_termination_reference_frame_at(payload, *marker).is_some()
-            }
-        })
-        .collect()
+fn compact_termination_reference_offsets(
+    payload: &[u8], start: usize, end: usize, require_path: bool,
+) -> impl Iterator<Item = usize> + '_ {
+    let end = super::DeclaredEnd::of(end, payload.len()).map_or(start, super::DeclaredEnd::get);
+    (start..end).filter(move |marker| {
+        if require_path { compact_termination_reference_at(payload, *marker) }
+        else { compact_termination_reference_frame_at(payload, *marker).is_some() }
+    })
 }
 
-fn distinct_offsets(mut offsets: Vec<usize>) -> Vec<usize> {
-    offsets.sort_unstable();
-    offsets.dedup();
-    offsets
+enum ReferenceOffsets {
+    Empty,
+    One(usize),
+    Ambiguous,
+}
+
+impl ReferenceOffsets {
+    fn insert(&mut self, offset: usize) {
+        match self {
+            Self::Empty => *self = Self::One(offset),
+            Self::One(first) if *first != offset => *self = Self::Ambiguous,
+            Self::One(_) | Self::Ambiguous => {}
+        }
+    }
+}
+
+fn unique_reference_offset(offsets: impl IntoIterator<Item = usize>) -> ReferenceOffsets {
+    let mut candidates = ReferenceOffsets::Empty;
+    for offset in offsets { candidates.insert(offset); }
+    candidates
 }
 
 fn compact_tokenized_single_face_child_at(payload: &[u8], offset: usize) -> bool {
@@ -1790,7 +1784,7 @@ pub(super) fn compact_single_face_reference_record_at(
                 let entry_count = count.checked_sub(serialized_roots)?;
                 let (components, end) =
                     compact_heterogeneous_component_path(payload, marker + 18, entry_count)?;
-                [0usize, 4, 8].into_iter().find_map(|gap| {
+                let source = [0usize, 4, 8].into_iter().find_map(|gap| {
                     let filler = match gap {
                         0 => true,
                         4 => payload.get(end..end + 4) == Some(&[0; 4]),
@@ -1811,12 +1805,13 @@ pub(super) fn compact_single_face_reference_record_at(
                     if payload.get(terminal..terminal + 8)
                         == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
                     {
-                        return Some((components.clone(), None));
+                        return Some(None);
                     }
                     let source = View::u32_le_at(payload, terminal + 20)?;
                     (payload.get(terminal..terminal + 20)? == [0; 20] && source != 0)
-                        .then(|| (components.clone(), Some(source)))
-                })
+                        .then_some(Some(source))
+                })?;
+                Some((components, source))
             })
         })
 }
