@@ -183,13 +183,13 @@ fn configuration_numeric_scalar_text_refuses_retained_limit() {
         serde_json::Number::from_f64(2.5).unwrap(),
     );
     assert!(
-        matches!(super::super::configuration_scalar_text(Some(&ctx), &scalar),
+        matches!(super::super::configuration_scalar_text(&ctx, &scalar),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d configuration scalar text")
     );
     assert_eq!(
-        super::super::configuration_scalar_text(None, &scalar).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| super::super::configuration_scalar_text(decode_ctx, &scalar)).unwrap(),
         "2.5"
     );
 }

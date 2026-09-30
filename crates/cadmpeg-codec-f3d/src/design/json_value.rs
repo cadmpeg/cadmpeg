@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::fmt;
 
 pub(in crate::design) struct TextSeed<'a, 'b> {
-    pub(in crate::design) ctx: Option<&'a DecodeContext<'b>>,
+    pub(in crate::design) ctx: &'a DecodeContext<'b>,
     pub(in crate::design) refusal: &'a mut Option<CodecError>,
     pub(in crate::design) operation: &'static str,
     pub(in crate::design) entry: bool,
@@ -22,7 +22,7 @@ impl<'de> DeserializeSeed<'de> for TextSeed<'_, '_> {
         D: serde::Deserializer<'de>,
     {
         if self.entry {
-            if let Some(ctx) = self.ctx {
+            { let ctx = self.ctx;
                 if let Err(error) =
                     ctx.charge_collection_items(1, "f3d configuration JSON object entry")
                 {
@@ -46,7 +46,7 @@ impl Visitor<'_> for TextSeed<'_, '_> {
     where
         E: serde::de::Error,
     {
-        match copy_text(self.ctx, text, self.operation) {
+        match self.ctx.copy_retained_text(text, self.operation) {
             Ok(text) => Ok(text),
             Err(error) => {
                 *self.refusal = Some(error);
@@ -113,7 +113,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
     where
         E: serde::de::Error,
     {
-        let copied = copy_text(Some(self.ctx), text, "f3d configuration JSON text");
+        let copied = self.ctx.copy_retained_text(text, "f3d configuration JSON text");
         self.admit(copied).map(Value::String)
     }
     fn visit_seq<S>(mut self, mut sequence: S) -> Result<Value, S::Error>
@@ -126,10 +126,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
             refusal: &mut *self.refusal,
             member: true,
         })? {
-            self.admit(values.try_reserve(1).map_err(|_| {
-                self.ctx
-                    .refuse_codec_limit("f3d configuration JSON array allocation", 0, 1)
-            }))?;
+            self.admit(DecodeContext::reserve_admitted_vec(&mut values, 1, "f3d configuration JSON array allocation"))?;
             values.push(value);
         }
         Ok(Value::Array(values))
@@ -140,7 +137,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
     {
         let mut fields = serde_json::Map::new();
         while let Some(key) = map.next_key_seed(TextSeed {
-            ctx: Some(self.ctx),
+            ctx: self.ctx,
             refusal: &mut *self.refusal,
             operation: "f3d configuration JSON key",
             entry: true,
@@ -149,7 +146,7 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
             // serde_json's raw-value feature interprets this first-key carrier.
             if fields.is_empty() && key == "$serde_json::private::RawValue" {
                 let raw = map.next_value_seed(TextSeed {
-                    ctx: Some(self.ctx),
+                    ctx: self.ctx,
                     refusal: &mut *self.refusal,
                     operation: "f3d configuration raw JSON text",
                     entry: false,
@@ -187,14 +184,3 @@ impl<'de> Visitor<'de> for ValueSeed<'_, '_> {
     }
 }
 
-fn copy_text(
-    ctx: Option<&DecodeContext<'_>>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let Some(ctx) = ctx else {
-        return Ok(text.to_owned());
-    };
-    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
-        .map_err(|_| CodecError::malformed("validated configuration text is not UTF-8"))
-}

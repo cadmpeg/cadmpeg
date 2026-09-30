@@ -246,7 +246,7 @@ pub(crate) fn legacy_as_built_421_generation(
 
 /// Project assembly scopes whose connector frames and operand qualifiers are complete.
 pub(crate) fn project_assembly_joints(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     scopes: &[DesignParameterScope],
     native_occurrences: &[DesignComponentOccurrence],
     features: &[Feature],
@@ -257,26 +257,15 @@ pub(crate) fn project_assembly_joints(
             continue;
         };
         let source = occurrence.occurrence_guid.as_str();
-        let (reservation, key) = if let Some(ctx) = ctx {
-            let count = u64::try_from(source.len())
-                .map_err(|_| ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1))?;
-            let reservation = ctx.reserve_scoped(count, "f3d assembly occurrence key")?;
-            let mut key = String::new();
-            key.try_reserve_exact(source.len()).map_err(|_| {
-                ctx.refuse_codec_limit("f3d assembly occurrence key allocation", 0, 1)
-            })?;
-            key.extend(
-                source
-                    .chars()
-                    .map(|character| character.to_ascii_lowercase()),
-            );
+        let (reservation, key) = {
+            let mut reservation = ctx.reserve_scoped(0, "f3d assembly occurrence key")?;
+let mut key = ctx.copy_scoped_text(source, &mut reservation, "f3d assembly occurrence key")?;
+key.make_ascii_lowercase();
             (Some(reservation), key)
-        } else {
-            (None, source.to_ascii_lowercase())
         };
         match occurrences.entry((stream, key)) {
             std::collections::btree_map::Entry::Vacant(entry) => {
-                if let Some(ctx) = ctx {
+                {
                     ctx.charge_retained(
                         u64::try_from(source.len()).map_err(|_| {
                             ctx.refuse_codec_limit("f3d assembly occurrence key length", 0, 1)
@@ -372,7 +361,7 @@ pub(crate) fn project_assembly_joints(
         });
         let translation_offset = [x?, y?, z?];
         if !joints.contains_key(id.as_str()) {
-            if let Some(ctx) = ctx {
+            {
                 ctx.charge_collection_items(1, "f3d assembly joint map entry")?;
             }
             let key = copy_assembly_text(ctx, id.as_str(), false)?;
@@ -404,20 +393,17 @@ pub(crate) fn project_assembly_joints(
         }
     }
     let mut projected = Vec::new();
-    if let Some(ctx) = ctx {
-        let count = u64::try_from(joints.len())
-            .map_err(|_| ctx.refuse_codec_limit("f3d assembly joint output count", 0, 1))?;
-        ctx.charge_collection_items(count, "f3d assembly joint output")?;
-        projected
-            .try_reserve(joints.len())
-            .map_err(|_| ctx.refuse_codec_limit("f3d assembly joint output allocation", 0, 1))?;
+    {
+        
+
+        ctx.reserve_vec(&mut projected, joints.len(), "f3d assembly joint output")?;
     }
     projected.extend(joints.into_values());
     Ok(projected)
 }
 
 fn project_qualified_operands(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     qualifiers: [&DesignAssemblyOperandQualifier; 2],
     stream: &str,
     occurrences: &BTreeMap<(&str, String), Option<&DesignComponentOccurrence>>,
@@ -432,29 +418,12 @@ fn project_qualified_operands(
                     else {
                         return Ok(None);
                     };
-                    let (lookup_reservation, lookup_guid) = if let Some(ctx) = ctx {
+                    let (lookup_reservation, lookup_guid) = {
                         let source = root_guid.as_str();
-                        let count = u64::try_from(source.len()).map_err(|_| {
-                            ctx.refuse_codec_limit("f3d assembly occurrence lookup", 0, 1)
-                        })?;
-                        let reservation =
-                            ctx.reserve_scoped(count, "f3d assembly occurrence lookup")?;
-                        let mut key = String::new();
-                        key.try_reserve_exact(source.len()).map_err(|_| {
-                            ctx.refuse_codec_limit(
-                                "f3d assembly occurrence lookup allocation",
-                                0,
-                                1,
-                            )
-                        })?;
-                        key.extend(
-                            source
-                                .chars()
-                                .map(|character| character.to_ascii_lowercase()),
-                        );
+                        let mut reservation = ctx.reserve_scoped(0, "f3d assembly occurrence lookup")?;
+let mut key = ctx.copy_scoped_text(source, &mut reservation, "f3d assembly occurrence lookup")?;
+key.make_ascii_lowercase();
                         (Some(reservation), key)
-                    } else {
-                        (None, root_guid.as_str().to_ascii_lowercase())
                     };
                     let occurrence = occurrences.get(&(stream, lookup_guid)).copied().flatten();
                     drop(lookup_reservation);
@@ -463,25 +432,12 @@ fn project_qualified_operands(
                     }
                     let object = copy_assembly_text(ctx, root_guid.as_str(), true)?;
                     let subelement_guids = &path.occurrence_guids()[1..];
-                    if let Some(ctx) = ctx {
-                        ctx.charge_collection_items(
-                            u64::try_from(subelement_guids.len()).map_err(|_| {
-                                ctx.refuse_codec_limit("f3d assembly path subelement count", 0, 1)
-                            })?,
-                            "f3d assembly path subelements",
-                        )?;
+                    {
+
                     }
                     let mut subelements = Vec::new();
-                    if let Some(ctx) = ctx {
-                        subelements
-                            .try_reserve(subelement_guids.len())
-                            .map_err(|_| {
-                                ctx.refuse_codec_limit(
-                                    "f3d assembly path subelement allocation",
-                                    0,
-                                    1,
-                                )
-                            })?;
+                    {
+                        ctx.reserve_vec(&mut subelements, subelement_guids.len(), "f3d assembly path subelements")?;
                     }
                     for guid in subelement_guids {
                         subelements.push(copy_assembly_text(ctx, guid.value.as_str(), true)?);
@@ -571,23 +527,15 @@ fn project_qualified_operands(
 }
 
 fn copy_assembly_text(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     source: &str,
     ascii_lowercase: bool,
 ) -> Result<String, CodecError> {
-    let Some(ctx) = ctx else {
-        return Ok(if ascii_lowercase {
-            source.to_ascii_lowercase()
-        } else {
-            source.to_owned()
-        });
-    };
+
     let operation = "f3d assembly operand text";
-    let count = u64::try_from(source.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
-    ctx.charge_retained(count, operation)?;
-    let mut text = String::new();
-    text.try_reserve_exact(source.len())
-        .map_err(|_| ctx.refuse_codec_limit("f3d assembly operand text allocation", 0, 1))?;
+    
+
+    let mut text = ctx.retained_string(source.len(), operation)?;
     for character in source.chars() {
         text.push(if ascii_lowercase {
             character.to_ascii_lowercase()
@@ -599,7 +547,7 @@ fn copy_assembly_text(
 }
 
 fn project_joint_origin_operand(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     scope_record_index: u32,
     stream: &str,
     scopes: &[DesignParameterScope],
@@ -738,14 +686,7 @@ mod tests {
         policy.limits.max_collection_items = collection_limit;
         policy.limits.max_materialized_bytes = materialized_limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::project_qualified_operands(
-            Some(&ctx),
-            [qualifier, qualifier],
-            "design",
-            &BTreeMap::new(),
-            &[],
-            &[],
-        )
+        super::project_qualified_operands(&ctx, [qualifier, qualifier], "design", &BTreeMap::new(), &[], &[])
         .expect_err("qualified path must refuse the requested limit")
     }
 
@@ -940,7 +881,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
             .expect_err("one occurrence needs one map entry");
         assert!(matches!(
             error,
@@ -957,7 +898,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_materialized_bytes = 35;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
             .expect_err("one occurrence key needs 36 temporary bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -973,7 +914,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = 35;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &[], &[occurrence], &[])
+        let error = super::project_assembly_joints(&ctx, &[], &[occurrence], &[])
             .expect_err("one occurrence key needs 36 retained bytes");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1044,7 +985,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
             .expect_err("one projected joint needs one map entry");
         assert!(matches!(
             error,
@@ -1069,7 +1010,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(identifier_bytes).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
             .expect_err("the joint map key needs retained text");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1097,7 +1038,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(identifier_bytes + key_length).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
             .expect_err("the native reference follows the retained joint key");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -1113,7 +1054,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::project_assembly_joints(Some(&ctx), &scopes, &[], &[])
+        let error = super::project_assembly_joints(&ctx, &scopes, &[], &[])
             .expect_err("the output vector needs one item after its map entry");
         assert!(matches!(
             error,
@@ -1515,7 +1456,7 @@ mod tests {
     }
 
     #[test]
-    fn axial_operands_project_component_and_document_root_qualifiers() {
+    fn axial_operands_project_component_and_document_root_qualifiers() { crate::test_support::with_decode_context(|decode_ctx| {
         let component_scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:component-insert#200",
             crate::records::feature::scope::DesignFeatureKind::ComponentInsert,
@@ -1583,14 +1524,7 @@ mod tests {
         let qualifiers =
             targets.map(|target| DesignAssemblyOperandQualifier::AxialTarget { target });
         let scopes = vec![component_scope, origin_scope.clone()];
-        let operands = super::project_qualified_operands(
-            None,
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &scopes,
-            &features,
-        )
+        let operands = super::project_qualified_operands(decode_ctx, qualifiers.each_ref(), "f3d:Design/BulkStream.dat", &BTreeMap::new(), &scopes, &features)
         .unwrap()
         .expect("complete axial operands");
 
@@ -1607,18 +1541,11 @@ mod tests {
             crate::ids::neutral_feature_id(&origin_scope).as_str()
         );
 
-        let unlisted_operands = super::project_qualified_operands(
-            None,
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &scopes,
-            &features[..1],
-        )
+        let unlisted_operands = super::project_qualified_operands(decode_ctx, qualifiers.each_ref(), "f3d:Design/BulkStream.dat", &BTreeMap::new(), &scopes, &features[..1])
         .unwrap()
         .expect("frame-resolved unlisted root JointOrigin");
         assert_eq!(unlisted_operands[1].object, operands[1].object);
-    }
+    }) }
 
     #[test]
     fn axial_connector_identity_excludes_axis_specific_occurrence_references() {
@@ -1693,14 +1620,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = u64::try_from(occurrence.as_str().len() - 1).unwrap();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = super::project_qualified_operands(
-            Some(&ctx),
-            qualifiers.each_ref(),
-            "f3d:Design/BulkStream.dat",
-            &BTreeMap::new(),
-            &[scope],
-            &[feature],
-        );
+        let result = super::project_qualified_operands(&ctx, qualifiers.each_ref(), "f3d:Design/BulkStream.dat", &BTreeMap::new(), &[scope], &[feature]);
         assert!(matches!(
             result,
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
@@ -1753,7 +1673,7 @@ mod tests {
                 &crate::ids::neutral_assembly_axial_object_id(&identity),
                 "f3d assembly axial connector identifier",
                 |ctx| {
-                    crate::design::identity::neutral_assembly_axial_object_id(Some(ctx), &identity)
+                    crate::design::identity::neutral_assembly_axial_object_id(ctx, &identity)
                 },
             );
         }
@@ -1785,7 +1705,7 @@ mod tests {
         assert_connector_identity(
             &crate::ids::neutral_assembly_legacy_object_id(&selection),
             "f3d assembly legacy connector identifier",
-            |ctx| crate::design::identity::neutral_assembly_legacy_object_id(Some(ctx), &selection),
+            |ctx| crate::design::identity::neutral_assembly_legacy_object_id(ctx, &selection),
         );
     }
 
@@ -1820,7 +1740,7 @@ mod tests {
             },
         ];
         assert!(
-            matches!(super::project_qualified_operands(Some(&ctx), qualifiers.each_ref(),
+            matches!(super::project_qualified_operands(&ctx, qualifiers.each_ref(),
             "f3d:Design/BulkStream.dat", &BTreeMap::new(), &scopes, &[]),
             Err(CodecError::ResourceLimit(failure)) if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d feature identifier")

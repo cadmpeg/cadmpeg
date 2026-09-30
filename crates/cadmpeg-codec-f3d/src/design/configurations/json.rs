@@ -60,11 +60,7 @@ pub(super) fn parse_configuration_payload(
         Err(error) => match refusal {
             Some(error) => Err(error),
             None => Err(CodecError::Malformed(
-                crate::design::text::format_design_text(
-                    Some(ctx),
-                    format_args!("invalid F3D configuration JSON {entry_name}: {error}"),
-                    "f3d configuration JSON diagnostic",
-                )?,
+                (ctx).format_retained(format_args!("invalid F3D configuration JSON {entry_name}: {error}"), "f3d configuration JSON diagnostic")?,
             )),
         },
     }

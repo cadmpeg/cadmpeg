@@ -363,16 +363,9 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     );
 
     let (mut sketches, mut entities) =
-        project_sketch_design(None, &placements, &points, &[], &[], &[], 1.0e-6)
+        crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6))
             .expect("sketch lanes pair");
-    let mut constraints = project_sketch_constraints(
-        None,
-        &placements,
-        &[],
-        (&points, &[], &[]),
-        &relations,
-        &entities,
-    )
+    let mut constraints = crate::test_support::with_decode_context(|decode_ctx| project_sketch_constraints(decode_ctx, &placements, &[], (&points, &[], &[]), &relations, &entities))
     .unwrap();
     assert_eq!(sketches.len(), 2);
     assert_eq!(entities.len(), 2);
