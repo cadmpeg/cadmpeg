@@ -2804,11 +2804,13 @@ fn angled_reference_plane_frame_candidates(
         .windows(ANGLED_REFERENCE_PLANE_FRAME_LEN)
         .enumerate()
         .filter(|(offset, _)| {
-            !payload.windows(fixed_plane::LEN).enumerate().any(|(fixed_offset, bytes)| {
-                ranges_overlap(*offset, ANGLED_REFERENCE_PLANE_FRAME_LEN,
-                    fixed_offset, fixed_plane::LEN)
-                    && fixed_reference_plane_frame(bytes)
-                        .or_else(|| repeated_normal_reference_plane_frame(bytes)).is_some()
+            let start = offset.checked_sub(fixed_plane::LEN - 1).unwrap_or(0);
+            // Every angled window ends within the payload.
+            let end = offset + ANGLED_REFERENCE_PLANE_FRAME_LEN;
+            !(start..end).any(|fixed_offset| {
+                payload.get(fixed_offset..).and_then(|tail| tail.get(..fixed_plane::LEN))
+                    .is_some_and(|bytes| fixed_reference_plane_frame(bytes)
+                        .or_else(|| repeated_normal_reference_plane_frame(bytes)).is_some())
             })
         })
         .filter_map(move |(offset, bytes)| {

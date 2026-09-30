@@ -167,10 +167,12 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     );
     let frames = HashMap::from([(2, plane_frame)]);
 
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let with_component = profile_reference_plane_payload(true);
     let index = plane_index(&with_component);
     assert_eq!(
-        feature_input_sketch_frame(&with_component, &frames, &index, 0, 0, with_component.len(),),
+        feature_input_sketch_frame(&ctx, &with_component, &frames, &index, 0, 0, with_component.len()).unwrap(),
         Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -182,13 +184,13 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let index = plane_index(&without_component);
     assert_eq!(
         feature_input_sketch_frame(
-            &without_component,
+            &ctx, &without_component,
             &frames,
             &index,
             0,
             0,
             without_component.len(),
-        ),
+        ).unwrap(),
         None
     );
 }
