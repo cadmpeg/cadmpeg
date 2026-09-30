@@ -464,7 +464,7 @@ impl NativeRecord {
             value: &Value,
         ) -> Result<(), cadmpeg_core::CodecError> {
             let _depth = ctx.enter_nested("load native record value")?;
-            ctx.charge_work(1, "inspect native record value")?;
+            ctx.charge_work(3, "inspect native record value")?;
             let children: &[Value] = match value {
                 Value::Array(values) => values,
                 Value::Object(values) => {
@@ -478,9 +478,15 @@ impl NativeRecord {
                         })?,
                         "load native record object fields",
                     )?;
-                    for child in values.values() {
+                    charge_map_work(ctx, values)?;
+                    for (key, child) in values {
+                        charge_text_work(ctx, key)?;
                         charge_value_tree(ctx, child)?;
                     }
+                    return Ok(());
+                }
+                Value::String(text) => {
+                    charge_text_work(ctx, text)?;
                     return Ok(());
                 }
                 _ => return Ok(()),
@@ -497,6 +503,58 @@ impl NativeRecord {
             Ok(())
         }
 
+        fn charge_map_work(ctx: &DecodeContext<'_>, values: &Map<String, Value>) -> Result<(), cadmpeg_core::CodecError> {
+            let levels = if values.len() > 1 { values.len().ilog2() + 1 } else { 1 };
+            for key in values.keys() {
+                let work = u64::try_from(key.len()).ok().and_then(|length| length.checked_add(1))
+                    .and_then(|length| length.checked_mul(u64::from(levels)))
+                    .ok_or_else(|| ctx.refuse_codec_limit("copy native record object", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, "copy native record object")?;
+            }
+            Ok(())
+        }
+
+        fn charge_text_work(ctx: &DecodeContext<'_>, text: &str) -> Result<(), cadmpeg_core::CodecError> {
+            let work = u64::try_from(text.len()).ok().and_then(|length| length.checked_mul(12))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit("inspect native record text", u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, "inspect native record text")
+        }
+
+        fn copy_admitted_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
+            let mut copy = String::new();
+            copy.try_reserve_exact(text.len()).map_err(|_| {
+                ctx.refuse_codec_limit("load typed native record", u64::MAX - 1, u64::MAX)
+            })?;
+            copy.push_str(text);
+            Ok(copy)
+        }
+
+        fn copy_admitted_value(ctx: &DecodeContext<'_>, value: &Value) -> Result<Value, cadmpeg_core::CodecError> {
+            let _depth = ctx.enter_nested("load native record value")?;
+            Ok(match value {
+                Value::Null => Value::Null,
+                Value::Bool(value) => Value::Bool(*value),
+                Value::Number(value) => Value::Number(value.clone()),
+                Value::String(value) => Value::String(copy_admitted_text(ctx, value)?),
+                Value::Array(values) => {
+                    let mut copied = Vec::new();
+                    copied.try_reserve_exact(values.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("load native record array elements", u64::MAX - 1, u64::MAX)
+                    })?;
+                    for value in values { copied.push(copy_admitted_value(ctx, value)?); }
+                    Value::Array(copied)
+                }
+                Value::Object(values) => {
+                    let mut copied = Map::new();
+                    for (key, value) in values {
+                        copied.insert(copy_admitted_text(ctx, key)?, copy_admitted_value(ctx, value)?);
+                    }
+                    Value::Object(copied)
+                }
+            })
+        }
+
         ctx.charge_collection_items(1, "load typed native record")?;
         ctx.charge_collection_items(
             u64::try_from(self.fields.len()).map_err(|_| {
@@ -504,7 +562,11 @@ impl NativeRecord {
             })?,
             "load native record fields",
         )?;
-        for value in self.fields.values() {
+        ctx.charge_collection_items(1, "load native record identity field")?;
+        charge_text_work(ctx, self.id.as_str())?;
+        charge_map_work(ctx, &self.fields)?;
+        for (key, value) in &self.fields {
+            charge_text_work(ctx, key)?;
             charge_value_tree(ctx, value)?;
         }
         let mut counter = ByteCount {
@@ -519,7 +581,23 @@ impl NativeRecord {
         }
         counted?;
         ctx.charge_retained(counter.bytes, "load typed native record")?;
-        self.to_typed()
+        #[cfg(test)]
+        TYPED_RECORD_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        let mut record = Map::new();
+        for (key, value) in &self.fields {
+            record.insert(copy_admitted_text(ctx, key)?, copy_admitted_value(ctx, value)?);
+        }
+        record.insert(copy_admitted_text(ctx, "id")?, Value::String(copy_admitted_text(ctx, self.id.as_str())?));
+        match serde_json::from_value(Value::Object(record)) {
+            Ok(value) => Ok(value),
+            Err(source) => {
+                charge_text_work(ctx, self.id.as_str())?;
+                let id = ctx.format_retained(format_args!("{}", self.id.as_str()), "retain native record error identity")?;
+                Err(NativeConvertError::ReadRecord {
+                    id: crate::ids::Identity::new(id)?, source,
+                })
+            }
+        }
     }
 }
 
@@ -731,8 +809,12 @@ impl NativeNamespace {
                 Ok(value) => value,
                 Err(source) if source.resource_limit().is_some() => return Err(source),
                 Err(source) => {
+                    ctx.charge_work(u64::try_from(arena.len()).map_err(|_| {
+                        ctx.refuse_codec_limit("retain native arena error name", u64::MAX - 1, u64::MAX)
+                    })?, "retain native arena error name")?;
+                    let arena = ctx.format_retained(format_args!("{arena}"), "retain native arena error name")?;
                     return Err(NativeConvertError::Arena {
-                        arena: arena.clone(),
+                        arena,
                         source: Box::new(source),
                     });
                 }
