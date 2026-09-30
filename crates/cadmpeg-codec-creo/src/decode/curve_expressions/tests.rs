@@ -1083,8 +1083,9 @@ fn curve_expression_activation_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_canonical_value_refuses_before_text() {
-    let prior =
-        cadmpeg_core::decode::u64_from_index("0".len() + "source_assignment_ordinal".len() + "active".len() + "activation".len());
+    let prior = cadmpeg_core::decode::u64_from_index(
+        "0".len() + "source_assignment_ordinal".len() + "active".len() + "activation".len(),
+    );
     let error = with_retained_limit(prior, quantity_property_result)
         .expect_err("canonical value follows the activation property");
     assert!(
@@ -1095,12 +1096,14 @@ fn curve_expression_canonical_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_dimension_value_refuses_before_text() {
-    let prior = cadmpeg_core::decode::u64_from_index("0".len()
-        + "source_assignment_ordinal".len()
-        + "active".len()
-        + "activation".len()
-        + "3.5".len()
-        + "evaluated_canonical_value".len());
+    let prior = cadmpeg_core::decode::u64_from_index(
+        "0".len()
+            + "source_assignment_ordinal".len()
+            + "active".len()
+            + "activation".len()
+            + "3.5".len()
+            + "evaluated_canonical_value".len(),
+    );
     let error = with_retained_limit(prior, quantity_property_result)
         .expect_err("dimension value follows the canonical property");
     assert!(

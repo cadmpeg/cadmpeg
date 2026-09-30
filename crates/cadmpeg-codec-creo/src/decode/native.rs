@@ -197,17 +197,24 @@ pub(super) fn emit_uniform<T: Serialize>(
     annotations: &mut AnnotationBuilder,
     arena: &UniformArena<'_, T>,
 ) -> Result<(), CodecError> {
-    emit_arena(ctx, ir, annotations, arena.key, arena.records, |annotations, record| {
-        annotate(
-            ctx,
-            annotations,
-            (arena.id)(record),
-            (arena.stream)(record),
-            (arena.offset)(record),
-            arena.tag,
-            arena.exactness,
-        )
-    })
+    emit_arena(
+        ctx,
+        ir,
+        annotations,
+        arena.key,
+        arena.records,
+        |annotations, record| {
+            annotate(
+                ctx,
+                annotations,
+                (arena.id)(record),
+                (arena.stream)(record),
+                (arena.offset)(record),
+                arena.tag,
+                arena.exactness,
+            )
+        },
+    )
 }
 
 #[cfg(test)]

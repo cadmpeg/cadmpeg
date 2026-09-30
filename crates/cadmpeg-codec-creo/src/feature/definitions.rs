@@ -1109,7 +1109,9 @@ impl<T> SolverSubtable<T> {
 
     pub(crate) fn is_complete(&self) -> bool {
         match self {
-            Self::Declared { header, rows } => cadmpeg_core::decode::index_from_u32(header.declared_count) == rows.len(),
+            Self::Declared { header, rows } => {
+                cadmpeg_core::decode::index_from_u32(header.declared_count) == rows.len()
+            }
             Self::Unframed(_) => false,
         }
     }
@@ -8605,7 +8607,10 @@ mod tests {
         assert_eq!(table(2, 5).missing_rows(), 0);
         assert!(!table(2, 5).is_complete());
 
-        assert_eq!(table(u32::MAX, 1).missing_rows(), usize::try_from(u32::MAX).expect("fixture index fits usize") - 1);
+        assert_eq!(
+            table(u32::MAX, 1).missing_rows(),
+            usize::try_from(u32::MAX).expect("fixture index fits usize") - 1
+        );
     }
 
     #[test]

@@ -714,7 +714,8 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     derived_radius
         .rows
         .retain(|row| row.variable_type != VariableType::Radius);
-    derived_radius.declared_count = u32::try_from(derived_radius.rows.len()).expect("fixture value fits u32");
+    derived_radius.declared_count =
+        u32::try_from(derived_radius.rows.len()).expect("fixture value fits u32");
     assert_eq!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
         Some([1.0, 0.0])

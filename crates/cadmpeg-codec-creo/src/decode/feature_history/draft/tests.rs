@@ -155,7 +155,8 @@ fn hole_generated_native_copy_refuses_retained_limit() {
     let local = "surface#11";
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(native.len() + producer.len() + local.len());
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index(native.len() + producer.len() + local.len());
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
     let error = hole_face_selection(
@@ -315,7 +316,11 @@ fn thicken_face_ids_refuse_retained_limit() {
     let prior = "creo:model:feature#3".len()
         + "creo:model:feature#17".len()
         + "creo:allfeatur:thicken_source_surfaces#17:11".len();
-    thicken_resource_error(None, Some(cadmpeg_core::decode::u64_from_index(prior)), "creo thicken face IDs");
+    thicken_resource_error(
+        None,
+        Some(cadmpeg_core::decode::u64_from_index(prior)),
+        "creo thicken face IDs",
+    );
 }
 
 #[test]

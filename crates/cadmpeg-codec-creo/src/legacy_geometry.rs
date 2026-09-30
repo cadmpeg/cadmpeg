@@ -433,9 +433,22 @@ fn namespace(
             continue;
         };
         let carrier = if row.kind == SurfaceKind::Spline {
-            spline_surface_carrier(ctx, row_object, &row, index.children, index.real_fields, namespace)?
+            spline_surface_carrier(
+                ctx,
+                row_object,
+                &row,
+                index.children,
+                index.real_fields,
+                namespace,
+            )?
         } else {
-            surface_carrier(row_object, &row, index.children, index.real_fields, namespace)
+            surface_carrier(
+                row_object,
+                &row,
+                index.children,
+                index.real_fields,
+                namespace,
+            )
         };
         if let Some(carrier) = carrier {
             ctx.reserve_vec(&mut carriers, 1, "creo legacy surface carriers")?;

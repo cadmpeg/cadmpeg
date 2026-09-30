@@ -219,9 +219,17 @@ fn solve_section_coordinates_with_derived_constraints(
         .len()
         .checked_add(equal_length_constraints.len())
         .and_then(|count| count.checked_add(auxiliary_constraints.midpoints.len()))
-        .and_then(|count| auxiliary_constraints.point_bindings.len().checked_mul(2).and_then(|bindings| count.checked_add(bindings)))
+        .and_then(|count| {
+            auxiliary_constraints
+                .point_bindings
+                .len()
+                .checked_mul(2)
+                .and_then(|bindings| count.checked_add(bindings))
+        })
         .and_then(|count| count.checked_add(1))
-        .ok_or_else(|| ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("creo section solver pass count", u64::MAX, u64::MAX)
+        })?;
     for _ in 0..max_passes {
         let mut appended = false;
         if append_point_on_line_equations(
@@ -1581,7 +1589,12 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
+            body.extend_from_slice(&[
+                id,
+                function,
+                0xf8,
+                u8::try_from(arguments.len()).expect("fixture value fits u8"),
+            ]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1671,7 +1684,12 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
+            body.extend_from_slice(&[
+                id,
+                function,
+                0xf8,
+                u8::try_from(arguments.len()).expect("fixture value fits u8"),
+            ]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1762,7 +1780,12 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
+            body.extend_from_slice(&[
+                id,
+                function,
+                0xf8,
+                u8::try_from(arguments.len()).expect("fixture value fits u8"),
+            ]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1834,7 +1857,12 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
+            body.extend_from_slice(&[
+                id,
+                function,
+                0xf8,
+                u8::try_from(arguments.len()).expect("fixture value fits u8"),
+            ]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1913,7 +1941,12 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
+            body.extend_from_slice(&[
+                id,
+                function,
+                0xf8,
+                u8::try_from(arguments.len()).expect("fixture value fits u8"),
+            ]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };

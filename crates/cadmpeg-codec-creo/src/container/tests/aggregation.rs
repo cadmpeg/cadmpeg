@@ -238,11 +238,16 @@ fn section_owner_range_refuses_end_overflow() {
         feature_id: 1,
         root_schema_class: None,
         stream_offset: 0,
-        body: vec![0xeb, 0x04].try_into().expect("two fixture header bytes"),
+        body: vec![0xeb, 0x04]
+            .try_into()
+            .expect("two fixture header bytes"),
         body_offset: usize::MAX - 1,
         offset: usize::MAX - 2,
     };
     crate::decode::with_test_decode_ctx(|ctx| {
-        assert!(matches!(crate::container::section_owner_ranges(ctx, &[], &[row]), Err(cadmpeg_core::CodecError::Malformed(_))));
+        assert!(matches!(
+            crate::container::section_owner_ranges(ctx, &[], &[row]),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
     });
 }

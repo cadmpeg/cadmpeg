@@ -991,18 +991,23 @@ fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
     let Some(prefix) = payload.get(..close) else {
         return false;
     };
-    prefix.iter().enumerate().rev().take(8).any(|(candidate, _)| {
-        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-            return false;
-        };
-        if previous != id {
-            return false;
-        }
-        after == close
-            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                && crate::psb::reference_id(payload, after + 1)
-                    .is_ok_and(|(_, reference_end)| reference_end == close))
-    })
+    prefix
+        .iter()
+        .enumerate()
+        .rev()
+        .take(8)
+        .any(|(candidate, _)| {
+            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+                return false;
+            };
+            if previous != id {
+                return false;
+            }
+            after == close
+                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                    && crate::psb::reference_id(payload, after + 1)
+                        .is_ok_and(|(_, reference_end)| reference_end == close))
+        })
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals

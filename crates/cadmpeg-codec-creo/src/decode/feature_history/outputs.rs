@@ -290,7 +290,10 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
         )
         .is_some()
         {
-            ctx.charge_retained(cadmpeg_core::decode::u64_from_index(candidate.len()), "creo evaluated sweep body IDs")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(candidate.len()),
+                "creo evaluated sweep body IDs",
+            )?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
             ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
             outputs.push(body);
@@ -471,7 +474,10 @@ fn insert_feature_parameter(
     } else {
         (base, base_reservation)
     };
-    ctx.charge_retained(cadmpeg_core::decode::u64_from_index(key.len()), "creo feature parameter key")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(key.len()),
+        "creo feature parameter key",
+    )?;
     ctx.charge_collection_items(1, "creo feature parameter nodes")?;
     parameters.insert(key, value);
     drop(key_reservation);
@@ -769,7 +775,10 @@ pub(in super::super) fn owned_section_feature_id(
     let row = exactly_one(scan.features.rows.iter().filter(|row| {
         row.root_schema_class == Some(SchemaClass::Section)
             && definition.offset >= row.body_offset
-            && row.body_offset.checked_add(row.body.len()).is_some_and(|end| definition.offset < end)
+            && row
+                .body_offset
+                .checked_add(row.body.len())
+                .is_some_and(|end| definition.offset < end)
     }))?;
     Some(row.feature_id)
 }
@@ -783,7 +792,10 @@ pub(super) fn section_definition_for_history_feature<'a>(
     }))?;
     let definition = exactly_one(scan.features.definitions.iter().filter(|definition| {
         definition.offset >= row.body_offset
-            && row.body_offset.checked_add(row.body.len()).is_some_and(|end| definition.offset < end)
+            && row
+                .body_offset
+                .checked_add(row.body.len())
+                .is_some_and(|end| definition.offset < end)
     }))?;
     Some(definition)
 }

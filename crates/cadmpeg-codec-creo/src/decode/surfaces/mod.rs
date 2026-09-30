@@ -186,18 +186,22 @@ mod tests {
     }
 
     fn product_identity_and_annotation_bytes() -> u64 {
-        let product_id_len = cadmpeg_core::decode::u64_from_index(cadmpeg_ir::ids::ProductDefinitionId::compose(
-            &crate::identity::MODEL_PRODUCT_DEFINITION,
-            cadmpeg_ir::identity_key!("root"),
-        )
-        .as_str()
-        .len());
-        let occurrence_id_len = cadmpeg_core::decode::u64_from_index(cadmpeg_ir::ids::OccurrenceId::compose(
-            &crate::identity::MODEL_OCCURRENCE,
-            cadmpeg_ir::identity_key!("root"),
-        )
-        .as_str()
-        .len());
+        let product_id_len = cadmpeg_core::decode::u64_from_index(
+            cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &crate::identity::MODEL_PRODUCT_DEFINITION,
+                cadmpeg_ir::identity_key!("root"),
+            )
+            .as_str()
+            .len(),
+        );
+        let occurrence_id_len = cadmpeg_core::decode::u64_from_index(
+            cadmpeg_ir::ids::OccurrenceId::compose(
+                &crate::identity::MODEL_OCCURRENCE,
+                cadmpeg_ir::identity_key!("root"),
+            )
+            .as_str()
+            .len(),
+        );
         product_id_len * 2
             + occurrence_id_len * 3
             + cadmpeg_core::decode::u64_from_index("creo:archive_header".len() * 2)
@@ -217,12 +221,14 @@ mod tests {
 
     #[test]
     fn part_product_name_copies_refuse_before_each_retained_growth() {
-        let product_id_len = cadmpeg_core::decode::u64_from_index(cadmpeg_ir::ids::ProductDefinitionId::compose(
-            &crate::identity::MODEL_PRODUCT_DEFINITION,
-            cadmpeg_ir::identity_key!("root"),
-        )
-        .as_str()
-        .len());
+        let product_id_len = cadmpeg_core::decode::u64_from_index(
+            cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &crate::identity::MODEL_PRODUCT_DEFINITION,
+                cadmpeg_ir::identity_key!("root"),
+            )
+            .as_str()
+            .len(),
+        );
         for (limit, operation) in [
             (0, "creo product definition reference"),
             (product_id_len, "creo product source name"),

@@ -895,7 +895,8 @@ pub(super) fn feature_entity_reference_records(
             id,
             source_entity_id: reference.source_entity_id,
             target_entity_id: reference.target_entity_id,
-            target_resolved: cadmpeg_core::decode::index_from_u32(reference.target_entity_id) < scan.features.entities.len(),
+            target_resolved: cadmpeg_core::decode::index_from_u32(reference.target_entity_id)
+                < scan.features.entities.len(),
             offset: reference.offset,
         });
     }
@@ -1032,7 +1033,8 @@ mod feature_entity_table_record_tests {
         let scan = scan_with_table();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:allfeatur:entity_table#12".len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("creo:allfeatur:entity_table#12".len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty source is admitted");
         let Err(error) = feature_entity_table_records(&ctx, &scan) else {
@@ -1644,7 +1646,8 @@ mod feature_choice_field_record_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:feature:choice_field#0".len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("creo:feature:choice_field#0".len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = feature_choice_field_records(&ctx, &scan) else {
@@ -3299,8 +3302,9 @@ mod surface_projection_limit_tests {
         scan.surfaces.prototype_records[0].family = SurfacePrototypeFamily::Other("unknown".into());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes =
-            cadmpeg_core::decode::u64_from_index("creo:visibgeom:surface_prototype#11".len() + "other:unknown".len() - 1);
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+            "creo:visibgeom:surface_prototype#11".len() + "other:unknown".len() - 1,
+        );
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) =
@@ -3922,7 +3926,8 @@ mod surface_parameter_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:visibgeom:surface_parameter#7".len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("creo:visibgeom:surface_parameter#7".len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = surface_parameter_records(
@@ -5037,7 +5042,8 @@ mod sketch_projection_limit_tests {
         let scan = scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let Err(error) = sketch_records(&ctx, &scan) else {
@@ -5438,7 +5444,8 @@ mod tests {
 
     #[test]
     fn native_expanded_section_id_refuses_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
+        let id_len =
+            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
         let error = expanded_records_with_limits(id_len - 1, 1)
             .expect_err("expanded-section ID needs full retained length");
         assert!(
@@ -5450,7 +5457,8 @@ mod tests {
 
     #[test]
     fn native_expanded_section_name_refuses_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
+        let id_len =
+            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
         let error = expanded_records_with_limits(id_len + 3, 1)
             .expect_err("section name needs four retained bytes");
         assert!(
@@ -5462,7 +5470,8 @@ mod tests {
 
     #[test]
     fn native_expanded_section_hash_refuses_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
+        let id_len =
+            cadmpeg_core::decode::u64_from_index("creo:container:expanded_section#Body:0".len());
         let error = expanded_records_with_limits(id_len + 4 + 63, 1)
             .expect_err("SHA-256 hex needs 64 retained bytes");
         assert!(
@@ -5565,7 +5574,8 @@ mod tests {
 
     #[test]
     fn native_reference_line_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:line_record#0".len()) - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:line_record#0".len()) - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_line_records(ctx, scan).map(|records| records.len())
         })
@@ -5599,7 +5609,8 @@ mod tests {
 
     #[test]
     fn native_reference_circle_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:arc_z_record#0".len()) - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:arc_z_record#0".len()) - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_circle_records(ctx, scan).map(|records| records.len())
         })
@@ -5633,7 +5644,8 @@ mod tests {
 
     #[test]
     fn native_reference_conic_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len()) - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len()) - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_conic_records(ctx, scan).map(|records| records.len())
         })
@@ -5667,7 +5679,8 @@ mod tests {
 
     #[test]
     fn native_reference_ellipse_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len()) - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len()) - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
         })
@@ -5681,9 +5694,10 @@ mod tests {
 
     #[test]
     fn native_reference_ellipse_source_id_refuses_retained_limit() {
-        let limit = cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len())
-            + cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len())
-            - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:ellipse_carrier#0".len())
+                + cadmpeg_core::decode::u64_from_index("creo:mdl_ref_info:conic_record#0".len())
+                - 1;
         let error = reference_records_with_limits(limit, 1, |ctx, scan| {
             reference_ellipse_records(ctx, scan).map(|records| records.len())
         })
@@ -5840,7 +5854,8 @@ mod tests {
 
     #[test]
     fn native_feature_state_id_refuses_retained_limit() {
-        let id_len = cadmpeg_core::decode::u64_from_index("creo:mdlstatus:feature_state#40:0".len());
+        let id_len =
+            cadmpeg_core::decode::u64_from_index("creo:mdlstatus:feature_state#40:0".len());
         let error = operation_state_records_with_limits(5 + id_len - 1, 3)
             .expect_err("the state ID needs its full retained length");
         assert!(

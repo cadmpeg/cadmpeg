@@ -190,7 +190,9 @@ pub(crate) fn unix_compress_literals(payload: &[u8]) -> Vec<u8> {
     for (index, value) in payload.iter().copied().enumerate() {
         for bit in 0..9 {
             let offset = index * 9 + bit;
-            packed[offset / 8] |= (u8::try_from((u16::from(value) >> bit) & 1).expect("fixture value fits u8")) << (offset % 8);
+            packed[offset / 8] |= (u8::try_from((u16::from(value) >> bit) & 1)
+                .expect("fixture value fits u8"))
+                << (offset % 8);
         }
     }
     stream.extend_from_slice(&packed);

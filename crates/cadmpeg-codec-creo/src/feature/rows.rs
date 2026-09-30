@@ -1026,9 +1026,7 @@ pub(crate) fn affected_ids(
                 let Some(remaining) = row.body.len().checked_sub(cursor) else {
                     continue;
                 };
-                let Some(capacity) =
-                    bounded_len(u64::from(count), 1, remaining)
-                else {
+                let Some(capacity) = bounded_len(u64::from(count), 1, remaining) else {
                     continue;
                 };
                 let mut ids = Vec::new();
@@ -1636,7 +1634,10 @@ pub(crate) fn loop_history_entries(
         let Some(row) = rows.iter().find(|row| {
             row.feature_id == table.feature_id
                 && table.offset >= row.body_offset
-                && row.body_offset.checked_add(row.body.len()).is_some_and(|end| table.offset < end)
+                && row
+                    .body_offset
+                    .checked_add(row.body.len())
+                    .is_some_and(|end| table.offset < end)
         }) else {
             continue;
         };

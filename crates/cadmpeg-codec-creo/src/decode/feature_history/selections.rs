@@ -364,7 +364,9 @@ mod tests {
     fn generated_curve_local_id_refuses_retained_limit() {
         generated_reference_error(
             None,
-            Some(cadmpeg_core::decode::u64_from_index("creo:model:feature#97".len())),
+            Some(cadmpeg_core::decode::u64_from_index(
+                "creo:model:feature#97".len(),
+            )),
             "creo generated curve local IDs",
         );
     }
@@ -454,7 +456,10 @@ mod tests {
     fn feature_edge_native_text_refuses_retained_limit() {
         selection_limit_error(
             None,
-            Some(cadmpeg_core::decode::u64_from_index("creo:allfeatur:edgs_affected#10:45".len()) - 1),
+            Some(
+                cadmpeg_core::decode::u64_from_index("creo:allfeatur:edgs_affected#10:45".len())
+                    - 1,
+            ),
             "creo feature edge selection native",
         );
     }
@@ -463,7 +468,9 @@ mod tests {
     fn feature_edge_identity_refuses_retained_limit() {
         selection_limit_error(
             None,
-            Some(cadmpeg_core::decode::u64_from_index("creo:allfeatur:edgs_affected#10:45".len())),
+            Some(cadmpeg_core::decode::u64_from_index(
+                "creo:allfeatur:edgs_affected#10:45".len(),
+            )),
             "creo selected edge IDs",
         );
     }

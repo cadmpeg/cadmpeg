@@ -198,13 +198,15 @@ fn emitted_entity_views_refuse_each_tree_node() {
 #[test]
 fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len()) - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len()) - 1;
     let error = views_with_policy(&policy).expect_err("first identity copy exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo emitted sketch entity IDs"));
-    policy.limits.max_retained_bytes =
-        cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len() * 2 + "native".len() - 1);
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "creo:model:sketch_entity#1".len() * 2 + "native".len() - 1,
+    );
     let error = views_with_policy(&policy).expect_err("native text exceeds remaining cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes

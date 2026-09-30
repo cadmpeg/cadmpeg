@@ -5941,16 +5941,15 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         let Some(separator_limit) = limit.checked_sub(3) else {
             continue;
         };
-        let mut first_separators =
-            (control_body_start..separator_limit).filter_map(|offset| {
-                (payload.get(offset..offset + 3) == Some(&[0x18, 0xf1, 0xf7]))
-                    .then(|| {
-                        let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;
-                        (reference == control_point_start && payload.get(after) == Some(&0xe2))
-                            .then_some((offset, after + 1))
-                    })
-                    .flatten()
-            });
+        let mut first_separators = (control_body_start..separator_limit).filter_map(|offset| {
+            (payload.get(offset..offset + 3) == Some(&[0x18, 0xf1, 0xf7]))
+                .then(|| {
+                    let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;
+                    (reference == control_point_start && payload.get(after) == Some(&0xe2))
+                        .then_some((offset, after + 1))
+                })
+                .flatten()
+        });
         let Some((first_separator, first_body_start)) = first_separators.next() else {
             continue;
         };

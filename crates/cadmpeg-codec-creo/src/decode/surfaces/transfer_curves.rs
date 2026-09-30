@@ -1080,7 +1080,8 @@ mod tests {
         assert_eq!(service.len(), 1);
         assert!(service[0].message.contains("row 41"));
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
         let error = boundary_loss_with_limits(policy).expect_err("message exceeds retained cap");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)

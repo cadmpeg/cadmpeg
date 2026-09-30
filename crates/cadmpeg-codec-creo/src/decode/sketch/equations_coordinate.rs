@@ -956,7 +956,8 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             }
         }
         if component_distances.is_empty()
-            || cadmpeg_core::decode::u64_from_index(component_distances.len()) >= u64::from(usize::BITS)
+            || cadmpeg_core::decode::u64_from_index(component_distances.len())
+                >= u64::from(usize::BITS)
             || (1usize << component_distances.len()) > MAX_SIGNED_BRANCHES
         {
             continue;

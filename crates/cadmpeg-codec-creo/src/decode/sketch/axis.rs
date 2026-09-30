@@ -14,7 +14,10 @@ impl SectionAxis {
     pub(super) const ALL: [Self; 2] = [Self::U, Self::V];
     /// The array index of the coordinate.
     pub(in crate::decode) const fn index(self) -> usize {
-        match self { Self::U => 0, Self::V => 1 }
+        match self {
+            Self::U => 0,
+            Self::V => 1,
+        }
     }
     /// The other section axis.
     pub(super) const fn other(self) -> Self {

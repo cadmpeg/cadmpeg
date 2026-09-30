@@ -657,7 +657,9 @@ fn real_polynomial_roots(
     )?;
     for (power, coefficient) in scaled.iter().enumerate().skip(1) {
         let Some(power) = cadmpeg_core::convert::f64_from_index(power) else {
-            return Err(CodecError::malformed("Creo polynomial power cannot be represented exactly"));
+            return Err(CodecError::malformed(
+                "Creo polynomial power cannot be represented exactly",
+            ));
         };
         derivative.push(BoundedCoefficient {
             value: coefficient.value * power,

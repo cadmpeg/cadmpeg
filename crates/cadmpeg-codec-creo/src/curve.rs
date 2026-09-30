@@ -3555,7 +3555,10 @@ impl DimensionRational {
     }
 
     fn as_f64(self) -> Option<f64> {
-        Some(cadmpeg_core::convert::f64_from_i64(self.numerator)? / cadmpeg_core::convert::f64_from_i64(self.denominator)?)
+        Some(
+            cadmpeg_core::convert::f64_from_i64(self.numerator)?
+                / cadmpeg_core::convert::f64_from_i64(self.denominator)?,
+        )
     }
 
     fn is_zero(self) -> bool {
@@ -4698,9 +4701,12 @@ impl ExpressionValue for DimensionProbeValue {
             .zip(*exponent)
             .map(|(value, exponent)| value.powf(exponent));
         let dimension = match exponent {
-            Some(exponent) if exponent.fract() == 0.0 => {
-                base_dimension.scale(i8::try_from(i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(*exponent)?).ok()?).ok()?)?
-            }
+            Some(exponent) if exponent.fract() == 0.0 => base_dimension.scale(
+                i8::try_from(
+                    i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(*exponent)?).ok()?,
+                )
+                .ok()?,
+            )?,
             Some(_) => base_dimension
                 .is_zero()
                 .then_some(SymbolicRelationDimension::default())?,
@@ -4735,7 +4741,20 @@ impl ExpressionValue for DimensionProbeValue {
                 if *exponent < f64::from(i8::MIN) || *exponent > f64::from(i8::MAX) {
                     return Ok(None);
                 }
-                let Some(dimension) = base_dimension.scale(i8::try_from(cadmpeg_core::convert::truncate_f64_to_i32(*exponent).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?).map_err(|_| cadmpeg_core::CodecError::malformed("Creo numeric value exceeds dimension range"))?) else {
+                let Some(dimension) = base_dimension.scale(
+                    i8::try_from(
+                        cadmpeg_core::convert::truncate_f64_to_i32(*exponent).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        })?,
+                    )
+                    .map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value exceeds dimension range",
+                        )
+                    })?,
+                ) else {
                     return Ok(None);
                 };
                 dimension
@@ -5061,9 +5080,10 @@ impl ExpressionValue for DimensionProbeValue {
                     .text_value()
                     .zip(needle.text_value())
                     .and_then(|(value, needle)| {
-                        cadmpeg_core::convert::f64_from_index(value
-                            .find(needle)
-                            .map_or(0, |byte| value[..byte].chars().count() + 1)
+                        cadmpeg_core::convert::f64_from_index(
+                            value
+                                .find(needle)
+                                .map_or(0, |byte| value[..byte].chars().count() + 1),
                         )
                     }),
                 constraints,
@@ -5097,11 +5117,12 @@ impl ExpressionValue for DimensionProbeValue {
                         } else {
                             let start = cadmpeg_core::convert::truncate_f64_to_usize(position)? - 1;
                             let remaining = character_count - start;
-                            let count = if length >= cadmpeg_core::convert::f64_from_index(remaining)? {
-                                remaining
-                            } else {
-                                cadmpeg_core::convert::truncate_f64_to_usize(length)?
-                            };
+                            let count =
+                                if length >= cadmpeg_core::convert::f64_from_index(remaining)? {
+                                    remaining
+                                } else {
+                                    cadmpeg_core::convert::truncate_f64_to_usize(length)?
+                                };
                             Some(value.chars().skip(start).take(count).collect())
                         }
                     },
@@ -5115,7 +5136,9 @@ impl ExpressionValue for DimensionProbeValue {
             }
             (CreoMathFunction::StringLength, [value]) => Some(Self::numeric_result(
                 SymbolicRelationDimension::default(),
-                value.text_value().and_then(|value| cadmpeg_core::convert::f64_from_index(value.chars().count())),
+                value
+                    .text_value()
+                    .and_then(|value| cadmpeg_core::convert::f64_from_index(value.chars().count())),
                 constraints,
             )),
             (CreoMathFunction::StringStarts, [value, prefix]) => Some(Self::numeric_result(
@@ -5547,9 +5570,16 @@ impl ExpressionValue for DimensionProbeValue {
                             "creo dimension text search work",
                         )?;
                         Some(
-                            cadmpeg_core::convert::f64_from_index(value
-                                .find(needle)
-                                .map_or(0, |byte| value[..byte].chars().count() + 1)).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?,
+                            cadmpeg_core::convert::f64_from_index(
+                                value
+                                    .find(needle)
+                                    .map_or(0, |byte| value[..byte].chars().count() + 1),
+                            )
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "Creo numeric value cannot be represented exactly",
+                                )
+                            })?,
                         )
                     }
                     None => None,
@@ -5574,52 +5604,78 @@ impl ExpressionValue for DimensionProbeValue {
                         constraints.push(constraint.copy_admitted(ctx)?);
                     }
                 }
-                let value = match value
-                    .text_value()
-                    .zip(position.numeric_value())
-                    .zip(length.numeric_value())
-                {
-                    Some(((value, position), length)) => {
-                        if !position.is_finite()
-                            || !length.is_finite()
-                            || position.fract() != 0.0
-                            || length.fract() != 0.0
-                            || position <= 0.0
-                            || length < 0.0
-                        {
-                            return Ok(None);
-                        }
-                        ctx.charge_work(
-                            cadmpeg_core::decode::u64_from_index(value.len()),
-                            "creo dimension text extract work",
-                        )?;
-                        let character_count = value.chars().count();
-                        if position > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? {
-                            Some(String::new())
-                        } else {
-                            let start = cadmpeg_core::convert::truncate_f64_to_usize(position).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? - 1;
-                            let remaining = character_count - start;
-                            let count = if length >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? {
-                                remaining
+                let value =
+                    match value
+                        .text_value()
+                        .zip(position.numeric_value())
+                        .zip(length.numeric_value())
+                    {
+                        Some(((value, position), length)) => {
+                            if !position.is_finite()
+                                || !length.is_finite()
+                                || position.fract() != 0.0
+                                || length.fract() != 0.0
+                                || position <= 0.0
+                                || length < 0.0
+                            {
+                                return Ok(None);
+                            }
+                            ctx.charge_work(
+                                cadmpeg_core::decode::u64_from_index(value.len()),
+                                "creo dimension text extract work",
+                            )?;
+                            let character_count = value.chars().count();
+                            if position
+                                > cadmpeg_core::convert::f64_from_index(character_count)
+                                    .ok_or_else(|| {
+                                        cadmpeg_core::CodecError::malformed(
+                                            "Creo numeric value cannot be represented exactly",
+                                        )
+                                    })?
+                            {
+                                Some(String::new())
                             } else {
-                                cadmpeg_core::convert::truncate_f64_to_usize(length).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?
-                            };
-                            let start_byte = value
-                                .char_indices()
-                                .nth(start)
-                                .map_or(value.len(), |(at, _)| at);
-                            let end_byte = value[start_byte..]
-                                .char_indices()
-                                .nth(count)
-                                .map_or(value.len(), |(at, _)| start_byte + at);
-                            Some(ctx.copy_retained_text(
-                                &value[start_byte..end_byte],
-                                "creo dimension extracted text",
-                            )?)
+                                let start = cadmpeg_core::convert::truncate_f64_to_usize(position)
+                                    .ok_or_else(|| {
+                                        cadmpeg_core::CodecError::malformed(
+                                            "Creo numeric value cannot be represented exactly",
+                                        )
+                                    })?
+                                    - 1;
+                                let remaining = character_count - start;
+                                let count = if length
+                                    >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(
+                                        || {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "Creo numeric value cannot be represented exactly",
+                                            )
+                                        },
+                                    )? {
+                                    remaining
+                                } else {
+                                    cadmpeg_core::convert::truncate_f64_to_usize(length)
+                                        .ok_or_else(|| {
+                                            cadmpeg_core::CodecError::malformed(
+                                                "Creo numeric value cannot be represented exactly",
+                                            )
+                                        })?
+                                };
+                                let start_byte = value
+                                    .char_indices()
+                                    .nth(start)
+                                    .map_or(value.len(), |(at, _)| at);
+                                let end_byte = value[start_byte..]
+                                    .char_indices()
+                                    .nth(count)
+                                    .map_or(value.len(), |(at, _)| start_byte + at);
+                                Some(ctx.copy_retained_text(
+                                    &value[start_byte..end_byte],
+                                    "creo dimension extracted text",
+                                )?)
+                            }
                         }
-                    }
-                    None => None,
-                };
+                        None => None,
+                    };
                 Ok(Some(Self::text_result(value, constraints)))
             }
             (CreoMathFunction::StringLength, [value]) => {
@@ -5629,7 +5685,14 @@ impl ExpressionValue for DimensionProbeValue {
                             cadmpeg_core::decode::u64_from_index(value.len()),
                             "creo dimension text length work",
                         )?;
-                        Some(cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?)
+                        Some(
+                            cadmpeg_core::convert::f64_from_index(value.chars().count())
+                                .ok_or_else(|| {
+                                    cadmpeg_core::CodecError::malformed(
+                                        "Creo numeric value cannot be represented exactly",
+                                    )
+                                })?,
+                        )
                     }
                     None => None,
                 };
@@ -5795,7 +5858,9 @@ impl ExpressionValue for CurveExpressionValue {
         }
         let integer = exponent.trunc();
         (integer == exponent).then_some(())?;
-        let exponent = i8::try_from(i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(integer)?).ok()?).ok()?;
+        let exponent =
+            i8::try_from(i16::try_from(cadmpeg_core::convert::truncate_f64_to_i32(integer)?).ok()?)
+                .ok()?;
         Some(quantity_value(
             value.powi(i32::from(exponent)),
             dimension.scale(exponent)?,
@@ -5922,7 +5987,13 @@ impl ExpressionValue for CurveExpressionValue {
                 let position = value
                     .find(needle)
                     .map_or(0, |byte| value[..byte].chars().count() + 1);
-                Ok(Some(Number(cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?)))
+                Ok(Some(Number(
+                    cadmpeg_core::convert::f64_from_index(position).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?,
+                )))
             }
             (CreoMathFunction::Extract, [String(value), Number(position), Number(length)]) => {
                 if !position.is_finite()
@@ -5939,15 +6010,35 @@ impl ExpressionValue for CurveExpressionValue {
                     "creo relation extract scan",
                 )?;
                 let character_count = value.chars().count();
-                if *position > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? {
+                if *position
+                    > cadmpeg_core::convert::f64_from_index(character_count).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?
+                {
                     return Ok(Some(String(std::string::String::new())));
                 }
-                let start = cadmpeg_core::convert::truncate_f64_to_usize(*position).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? - 1;
+                let start =
+                    cadmpeg_core::convert::truncate_f64_to_usize(*position).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })? - 1;
                 let remaining = character_count - start;
-                let length = if *length >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))? {
+                let length = if *length
+                    >= cadmpeg_core::convert::f64_from_index(remaining).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })? {
                     remaining
                 } else {
-                    cadmpeg_core::convert::truncate_f64_to_usize(*length).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?
+                    cadmpeg_core::convert::truncate_f64_to_usize(*length).ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo numeric value cannot be represented exactly",
+                        )
+                    })?
                 };
                 let start_byte = value
                     .char_indices()
@@ -5978,7 +6069,15 @@ impl ExpressionValue for CurveExpressionValue {
                     cadmpeg_core::decode::u64_from_index(value.len()),
                     "creo relation text length work",
                 )?;
-                Ok(Some(Number(cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?)))
+                Ok(Some(Number(
+                    cadmpeg_core::convert::f64_from_index(value.chars().count()).ok_or_else(
+                        || {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo numeric value cannot be represented exactly",
+                            )
+                        },
+                    )?,
+                )))
             }
             (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
                 ctx.charge_work(
@@ -6734,7 +6833,9 @@ fn evaluate_creo_relation_function(
                 String(value.chars().skip(start).take(length).collect())
             }
         }
-        (CreoMathFunction::StringLength, [String(value)]) => Number(cadmpeg_core::convert::f64_from_index(value.chars().count())?),
+        (CreoMathFunction::StringLength, [String(value)]) => Number(
+            cadmpeg_core::convert::f64_from_index(value.chars().count())?,
+        ),
         (CreoMathFunction::StringStarts, [String(value), String(prefix)]) => {
             Number(f64::from(value.starts_with(prefix)))
         }
@@ -6942,9 +7043,9 @@ const MAX_RELATION_STRING_PRECISION: f64 = 128.0;
 fn relation_precision(value: f64) -> Option<usize> {
     (value.is_finite()
         && value.fract() == 0.0
-        && value >= 0.0
-        && value <= MAX_RELATION_STRING_PRECISION)
-        .then(|| cadmpeg_core::convert::truncate_f64_to_usize(value)).flatten()
+        && (0.0..=MAX_RELATION_STRING_PRECISION).contains(&value))
+    .then(|| cadmpeg_core::convert::truncate_f64_to_usize(value))
+    .flatten()
 }
 
 fn format_relation_real(value: f64, decimals: Option<usize>, scientific: bool) -> Option<String> {
@@ -7185,9 +7286,18 @@ fn infer_solve_variable_dimensions(
                     .get(variable)
                     .copied()
                     .unwrap_or_default()
-                    .as_f64().ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo dimension coefficient cannot be represented exactly"))?;
+                    .as_f64()
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "Creo dimension coefficient cannot be represented exactly",
+                        )
+                    })?;
             }
-            let rhs = -difference.constant.as_f64().ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo dimension constant cannot be represented exactly"))?;
+            let rhs = -difference.constant.as_f64().ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Creo dimension constant cannot be represented exactly",
+                )
+            })?;
             if coefficients.iter().any(|coefficient| *coefficient != 0.0) || rhs != 0.0 {
                 ctx.reserve_vec(rows, 1, "creo dimension equation rows")?;
                 rows.push(AffineEquationRow { coefficients, rhs });
@@ -7238,7 +7348,16 @@ fn infer_solve_variable_dimensions(
             {
                 return Ok(None);
             }
-            components[axis][index] = i8::try_from(cadmpeg_core::convert::truncate_f64_to_i32(rounded).ok_or_else(|| cadmpeg_core::CodecError::malformed("Creo numeric value cannot be represented exactly"))?).map_err(|_| cadmpeg_core::CodecError::malformed("Creo numeric value exceeds dimension range"))?;
+            components[axis][index] = i8::try_from(
+                cadmpeg_core::convert::truncate_f64_to_i32(rounded).ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed(
+                        "Creo numeric value cannot be represented exactly",
+                    )
+                })?,
+            )
+            .map_err(|_| {
+                cadmpeg_core::CodecError::malformed("Creo numeric value exceeds dimension range")
+            })?;
         }
     }
     let mut dimensions = ctx.alloc_filled(
@@ -8801,8 +8920,7 @@ fn complete_two_chart_samples(
     let Some(remaining) = body.len().checked_sub(start) else {
         return Ok(None);
     };
-    let Some(sample_count) = bounded_len(u64::from(count), 4, remaining)
-    else {
+    let Some(sample_count) = bounded_len(u64::from(count), 4, remaining) else {
         return Ok(None);
     };
     if sample_count < 2 {

@@ -2700,7 +2700,10 @@ mod tests {
                     if length > 1 {
                         body.push(second);
                     }
-                    body.extend((2..length).map(|index| u8::try_from(index).expect("fixture value fits u8")));
+                    body.extend(
+                        (2..length)
+                            .map(|index| u8::try_from(index).expect("fixture value fits u8")),
+                    );
                     for offset in 0..body.len() {
                         for decode in [
                             decode_in_surface_row_lane,

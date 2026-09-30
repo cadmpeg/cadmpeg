@@ -156,7 +156,10 @@ fn pending_trimmed_definition(external_ids: &[u32]) -> FeatureDefinition {
                 external_id: *external_id,
                 kind: TrimEntityKind::Line,
                 mode: Some(0),
-                vertices: [u32::try_from(index).expect("fixture value fits u32"), u32::try_from(index).expect("fixture value fits u32") + 1],
+                vertices: [
+                    u32::try_from(index).expect("fixture value fits u32"),
+                    u32::try_from(index).expect("fixture value fits u32") + 1,
+                ],
                 offset: index,
             })
             .collect(),
