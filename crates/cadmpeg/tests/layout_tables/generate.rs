@@ -358,7 +358,7 @@ fn fence_text(text: &str) -> String {
 
 /// Turn one validated table into the checked-in `layout.rs` source.
 pub(crate) fn emit_layout_rs(file: &LayoutFile, source_root: &std::path::Path) -> Result<String, Vec<String>> {
-    let reads = if file.format == "iges" {
+    let reads = if file.format != "nx" {
         Some(read_set::layout_reads(source_root).map_err(|error| vec![error])?)
     } else {
         None
@@ -477,8 +477,8 @@ fn nx_reader_constant(record: &str, name: &str) -> bool {
     }
 }
 
-fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String)>>) -> Result<String, EmitFailure> {
-    let is_read = |record: &str, name: &str| reads.map_or_else(|| file.format != "nx" || nx_reader_constant(record, name), |reads| reads.contains(&(record.to_string(), name.to_string())));
+fn emit_layout_source(file: &LayoutFile, reads: Option<&read_set::Reads>) -> Result<String, EmitFailure> {
+    let is_read = |record: &str, name: &str| reads.map_or_else(|| file.format != "nx" || nx_reader_constant(record, name), |reads| reads.contains(record, name));
     let mut errors = Vec::new();
     let mut omitted = Vec::new();
     let mut modules = String::new();
@@ -545,6 +545,9 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String
                     "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
                     field.name, record.section
                 )?;
+                if reads.is_some_and(|reads| reads.test_only(&record.name, &const_name)) {
+                    writeln!(fields_out, "    #[cfg(test)]")?;
+                }
                 writeln!(
                     fields_out,
                     "    pub(crate) const {const_name}: usize = {offset};"
@@ -569,6 +572,9 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String
                                 "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
                                 field.name, field.ty, record.section
                             )?;
+                            if reads.is_some_and(|reads| reads.test_only(&record.name, &value_name)) {
+                                writeln!(fields_out, "    #[cfg(test)]")?;
+                            }
                             writeln!(fields_out, "    pub(crate) const {value_name}: {binding};")?;
                         }
                     }
@@ -628,6 +634,9 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String
                 "    /// Record length in bytes. Spec §{}.",
                 record.section
             )?;
+            if reads.is_some_and(|reads| reads.test_only(&record.name, "LEN")) {
+                writeln!(modules, "    #[cfg(test)]")?;
+            }
             writeln!(modules, "    pub(crate) const LEN: usize = {size};")?;
         }
         modules.push_str(&fields_out);
@@ -648,7 +657,7 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String
         let Some(name) = token_const_name(&token.name) else {
             continue;
         };
-        if is_read("token", &name) {
+        if reads.is_none() || is_read("token", &name) {
             token_consts.push((name, value, token));
         }
     }
@@ -661,6 +670,9 @@ fn emit_layout_source(file: &LayoutFile, reads: Option<&BTreeSet<(String, String
                 "    /// `{}` (`{}`). Spec §{}.",
                 token.name, token.tag, token.section
             )?;
+            if reads.is_some_and(|reads| reads.test_only("token", name)) {
+                writeln!(token_mod, "    #[cfg(test)]")?;
+            }
             match value {
                 TokenConst::Bytes(bytes) => {
                     writeln!(
