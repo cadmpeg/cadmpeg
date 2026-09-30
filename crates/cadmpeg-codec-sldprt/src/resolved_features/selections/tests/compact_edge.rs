@@ -719,9 +719,14 @@ fn fillet_edge_roster_ends_at_direct_or_repeated_vertex_dimension() {
         sketch_entities: Vec::new(),
     };
 
-    assert_eq!(fillet_edge_roster_end(&lane, 0, 80), Some(direct_record));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+
+    assert_eq!(fillet_edge_roster_end(&ctx, &lane, 0, 80).unwrap(), Some(direct_record));
     assert_eq!(
-        fillet_edge_roster_end(&lane, 80, 144),
+        fillet_edge_roster_end(&ctx, &lane, 80, 144).unwrap(),
         Some(repeated_record)
     );
 }
