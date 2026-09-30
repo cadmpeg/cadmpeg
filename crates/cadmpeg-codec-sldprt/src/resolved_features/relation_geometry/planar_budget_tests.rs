@@ -533,3 +533,52 @@ fn planar_repeated_circles_refuse_retained_limit() {
 fn planar_repeated_circles_refuse_work_limit() {
     assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_repeated_circles_with_policy);
 }
+
+fn project_dynamic_lines_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition};
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances[0].family = crate::records::FeatureInputRelationFamily::LineLineDistance;
+    lane.relation_instances[0].operands = (0u16..2).map(|index| FeatureInputOperand {
+        offset: u64::from(index), reference_ref: format!("reference-{index}"), kind: FeatureInputOperandKind::Native(crate::records::operand_tag::NativeOperandTag::try_from(0x812a).unwrap()),
+        entity_index: index, entity_ref: None,
+    }).collect();
+    let entities: Vec<_> = (0..2).map(|index| {
+        SketchEntity::new(SketchEntityId::mint(format!("synthetic:test:id#dimension-line-{index}")).unwrap(), sketch.id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start: cadmpeg_ir::math::Point2::new(0.0, f64::from(index) * 2.0), end: cadmpeg_ir::math::Point2::new(1.0, f64::from(index) * 2.0) }).unwrap())
+            .with_geometry_ref(Some(format!("feature:solver-line:{index}")))
+    }).collect();
+    let parameter = DesignParameter {
+        id: ParameterId::mint("synthetic:test:id#line-dimension").unwrap(), owner: None, ordinal: 0,
+        name: "D1".into(), expression: "2mm".into(), display: None,
+        value: Some(ParameterValue::Length(cadmpeg_ir::scalar::Length::new(2.0).unwrap())),
+        dependencies: DistinctMembers::default(), properties: BTreeMap::new(), pmi: None, native_ref: Some("scalar".into()),
+    };
+    let expected = SketchConstraintDefinitionInput::Distance {
+        entities: vec![entities[0].id().clone(), entities[1].id().clone()], parameter: parameter.id.clone(),
+    };
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut constraints = Vec::new();
+    project_relation_bindings(&ctx, &mut constraints, &[sketch], &[feature], &entities, &[parameter], &[lane])?;
+    assert_eq!(constraints.len(), 1);
+    assert_eq!(constraints[0].definition.kind(), &expected);
+    Ok(())
+}
+
+
+
+#[test]
+fn planar_dynamic_lines_refuse_collection_limit() {
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems, project_dynamic_lines_with_policy);
+}
+
+#[test]
+fn planar_dynamic_lines_refuse_retained_limit() {
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes, project_dynamic_lines_with_policy);
+}
+
+#[test]
+fn planar_dynamic_lines_refuse_work_limit() {
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_dynamic_lines_with_policy);
+}
