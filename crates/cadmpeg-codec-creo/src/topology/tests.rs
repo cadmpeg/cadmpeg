@@ -986,7 +986,8 @@ fn decode_transfers_closed_plane_intersection_brep() {
         ]
     );
     assert_eq!(native, "creo:allfeatur:edgs_affected#4:10,11");
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
