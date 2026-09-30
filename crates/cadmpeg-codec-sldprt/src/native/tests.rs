@@ -1704,3 +1704,28 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
 }
 
 mod typed_load_limits;
+
+#[test]
+fn native_store_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let decoded = SldprtCodec.decode(
+        &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let native = sldprt_native(decoded.ir());
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut expected = cadmpeg_ir::NativeNamespace::default();
+    native.store(&service, &mut expected).unwrap();
+    assert!(!expected.arenas()["features"].is_empty());
+
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits));
+}

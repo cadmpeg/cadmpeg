@@ -650,8 +650,9 @@ impl JsonSchema for NativeRecord {
 /// record is converted before the next is read, and a record the source could
 /// not state stops the walk with that record's own error. Equal identities can
 /// occur before document validation, so ordering must preserve their input
-/// order. The stable sort's possible scratch is reserved against the caller's
-/// temporary-byte budget before sorting.
+/// order. A fallibly reserved index permutation orders records by identity and
+/// original ordinal. Its storage is admitted against the caller's temporary-byte
+/// budget before sorting.
 pub fn arena_from<T, E, I>(ctx: &DecodeContext<'_>, records: I) -> Result<Vec<NativeRecord>, E>
 where
     T: Serialize,
@@ -702,7 +703,47 @@ where
     let _sort_scratch = ctx
         .reserve_scoped(scratch_bytes, "sort native records")
         .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
-    converted.sort_by(|left, right| left.id().cmp(right.id()));
+    let operation = "sort native records";
+    let count = u64::try_from(converted.len()).map_err(|_| {
+        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+            operation, u64::MAX - 1, u64::MAX,
+        )))
+    })?;
+    ctx.charge_work(count, operation)
+        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+    let longest_identity = converted.iter().map(|record| record.id().len()).max().unwrap_or(0);
+    let work = u64::try_from(longest_identity).ok()
+        .and_then(|length| length.checked_add(1))
+        .and_then(|length| length.checked_mul(count))
+        .and_then(|amount| amount.checked_mul(u64::from(converted.len().checked_ilog2().unwrap_or(0)) + 1))
+        .and_then(|amount| amount.checked_mul(32))
+        .ok_or_else(|| E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+            operation, u64::MAX - 1, u64::MAX,
+        ))))?;
+    ctx.charge_work(work, operation)
+        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+    ctx.charge_collection_items(count, operation)
+        .map_err(|error| E::from(NativeConvertError::Resource(error)))?;
+    let mut order = Vec::new();
+    order.try_reserve_exact(converted.len()).map_err(|_| {
+        E::from(NativeConvertError::Resource(ctx.refuse_codec_limit(
+            operation, u64::MAX - 1, u64::MAX,
+        )))
+    })?;
+    order.extend(0..converted.len());
+    order.sort_unstable_by(|left, right| {
+        converted[*left].id().cmp(converted[*right].id()).then_with(|| left.cmp(right))
+    });
+    for start in 0..order.len() {
+        let mut cursor = start;
+        while order[cursor] != start {
+            let next = order[cursor];
+            converted.swap(cursor, next);
+            order[cursor] = cursor;
+            cursor = next;
+        }
+        order[cursor] = cursor;
+    }
     Ok(converted)
 }
 

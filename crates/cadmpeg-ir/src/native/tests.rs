@@ -958,3 +958,46 @@ fn native_arena_charged_load_preserves_values_and_error_context() {
     assert_eq!(id.as_str(), "test:native:record#refused");
     assert!(source.is_data());
 }
+
+#[test]
+fn native_arena_index_sort_preserves_cycles_and_identity_ties() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    for suffixes in [
+        ["e", "d", "c", "b", "a"],
+        ["c", "a", "e", "b", "d"],
+        ["c", "a", "c", "b", "a"],
+        ["a", "a", "a", "a", "a"],
+    ] {
+        let records = suffixes.into_iter().enumerate().map(|(ordinal, suffix)| {
+            Ok::<_, crate::native::NativeConvertError>(serde_json::json!({
+                "id": format!("test:native:record#{suffix}"), "ordinal": ordinal,
+            }))
+        });
+        let sorted = crate::native::arena_from(&ctx, records).unwrap();
+        let mut expected = suffixes.into_iter().enumerate().collect::<Vec<_>>();
+        expected.sort_by_key(|(_, suffix)| *suffix);
+        for (record, (ordinal, suffix)) in sorted.iter().zip(expected) {
+            assert_eq!(record.id(), format!("test:native:record#{suffix}"));
+            assert_eq!(record.field("ordinal"), Some(serde_json::json!(ordinal)));
+        }
+    }
+}
+
+#[test]
+fn native_arena_sort_refuses_work_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let record = serde_json::json!({"id":"test:native:record#first"});
+    let error = crate::native::arena_from(&ctx, [Ok::<_, crate::native::NativeConvertError>(record)])
+        .unwrap_err();
+    assert!(matches!(cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::WorkUnits));
+}
