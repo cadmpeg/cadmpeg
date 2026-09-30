@@ -3,8 +3,8 @@
 use super::{
     full_round_fillet_selection_triple, project_compact_surface_selections,
     project_unbound_cosmetic_thread_faces, project_unbound_offset_plane_faces,
-    sole_unresolved_fillet_group, unique_cylindrical_face, unique_planar_face,
-    unique_topological_cylindrical_face, variable_fillet_radius_groups,
+    unique_cylindrical_face, unique_planar_face, unique_topological_cylindrical_face,
+    variable_fillet_radius_groups,
 };
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
@@ -1844,115 +1844,6 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 }
 
 #[test]
-fn a_sole_unresolved_fillet_group_carries_its_edges() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection,
-    };
-
-    let group = |edges: EdgeSelection, radius: RadiusSpec| FilletGroup {
-        edges,
-        radius,
-        tangency_weight: None,
-    };
-    let native = EdgeSelection::Native("native:fillet-edges".into());
-    let fillet = |groups: Vec<FilletGroup>| {
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: groups
-                .try_into()
-                .expect("a fillet keeps one or more groups"),
-        })
-    };
-
-    let definition = fillet(vec![group(
-        native.clone(),
-        RadiusSpec::Unresolved {
-            form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-        },
-    )]);
-    let carried = sole_unresolved_fillet_group(&definition)
-        .expect("a sole group without a radius is carried out of the check");
-    assert_eq!(carried.0, &native);
-
-    assert_eq!(
-        sole_unresolved_fillet_group(&fillet(vec![group(
-            native.clone(),
-            RadiusSpec::Constant {
-                radius: cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("a positive radius"),
-            },
-        )])),
-        None
-    );
-    assert_eq!(
-        sole_unresolved_fillet_group(&fillet(vec![
-            group(
-                native.clone(),
-                RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
-                }
-            ),
-            group(
-                EdgeSelection::Unresolved,
-                RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
-                }
-            ),
-        ])),
-        None
-    );
-    assert_eq!(
-        sole_unresolved_fillet_group(&FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: vec![cadmpeg_ir::features::edge_treatments::ChamferGroup {
-                edges: native,
-                spec: cadmpeg_ir::features::edge_treatments::ChamferSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance)
-                },
-            }]
-            .try_into()
-            .expect("a chamfer keeps one or more groups"),
-            flip_direction: false,
-        })),
-        None
-    );
-}
-
-#[test]
-fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
-    use cadmpeg_ir::features::{
-        edge_treatments::{FilletGroup, RadiusSpec},
-        EdgeSelection,
-    };
-
-    let weight = cadmpeg_ir::scalar::FiniteReal::new(0.75).expect("a finite tangency weight");
-    let fillet = |tangency_weight| {
-        FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: vec![FilletGroup {
-                edges: EdgeSelection::Unresolved,
-                radius: RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                },
-                tangency_weight,
-            }]
-            .try_into()
-            .expect("a fillet keeps one or more groups"),
-        })
-    };
-
-    assert_eq!(
-        sole_unresolved_fillet_group(&fillet(Some(weight)))
-            .expect("a sole group without a radius is carried out of the check")
-            .1,
-        Some(weight)
-    );
-    assert_eq!(
-        sole_unresolved_fillet_group(&fillet(None))
-            .expect("a sole group without a radius is carried out of the check")
-            .1,
-        None
-    );
-}
-
-#[test]
 fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     with_projection_context(|ctx| {
         let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
@@ -2015,3 +1906,5 @@ fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
             .is_none());
     });
 }
+
+mod unresolved_fillet_groups;
