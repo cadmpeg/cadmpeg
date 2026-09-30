@@ -2,7 +2,6 @@
 //! Edit-and-patch engine: diff a neutral `CadIr` against a decoded baseline and
 //! patch a retained F3D archive in place.
 
-use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
@@ -602,23 +601,14 @@ pub(crate) fn write_semantic(
             })?;
             continue;
         }
-        let mut bytes = Vec::with_capacity(usize::try_from(entry.size()).map_err(|_| {
-            cadmpeg_core::decode::refuse_local_limit(
-                "f3d patch ZIP entry size",
-                u64_from_index(usize::MAX),
-                entry.size(),
-            )
-        })?);
+        let mut bytes = Vec::new();
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = entry.read(&mut chunk)?;
             if read == 0 {
                 break;
             }
-            bytes.try_reserve(read).map_err(|_| {
-                CodecError::malformed(format_args!("cannot allocate ZIP entry {name}"))
-            })?;
-            bytes.extend_from_slice(&chunk[..read]);
+            encode_ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "retain F3D patch ZIP entry")?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);
