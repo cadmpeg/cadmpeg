@@ -2428,7 +2428,7 @@ pub(crate) fn compact_edge_selection_at(
         Ok::<_, CodecError>(())
     };
     if let Some(ids) = compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)? { consider(ids)?; }
-    for (components, _) in compact_edge_component_path_candidates(payload, marker, count) {
+    for (components, _) in compact_edge_component_path_candidates(ctx, payload, marker, count)? {
         let mut ids = Vec::new();
         for component in components {
             ctx.charge_work(1, OPERATION)?;
@@ -2471,7 +2471,7 @@ pub(crate) fn compact_edge_component_path_at(
         }
         return Ok(Some(components));
     }
-    Ok(compact_edge_component_path(payload, marker, count).map(|(components, _)| components))
+    Ok(compact_edge_component_path(ctx, payload, marker, count)?.map(|(components, _)| components))
 }
 
 fn compact_component_reference_list_at(
@@ -2703,7 +2703,7 @@ pub(super) fn compact_component_path_end_at(
     let candidates = [
         compact_wide_component_path(payload, marker + 18, count),
         compact_heterogeneous_component_path(payload, marker + 18, count),
-        compact_sparse_component_path(payload, marker + 18, count),
+        compact_sparse_component_path(ctx, payload, marker + 18, count)?,
     ];
     let mut candidate: Option<(Vec<FeatureInputComponentPathEntry>, usize)> = None;
     let mut ambiguous = false;
@@ -2718,55 +2718,74 @@ pub(super) fn compact_component_path_end_at(
 }
 
 fn compact_edge_component_path(
-    payload: &[u8],
-    marker: usize,
-    count: usize,
-) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
-    let candidates = compact_edge_component_path_candidates(payload, marker, count);
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.clone())
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize, count: usize,
+) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, CodecError> {
+    let mut candidates = compact_edge_component_path_candidates(ctx, payload, marker, count)?.into_iter();
+    let candidate = candidates.next();
+    Ok(if candidates.next().is_none() { candidate } else { None })
 }
 
 fn compact_edge_component_path_candidates(
-    payload: &[u8],
-    marker: usize,
-    count: usize,
-) -> Vec<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
-    let component_paths = |entry_count| {
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize, count: usize,
+) -> Result<Vec<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT edge path candidates";
+    let component_paths = |entry_count| -> Result<Vec<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
         let candidates = [
             compact_wide_component_path(payload, marker + 18, entry_count),
             compact_heterogeneous_component_path(payload, marker + 18, entry_count),
-            compact_sparse_component_path(payload, marker + 18, entry_count),
+            compact_sparse_component_path(ctx, payload, marker + 18, entry_count)?,
         ];
-        distinct_candidates(candidates.into_iter().flatten())
+        let mut distinct = Vec::new();
+        for candidate in candidates.into_iter().flatten() {
+            let mut duplicate = false;
+            for existing in &distinct {
+                ctx.charge_work(u64_from_index(candidate.0.len()).checked_add(2)
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                if existing == &candidate { duplicate = true; break; }
+            }
+            if !duplicate {
+                ctx.reserve_collection_vec(&mut distinct, 1, OPERATION)?;
+                distinct.push(candidate);
+            }
+        }
+        Ok(distinct)
     };
-    let terminal_paths = if count > 1 {
-        component_paths(count - 1)
-            .into_iter()
-            .filter_map(|(components, end)| {
-                Some((components, end, edge_terminal_source_at(payload, end)?))
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    let mut candidates = terminal_paths
-        .iter()
-        .map(|(components, _, source)| (components.clone(), Some(*source)))
-        .collect::<Vec<_>>();
-    candidates.extend(
-        component_paths(count)
-            .into_iter()
-            .filter(|(components, end)| {
-                !terminal_paths.iter().any(|(prefix, prefix_end, _)| {
-                    *prefix_end < *end && components.starts_with(prefix)
-                })
-            })
-            .map(|(components, _)| (components, None)),
-    );
-    distinct_candidates(candidates)
+    let mut terminal_paths = Vec::new();
+    if count > 1 {
+        for (components, end) in component_paths(count - 1)? {
+            ctx.charge_work(36, OPERATION)?;
+            if let Some(source) = edge_terminal_source_at(payload, end) {
+                ctx.reserve_collection_vec(&mut terminal_paths, 1, OPERATION)?;
+                terminal_paths.push((components, end, source));
+            }
+        }
+    }
+    let mut full_paths = component_paths(count)?;
+    for (components, _) in &full_paths {
+        for (prefix, _, _) in &terminal_paths {
+            let work = u64_from_index(components.len()).checked_add(u64_from_index(prefix.len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+        }
+    }
+    full_paths.retain(|(components, end)| !terminal_paths.iter()
+        .any(|(prefix, prefix_end, _)| *prefix_end < *end && components.starts_with(prefix)));
+    let mut candidates = Vec::new();
+    for candidate in terminal_paths.into_iter().map(|(components, _, source)| (components, Some(source)))
+        .chain(full_paths.into_iter().map(|(components, _)| (components, None))) {
+        let mut duplicate = false;
+        for existing in &candidates {
+            ctx.charge_work(u64_from_index(candidate.0.len()).checked_add(2)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if existing == &candidate { duplicate = true; break; }
+        }
+        if !duplicate {
+            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            candidates.push(candidate);
+        }
+    }
+    Ok(candidates)
 }
 
 fn edge_terminal_source_at(payload: &[u8], end: usize) -> Option<u32> {
@@ -2807,7 +2826,7 @@ pub(crate) fn compact_edge_owner_feature_at(
     let Some(count) = count else { return Ok(None); };
     let owner_source = if compact_component_reference_list_at(ctx, payload, marker)?.is_some() { None }
     else {
-        let Some((_, owner)) = compact_edge_component_path(payload, marker, count) else { return Ok(None); };
+        let Some((_, owner)) = compact_edge_component_path(ctx, payload, marker, count)? else { return Ok(None); };
         owner
     };
     if let Some(source) = owner_source {
@@ -3015,10 +3034,10 @@ fn compact_component_separator(payload: &[u8], cursor: usize, gap: usize) -> boo
 }
 
 fn compact_sparse_component_path(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     cursor: usize,
     count: usize,
-) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
     fn entry_prefix(payload: &[u8], offset: usize) -> Option<(u16, [u8; 12])> {
         let instance = payload.get(offset..offset + 4)?;
         let token = View::u16_le_at(instance, 0)?;
@@ -3035,18 +3054,24 @@ fn compact_sparse_component_path(
     }
 
     fn parse(
-        payload: &[u8],
+        ctx: &DecodeContext<'_>, payload: &[u8],
         cursor: usize,
         remaining: usize,
         failed: &mut HashSet<(usize, usize)>,
-    ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
-        if !failed.insert((cursor, remaining)) {
-            return None;
-        }
-        let (instance, type_signature) = entry_prefix(payload, cursor)?;
+    ) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, usize)>, CodecError> {
+        const OPERATION: &str = "decode SLDPRT sparse component path";
+        let _depth = ctx.enter_nested(OPERATION)?;
+        ctx.charge_work(32, OPERATION)?;
+        if failed.contains(&(cursor, remaining)) { return Ok(None); }
+        ctx.charge_collection_items(1, OPERATION)?;
+        failed.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        failed.insert((cursor, remaining));
+        let Some((instance, type_signature)) = entry_prefix(payload, cursor) else { return Ok(None); };
         for entry_length in [20usize, 16] {
             let local_id = if entry_length == 20 {
-                Some(View::u32_le_at(payload, cursor + 16)?)
+                let Some(local_id) = View::u32_le_at(payload, cursor + 16) else { return Ok(None); };
+                Some(local_id)
             } else {
                 None
             };
@@ -3055,31 +3080,37 @@ fn compact_sparse_component_path(
                 type_signature,
                 local_id,
             };
-            let end = cursor.checked_add(entry_length)?;
+            let Some(end) = cursor.checked_add(entry_length) else { return Ok(None); };
             if remaining == 1 {
-                return Some((vec![entry], end));
+                let mut entries = Vec::new();
+                ctx.reserve_collection_vec(&mut entries, 1, OPERATION)?;
+                entries.push(entry);
+                return Ok(Some((entries, end)));
             }
             for gap in COMPACT_COMPONENT_PATH_GAPS {
+                ctx.charge_work(32, OPERATION)?;
                 if !compact_component_separator(payload, end, *gap) {
                     continue;
                 }
                 let Some(next) = end.checked_add(*gap) else {
                     continue;
                 };
-                let Some((mut tail, path_end)) = parse(payload, next, remaining - 1, failed) else {
+                let Some((mut tail, path_end)) = parse(ctx, payload, next, remaining - 1, failed)? else {
                     continue;
                 };
-                let mut entries = Vec::with_capacity(remaining);
-                entries.push(entry);
-                entries.append(&mut tail);
-                return Some((entries, path_end));
+                ctx.charge_work(u64_from_index(tail.len()), OPERATION)?;
+                ctx.reserve_collection_vec(&mut tail, 1, OPERATION)?;
+                tail.insert(0, entry);
+                return Ok(Some((tail, path_end)));
             }
         }
-        None
+        Ok(None)
     }
 
-    bounded_len(count as u64, 16, payload.len().saturating_sub(cursor))?;
-    parse(payload, cursor, count, &mut HashSet::new())
+    if bounded_len(u64_from_index(count), 16, payload.len().checked_sub(cursor).unwrap_or(0)).is_none() {
+        return Ok(None);
+    }
+    parse(ctx, payload, cursor, count, &mut HashSet::new())
 }
 
 fn compact_u16_edge_ids(
