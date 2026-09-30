@@ -460,7 +460,7 @@ fn native_owner_operand_keeps_a_missing_source_index() {
         owner = owner.with_test_identity(owner.object_index(), index);
         let markers = HashMap::from([(relation.id(), &relation), (owner.id(), &owner)]);
         let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
-            typed_marker_relation_definition(&relation, &markers, &HashMap::new())
+            typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap()
         else {
             panic!("native relation");
         };

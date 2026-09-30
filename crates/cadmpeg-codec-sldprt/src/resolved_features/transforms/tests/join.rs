@@ -157,7 +157,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(cycle.id(), &cycle);
     assert!(marker_entities("cycle", &markers, &joins).is_empty());
     assert_eq!(
-        typed_marker_relation_definition(markers["reference"], &markers, &joins,),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), markers["reference"], &markers, &joins,).unwrap(),
         Some(SketchConstraintDefinitionInput::Vertical {
             entity: first.clone(),
         })
@@ -167,14 +167,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         SketchRelationKind::HorizontalPoints,
     ));
     assert!(matches!(
-        typed_marker_relation_definition(&nested_horizontal, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &nested_horizontal, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
             if native_kind == "sldprt:marker-relation:25"
     ));
     let mut nested_native = nested_reference.clone();
     nested_native.reclassify(SketchInputKind::from_native_code(28));
     assert_eq!(
-        typed_marker_relation_definition(&nested_native, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &nested_native, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:28")
                 .unwrap(),
@@ -210,7 +210,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     markers.insert(coordinate_horizontal.id(), &coordinate_horizontal);
     assert_eq!(
-        typed_marker_relation_definition(&coordinate_horizontal, &markers, &coordinate_loci,),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &coordinate_horizontal, &markers, &coordinate_loci,).unwrap(),
         None
     );
     let relation_point =
@@ -233,7 +233,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(point_handle.id(), &point_handle);
     markers.insert(point_horizontal.id(), &point_horizontal);
     assert!(matches!(
-        typed_marker_relation_definition(&point_horizontal, &markers, &point_loci),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &point_horizontal, &markers, &point_loci).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { entities, .. })
             if entities == vec![relation_point]
     ));
@@ -241,12 +241,12 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let mut operandless_vertical = marker("operandless-vertical", None);
     operandless_vertical.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
-        typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &operandless_vertical, &markers, &joins).unwrap(),
         None
     );
     operandless_vertical.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.02]);
     assert_eq!(
-        typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &operandless_vertical, &markers, &joins).unwrap(),
         None
     );
     let mut parallel = marker("parallel", None);
@@ -266,7 +266,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     markers.insert(parallel.id(), &parallel);
     assert_eq!(
-        typed_marker_relation_definition(&parallel, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &parallel, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Parallel {
             first: first.clone(),
             second: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
@@ -277,7 +277,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     symmetric.links = parallel.links.clone();
     markers.insert(symmetric.id(), &symmetric);
     assert_eq!(
-        typed_marker_relation_definition(&symmetric, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &symmetric, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:11")
                 .unwrap(),
@@ -312,7 +312,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     coincident.links = parallel.links.clone();
     markers.insert(coincident.id(), &coincident);
     assert_eq!(
-        typed_marker_relation_definition(&coincident, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &coincident, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
@@ -329,7 +329,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     horizontal_points.links = parallel.links.clone();
     markers.insert(horizontal_points.id(), &horizontal_points);
     assert_eq!(
-        typed_marker_relation_definition(&horizontal_points, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &horizontal_points, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
@@ -346,7 +346,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     legacy_horizontal_points.links = parallel.links.clone();
     markers.insert(legacy_horizontal_points.id(), &legacy_horizontal_points);
     assert_eq!(
-        typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &legacy_horizontal_points, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
@@ -385,7 +385,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(entity_marker.id(), &entity_marker);
     markers.insert(midpoint.id(), &midpoint);
     assert_eq!(
-        typed_marker_relation_definition(&midpoint, &markers, &midpoint_loci),
+        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &midpoint, &markers, &midpoint_loci).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint {
             point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
             entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
@@ -419,7 +419,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             }],
         );
         assert_eq!(
-            typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
+            typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &arc_angle, &markers, &arc_loci).unwrap(),
             Some(SketchConstraintDefinitionInput::ArcAngle {
                 entity: SketchEntityId::mint("synthetic:test:id#second").unwrap(),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(angle).unwrap(),
@@ -428,7 +428,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         arc_angle.links.as_mut().unwrap().entries_mut()[0].entity_ref =
             entity_marker.id().to_string();
         assert!(matches!(
-            typed_marker_relation_definition(&arc_angle, &markers, &arc_loci),
+            typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &arc_angle, &markers, &arc_loci).unwrap(),
             Some(SketchConstraintDefinitionInput::Native {
                 native_kind,
                 entities,

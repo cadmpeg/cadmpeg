@@ -321,47 +321,47 @@ fn locus_relations_require_matching_evaluated_geometry() {
         ),
     ]);
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &coincident,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &merge_points,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::ArcAngle { .. })
     ));
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &symmetric,
             &sketch,
             &[
@@ -371,7 +371,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
             ],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(symmetric_first.id().clone()),
             second: SketchLocus::Entity(symmetric_second.id().clone()),
@@ -379,13 +379,13 @@ fn locus_relations_require_matching_evaluated_geometry() {
         })
     );
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::AtIntersection {
             point: SketchLocus::Entity(first.id().clone()),
             first: line.id().clone(),
@@ -397,13 +397,13 @@ fn locus_relations_require_matching_evaluated_geometry() {
         position: Point2::new(1.0, 0.0),
     })
     .unwrap();
-    let definition = typed_marker_relation_definition_in_sketch(
+    let definition = typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
         &coincident,
         &sketch,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
         &markers,
         &loci,
-    )
+    ).unwrap()
     .expect("typed coincident relation");
     assert!(matches!(
         definition,
@@ -422,23 +422,23 @@ fn locus_relations_require_matching_evaluated_geometry() {
         .unwrap(),
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     arc.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
@@ -449,13 +449,13 @@ fn locus_relations_require_matching_evaluated_geometry() {
     })
     .unwrap();
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
     symmetric_second.geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -463,13 +463,13 @@ fn locus_relations_require_matching_evaluated_geometry() {
     })
     .unwrap();
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &symmetric,
             &sketch,
             &[symmetric_first, symmetric_second, symmetry_axis],
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
@@ -1113,13 +1113,13 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
     .with_native_ref(Some(point.id().to_string()));
 
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(
+        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Fixed { entity: point_id })
     );
 }

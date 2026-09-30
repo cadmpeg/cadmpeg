@@ -2875,12 +2875,13 @@ pub(crate) fn project_relation_bindings(
                 continue;
             };
             let Some(definition) = typed_marker_relation_definition_in_sketch(
+                ctx,
                 marker,
                 sketch,
                 sketch_entities,
                 &markers_by_id,
                 &loci_by_marker,
-            ) else {
+            )? else {
                 continue;
             };
             let active =

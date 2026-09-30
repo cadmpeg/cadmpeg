@@ -641,3 +641,37 @@ fn planar_dynamic_marker_points_refuse_work_limit() {
 fn planar_dynamic_marker_points_refuse_nesting_limit() {
     assert_owned_loci_refusal(ResourceDimension::RecursionDepth, project_dynamic_marker_points_with_policy);
 }
+
+fn project_native_marker_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks, SketchRelationKind};
+    let (sketch, feature, mut lane) = planar_fixture();
+    lane.relation_instances.clear();
+    let mut relation = SketchInputEntity::new("opaque-relation", "lane", 0, 0, SketchInputKind::Relation(SketchRelationKind::OffsetEdge));
+    relation.feature_ref = Some("feature".into());
+    relation.links = SketchInputLinks::new(0, vec![SketchInputLink { local_id: 3, entity_ref: "opaque-point".into() }]);
+    lane.sketch_entities = vec![relation, SketchInputEntity::new("opaque-point", "lane", 1, 1, SketchInputKind::Point)];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut constraints = Vec::new();
+    project_relation_bindings(&ctx, &mut constraints, &[sketch], &[feature], &[], &[], &[lane])?;
+    assert_eq!(constraints.len(), 1);
+    let cadmpeg_ir::sketches::SketchConstraintDefinitionInput::Native { entities, operands, .. } = constraints[0].definition.kind() else { panic!("native marker relation"); };
+    assert!(entities.is_empty());
+    assert_eq!(operands, &vec![cadmpeg_ir::sketches::SketchNativeOperand {
+        native_kind: cadmpeg_core::nonblank_literal!("sldprt:marker-local-id"), field: None,
+        object_index: Some(3), native_ref: Some("opaque-point".into()),
+    }]);
+    Ok(())
+}
+#[test]
+fn planar_native_marker_refuses_collection_limit() {
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems, project_native_marker_with_policy);
+}
+#[test]
+fn planar_native_marker_refuses_retained_limit() {
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes, project_native_marker_with_policy);
+}
+#[test]
+fn planar_native_marker_refuses_work_limit() {
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits, project_native_marker_with_policy);
+}
