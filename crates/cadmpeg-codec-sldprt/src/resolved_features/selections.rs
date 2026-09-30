@@ -1891,7 +1891,7 @@ pub(super) fn component_vector_path_at(
     let cell_count = usize::try_from(View::u32_le_at(payload, header)?)
         .ok()
         .filter(|count| (2..=65).contains(count))?;
-    let candidate_results = [
+    let mut candidate_results = [
         compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1),
         (cell_count > 2)
             .then(|| compact_heterogeneous_component_path(payload, marker + 18, cell_count - 2))
@@ -1910,22 +1910,15 @@ pub(super) fn component_vector_path_at(
     // An exact count is an explicit vector boundary. A following path-shaped
     // record does not extend it; continuation checks only disambiguate root
     // slot interpretations.
-    let exact_count_candidates = candidate_results[2].clone().into_iter().collect::<Vec<_>>();
-    if let [candidate] = exact_count_candidates.as_slice() {
-        return Some(candidate.0.clone());
+    if let Some((components, _)) = candidate_results[2].take() {
+        return Some(components);
     }
-    let candidates = candidate_results.into_iter().flatten().collect::<Vec<_>>();
-    let candidates = distinct_candidates(
+    unique_candidate(
         // A shorter root-slot interpretation is incomplete when another valid
         // entry follows its end; the remaining entry is part of this path.
-        candidates
-            .into_iter()
+        candidate_results.into_iter().flatten()
             .filter(|(_, end)| !component_path_continues(payload, *end, true)),
-    );
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.0.clone())
+    ).map(|(components, _)| components)
 }
 
 fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -> bool {
@@ -2047,11 +2040,7 @@ fn counted_surface_component_path_at(
     .into_iter()
     .flatten()
     .filter(|(_, end)| !component_path_continues(payload, *end, false));
-    let candidates = distinct_candidates(candidates);
-    let [candidate] = candidates.as_slice() else {
-        return None;
-    };
-    Some(candidate.0.clone())
+    unique_candidate(candidates).map(|(components, _)| components)
 }
 
 fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
@@ -2803,14 +2792,15 @@ fn edge_terminal_source_at(payload: &[u8], end: usize) -> Option<u32> {
     (source != 0).then_some(source)
 }
 
-fn distinct_candidates<T: PartialEq>(candidates: impl IntoIterator<Item = T>) -> Vec<T> {
-    let mut distinct = Vec::new();
+fn unique_candidate<T: PartialEq>(candidates: impl IntoIterator<Item = T>) -> Option<T> {
+    let mut unique = None;
+    let mut ambiguous = false;
     for candidate in candidates {
-        if !distinct.contains(&candidate) {
-            distinct.push(candidate);
-        }
+        if let Some(first) = &unique {
+            if first != &candidate { ambiguous = true; }
+        } else { unique = Some(candidate); }
     }
-    distinct
+    if ambiguous { None } else { unique }
 }
 
 pub(crate) fn compact_edge_owner_feature_at(
