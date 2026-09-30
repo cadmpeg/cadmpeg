@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
@@ -23,20 +23,25 @@ fn material_asset_result(configure: impl FnOnce(&mut DecodePolicy)) -> Result<Ca
         container,
         streams: Vec::new(),
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut ir = CadIr::empty();
-    let mut annotations = AnnotationBuilder::new();
-    super::super::attach_material_texture_assets(
-        &ctx,
-        &mut ir,
-        &textures,
-        &scan,
-        &mut annotations,
-    )?;
-    Ok(ir)
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut ir = CadIr::empty();
+            let mut annotations = AnnotationBuilder::new();
+            super::super::attach_material_texture_assets(
+                ctx,
+                &mut ir,
+                &textures,
+                &scan,
+                &mut annotations,
+            )?;
+            Ok(ir)
+        },
+    )
 }
 
 #[test]

@@ -12,14 +12,12 @@ fn hole_diameters_for_operations(
     operations: &[String],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    hole_body_projection(&ctx, ir, operations, outputs)
-        .expect("hole witness resource budget")
-        .map(|projection| projection.diameters)
-        .unwrap_or_default()
+    crate::test_support::with_decode_context(|ctx| {
+        hole_body_projection(ctx, ir, operations, outputs)
+            .expect("hole witness resource budget")
+            .map(|projection| projection.diameters)
+            .unwrap_or_default()
+    })
 }
 
 fn simple_hole_diameters(
@@ -33,16 +31,15 @@ fn simple_hole_diameters(
         .enumerate()
         .map(|(position, template)| (template.operation_label.as_str(), position))
         .collect::<BTreeMap<_, _>>();
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Some(operations) = simple_hole_operations(&ctx, templates, groups, &operation_positions)
-        .expect("simple hole operation resource budget")
-    else {
-        return BTreeMap::new();
-    };
-    hole_diameters_for_operations(ir, &operations, outputs)
+
+    crate::test_support::with_decode_context(|ctx| {
+        let Some(operations) = simple_hole_operations(ctx, templates, groups, &operation_positions)
+            .expect("simple hole operation resource budget")
+        else {
+            return BTreeMap::new();
+        };
+        hole_diameters_for_operations(ir, &operations, outputs)
+    })
 }
 
 mod blend;

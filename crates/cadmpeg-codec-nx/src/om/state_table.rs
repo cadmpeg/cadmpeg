@@ -85,40 +85,42 @@ fn operation_state_status_table(
     use super::state_slot_lane::StateSlotLane;
     use super::state_status::operation_state_status_row_at;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)
-        .expect("test state bytes fit the decode policy");
-
-    if start >= end || end > bytes.len() {
-        return None;
-    }
-    let mut entries = Vec::new();
-    let mut at = start;
-    while at < end {
-        if OperationStateMessage::read(bytes, at, base_offset).is_some() {
-            break;
-        }
-        if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
-            let lane = StateSlotLane::read(&ctx, bytes, at, end, base_offset)
-                .expect("test state slots fit the decode policy")?;
-            at = lane.end_offset() - base_offset;
-            entries.push(StateTableEntry::Slots(lane.into_slots()));
-            continue;
-        }
-        let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None) else {
-            break;
-        };
-        at = row.end_offset() - base_offset;
-        entries.push(StateTableEntry::Status(row.body()));
-    }
-    if !entries
-        .iter()
-        .any(|entry| matches!(entry, StateTableEntry::Status(_)))
-    {
-        return None;
-    }
-    OperationStateStatusTable::new(base_offset.checked_add(start)?, NonEmpty::new(entries)?)
+    crate::test_support::with_decode_context_over(
+        bytes,
+        |_| {},
+        |ctx| {
+            if start >= end || end > bytes.len() {
+                return None;
+            }
+            let mut entries = Vec::new();
+            let mut at = start;
+            while at < end {
+                if OperationStateMessage::read(bytes, at, base_offset).is_some() {
+                    break;
+                }
+                if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
+                    let lane = StateSlotLane::read(ctx, bytes, at, end, base_offset)
+                        .expect("test state slots fit the decode policy")?;
+                    at = lane.end_offset() - base_offset;
+                    entries.push(StateTableEntry::Slots(lane.into_slots()));
+                    continue;
+                }
+                let Some(row) = operation_state_status_row_at(bytes, at, end, base_offset, None)
+                else {
+                    break;
+                };
+                at = row.end_offset() - base_offset;
+                entries.push(StateTableEntry::Status(row.body()));
+            }
+            if !entries
+                .iter()
+                .any(|entry| matches!(entry, StateTableEntry::Status(_)))
+            {
+                return None;
+            }
+            OperationStateStatusTable::new(base_offset.checked_add(start)?, NonEmpty::new(entries)?)
+        },
+    )
 }
 
 #[cfg(test)]

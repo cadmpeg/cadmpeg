@@ -114,8 +114,8 @@ fn operation_state_opaque_payload_end(bytes: &[u8], at: usize, end: usize) -> Op
     if bytes.get(at..at + 3) == Some(&[0x02, 0x01, 0x11]) {
         return Some(at + 3);
     }
-    let search_end = end.min(at.saturating_add(MAX_OPAQUE_STATUS_BYTES));
-    for cursor in at..search_end.saturating_sub(1) {
+    let search_end = end.min(at.checked_add(MAX_OPAQUE_STATUS_BYTES)?);
+    for cursor in at..search_end.checked_sub(1)? {
         if bytes.get(cursor..cursor + 2) == Some(&[0x02, 0x11]) {
             return Some(cursor + 2);
         }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{AnnotationBuilder, CadIr};
 
@@ -20,19 +20,24 @@ fn unknown_container_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
     let mut ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    super::super::attach_container_layer(
-        &ctx,
-        &mut ir,
-        &scan,
-        &mut annotations,
-        &mut unknowns,
-        crate::native::TypedNative::ContainerOnly,
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            super::super::attach_container_layer(
+                ctx,
+                &mut ir,
+                &scan,
+                &mut annotations,
+                &mut unknowns,
+                crate::native::TypedNative::ContainerOnly,
+            )
+            .unwrap_err()
+        },
     )
-    .unwrap_err()
 }
 
 #[test]

@@ -236,3 +236,13 @@ fn separates_complete_reference_class_and_member_regions() {
     assert_eq!(variant.definitions.len(), 2);
     assert_eq!(variant.field_start, first_member_start);
 }
+
+#[test]
+fn field_search_offset_overflow_refuses_record() {
+    crate::test_support::with_decode_context(|ctx| {
+        assert!(matches!(
+            super::field_definitions(ctx, &[], usize::MAX, 0),
+            Err(cadmpeg_core::CodecError::Malformed(_))
+        ));
+    });
+}

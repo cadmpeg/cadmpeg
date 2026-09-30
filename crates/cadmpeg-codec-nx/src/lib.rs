@@ -89,7 +89,6 @@ mod jt;
 mod jt_topology;
 /// Byte-offset constants generated from `docs/layouts/nx.toml`.
 mod layout;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod native;
 mod nurbs;

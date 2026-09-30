@@ -869,7 +869,7 @@ impl TryFrom<ExpressionDeclarationWire> for ExpressionDeclaration {
 /// Explicit numeric expression serialized in one NX OM entity.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(try_from = "ExpressionWire")]
-pub(super) struct Expression {
+pub(super) struct ParameterFormula {
     /// Globally unique native-record identity.
     pub(super) id: String,
     /// Externally bounded OM record and its persistent identity.
@@ -882,7 +882,6 @@ pub(super) struct Expression {
     /// Declared native unit.
     pub(super) unit: ExpressionUnit,
     /// Exact serialized expression text.
-    #[allow(clippy::struct_field_names)]
     pub(super) expression: String,
     /// Finite numeric value after context-free and dependency-graph evaluation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -914,7 +913,7 @@ struct ExpressionRef<'a> {
     source_offset: u64,
 }
 
-impl Serialize for Expression {
+impl Serialize for ParameterFormula {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         ExpressionRef {
             id: &self.id,
@@ -983,8 +982,8 @@ struct ExpressionWire {
 }
 
 #[cfg(test)]
-impl From<Expression> for ExpressionWire {
-    fn from(value: Expression) -> Self {
+impl From<ParameterFormula> for ExpressionWire {
+    fn from(value: ParameterFormula) -> Self {
         let (object_id, record) = value.owner.map_or((None, None), |owner| {
             (Some(owner.object_id), Some(owner.record))
         });
@@ -1006,7 +1005,7 @@ impl From<Expression> for ExpressionWire {
     }
 }
 
-impl TryFrom<ExpressionWire> for Expression {
+impl TryFrom<ExpressionWire> for ParameterFormula {
     type Error = String;
     fn try_from(wire: ExpressionWire) -> Result<Self, Self::Error> {
         let name = ParameterName::new(wire.name);
@@ -6298,7 +6297,7 @@ pub(super) fn expressions(
     ctx: &DecodeContext<'_>,
     container: &Container,
     declarations: &[ExpressionDeclaration],
-) -> Result<Vec<Expression>, CodecError> {
+) -> Result<Vec<ParameterFormula>, CodecError> {
     let declaration_bytes = declarations
         .len()
         .checked_mul(
@@ -6415,7 +6414,7 @@ pub(super) fn expressions(
                 .checked_add(cadmpeg_core::decode::u64_from_index(expression.offset))
                 .ok_or_else(|| ctx.refuse_codec_limit("NX expression source offset", 0, 1))?;
             ctx.reserve_retained_vec(&mut expressions, 1, "NX native expressions")?;
-            expressions.push(Expression {
+            expressions.push(ParameterFormula {
                 id: retained_om_index_id(
                     ctx,
                     "nx:om-entry-",
@@ -6466,7 +6465,7 @@ pub(super) fn expressions(
 
 fn evaluate_expression_graphs(
     ctx: &DecodeContext<'_>,
-    expressions: &mut [Expression],
+    expressions: &mut [ParameterFormula],
 ) -> Result<(), CodecError> {
     struct Group {
         count: usize,
@@ -6639,18 +6638,23 @@ mod object_record_identity_tests {
     fn object_record_identity_limit_error(
         configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
     ) -> cadmpeg_core::CodecError {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
         let file = prt_with_indexed_om_section();
-        let scan_arena = DecodeArena::new();
-        let scan_policy = DecodePolicy::service();
-        let (scan_ctx, _) =
-            DecodeContext::from_root_bytes(&file, &scan_arena, &scan_policy).unwrap();
-        let container = crate::container::scan_bytes(&scan_ctx, &file).unwrap();
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::object_records(&ctx, &container).unwrap_err()
+
+        crate::test_support::with_decode_context_over(
+            &file,
+            |_| {},
+            |scan_ctx| {
+                let container = crate::container::scan_bytes(scan_ctx, &file).unwrap();
+
+                crate::test_support::with_decode_context_over(
+                    &[],
+                    |policy| {
+                        configure(policy);
+                    },
+                    |ctx| super::object_records(ctx, &container).unwrap_err(),
+                )
+            },
+        )
     }
 
     #[test]

@@ -3,6 +3,9 @@
 
 use std::collections::BTreeSet;
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+
 use crate::psb;
 
 use super::rows::row_spans;
@@ -25,6 +28,7 @@ pub(crate) struct FeatureEntityTable {
 impl FeatureEntityTable {
     /// Admits a table whose materialized identifiers are exactly the entries
     /// the model decoded as `srf_array` identifiers.
+    #[cfg(test)]
     pub(crate) fn new(
         feature_id: u32,
         table_class_id: u32,
@@ -46,24 +50,53 @@ impl FeatureEntityTable {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn entry_ids(&self) -> Vec<u32> {
         self.entries.iter().map(|entry| entry.entity_id).collect()
     }
 
+    #[cfg(test)]
     pub(crate) fn surface_ids(&self) -> Vec<u32> {
+        self.surface_ids_iter().collect()
+    }
+
+    /// Iterate materialized surface identities in declared entry order.
+    pub(crate) fn surface_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
             .filter(|id| self.surface_ids.contains(id))
-            .collect()
     }
 
-    pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
+    /// Return whether this table materializes one surface identity.
+    pub(crate) fn contains_surface_id(&self, entity_id: u32) -> bool {
+        self.surface_ids.contains(&entity_id)
+    }
+
+    /// Borrow the distinct materialized surface identities.
+    pub(crate) fn unique_surface_ids(&self) -> &BTreeSet<u32> {
+        &self.surface_ids
+    }
+
+    #[cfg(test)]
+    pub(crate) fn non_surface_entity_ids_iter(&self) -> impl Iterator<Item = u32> + '_ {
         self.entries
             .iter()
             .map(|entry| entry.entity_id)
             .filter(|id| !self.surface_ids.contains(id))
-            .collect()
+    }
+
+    pub(crate) fn contains_non_surface_entity_id(&self, entity_id: u32) -> bool {
+        !self.surface_ids.contains(&entity_id)
+            && self
+                .entries
+                .iter()
+                .any(|entry| entry.entity_id == entity_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn non_surface_entity_ids(&self) -> Vec<u32> {
+        self.non_surface_entity_ids_iter().collect()
     }
 }
 
@@ -314,20 +347,32 @@ pub(crate) struct FeatureEntityReference {
 }
 
 /// Source section identifiers carried by class-200 generated entries.
-pub(super) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) -> BTreeSet<u32> {
-    table
+pub(super) fn generated_class_200_source_entity_ids(
+    ctx: &DecodeContext<'_>,
+    table: &FeatureEntityTable,
+) -> Result<BTreeSet<u32>, CodecError> {
+    let mut ids = BTreeSet::new();
+    for id in table
         .entries
         .iter()
         .filter_map(FeatureEntityTableEntry::source_entity_id)
-        .collect()
+    {
+        if !ids.contains(&id) {
+            ctx.charge_collection_items(1, "creo generated source entity ID nodes")?;
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
 }
 
 /// Decode the implicit named-record entity table and every canonical `f7`
 /// reference, preserving both source context and unresolved target IDs.
-pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
-    let tokens = psb::tokens(payload);
-    let Some(root) = tokens.first() else {
-        return (Vec::new(), Vec::new());
+pub(crate) fn entity_graph(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+) -> Result<(Vec<FeatureEntity>, Vec<FeatureEntityReference>), CodecError> {
+    let Some(root) = psb::token_at(payload, 0) else {
+        return Ok((Vec::new(), Vec::new()));
     };
     // The root name ends one byte before the record ends, at its NUL.
     let root_name = root
@@ -339,35 +384,41 @@ pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEn
         || payload.get(1) != Some(&0)
         || root_name != Some(b"Sld_Features".as_slice())
     {
-        return (Vec::new(), Vec::new());
+        return Ok((Vec::new(), Vec::new()));
     }
     let mut entities = Vec::new();
-    for token in &tokens {
+    let mut offset = 0;
+    while let Some(token) = psb::token_at(payload, offset) {
+        offset += token.length;
         if token.kind != psb::TokenKind::NamedRecord || token.length < 3 {
             continue;
         }
         let name_start = token.offset + 2;
         let name_end = token.offset + token.length - 1;
+        let entity_id = u32::try_from(entities.len())
+            .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
+        ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
         entities.push(FeatureEntity {
-            entity_id: entities.len() as u32,
+            entity_id,
             type_byte: payload[token.offset + 1],
-            name: String::from_utf8_lossy(&payload[name_start..name_end]).into_owned(),
+            name: copy_lossy_entity_name(ctx, &payload[name_start..name_end])?,
             offset: token.offset,
         });
     }
-    let entity_by_offset = entities
-        .iter()
-        .map(|entity| (entity.offset, entity.entity_id))
-        .collect::<std::collections::BTreeMap<_, _>>();
     let mut source = None;
     let mut references = Vec::new();
-    for token in tokens {
+    let mut next_entity = 0;
+    let mut offset = 0;
+    while let Some(token) = psb::token_at(payload, offset) {
+        offset += token.length;
         if token.kind == psb::TokenKind::NamedRecord {
-            source = entity_by_offset.get(&token.offset).copied();
+            source = entities.get(next_entity).map(|entity| entity.entity_id);
+            next_entity += 1;
         } else if token.kind == psb::TokenKind::EntityReference {
             let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else {
                 continue;
             };
+            ctx.reserve_vec(&mut references, 1, "creo feature entity graph references")?;
             references.push(FeatureEntityReference {
                 source_entity_id: source,
                 target_entity_id,
@@ -375,111 +426,125 @@ pub(crate) fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEn
             });
         }
     }
-    (entities, references)
+    Ok((entities, references))
+}
+
+fn copy_lossy_entity_name(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<String, CodecError> {
+    crate::text::copy_lossy_text(ctx, bytes, "creo feature entity name")
 }
 
 pub(super) fn read_entries(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     body_start: usize,
     count: u32,
-) -> Option<Vec<FeatureEntityTableEntry>> {
-    let count = usize::try_from(count).ok()?;
-    let remaining = payload.len().checked_sub(body_start)?;
-    (count <= remaining / 2).then_some(())?;
-    let mut entries = Vec::with_capacity(count);
-    let mut cursor = body_start;
-    for index in 0..count {
-        let prefixed_class = (payload.get(cursor) == Some(&psb::token::ENTITY_REF))
-            .then(|| psb::reference_id(payload, cursor + 1).ok())
-            .flatten();
-        let prefixed = prefixed_class.is_some();
-        if let Some((_, after_class)) = prefixed_class {
-            cursor = after_class;
-        }
-        let offset = cursor;
-        let (id, after) = psb::reference_id(payload, cursor).ok()?;
-        let (class_id, after_class) = psb::reference_id(payload, after).ok().or_else(|| {
-            (index == 0)
-                .then_some(prefixed_class)
-                .flatten()
-                .map(|(class_id, _)| (class_id, after))
-        })?;
-        let related_class = RelatedClass::from_class_id(class_id);
-        let (entry_payload, body_start) = if class_id == 200 {
-            match psb::reference_id(payload, after_class) {
-                Ok((order, after_order)) => (
-                    EntryPayload::Source {
-                        entity: Some(order),
-                    },
-                    after_order,
-                ),
-                Err(_) => (EntryPayload::Source { entity: None }, after_class),
+) -> Result<Option<Vec<FeatureEntityTableEntry>>, CodecError> {
+    let Some(count) = usize::try_from(count).ok() else {
+        return Ok(None);
+    };
+    let Some(remaining) = payload.len().checked_sub(body_start) else {
+        return Ok(None);
+    };
+    if count > remaining / 2 {
+        return Ok(None);
+    }
+    let mut entries = Vec::new();
+    ctx.reserve_vec(&mut entries, count, "creo feature table entries")?;
+    Ok((move || {
+        let mut cursor = body_start;
+        for index in 0..count {
+            let prefixed_class = (payload.get(cursor) == Some(&psb::token::ENTITY_REF))
+                .then(|| psb::reference_id(payload, cursor + 1).ok())
+                .flatten();
+            let prefixed = prefixed_class.is_some();
+            if let Some((_, after_class)) = prefixed_class {
+                cursor = after_class;
             }
-        } else if let Some(class) = related_class {
-            psb::reference_id(payload, after_class)
-                .ok()
-                .and_then(|(entity, after_related)| {
-                    let state = match (class, payload.get(after_related)) {
-                        (_, Some(&0)) => RelatedState::Zero,
-                        (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
-                        _ => return None,
-                    };
-                    Some((
-                        EntryPayload::Related {
-                            class,
-                            entity,
-                            state,
+            let offset = cursor;
+            let (id, after) = psb::reference_id(payload, cursor).ok()?;
+            let (class_id, after_class) = psb::reference_id(payload, after).ok().or_else(|| {
+                (index == 0)
+                    .then_some(prefixed_class)
+                    .flatten()
+                    .map(|(class_id, _)| (class_id, after))
+            })?;
+            let related_class = RelatedClass::from_class_id(class_id);
+            let (entry_payload, body_start) = if class_id == 200 {
+                match psb::reference_id(payload, after_class) {
+                    Ok((order, after_order)) => (
+                        EntryPayload::Source {
+                            entity: Some(order),
                         },
-                        after_related,
+                        after_order,
+                    ),
+                    Err(_) => (EntryPayload::Source { entity: None }, after_class),
+                }
+            } else if let Some(class) = related_class {
+                psb::reference_id(payload, after_class)
+                    .ok()
+                    .and_then(|(entity, after_related)| {
+                        let state = match (class, payload.get(after_related)) {
+                            (_, Some(&0)) => RelatedState::Zero,
+                            (RelatedClass::Class2017, Some(&1)) => RelatedState::One,
+                            _ => return None,
+                        };
+                        Some((
+                            EntryPayload::Related {
+                                class,
+                                entity,
+                                state,
+                            },
+                            after_related,
+                        ))
+                    })
+                    .unwrap_or((
+                        EntryPayload::Plain {
+                            class: PlainClass::new(class_id)?,
+                        },
+                        after_class,
                     ))
-                })
-                .unwrap_or((
+            } else {
+                (
                     EntryPayload::Plain {
                         class: PlainClass::new(class_id)?,
                     },
                     after_class,
-                ))
-        } else {
-            (
-                EntryPayload::Plain {
-                    class: PlainClass::new(class_id)?,
-                },
-                after_class,
-            )
-        };
-        let terminal_state = match entry_payload {
-            EntryPayload::Source { .. } => payload
-                .get(body_start)
-                .copied()
-                .filter(|state| matches!(state, 0 | 1)),
-            EntryPayload::Related { state, .. } => Some(state.as_u8()),
-            EntryPayload::Plain { .. } => None,
-        };
-        let terminal_table_separator = (index + 1 == count
-            && terminal_state.is_some()
-            && payload.get(body_start + 1..body_start + 3)
-                == Some(&[0xf2, psb::token::ENTITY_REF]))
-        .then_some(body_start + 1);
-        let end_offset = if let Some(end_offset) = terminal_table_separator {
-            end_offset
-        } else {
-            body_start
-                + payload
-                    .get(body_start..)?
-                    .iter()
-                    .position(|&byte| byte == 0xe3)?
-                + 1
-        };
-        entries.push(FeatureEntityTableEntry {
-            entity_id: id,
-            payload: entry_payload,
-            prefixed,
-            offset,
-            end_offset,
-        });
-        cursor = end_offset;
-    }
-    Some(entries)
+                )
+            };
+            let terminal_state = match entry_payload {
+                EntryPayload::Source { .. } => payload
+                    .get(body_start)
+                    .copied()
+                    .filter(|state| matches!(state, 0 | 1)),
+                EntryPayload::Related { state, .. } => Some(state.as_u8()),
+                EntryPayload::Plain { .. } => None,
+            };
+            let terminal_table_separator = (index + 1 == count
+                && terminal_state.is_some()
+                && payload.get(body_start + 1..body_start + 3)
+                    == Some(&[0xf2, psb::token::ENTITY_REF]))
+            .then_some(body_start + 1);
+            let end_offset = if let Some(end_offset) = terminal_table_separator {
+                end_offset
+            } else {
+                body_start
+                    + payload
+                        .get(body_start..)?
+                        .iter()
+                        .position(|&byte| byte == 0xe3)?
+                    + 1
+            };
+            entries.push(FeatureEntityTableEntry {
+                entity_id: id,
+                payload: entry_payload,
+                prefixed,
+                offset,
+                end_offset,
+            });
+            cursor = end_offset;
+        }
+        Some(entries)
+    })())
 }
 
 /// Decode valid `AllFeatur` mixed generated-entity tables.
@@ -487,11 +552,12 @@ pub(super) fn read_entries(
 /// `feature_ids` must come from byte-decoded geometry ownership; no owner is
 /// inferred from a table's neighbouring bytes or entity contents.
 pub(crate) fn entity_tables(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     feature_ids: &BTreeSet<u32>,
     surface_ids: &BTreeSet<u32>,
-) -> Vec<FeatureEntityTable> {
-    let spans = row_spans(payload, feature_ids);
+) -> Result<Vec<FeatureEntityTable>, CodecError> {
+    let spans = row_spans(ctx, payload, feature_ids)?;
     let mut tables = Vec::new();
     for offset in 0..payload.len() {
         if payload[offset] != psb::token::ARRAY_OPEN {
@@ -514,16 +580,164 @@ pub(crate) fn entity_tables(
         else {
             continue;
         };
-        let Some(entries) = read_entries(&payload[..row_end], after_table_class + 2, count) else {
+        let Some(entries) = read_entries(ctx, &payload[..row_end], after_table_class + 2, count)?
+        else {
             continue;
         };
-        tables.push(FeatureEntityTable::new(
+        let mut table_surface_ids = BTreeSet::new();
+        for entry in &entries {
+            if surface_ids.contains(&entry.entity_id)
+                && !table_surface_ids.contains(&entry.entity_id)
+            {
+                ctx.charge_collection_items(1, "creo feature table surface ids")?;
+                table_surface_ids.insert(entry.entity_id);
+            }
+        }
+        ctx.reserve_vec(&mut tables, 1, "creo feature entity tables")?;
+        tables.push(FeatureEntityTable {
             feature_id,
             table_class_id,
             entries,
-            surface_ids,
+            surface_ids: table_surface_ids,
             offset,
-        ));
+        });
     }
-    tables
+    Ok(tables)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dummy_table_entry, entity_graph, entity_tables, read_entries, FeatureEntityTable};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
+
+    #[test]
+    fn entity_table_borrowed_readers_preserve_duplicate_source_order() {
+        let table = FeatureEntityTable::new(
+            4,
+            29,
+            vec![
+                dummy_table_entry(7),
+                dummy_table_entry(9),
+                dummy_table_entry(9),
+            ],
+            &std::collections::BTreeSet::from([7]),
+            12,
+        );
+        assert_eq!(table.entry_ids(), [7, 9, 9]);
+        assert_eq!(
+            table.surface_ids_iter().collect::<Vec<_>>(),
+            table.surface_ids()
+        );
+        assert_eq!(
+            table.non_surface_entity_ids_iter().collect::<Vec<_>>(),
+            [9, 9]
+        );
+        assert!(table.contains_surface_id(7));
+        assert!(table.contains_non_surface_entity_id(9));
+        assert!(!table.contains_non_surface_entity_id(7));
+        assert!(!table.contains_non_surface_entity_id(11));
+    }
+
+    fn run(items: u64, bytes: u64) -> Result<(usize, usize, String), CodecError> {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = items;
+        policy.limits.max_retained_bytes = bytes;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(GRAPH, &arena, &policy).expect("root graph is admitted");
+        let (entities, references) = entity_graph(&ctx, GRAPH)?;
+        Ok((entities.len(), references.len(), entities[1].name.clone()))
+    }
+
+    #[test]
+    fn entity_graph_nodes_refuse_before_vec_growth() {
+        assert_eq!(
+            run(3, u64::MAX).expect("graph admitted"),
+            (2, 1, "N\u{fffd}".into())
+        );
+        let error = run(0, u64::MAX).expect_err("root node needs a Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity graph nodes"));
+    }
+
+    #[test]
+    fn entity_graph_references_refuse_before_vec_growth() {
+        let error = run(2, u64::MAX).expect_err("reference needs a Vec item");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity graph references"));
+    }
+
+    #[test]
+    fn entity_graph_lossy_name_refuses_before_retained_growth() {
+        let error = run(3, 15).expect_err("replacement needs three retained bytes");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "creo feature entity name"));
+    }
+
+    #[test]
+    fn feature_table_entries_refuse_before_counted_vec_reserve() {
+        let payload = [10, 0x80, 200, 4, 0, 0xe3, 11, 0x80, 200, 7, 1, 0xf2, 0xf7];
+        let run = |limit| {
+            let arena = DecodeArena::new();
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = limit;
+            let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+                .expect("root table is admitted");
+            read_entries(&ctx, &payload, 0, 2)
+        };
+        assert_eq!(
+            run(2)
+                .expect("two entry slots admitted")
+                .expect("complete table")
+                .len(),
+            2
+        );
+        let error = run(1).expect_err("two entry slots exceed one-item limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature table entries"));
+    }
+
+    fn limited_tables(limit: u64) -> Result<Vec<super::FeatureEntityTable>, CodecError> {
+        let payload = crate::test_support::allfeatur_row(
+            4,
+            [0xeb, 0x04],
+            917,
+            &[0xf8, 1, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0x80, 0xc8, 1, 0, 0xe3],
+        );
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
+            .expect("root row is admitted");
+        entity_tables(
+            &ctx,
+            &payload,
+            &std::collections::BTreeSet::from([4]),
+            &std::collections::BTreeSet::from([7]),
+        )
+    }
+
+    #[test]
+    fn feature_table_surface_ids_refuse_before_btree_insert() {
+        assert_eq!(limited_tables(8).expect("one table admitted").len(), 1);
+        let error = limited_tables(6).expect_err("surface id node exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature table surface ids"));
+    }
+
+    #[test]
+    fn feature_entity_tables_refuse_before_vec_growth() {
+        let error = limited_tables(7).expect_err("table Vec item exceeds limit");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::CollectionItems
+                && limit.operation == "creo feature entity tables"));
+    }
 }

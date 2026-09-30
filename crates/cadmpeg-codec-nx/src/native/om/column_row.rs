@@ -302,7 +302,7 @@ mod tests {
     use crate::container::{self, Container};
     use crate::test_support::test_om::offset_only_indexed_om_section;
     use crate::test_support::test_prt::prt_with_named_payloads;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodeContext, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     const INDEX_ROW: &[u8] =
@@ -348,17 +348,22 @@ mod tests {
 
     fn route_refusal(row: &[u8], route: Route, dimension: ResourceDimension) -> CodecError {
         let container = column_container(row);
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        match dimension {
-            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
-            ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+
+        let adjust: fn(&mut cadmpeg_core::decode::DecodePolicy) = match dimension {
+            ResourceDimension::CollectionItems => |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            ResourceDimension::RetainedBytes => |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            ResourceDimension::WorkUnits => |policy| {
+                policy.limits.max_work_units = 0;
+            },
             _ => panic!("unsupported test dimension"),
-        }
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-        route(&ctx, &container).expect_err("column row resource refusal")
+        };
+        crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
+            route(ctx, &container).expect_err("column row resource refusal")
+        })
     }
 
     #[test]

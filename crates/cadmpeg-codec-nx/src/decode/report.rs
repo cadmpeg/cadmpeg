@@ -132,41 +132,62 @@ impl Display for JoinedCounts<'_> {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-// Each flag is an independent model-wide phase fact surfaced in the loss
-// report; combining them would hide which bounded phase stopped.
-#[allow(clippy::struct_excessive_bools)]
-pub(super) struct CompletionBudgetStatus {
+pub(super) struct PcurveCompletionStatus {
     pub(super) exact_boundary_exhausted: bool,
     pub(super) transfer_exhausted: bool,
-    pub(super) support_uv_validation_exhausted: bool,
-    pub(super) support_uv_exhausted: bool,
-    pub(super) coupled_support_uv_exhausted: bool,
-    pub(super) completion_geometry_exhausted: bool,
-    pub(super) serialized_support_uv_geometry_exhausted: bool,
-    pub(super) support_uv_geometry_exhausted: bool,
-    pub(super) coupled_support_uv_geometry_exhausted: bool,
+    pub(super) geometry_exhausted: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct SupportUvPhaseStatus {
+    pub(super) samples_exhausted: bool,
+    pub(super) geometry_exhausted: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct CompletionBudgetStatus {
+    pub(super) pcurves: PcurveCompletionStatus,
+    pub(super) serialized: SupportUvPhaseStatus,
+    pub(super) direct: SupportUvPhaseStatus,
+    pub(super) coupled: SupportUvPhaseStatus,
     pub(super) support_uv_lane_geometry_exhausted: bool,
     pub(super) transfer_limit: usize,
     pub(super) support_uv_limit: usize,
 }
 
 // Keep the independent report facts explicit at the decode/report boundary.
-#[allow(clippy::too_many_arguments)]
+
+pub(super) struct GeometryReportFacts<'inputs> {
+    pub(super) unmatched_delta_tombstone_counts: &'inputs BTreeMap<&'static str, usize>,
+    pub(super) counts: &'inputs Counts,
+    pub(super) has_topology: bool,
+    pub(super) has_unresolved_sub_bodies: bool,
+    pub(super) tessellation_count: usize,
+    pub(super) completion_budget: CompletionBudgetStatus,
+    pub(super) adaptive_geometry_exhausted: bool,
+    pub(super) dialect_losses: &'inputs [LossNote],
+    pub(super) notes: &'inputs [String],
+}
+
 pub(super) fn build_geometry_report(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &Scan,
-    unmatched_delta_tombstone_counts: &BTreeMap<&'static str, usize>,
+    geometry_report_facts: &GeometryReportFacts<'_>,
     ir: &CadIr,
-    counts: &Counts,
-    has_topology: bool,
-    has_unresolved_sub_bodies: bool,
-    tessellation_count: usize,
     model: &crate::native::model::NativeModel,
-    completion_budget: CompletionBudgetStatus,
-    adaptive_geometry_exhausted: bool,
-    dialect_losses: &[LossNote],
-    notes: &[String],
 ) -> Result<DecodeBody, cadmpeg_core::CodecError> {
+    let &GeometryReportFacts {
+        unmatched_delta_tombstone_counts,
+        counts,
+        has_topology,
+        has_unresolved_sub_bodies,
+        tessellation_count,
+        completion_budget,
+        adaptive_geometry_exhausted,
+        dialect_losses,
+        notes,
+    } = geometry_report_facts;
+
     let has_untransferred_attribute_fields =
         model.has_untransferred_parasolid_attribute_fields(ctx)?;
     let mut losses = Vec::new();
@@ -251,44 +272,53 @@ pub(super) fn build_geometry_report(
         })
         .sum::<usize>();
     if unresolved_intersection_lanes > 0
-        && (completion_budget.exact_boundary_exhausted
-            || completion_budget.transfer_exhausted
-            || completion_budget.support_uv_validation_exhausted
-            || completion_budget.support_uv_exhausted
-            || completion_budget.coupled_support_uv_exhausted
-            || completion_budget.completion_geometry_exhausted
-            || completion_budget.serialized_support_uv_geometry_exhausted
-            || completion_budget.support_uv_geometry_exhausted
-            || completion_budget.coupled_support_uv_geometry_exhausted
+        && (completion_budget.pcurves.exact_boundary_exhausted
+            || completion_budget.pcurves.transfer_exhausted
+            || completion_budget.serialized.samples_exhausted
+            || completion_budget.direct.samples_exhausted
+            || completion_budget.coupled.samples_exhausted
+            || completion_budget.pcurves.geometry_exhausted
+            || completion_budget.serialized.geometry_exhausted
+            || completion_budget.direct.geometry_exhausted
+            || completion_budget.coupled.geometry_exhausted
             || completion_budget.support_uv_lane_geometry_exhausted)
     {
         let bounded_phases = [
             completion_budget
+                .pcurves
                 .exact_boundary_exhausted
                 .then_some("exact-boundary transfer"),
             completion_budget
+                .pcurves
                 .transfer_exhausted
                 .then_some("opposite-chart transfer"),
             completion_budget
-                .support_uv_validation_exhausted
+                .serialized
+                .samples_exhausted
                 .then_some("support-UV consistency checks"),
             completion_budget
-                .support_uv_exhausted
+                .direct
+                .samples_exhausted
                 .then_some("EXT11 support-UV fitting"),
             completion_budget
-                .coupled_support_uv_exhausted
+                .coupled
+                .samples_exhausted
                 .then_some("coupled EXT11 support-UV fitting"),
             completion_budget
-                .completion_geometry_exhausted
+                .pcurves
+                .geometry_exhausted
                 .then_some("pcurve geometry fitting"),
             completion_budget
-                .serialized_support_uv_geometry_exhausted
+                .serialized
+                .geometry_exhausted
                 .then_some("serialized support-UV geometry fitting"),
             completion_budget
-                .support_uv_geometry_exhausted
+                .direct
+                .geometry_exhausted
                 .then_some("support-UV geometry fitting"),
             completion_budget
-                .coupled_support_uv_geometry_exhausted
+                .coupled
+                .geometry_exhausted
                 .then_some("coupled support-UV geometry fitting"),
             completion_budget
                 .support_uv_lane_geometry_exhausted
@@ -1012,7 +1042,7 @@ pub(crate) fn append_design_intent_losses(
 #[cfg(test)]
 mod tests {
     use super::append_design_intent_losses;
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::ResourceDimension;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::ids::BodyId;
     use cadmpeg_ir::topology::{Body, BodyKind};
@@ -1033,31 +1063,37 @@ mod tests {
 
     #[test]
     fn design_intent_report_refuses_body_list_at_collection_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded test input");
-        assert!(matches!(
-            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::CollectionItems
-                    && limit.operation == "nx report current body identities"
-        ));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::CollectionItems
+                            && limit.operation == "nx report current body identities"
+                ));
+            },
+        );
     }
 
     #[test]
     fn design_intent_report_refuses_body_copy_at_retained_limit() {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = 0;
-        let (ctx, _) =
-            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("bounded test input");
-        assert!(matches!(
-            append_design_intent_losses(&ctx, &body_ir(), &mut Vec::new()),
-            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::RetainedBytes
-                    && limit.operation == "nx report current body identity"
-        ));
+        crate::test_support::with_decode_context_over(
+            &[],
+            |policy| {
+                policy.limits.max_retained_bytes = 0;
+            },
+            |ctx| {
+                assert!(matches!(
+                    append_design_intent_losses(ctx, &body_ir(), &mut Vec::new()),
+                    Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                        if limit.dimension == ResourceDimension::RetainedBytes
+                            && limit.operation == "nx report current body identity"
+                ));
+            },
+        );
     }
 }
