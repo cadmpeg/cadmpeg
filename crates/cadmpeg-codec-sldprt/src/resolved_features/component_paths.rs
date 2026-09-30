@@ -12,10 +12,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::{HashMap, HashSet};
 
-pub(super) fn component_path_features(
+pub(super) fn component_path_features<'a>(
     ctx: &DecodeContext<'_>,
     components: &[FeatureInputComponentPathEntry],
-    features: &[crate::records::Feature],
+    features: impl IntoIterator<Item = &'a crate::records::Feature>,
 ) -> Result<Vec<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT component path producers";
     let mut by_source = HashMap::<u32, Option<&str>>::new();
