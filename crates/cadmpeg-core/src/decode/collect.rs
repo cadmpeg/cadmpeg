@@ -108,6 +108,44 @@ impl DecodeContext<'_> {
         Self::reserve_admitted_vec(values, count, operation)
     }
 
+    /// Creates retained storage whose collection slots are admitted separately.
+    pub fn retained_admitted_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<Vec<T>, CodecError> {
+        let mut values = Vec::new();
+        self.reserve_retained_admitted_vec(&mut values, count, operation)?;
+        Ok(values)
+    }
+
+    /// Admits scoped collection slots whose storage is allocated by a later operation.
+    pub fn reserve_scoped_collection<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<ScopedReservation<'_>, CodecError> {
+        self.charge_collection_items(u64_from_index(count), operation)?;
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        self.reserve_scoped(u64_from_index(bytes), operation)
+    }
+
+    /// Creates scoped storage whose collection slots are admitted separately.
+    pub fn scoped_admitted_vec<T>(
+        &self,
+        count: usize,
+        operation: &'static str,
+    ) -> Result<(Vec<T>, ScopedReservation<'_>), CodecError> {
+        let bytes = count
+            .checked_mul(std::mem::size_of::<T>())
+            .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
+        let reservation = self.reserve_scoped(u64_from_index(bytes), operation)?;
+        let values = Self::admitted_vec(count, operation)?;
+        Ok((values, reservation))
+    }
+
     /// Grows scoped storage and admits additional vector slots.
     pub fn reserve_scoped_vec<T>(
         &self,
@@ -121,6 +159,19 @@ impl DecodeContext<'_> {
             .ok_or_else(|| self.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
         reservation.grow(u64_from_index(bytes))?;
         self.reserve_vec(values, count, operation)
+    }
+
+    /// Appends one item with scoped storage and a charged collection slot.
+    pub fn push_scoped_vec<T>(
+        &self,
+        reservation: &mut ScopedReservation<'_>,
+        values: &mut Vec<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.reserve_scoped_vec(reservation, values, 1, operation)?;
+        values.push(value);
+        Ok(())
     }
 
     /// Reserves temporary vector storage and returns its live byte reservation.
@@ -587,6 +638,37 @@ impl DecodeContext<'_> {
         Ok(out)
     }
 
+    /// Inserts a unique set value after retaining its storage and slot.
+    pub fn insert_retained_hash_set<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if values.contains(&value) {
+            return Ok(false);
+        }
+        self.charge_retained(u64_from_index(std::mem::size_of::<T>()), operation)?;
+        self.reserve_set(values, 1, operation)?;
+        Ok(values.insert(value))
+    }
+
+    /// Inserts a unique tree value after admitting its scoped value storage.
+    pub fn insert_scoped_btree_value<T: Ord>(
+        &self,
+        reservation: &mut ScopedReservation<'_>,
+        values: &mut BTreeSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<bool, CodecError> {
+        if values.contains(&value) {
+            return Ok(false);
+        }
+        self.charge_collection_items(1, operation)?;
+        reservation.grow(u64_from_index(std::mem::size_of::<T>()))?;
+        Ok(values.insert(value))
+    }
+
     /// Inserts a new set item after charging its slot.
     pub fn insert_hash_set<T: Eq + Hash>(
         &self,
@@ -620,6 +702,19 @@ impl DecodeContext<'_> {
             .try_reserve(1)
             .map_err(|_| self.collection_allocation_failed(1, operation))?;
         Ok(values.insert(owned))
+    }
+
+    /// Extends a set with one charged slot for each distinct new value.
+    pub fn extend_hash_set<T: Eq + Hash>(
+        &self,
+        values: &mut HashSet<T>,
+        additions: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        for value in additions {
+            self.insert_hash_set(values, value, operation)?;
+        }
+        Ok(())
     }
 
     /// Collects distinct values into a charged hash set.
@@ -709,6 +804,21 @@ impl DecodeContext<'_> {
             .try_reserve(1)
             .map_err(|_| self.collection_allocation_failed(1, operation))?;
         values.push_back(value);
+        Ok(())
+    }
+
+    /// Prepends a deque item after charging its slot.
+    pub fn push_front<T>(
+        &self,
+        values: &mut VecDeque<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        self.charge_collection_items(1, operation)?;
+        values
+            .try_reserve(1)
+            .map_err(|_| self.collection_allocation_failed(1, operation))?;
+        values.push_front(value);
         Ok(())
     }
 
@@ -989,6 +1099,58 @@ impl DecodeContext<'_> {
         Ok(values.insert(value))
     }
 
+    /// Collects distinct ordered values after admitting each new entry.
+    pub fn collect_btree_set<T: Ord>(
+        &self,
+        values: impl IntoIterator<Item = T>,
+        operation: &'static str,
+    ) -> Result<BTreeSet<T>, CodecError> {
+        let mut out = BTreeSet::new();
+        for value in values {
+            self.insert_btree_set(&mut out, value, operation)?;
+        }
+        Ok(out)
+    }
+
+    /// Appends an ordered group member after admitting its group and slot.
+    pub fn push_btree_group<K: Ord, V>(
+        &self,
+        groups: &mut BTreeMap<K, Vec<V>>,
+        key: K,
+        value: V,
+        group_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(values) = groups.get_mut(&key) {
+            return self.push_vec(values, value, item_operation);
+        }
+        self.admit_btree_entry(groups, &key, group_operation)?;
+        let mut values = self.collection_vec(1, item_operation)?;
+        values.push(value);
+        groups.insert(key, values);
+        Ok(())
+    }
+
+    /// Inserts an ordered group member after admitting its group and value.
+    pub fn insert_btree_group_set<K: Ord, V: Ord>(
+        &self,
+        groups: &mut BTreeMap<K, BTreeSet<V>>,
+        key: K,
+        value: V,
+        group_operation: &'static str,
+        item_operation: &'static str,
+    ) -> Result<(), CodecError> {
+        if let Some(values) = groups.get_mut(&key) {
+            self.insert_btree_set(values, value, item_operation)?;
+            return Ok(());
+        }
+        self.admit_btree_entry(groups, &key, group_operation)?;
+        let mut values = BTreeSet::new();
+        self.insert_btree_set(&mut values, value, item_operation)?;
+        groups.insert(key, values);
+        Ok(())
+    }
+
     /// Extends retained bytes after charging both their slots and storage.
     pub fn extend_retained_bytes(
         &self,
@@ -1061,6 +1223,16 @@ impl DecodeContext<'_> {
         Ok((values, reservation))
     }
 
+    /// Charges retained text produced by a later aggregate materialization.
+    pub fn charge_formatted_retained(
+        &self,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        self.charge_retained(u64_from_index(length), operation)
+    }
+
     /// Formats a retained string after charging its exact byte count.
     pub fn format_retained(
         &self,
@@ -1106,6 +1278,19 @@ impl DecodeContext<'_> {
         })?;
         output.push_str(suffix);
         Ok(())
+    }
+
+    /// Appends formatted text after admitting its exact retained byte count.
+    pub fn append_formatted_retained(
+        &self,
+        output: &mut String,
+        args: fmt::Arguments<'_>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        let length = self.formatted_length(args, operation)?;
+        self.charge_retained(u64_from_index(length), operation)?;
+        Self::reserve_admitted_string(output, length, operation)?;
+        fmt::write(output, args).map_err(CodecError::malformed)
     }
 
     /// Reserves an empty retained string after charging its declared length.
@@ -1462,6 +1647,30 @@ mod tests {
         |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back"),
         |ctx: &DecodeContext<'_>| ctx.push_back(&mut VecDeque::new(), 1_u8, "test push back")
     );
+    #[test]
+    fn push_front_refuses_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 0);
+        let mut values = VecDeque::new();
+        assert!(
+            matches!(ctx.push_front(&mut values, 1_u8, "test push front"),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        assert_eq!(values.capacity(), 0);
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_front_service_profile_preserves_order() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, DecodePolicy::service().limits.max_collection_items);
+        let mut values = VecDeque::from([2_u8]);
+        ctx.push_front(&mut values, 1, "test push front")
+            .expect("service profile");
+        assert_eq!(values, VecDeque::from([1, 2]));
+    }
+
     collection_case!(
         reserve_heap_charges_before_growth,
         1,
@@ -2685,5 +2894,317 @@ mod tests {
             .expect_err("test operation refuses");
         assert!(matches!(error, crate::CodecError::ResourceLimit(limit)
         if limit.dimension == crate::decode::ResourceDimension::WorkUnits));
+    }
+    #[test]
+    fn append_formatted_retained_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = 2;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
+        let mut output = String::new();
+        let error = ctx
+            .append_formatted_retained(
+                &mut output,
+                format_args!("{}", 123),
+                "test formatted append",
+            )
+            .expect_err("three bytes exceed two");
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes));
+        assert!(output.is_empty());
+        assert_eq!(output.capacity(), 0);
+    }
+
+    #[test]
+    fn append_formatted_retained_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut output = String::from("prefix:");
+        ctx.append_formatted_retained(
+            &mut output,
+            format_args!("{}", 123),
+            "test formatted append",
+        )
+        .expect("service profile admits text");
+        assert_eq!(output, "prefix:123");
+    }
+
+    #[test]
+    fn push_scoped_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
+        let mut values = Vec::<u16>::new();
+        let mut storage = ctx
+            .reserve_scoped(0, "test scoped push")
+            .expect("test reservation");
+        let error = ctx
+            .push_scoped_vec(&mut storage, &mut values, 7, "test scoped push")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), 0);
+    }
+
+    #[test]
+    fn push_scoped_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = Vec::<u16>::new();
+        let mut storage = ctx
+            .reserve_scoped(0, "test scoped push")
+            .expect("test reservation");
+        ctx.push_scoped_vec(&mut storage, &mut values, 7, "test scoped push")
+            .expect("service admission");
+        assert_eq!(values, [7]);
+    }
+
+    #[test]
+    fn collect_btree_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 0);
+
+        let error = ctx
+            .collect_btree_set([7u16], "test ordered set")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn collect_btree_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+
+        let result = ctx
+            .collect_btree_set([7u16, 9, 7], "test ordered set")
+            .expect("service admission");
+        assert_eq!(result, BTreeSet::from([7, 9]));
+    }
+
+    #[test]
+    fn push_btree_group_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        let mut values = BTreeMap::<u8, Vec<u16>>::new();
+        let error = ctx
+            .push_btree_group(&mut values, 1, 7, "test group", "test member")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn push_btree_group_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = BTreeMap::<u8, Vec<u16>>::new();
+        ctx.push_btree_group(&mut values, 1, 7, "test group", "test member")
+            .expect("service admission");
+        assert_eq!(values[&1], [7]);
+        ctx.push_btree_group(&mut values, 1, 9, "test group", "test member")
+            .expect("second member");
+        assert_eq!(values[&1], [7, 9]);
+    }
+
+    #[test]
+    fn insert_btree_group_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 1);
+        let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
+        let error = ctx
+            .insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect_err("one below required storage");
+        assert!(
+            matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn insert_btree_group_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = BTreeMap::<u8, BTreeSet<u16>>::new();
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect("service admission");
+        assert_eq!(values[&1], BTreeSet::from([7]));
+        ctx.insert_btree_group_set(&mut values, 1, 7, "test group", "test member")
+            .expect("duplicate member");
+        assert_eq!(values[&1], BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn retained_admitted_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 3);
+        assert!(
+            matches!(ctx.retained_admitted_vec::<u16>(2, "test retained admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn retained_admitted_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = ctx
+            .retained_admitted_vec(2, "test retained admitted storage")
+            .expect("service admission");
+        values.extend([7u16, 9]);
+        assert_eq!(values, [7, 9]);
+    }
+
+    #[test]
+    fn scoped_admitted_vec_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
+        assert!(
+            matches!(ctx.scoped_admitted_vec::<u16>(2, "test scoped admitted storage"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn scoped_admitted_vec_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let (mut values, _reservation) = ctx
+            .scoped_admitted_vec(2, "test scoped admitted storage")
+            .expect("service admission");
+        values.extend([7u16, 9]);
+        assert_eq!(values, [7, 9]);
+    }
+
+    #[test]
+    fn charge_formatted_retained_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 2);
+        assert!(
+            matches!(ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission"),
+            Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes && limit.additional == 3)
+        );
+    }
+
+    #[test]
+    fn charge_formatted_retained_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        ctx.charge_formatted_retained(format_args!("a{}", 12), "test formatted admission")
+            .expect("service admission");
+    }
+
+    #[test]
+    fn insert_retained_hash_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::RetainedBytes, 1);
+        let mut values = HashSet::new();
+        assert!(
+            matches!(ctx.insert_retained_hash_set(&mut values, 7u16, "test retained set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::RetainedBytes)
+        );
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), 0);
+    }
+
+    #[test]
+    fn insert_retained_hash_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = HashSet::new();
+        assert!(ctx
+            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .expect("service admission"));
+        assert!(!ctx
+            .insert_retained_hash_set(&mut values, 7u16, "test retained set")
+            .expect("duplicate"));
+        assert_eq!(values, HashSet::from([7]));
+    }
+
+    #[test]
+    fn insert_scoped_btree_value_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 1);
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped value")
+            .expect("empty reserve");
+        let mut values = BTreeSet::new();
+        assert!(
+            matches!(ctx.insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes)
+        );
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn insert_scoped_btree_value_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut reservation = ctx
+            .reserve_scoped(0, "test scoped value")
+            .expect("empty reserve");
+        let mut values = BTreeSet::new();
+        assert!(ctx
+            .insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value")
+            .expect("service admission"));
+        assert!(!ctx
+            .insert_scoped_btree_value(&mut reservation, &mut values, 7u16, "test scoped value")
+            .expect("duplicate"));
+        assert_eq!(values, BTreeSet::from([7]));
+    }
+
+    #[test]
+    fn extend_hash_set_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = context(&arena, 0);
+        let mut values = HashSet::new();
+        assert!(
+            matches!(ctx.extend_hash_set(&mut values, [7u16], "test extend set"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::CollectionItems)
+        );
+        assert!(values.is_empty());
+        assert_eq!(values.capacity(), 0);
+    }
+
+    #[test]
+    fn extend_hash_set_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let mut values = HashSet::from([7u16]);
+        ctx.extend_hash_set(&mut values, [7, 9, 9], "test extend set")
+            .expect("service admission");
+        assert_eq!(values, HashSet::from([7, 9]));
+    }
+
+    #[test]
+    fn reserve_scoped_collection_refuses_one_below_need_before_allocation() {
+        let arena = DecodeArena::new();
+        let ctx = operation_context(&arena, ResourceDimension::MaterializedBytes, 3);
+        assert!(
+            matches!(ctx.reserve_scoped_collection::<u16>(2, "test scoped collection"), Err(CodecError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::MaterializedBytes && limit.additional == 4)
+        );
+    }
+
+    #[test]
+    fn reserve_scoped_collection_succeeds_under_service_profile() {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("test context");
+        let reservation = ctx
+            .reserve_scoped_collection::<u16>(2, "test scoped collection")
+            .expect("service admission");
+        drop(reservation);
     }
 }

@@ -173,21 +173,7 @@ fn parse_mesh(
         .ok_or_else(|| {
             CodecError::Malformed("mesh facet count exceeds remaining payload".into())
         })?;
-    ctx.charge_collection_items(
-        cadmpeg_core::decode::u64_from_index(facet_capacity),
-        "FreeCAD mesh facets",
-    )?;
-    let mut triangles = Vec::new();
-    triangles.try_reserve_exact(facet_capacity).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                ctx.policy().limits.max_collection_items,
-                cadmpeg_core::decode::u64_from_index(facet_capacity),
-                "FreeCAD mesh facets",
-            ),
-        )
-    })?;
+    let mut triangles = ctx.collection_vec(facet_capacity, "FreeCAD mesh facets")?;
     for _ in 0..facet_count {
         let triangle = [
             reader.index(byte_order, point_count, "mesh facet point")?,

@@ -1268,6 +1268,56 @@ impl SpatialSketchProfile {
         Self::from_parts(origin, normal, u_axis, boundary)
     }
 
+    /// Admit a decoded profile after charging and reserving its uniqueness index.
+    pub fn try_new_charged(
+        origin: Point3,
+        normal: Vector3,
+        u_axis: Vector3,
+        boundary: Vec<SpatialSketchEntityUse>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        let Some(origin) = FinitePoint3::new(origin) else {
+            return Ok(Err("spatial profile origin must be finite"));
+        };
+        let Some(normal) = UnitVector3::new(normal) else {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        };
+        let Some(u_axis) = UnitVector3::new(u_axis) else {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        };
+        let [n, u] = [normal.as_raw(), u_axis.as_raw()];
+        let dot = n.x * u.x + n.y * u.y + n.z * u.z;
+        if dot.abs() > EPS_SPATIAL_PROFILE_FRAME {
+            return Ok(Err(SPATIAL_PROFILE_AXES_ERROR));
+        }
+        if boundary.is_empty() {
+            return Ok(Err(
+                "spatial profile boundary must be nonempty and contain distinct entities",
+            ));
+        }
+        let count =
+            u64::try_from(boundary.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = std::collections::HashSet::new();
+        unique
+            .try_reserve(boundary.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for use_ in &boundary {
+            if !unique.insert(&use_.entity) {
+                return Ok(Err(
+                    "spatial profile boundary must be nonempty and contain distinct entities",
+                ));
+            }
+        }
+        Ok(Ok(Self {
+            origin,
+            normal,
+            u_axis,
+            boundary,
+        }))
+    }
+
     /// Build a profile from an admitted origin and unit axes. The argument
     /// types state finiteness and unit length, so only the axis
     /// orthogonality and the boundary are tested.
@@ -2973,6 +3023,34 @@ impl SketchPolygon {
         Ok(Self { entities })
     }
 
+    /// Admit decoded polygon members after charging the uniqueness index.
+    pub fn try_new_charged(
+        entities: Vec<SketchEntityId>,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Result<Self, &'static str>, cadmpeg_core::CodecError> {
+        if entities.len() < 3 {
+            return Ok(Err(
+                "entities requires at least three distinct polygon members",
+            ));
+        }
+        let count =
+            u64::try_from(entities.len()).map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        ctx.charge_collection_items(count, operation)?;
+        let mut unique = std::collections::HashSet::new();
+        unique
+            .try_reserve(entities.len())
+            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        for entity in &entities {
+            if !unique.insert(entity) {
+                return Ok(Err(
+                    "entities requires at least three distinct polygon members",
+                ));
+            }
+        }
+        Ok(Ok(Self { entities }))
+    }
+
     /// Returns the ordered polygon members.
     pub fn entities(&self) -> &[SketchEntityId] {
         &self.entities
@@ -3094,6 +3172,16 @@ impl SketchConstraintDefinition {
     #[must_use]
     pub fn kind(&self) -> &SketchConstraintDefinitionInput {
         &self.0
+    }
+
+    /// Set the driving parameter of an admitted planar offset relation.
+    /// The parameter does not change offset-pair admission.
+    pub fn set_offset_parameter(&mut self, driving: OffsetParameter) -> bool {
+        let SketchConstraintDefinitionInput::Offset { parameter, .. } = &mut self.0 else {
+            return false;
+        };
+        *parameter = Some(driving);
+        true
     }
 
     /// Consume the admitted definition and return its kind.

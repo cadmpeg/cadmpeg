@@ -7,7 +7,6 @@ use crate::design::decode::scopes::fixed_parameters::exact_fixed_extrude_paramet
 use crate::design::decode::scopes::work_geometry::{
     exact_work_axis_construction, exact_work_plane_frame,
 };
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
@@ -104,7 +103,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert!(matches!(
         exact_direct_face_operation(&bytes, &records, &scope),
         Some(DesignDirectFaceOperation::Shell(crate::records::feature::direct_face::DesignShellOperation {
@@ -160,8 +159,12 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-322/261 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-322/261 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
@@ -175,7 +178,7 @@ fn class_322_261_work_plane_332_byte_frame_decodes_its_matrix_only_for_that_pair
     assert_eq!(
         exact_work_plane_frame(
             &wrong_pair,
-            &IndexedRecordOffsets::build(&wrong_pair),
+            &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
             &scope,
         ),
         None
@@ -218,8 +221,12 @@ fn legacy_work_plane_class_350_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-350 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-350 WorkPlane frame");
     for (actual_row, expected_row) in decoded.transform.iter().zip(transform.iter()) {
         for (actual, expected) in actual_row.iter().zip(expected_row.iter()) {
             assert!((actual - expected).abs() < EPS_WORK_PLANE_CLASS_350_TEST_VALUE);
@@ -263,8 +270,12 @@ fn legacy_work_plane_class_400_frame_decodes_its_matrix() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let decoded = exact_work_plane_frame(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-        .expect("class-400 WorkPlane frame");
+    let decoded = exact_work_plane_frame(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("class-400 WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(decoded.transform_offset, 49);
     assert_eq!(decoded.reference, None);
@@ -323,7 +334,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             .unwrap();
         let decoded = crate::design::decode::scopes::direct_face::exact_move_operation(
             &bytes,
-            &IndexedRecordOffsets::build(&bytes),
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
         )
         .expect("legacy Move transform frame");
@@ -340,7 +351,7 @@ fn legacy_move_transform_classes_use_the_shared_253_byte_envelope() {
             assert!(
                 crate::design::decode::scopes::direct_face::exact_move_operation(
                     &bytes,
-                    &IndexedRecordOffsets::build(&bytes),
+                    &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                     &scope,
                 )
                 .is_none(),
@@ -429,9 +440,12 @@ fn direct_work_axis_carriers_project_both_admitted_generations() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let construction =
-            exact_work_axis_construction(&bytes, &IndexedRecordOffsets::build(&bytes), &scope)
-                .expect("direct WorkAxis carrier");
+        let construction = exact_work_axis_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+        )
+        .expect("direct WorkAxis carrier");
         assert_eq!(construction.origin_offset, 25);
         assert_eq!(construction.displacement_offset, 49);
         assert!(matches!(
@@ -580,7 +594,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
 
     let fixed = exact_fixed_extrude_parameters(
         &bytes,
-        &IndexedRecordOffsets::build(&bytes),
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &[taper_parameter, along_parameter],
         &[taper_owner, along_owner],

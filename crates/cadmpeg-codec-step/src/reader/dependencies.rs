@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -105,15 +105,15 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            insert_note(
+            ctx.insert_btree_set(
                 &mut notes,
                 document_note(identifier, name, &source, ctx)?,
-                ctx,
+                "step_dependency_note_set",
             )?;
-            insert_claim(&mut typed, id, ctx)?;
-            insert_claim(&mut typed, document_id, ctx)?;
+            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_hash_set(&mut typed, document_id, "step_dependency_claims")?;
             if let Some(kind) = kind {
-                insert_claim(&mut typed, *kind, ctx)?;
+                ctx.insert_hash_set(&mut typed, *kind, "step_dependency_claims")?;
             }
         }
         if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
@@ -130,28 +130,21 @@ pub(super) fn decode(
                 .transpose()?
                 .flatten()
                 .unwrap_or_default();
-            insert_note(
+            ctx.insert_btree_set(
                 &mut notes,
-                charged_note(&["external source ", source, " item ", &item], ctx)?,
-                ctx,
+                ctx.join_retained(
+                    &["external source ", source, " item ", &item],
+                    "",
+                    "step_dependency_note_text",
+                )?,
+                "step_dependency_note_set",
             )?;
-            insert_claim(&mut typed, id, ctx)?;
-            insert_claim(&mut typed, source_id, ctx)?;
+            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_hash_set(&mut typed, source_id, "step_dependency_claims")?;
         }
     }
 
-    ctx.charge_collection_items(u64_from_index(notes.len()), "step_dependency_note_vector")?;
-    let mut ordered_notes = Vec::new();
-    ordered_notes.try_reserve_exact(notes.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_dependency_note_vector"),
-                0,
-                u64_from_index(notes.len()),
-                "step_dependency_note_vector",
-            ),
-        )
-    })?;
+    let mut ordered_notes = ctx.collection_vec(notes.len(), "step_dependency_note_vector")?;
     ordered_notes.extend(notes);
     Ok(StageOutcome {
         value: (),
@@ -159,40 +152,6 @@ pub(super) fn decode(
         notes: ordered_notes,
         losses,
     })
-}
-
-fn insert_claim(
-    claims: &mut HashSet<u64>,
-    id: u64,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if !claims.contains(&id) {
-        ctx.charge_collection_items(1, "step_dependency_claims")?;
-        claims.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_dependency_claims"),
-                    0,
-                    1,
-                    "step_dependency_claims",
-                ),
-            )
-        })?;
-        claims.insert(id);
-    }
-    Ok(())
-}
-
-fn insert_note(
-    notes: &mut BTreeSet<String>,
-    note: String,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if !notes.contains(&note) {
-        ctx.charge_collection_items(1, "step_dependency_note_set")?;
-        notes.insert(note);
-    }
-    Ok(())
 }
 
 fn document_parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -250,31 +209,7 @@ fn document_note(
     if !source.is_empty() {
         parts.extend([" from ", source]);
     }
-    charged_note(&parts, ctx)
-}
-
-fn charged_note(parts: &[&str], ctx: &DecodeContext<'_>) -> Result<String, CodecError> {
-    let operation = "step_dependency_note_text";
-    let len = parts
-        .iter()
-        .try_fold(0usize, |sum, part| sum.checked_add(part.len()));
-    let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
-    ctx.charge_retained(u64_from_index(len), operation)?;
-    let mut note = String::new();
-    note.try_reserve_exact(len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(len),
-                operation,
-            ),
-        )
-    })?;
-    for part in parts {
-        note.push_str(part);
-    }
-    Ok(note)
+    ctx.join_retained(&parts, "", "step_dependency_note_text")
 }
 
 #[cfg(test)]

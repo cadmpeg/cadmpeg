@@ -854,27 +854,25 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
             LiteralStorage::Retained => "step_lex_normalized_retained",
             LiteralStorage::Transient => "step_lex_normalized_temp",
         };
-        let reservation = match storage {
-            LiteralStorage::Retained => {
+        let (mut output, reservation) = match storage {
+            LiteralStorage::Retained => (
                 self.budget
-                    .charge_retained(u64_from_index(byte_count), operation)
-                    .map_err(|error| Self::resource_error(start, error))?;
-                None
-            }
-            LiteralStorage::Transient => Some(
-                self.budget
-                    .reserve_scoped(u64_from_index(byte_count), operation)
+                    .retained_string(byte_count, operation)
                     .map_err(|error| Self::resource_error(start, error))?,
+                None,
             ),
-        };
-        let mut output = String::new();
-        output.try_reserve_exact(byte_count).map_err(|_| {
-            Self::resource_error(
-                start,
+            LiteralStorage::Transient => {
+                let mut reservation = self
+                    .budget
+                    .reserve_scoped(0, operation)
+                    .map_err(|error| Self::resource_error(start, error))?;
+                let mut output = String::new();
                 self.budget
-                    .refuse_codec_limit(operation, 0, u64_from_index(byte_count)),
-            )
-        })?;
+                    .reserve_scoped_string(&mut reservation, &mut output, byte_count, operation)
+                    .map_err(|error| Self::resource_error(start, error))?;
+                (output, Some(reservation))
+            }
+        };
         for &byte in &self.input[start..end] {
             if !byte.is_ascii_control() {
                 output.push(char::from(byte));
@@ -890,23 +888,8 @@ impl<'a, 'ctx, 'arena> Lexer<'a, 'ctx, 'arena> {
         start: usize,
     ) -> Result<(), LexError> {
         self.budget
-            .charge_collection_items(u64_from_index(bytes.len()), "step_string_lexeme_items")
-            .map_err(|error| Self::resource_error(start, error))?;
-        self.budget
-            .charge_retained(u64_from_index(bytes.len()), "step_string_lexeme_retained")
-            .map_err(|error| Self::resource_error(start, error))?;
-        output.try_reserve(bytes.len()).map_err(|_| {
-            Self::resource_error(
-                start,
-                self.budget.refuse_codec_limit(
-                    "step_string_lexeme_items",
-                    0,
-                    u64_from_index(bytes.len()),
-                ),
-            )
-        })?;
-        output.extend_from_slice(bytes);
-        Ok(())
+            .extend_retained_bytes(output, bytes, "step_string_lexeme_items")
+            .map_err(|error| Self::resource_error(start, error))
     }
 
     fn print_control_end(&self, at: usize) -> Option<usize> {

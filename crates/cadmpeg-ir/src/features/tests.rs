@@ -4,6 +4,7 @@
 use crate::features::TrimCellSelection;
 use crate::math::{Point3, Vector3};
 
+mod distinct_members;
 mod unit_directions;
 
 #[test]

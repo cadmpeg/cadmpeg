@@ -994,7 +994,7 @@ fn hole_face_case(
     };
     feature.native_ref = Some(scope_id.into());
     let mut input_topologies = vec![FeatureInputTopology {
-        id: crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1),
+        id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id.clone(),
         bodies: (Vec::new()).try_into().unwrap(),
         faces: (Vec::new()).try_into().unwrap(),
@@ -1088,7 +1088,7 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     assert_eq!(native, scope_id);
     assert_eq!(
         state,
-        &crate::design::edge_resolve::feature_input_topology_id(&feature_id, 1)
+        &crate::ids::feature_input_topology_id(&feature_id, 1)
     );
     assert_eq!(faces.len(), 1);
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());

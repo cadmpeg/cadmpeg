@@ -72,26 +72,23 @@ pub(super) fn decode(
         };
         let (item_ids, _container_item_bytes) = container_item_ids(items, kind, id, ctx)?;
         for &item in &item_ids {
-            insert_temporary_set(
+            ctx.insert_scoped_btree_value(
+                &mut reservations.declared,
                 &mut declared_items,
                 item,
-                ctx,
-                &mut reservations.declared,
                 "step_tessellation_declared_items",
             )?;
         }
         let (candidates, _linked_body_bytes) = linked_bodies(record, kind, topology, ctx)?;
         if candidates.is_empty() {
-            insert_temporary_set(
+            ctx.insert_scoped_btree_value(
+                &mut reservations.unresolved_containers,
                 &mut unresolved_containers,
                 id,
-                ctx,
-                &mut reservations.unresolved_containers,
                 "step_tessellation_unresolved_containers",
             )?;
         }
-        let mut body_candidate_bytes = temporary_collection::<BodyId>(
-            ctx,
+        let mut body_candidate_bytes = ctx.reserve_scoped_collection::<BodyId>(
             candidates.len(),
             "step_tessellation_body_candidates",
         )?;
@@ -125,7 +122,7 @@ pub(super) fn decode(
         for item in item_ids {
             associator.visit(item, None)?;
         }
-        insert_claim(&mut typed, id, ctx)?;
+        ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
     }
     let mut representation_cache = BTreeMap::new();
     let (product_representations, product_representation_bytes) =
@@ -377,8 +374,7 @@ pub(super) fn decode(
                     coordinate_indices.insert(index);
                 }
             }
-            let _local_index_bytes = temporary_collection::<(u32, u32)>(
-                ctx,
+            let _local_index_bytes = ctx.reserve_scoped_collection::<(u32, u32)>(
                 coordinate_indices.len(),
                 "step_tessellation_local_index",
             )?;
@@ -397,8 +393,7 @@ pub(super) fn decode(
                         })
                 })
                 .collect::<Result<BTreeMap<_, _>, _>>()?;
-            let local_vertex_bytes = temporary_collection::<FinitePoint3>(
-                ctx,
+            let local_vertex_bytes = ctx.reserve_scoped_collection::<FinitePoint3>(
                 coordinate_indices.len(),
                 "step_tessellation_local_vertices",
             )?;
@@ -410,8 +405,7 @@ pub(super) fn decode(
                     .iter()
                     .map(|index| vertices[cadmpeg_core::decode::index_from_u32(*index) - 1]),
             )?;
-            let local_triangle_bytes = temporary_collection::<[u32; 3]>(
-                ctx,
+            let local_triangle_bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
                 triangles.len(),
                 "step_tessellation_local_triangles",
             )?;
@@ -445,13 +439,11 @@ pub(super) fn decode(
                 )?;
                 continue;
             }
-            let local_vertex_bytes = temporary_collection::<FinitePoint3>(
-                ctx,
+            let local_vertex_bytes = ctx.reserve_scoped_collection::<FinitePoint3>(
                 pnindex.len(),
                 "step_tessellation_pn_vertices",
             )?;
-            let local_triangle_bytes = temporary_collection::<[u32; 3]>(
-                ctx,
+            let local_triangle_bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
                 triangles.len(),
                 "step_tessellation_pn_triangles",
             )?;
@@ -524,11 +516,11 @@ pub(super) fn decode(
                 CoordinateAddressing::TriangleIndices(coordinate_indices)
                     if count == vertices.len() =>
                 {
-                    _projected_normal_bytes = Some(temporary_collection::<FiniteVector3>(
-                        ctx,
-                        coordinate_indices.len(),
-                        "step_tessellation_projected_normals",
-                    )?);
+                    _projected_normal_bytes =
+                        Some(ctx.reserve_scoped_collection::<FiniteVector3>(
+                            coordinate_indices.len(),
+                            "step_tessellation_projected_normals",
+                        )?);
                     Some(collect_checked(
                         ctx,
                         coordinate_indices.len(),
@@ -558,8 +550,7 @@ pub(super) fn decode(
             if let Some(placement) =
                 distinct_placement(item_placements.get(&id).map_or(&[], Vec::as_slice))
             {
-                _placed_vertex_bytes = Some(temporary_collection::<FinitePoint3>(
-                    ctx,
+                _placed_vertex_bytes = Some(ctx.reserve_scoped_collection::<FinitePoint3>(
                     local_vertices.len(),
                     "step_tessellation_placed_vertices",
                 )?);
@@ -578,8 +569,7 @@ pub(super) fn decode(
                     ))
                 })?;
                 if let Some(source_normals) = normals.take() {
-                    _placed_normal_bytes = Some(temporary_collection::<FiniteVector3>(
-                        ctx,
+                    _placed_normal_bytes = Some(ctx.reserve_scoped_collection::<FiniteVector3>(
                         source_normals.len(),
                         "step_tessellation_placed_normals",
                     )?);
@@ -687,8 +677,7 @@ pub(super) fn decode(
         } else {
             None
         };
-        let _validation_triangle_bytes = temporary_collection::<[u32; 3]>(
-            ctx,
+        let _validation_triangle_bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
             triangle_count,
             "step_tessellation_validation_triangles",
         )?;
@@ -733,9 +722,10 @@ pub(super) fn decode(
                 ctx,
             )?;
         }
-        ctx.charge_collection_items(1, "step_tessellation_mesh_list")?;
-        ctx.charge_retained(
-            bytes_for::<Tessellation>(1, ctx, "step_tessellation_mesh_list")?,
+
+        ctx.reserve_retained_vec(
+            &mut ir.model.tessellations,
+            1,
             "step_tessellation_mesh_list",
         )?;
         let body = (!item_bodies.get(&id).is_some_and(BTreeSet::is_empty))
@@ -743,7 +733,9 @@ pub(super) fn decode(
             .flatten()
             .filter(|bodies| bodies.len() == 1)
             .and_then(|bodies| bodies.iter().next());
-        let body = admitted_mesh_body(body, ctx)?;
+        let body = body
+            .map(|body| body.try_clone_for_decode(ctx, "step_tessellation_mesh_body"))
+            .transpose()?;
         let source_object = if !declared_items.contains(&id)
             || item_bodies.get(&id).is_some_and(BTreeSet::is_empty)
             || item_bodies.get(&id).is_none_or(|bodies| bodies.len() != 1)
@@ -752,21 +744,12 @@ pub(super) fn decode(
         } else {
             None
         };
-        ir.model.tessellations.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_mesh_list"),
-                    0,
-                    1,
-                    "step_tessellation_mesh_list",
-                ),
-            )
-        })?;
+
         ir.model
             .tessellations
             .push(mesh.with_body(body).with_source_object(source_object));
-        insert_claim(&mut typed, id, ctx)?;
-        insert_claim(&mut typed, coordinate_id, ctx)?;
+        ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
+        ctx.insert_retained_hash_set(&mut typed, coordinate_id, "step_tessellation_claims")?;
     }
     if !ir.model.tessellations.is_empty() {
         for (&id, record) in exchange.records() {
@@ -774,7 +757,7 @@ pub(super) fn decode(
                 || has_entity(record, "TESSELLATED_SOLID")
                 || has_entity(record, "TESSELLATED_SHELL")
             {
-                insert_claim(&mut typed, id, ctx)?;
+                ctx.insert_retained_hash_set(&mut typed, id, "step_tessellation_claims")?;
             }
         }
     }
@@ -882,11 +865,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
         let local_placement = if has_entity(record, "REPOSITIONED_TESSELLATED_ITEM") {
             let placement = repositioned_placement(record, self.geometry);
             if placement.is_none() {
-                insert_temporary_set(
+                self.ctx.insert_scoped_btree_value(
+                    &mut self.reservations.unresolved_placements,
                     self.unresolved_placements,
                     id,
-                    self.ctx,
-                    &mut self.reservations.unresolved_placements,
                     "step_tessellation_unresolved_placements",
                 )?;
             }
@@ -915,19 +897,17 @@ impl TessellationItemAssociator<'_, '_, '_> {
         .is_some()
         {
             if self.mode != AssociationMode::DetachedAnnotation {
-                insert_temporary_set(
+                self.ctx.insert_scoped_btree_value(
+                    &mut self.reservations.body_context,
                     self.body_context_items,
                     id,
-                    self.ctx,
-                    &mut self.reservations.body_context,
                     "step_tessellation_body_context_items",
                 )?;
             }
-            insert_temporary_set(
+            self.ctx.insert_scoped_btree_value(
+                &mut self.reservations.declared,
                 self.declared_items,
                 id,
-                self.ctx,
-                &mut self.reservations.declared,
                 "step_tessellation_declared_items",
             )?;
             associate_bodies(
@@ -955,11 +935,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
             ],
         ) {
             if self.mode == AssociationMode::BodyItems {
-                insert_temporary_set(
+                self.ctx.insert_scoped_btree_value(
+                    &mut self.reservations.declared,
                     self.declared_items,
                     id,
-                    self.ctx,
-                    &mut self.reservations.declared,
                     "step_tessellation_declared_items",
                 )?;
                 associate_bodies(
@@ -971,7 +950,8 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 )?;
             }
             if self.mode != AssociationMode::DetachedAnnotation {
-                insert_claim(self.typed, id, self.ctx)?;
+                self.ctx
+                    .insert_retained_hash_set(self.typed, id, "step_tessellation_claims")?;
             }
             if !self.bodies.is_empty() && matches!(kind, "TESSELLATED_SOLID" | "TESSELLATED_SHELL")
             {
@@ -990,11 +970,10 @@ impl TessellationItemAssociator<'_, '_, '_> {
                 self.visit(item, placement)?;
             }
         } else if self.mode == AssociationMode::BodyItems {
-            insert_temporary_set(
+            self.ctx.insert_scoped_btree_value(
+                &mut self.reservations.declared,
                 self.declared_items,
                 id,
-                self.ctx,
-                &mut self.reservations.declared,
                 "step_tessellation_declared_items",
             )?;
             associate_bodies(
@@ -1043,47 +1022,6 @@ fn tessellated_annotation_item(record: &RawRecord) -> Option<u64> {
         }
     }
     None
-}
-
-fn insert_temporary_set<T: Ord + Copy>(
-    values: &mut BTreeSet<T>,
-    value: T,
-    ctx: &DecodeContext<'_>,
-    bytes: &mut ScopedReservation<'_>,
-    operation: &'static str,
-) -> Result<bool, CodecError> {
-    if values.contains(&value) {
-        return Ok(false);
-    }
-    ctx.charge_collection_items(1, operation)?;
-    bytes.grow(bytes_for::<T>(1, ctx, operation)?)?;
-    Ok(values.insert(value))
-}
-
-fn insert_claim(
-    claims: &mut HashSet<u64>,
-    id: u64,
-    ctx: &DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    if !claims.contains(&id) {
-        ctx.charge_collection_items(1, "step_tessellation_claims")?;
-        ctx.charge_retained(
-            bytes_for::<u64>(1, ctx, "step_tessellation_claims")?,
-            "step_tessellation_claims",
-        )?;
-        claims.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_claims"),
-                    0,
-                    1,
-                    "step_tessellation_claims",
-                ),
-            )
-        })?;
-        claims.insert(id);
-    }
-    Ok(())
 }
 
 fn associate_bodies(
@@ -1136,23 +1074,10 @@ fn push_placement(
             "step_tessellation_placement_entries",
         )?)?;
     }
-    ctx.charge_collection_items(1, "step_tessellation_placements")?;
-    bytes.grow(bytes_for::<Transform>(
-        1,
-        ctx,
-        "step_tessellation_placements",
-    )?)?;
+
     let values = placements.entry(item).or_default();
-    values.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_placements"),
-                0,
-                1,
-                "step_tessellation_placements",
-            ),
-        )
-    })?;
+
+    ctx.reserve_scoped_vec(bytes, values, 1, "step_tessellation_placements")?;
     values.push(placement);
     Ok(())
 }
@@ -1173,11 +1098,10 @@ fn insert_relationship(
         )?)?;
     }
     let targets = relationships.entry(source).or_default();
-    insert_temporary_set(
+    ctx.insert_scoped_btree_value(
+        bytes,
         targets,
         target,
-        ctx,
-        bytes,
         "step_tessellation_relationship_edges",
     )?;
     Ok(())
@@ -1195,11 +1119,10 @@ fn product_linked_representations<'a>(
             .iter()
             .any(|partial| partial.name == "PRODUCT_DEFINITION_SHAPE")
         {
-            insert_temporary_set(
+            ctx.insert_scoped_btree_value(
+                &mut definition_bytes,
                 &mut product_shape_definitions,
                 id,
-                ctx,
-                &mut definition_bytes,
                 "step_tessellation_product_definitions",
             )?;
         }
@@ -1218,11 +1141,10 @@ fn product_linked_representations<'a>(
                 .then(|| partial.parameters.get(1).and_then(ValueExt::reference))?
         })();
         if let Some(representation) = representation {
-            insert_temporary_set(
+            ctx.insert_scoped_btree_value(
+                &mut linked_bytes,
                 &mut linked,
                 representation,
-                ctx,
-                &mut linked_bytes,
                 "step_tessellation_product_representations",
             )?;
         }
@@ -1279,46 +1201,29 @@ fn product_linked_representations<'a>(
         )?;
     }
     let mut pending_bytes =
-        temporary_collection::<u64>(ctx, linked.len(), "step_tessellation_product_pending")?;
+        ctx.reserve_scoped_collection::<u64>(linked.len(), "step_tessellation_product_pending")?;
     let mut pending = Vec::new();
-    pending.try_reserve_exact(linked.len()).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_product_pending"),
-                0,
-                u64_from_index(linked.len()),
-                "step_tessellation_product_pending",
-            ),
-        )
-    })?;
+
+    DecodeContext::reserve_admitted_vec(
+        &mut pending,
+        linked.len(),
+        "step_tessellation_product_pending",
+    )?;
     pending.extend(linked.iter().copied());
     while let Some(representation) = pending.pop() {
         for &related in relationships.get(&representation).into_iter().flatten() {
-            if insert_temporary_set(
+            if ctx.insert_scoped_btree_value(
+                &mut linked_bytes,
                 &mut linked,
                 related,
-                ctx,
-                &mut linked_bytes,
                 "step_tessellation_product_representations",
             )? {
-                ctx.charge_collection_items(1, "step_tessellation_product_pending")?;
-                pending_bytes.grow(bytes_for::<u64>(
+                ctx.reserve_scoped_vec(
+                    &mut pending_bytes,
+                    &mut pending,
                     1,
-                    ctx,
                     "step_tessellation_product_pending",
-                )?)?;
-                pending.try_reserve(1).map_err(|_| {
-                    cadmpeg_core::CodecError::ResourceLimit(
-                        cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                            cadmpeg_core::decode::ResourceDimension::Codec(
-                                "step_tessellation_product_pending",
-                            ),
-                            0,
-                            1,
-                            "step_tessellation_product_pending",
-                        ),
-                    )
-                })?;
+                )?;
                 pending.push(related);
             }
         }
@@ -1341,11 +1246,10 @@ fn product_representation_items<'a>(
             admitted_representation_items(record, ctx)?
         {
             for item in representation_items {
-                insert_temporary_set(
+                ctx.insert_scoped_btree_value(
+                    &mut bytes,
                     &mut items,
                     item,
-                    ctx,
-                    &mut bytes,
                     "step_tessellation_product_items",
                 )?;
             }
@@ -1365,7 +1269,8 @@ fn admitted_representation_items<'a>(
         .iter()
         .filter(|value| value.reference().is_some())
         .count();
-    let bytes = temporary_collection::<u64>(ctx, count, "step_tessellation_representation_items")?;
+    let bytes =
+        ctx.reserve_scoped_collection::<u64>(count, "step_tessellation_representation_items")?;
     let items = collect_checked(
         ctx,
         count,
@@ -1392,7 +1297,7 @@ fn linked_bodies<'a>(
             let bodies = topology.body_by_root.get(&link);
             let count = bodies.map_or(0, Vec::len);
             let mut bytes =
-                temporary_collection::<BodyId>(ctx, count, "step_tessellation_linked_bodies")?;
+                ctx.reserve_scoped_collection::<BodyId>(count, "step_tessellation_linked_bodies")?;
             for body in bodies.into_iter().flatten() {
                 bytes.grow(u64_from_index(body.as_str().len()))?;
             }
@@ -1406,7 +1311,7 @@ fn linked_bodies<'a>(
             let bodies = topology.body_by_shell.get(&link);
             let count = bodies.map_or(0, BTreeSet::len);
             let mut bytes =
-                temporary_collection::<BodyId>(ctx, count, "step_tessellation_linked_bodies")?;
+                ctx.reserve_scoped_collection::<BodyId>(count, "step_tessellation_linked_bodies")?;
             for body in bodies.into_iter().flatten() {
                 bytes.grow(u64_from_index(body.as_str().len()))?;
             }
@@ -1433,7 +1338,7 @@ fn index_list<'a>(
     let Some(values) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let bytes = temporary_collection::<u32>(ctx, values.len(), "step_tessellation_pnindex")?;
+    let bytes = ctx.reserve_scoped_collection::<u32>(values.len(), "step_tessellation_pnindex")?;
     Ok(collect_optional_checked(
         ctx,
         values.len(),
@@ -1451,7 +1356,8 @@ fn container_item_ids<'a>(
     id: u64,
     ctx: &'a DecodeContext<'_>,
 ) -> Result<(Vec<u64>, ScopedReservation<'a>), CodecError> {
-    let bytes = temporary_collection::<u64>(ctx, items.len(), "step_tessellation_container_items")?;
+    let bytes =
+        ctx.reserve_scoped_collection::<u64>(items.len(), "step_tessellation_container_items")?;
     let ids = collect_result_checked(
         ctx,
         items.len(),
@@ -1613,15 +1519,6 @@ fn admitted_surface_id<'a>(
     Ok((ids::data(kind!("surface"), id), reservation))
 }
 
-/// Copy a body identity after its caller has charged the destination storage.
-fn admitted_mesh_body(
-    body: Option<&BodyId>,
-    ctx: &DecodeContext<'_>,
-) -> Result<Option<BodyId>, CodecError> {
-    body.map(|body| body.try_clone_for_decode(ctx, "step_tessellation_mesh_body"))
-        .transpose()
-}
-
 fn admitted_source_association(
     id: u64,
     ctx: &DecodeContext<'_>,
@@ -1636,93 +1533,16 @@ fn push_loss(
     message: std::fmt::Arguments<'_>,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
-    struct CountBytes(Option<u64>);
-
-    impl std::fmt::Write for CountBytes {
-        fn write_str(&mut self, value: &str) -> std::fmt::Result {
-            self.0 = self
-                .0
-                .and_then(|count| count.checked_add(u64_from_index(value.len())));
-            if self.0.is_some() {
-                Ok(())
-            } else {
-                Err(std::fmt::Error)
-            }
-        }
-    }
-
-    let mut count = CountBytes(Some(0));
-    std::fmt::write(&mut count, message).map_err(|_| {
-        ctx.refuse_codec_limit("step_tessellation_loss_message", u64::MAX - 1, u64::MAX)
-    })?;
-    let message_bytes = count.0.ok_or_else(|| {
-        ctx.refuse_codec_limit("step_tessellation_loss_message", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_collection_items(1, "step_tessellation_loss_notes")?;
-    let retained_bytes = u64_from_index(std::mem::size_of::<LossNote>())
-        .checked_add(message_bytes)
-        .and_then(|bytes| bytes.checked_add(u64_from_index(code.code().len())))
-        .and_then(|bytes| bytes.checked_add(u64_from_index("step".len())))
+    ctx.reserve_retained_vec(losses, 1, "step_tessellation_loss_notes")?;
+    let vocabulary_bytes = u64_from_index(code.code().len())
+        .checked_add(u64_from_index("step".len()))
         .ok_or_else(|| {
             ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
         })?;
-    ctx.charge_retained(retained_bytes, "step_tessellation_loss_notes")?;
-    losses.try_reserve(1).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_loss_notes"),
-                0,
-                1,
-                "step_tessellation_loss_notes",
-            ),
-        )
-    })?;
-    let message_len = usize::try_from(message_bytes).map_err(|_| {
-        ctx.refuse_codec_limit("step_tessellation_loss_notes", u64::MAX - 1, u64::MAX)
-    })?;
-    let mut text = String::new();
-    text.try_reserve_exact(message_len).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("step_tessellation_loss_notes"),
-                0,
-                message_bytes,
-                "step_tessellation_loss_notes",
-            ),
-        )
-    })?;
-    std::fmt::write(&mut text, message)
-        .map_err(|_| ctx.refuse_codec_limit("step_tessellation_loss_notes", 0, message_bytes))?;
+    ctx.charge_retained(vocabulary_bytes, "step_tessellation_loss_notes")?;
+    let text = ctx.format_retained(message, "step_tessellation_loss_notes")?;
     losses.push(code.note(text));
     Ok(())
-}
-
-fn temporary_collection<'a, T>(
-    ctx: &'a DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<ScopedReservation<'a>, CodecError> {
-    ctx.charge_collection_items(u64_from_index(count), operation)?;
-    ctx.reserve_scoped(bytes_for::<T>(count, ctx, operation)?, operation)
-}
-
-fn checked_vec<T>(
-    _ctx: &DecodeContext<'_>,
-    count: usize,
-    operation: &'static str,
-) -> Result<Vec<T>, CodecError> {
-    let mut values = Vec::new();
-    values.try_reserve_exact(count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                0,
-                u64_from_index(count),
-                operation,
-            ),
-        )
-    })?;
-    Ok(values)
 }
 
 fn collect_checked<T>(
@@ -1731,7 +1551,7 @@ fn collect_checked<T>(
     operation: &'static str,
     items: impl IntoIterator<Item = T>,
 ) -> Result<Vec<T>, CodecError> {
-    let mut values = checked_vec(ctx, count, operation)?;
+    let mut values = DecodeContext::admitted_vec(count, operation)?;
     for item in items {
         if values.len() == count {
             return Err(ctx.refuse_codec_limit(operation, 0, 1));
@@ -1747,7 +1567,7 @@ fn collect_optional_checked<T>(
     operation: &'static str,
     items: impl IntoIterator<Item = Option<T>>,
 ) -> Result<Option<Vec<T>>, CodecError> {
-    let mut values = checked_vec(ctx, count, operation)?;
+    let mut values = DecodeContext::admitted_vec(count, operation)?;
     for item in items {
         let Some(item) = item else {
             return Ok(None);
@@ -1766,7 +1586,7 @@ fn collect_result_checked<T>(
     operation: &'static str,
     items: impl IntoIterator<Item = Result<T, CodecError>>,
 ) -> Result<Vec<T>, CodecError> {
-    let mut values = checked_vec(ctx, count, operation)?;
+    let mut values = DecodeContext::admitted_vec(count, operation)?;
     for item in items {
         let item = item?;
         if values.len() == count {
@@ -1788,8 +1608,7 @@ fn coordinate_rows<'a>(
         .flat_map(|partial| partial.parameters.iter())
         .filter_map(ValueExt::list)
     {
-        let bytes = temporary_collection::<FinitePoint3>(
-            ctx,
+        let bytes = ctx.reserve_scoped_collection::<FinitePoint3>(
             rows.len(),
             "step_tessellation_coordinate_rows",
         )?;
@@ -1826,7 +1645,7 @@ fn triangle_rows<'a>(
         return Ok(None);
     };
     let bytes =
-        temporary_collection::<[u32; 3]>(ctx, rows.len(), "step_tessellation_triangle_rows")?;
+        ctx.reserve_scoped_collection::<[u32; 3]>(rows.len(), "step_tessellation_triangle_rows")?;
     Ok(collect_optional_checked(
         ctx,
         rows.len(),
@@ -1863,24 +1682,17 @@ fn complex_triangles<'a>(
         .ok_or_else(|| {
             ctx.refuse_codec_limit("step_complex_triangle_count", u64::MAX - 1, u64::MAX)
         })?;
-    let bytes = temporary_collection::<[u32; 3]>(
-        ctx,
+    let bytes = ctx.reserve_scoped_collection::<[u32; 3]>(
         triangle_count,
         "step_complex_tessellation_triangles",
     )?;
     let mut triangles = Vec::new();
-    triangles.try_reserve_exact(triangle_count).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec(
-                    "step_complex_tessellation_triangles",
-                ),
-                0,
-                u64_from_index(triangle_count),
-                "step_complex_tessellation_triangles",
-            ),
-        )
-    })?;
+
+    DecodeContext::reserve_admitted_vec(
+        &mut triangles,
+        triangle_count,
+        "step_complex_tessellation_triangles",
+    )?;
     for strip in strips {
         for index in 0..strip.len() - 2 {
             triangles.push(if index % 2 == 0 {
@@ -1913,7 +1725,7 @@ fn index_rows<'a>(
         ));
     };
     let row_bytes =
-        temporary_collection::<Vec<u32>>(ctx, rows.len(), "step_complex_tessellation_rows")?;
+        ctx.reserve_scoped_collection::<Vec<u32>>(rows.len(), "step_complex_tessellation_rows")?;
     let mut index_bytes = ctx.reserve_scoped(0, "step_complex_tessellation_indices")?;
     let indices = collect_result_checked(
         ctx,
@@ -1958,8 +1770,8 @@ fn normal_rows<'a>(
     let Some(rows) = value.and_then(ValueExt::list) else {
         return Ok(None);
     };
-    let bytes =
-        temporary_collection::<FiniteVector3>(ctx, rows.len(), "step_tessellation_normal_rows")?;
+    let bytes = ctx
+        .reserve_scoped_collection::<FiniteVector3>(rows.len(), "step_tessellation_normal_rows")?;
     Ok(collect_optional_checked(
         ctx,
         rows.len(),

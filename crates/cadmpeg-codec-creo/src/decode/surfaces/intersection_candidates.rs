@@ -848,6 +848,7 @@ fn meridian_circle_intersections(
     )
     .unwrap_or_default()
     .into_iter()
+    .flatten()
     .map(|point| [point.u, point.v])
     .collect()
 }

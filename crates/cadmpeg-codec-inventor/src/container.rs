@@ -12,7 +12,6 @@ use cadmpeg_ir::ContainerSummary;
 use crate::external_reference::{parse as parse_ufrx, UfrxState};
 use crate::property_set::{inventory as property_set_inventory, PropertySetDescriptor};
 use crate::protein::{parse as parse_protein, ProteinState};
-use crate::record_issue::admit_formatted;
 use crate::rse::SegmentBulkState;
 use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState};
 
@@ -189,13 +188,9 @@ fn summary_note(
     database_count: usize,
 ) -> Result<String, CodecError> {
     ctx.charge_collection_items(1, "collect Inventor summary note")?;
-    admit_formatted(
-        ctx,
-        format_args!(
+    ctx.charge_formatted_retained(format_args!(
             "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
-        ),
-        "retain Inventor summary note",
-    )?;
+        ), "retain Inventor summary note")?;
     Ok(format!(
         "CFB v{major} with {segment_count} RSe segment pair(s) and {database_count} versioned database(s)"
     ))
@@ -212,8 +207,7 @@ fn admit_container_entries(
         ctx.charge_retained(path_len, "retain Inventor summary entry path")?;
         ctx.charge_collection_items(1, "collect Inventor summary directory attribute")?;
         ctx.charge_retained(12, "retain Inventor summary directory key")?;
-        admit_formatted(
-            ctx,
+        ctx.charge_formatted_retained(
             format_args!("{}", entry.directory_id()),
             "retain Inventor summary directory id",
         )?;
@@ -228,8 +222,7 @@ fn admit_container_entries(
             }
             ctx.charge_collection_items(1, "collect Inventor summary start-sector attribute")?;
             ctx.charge_retained(12, "retain Inventor summary start-sector key")?;
-            admit_formatted(
-                ctx,
+            ctx.charge_formatted_retained(
                 format_args!("{}", stream.start_sector()),
                 "retain Inventor summary start sector",
             )?;
@@ -267,7 +260,7 @@ fn insert_attribute(
         cadmpeg_core::decode::u64_from_index(key.len()),
         "retain Inventor summary attribute key",
     )?;
-    admit_formatted(ctx, value, "retain Inventor summary attribute value")?;
+    ctx.charge_formatted_retained(value, "retain Inventor summary attribute value")?;
     entry.attributes.insert(key.into(), value.to_string());
     Ok(())
 }

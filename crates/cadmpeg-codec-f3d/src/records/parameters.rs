@@ -353,15 +353,6 @@ impl DesignParameter {
         }
     }
 
-    pub(crate) fn source_kind_name(&self) -> NonBlankString {
-        match &self.source {
-            DesignParameterSource::User { .. } => {
-                cadmpeg_core::nonblank_literal!("User Parameter")
-            }
-            DesignParameterSource::Owned(source) => source.source_kind.clone(),
-        }
-    }
-
     pub(crate) fn kind(&self) -> DesignParameterKind {
         design_parameter_kind_from_source(self.source_kind())
     }

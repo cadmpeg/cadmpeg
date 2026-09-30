@@ -40,7 +40,10 @@ fn work_point_history_state_keys_are_history_qualified() {
         scopes_by_state: HashMap::new(),
     };
 
-    assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
+    assert_ne!(
+        graph.state_key(None, &scope_a, 7).unwrap(),
+        graph.state_key(None, &scope_b, 7).unwrap()
+    );
 }
 
 #[test]
@@ -99,7 +102,7 @@ fn history_state_predecessors_are_component_qualified() {
     let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
 
     let predecessor = graph
-        .predecessor(&second, |_| true)
+        .predecessor(None, &second, |_| true)
         .expect("component-qualified state chain");
     let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
     else {
@@ -221,6 +224,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     )
     .unwrap();
     let ordinals = crate::design::feature_project::authored_scope_ordinals(
+        None,
         &scopes,
         &[unrelated, authored.clone()],
     )
@@ -631,6 +635,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
     )
     .unwrap();
     let result = crate::design::feature_project::authored_scope_ordinals(
+        None,
         &scopes,
         std::slice::from_ref(&timeline),
     );
@@ -834,7 +839,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     );
     second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let scopes = vec![second.clone(), first.clone()];
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(&scopes, &[])
+    let ordinals = crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[])
         .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
@@ -848,7 +853,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         })
         .unwrap();
     let mixed_scopes = vec![first, mixed];
-    let error = crate::design::feature_project::authored_scope_ordinals(&mixed_scopes, &[])
+    let error = crate::design::feature_project::authored_scope_ordinals(None, &mixed_scopes, &[])
         .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
@@ -871,12 +876,13 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     second.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     let scopes = vec![first, second];
 
-    let ordinals = crate::design::feature_project::authored_scope_ordinals_per_stream(&scopes, &[])
-        .expect("independent stream-local orders");
+    let ordinals =
+        crate::design::feature_project::authored_scope_ordinals_per_stream(None, &scopes, &[])
+            .expect("independent stream-local orders");
     assert_eq!(ordinals.len(), 2);
     assert!(ordinals.values().all(|ordinal| *ordinal == 0));
     assert!(matches!(
-        crate::design::feature_project::authored_scope_ordinals(&scopes, &[]),
+        crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[]),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -1101,4 +1107,800 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
             assert_eq!(rotation.direction.get().z.signum(), angle.signum());
         }
     }
+}
+
+fn feature_dependency_index_fixture() -> cadmpeg_ir::features::Feature {
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    Feature {
+        id: FeatureId::mint("f3d:model:feature#dependency-index").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
+                kind: "IndexTest".into(),
+                parameters: Default::default(),
+            },
+        )),
+        native_ref: None,
+    }
+}
+
+fn assert_feature_dependency_index_refusal(operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let feature = feature_dependency_index_fixture();
+    for limit in 0..3 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match super::super::ensure_feature_dependencies_precede(
+            Some(&ctx),
+            std::slice::from_ref(&feature),
+        ) {
+            Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
+            Err(CodecError::ResourceLimit(_)) => {}
+            Ok(()) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn feature_dependency_ordinal_index_refuses_collection_limit() {
+    assert_feature_dependency_index_refusal("f3d feature dependency ordinal index");
+}
+
+#[test]
+fn feature_unique_ordinal_index_refuses_collection_limit() {
+    assert_feature_dependency_index_refusal("f3d feature unique ordinal index");
+}
+
+fn authored_ordinal_limit_fixture() -> (Vec<DesignParameterScope>, DesignFeatureTimeline) {
+    let stream = "f3d:Design/BulkStream.dat";
+    let mut first = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        10,
+    );
+    first.feature_ordinal = std::num::NonZeroU32::new(1).unwrap();
+    let mut second = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        11,
+    );
+    second.feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+        crate::records::entity_header::DesignTimelineFrame::test_items(
+            0,
+            vec![
+                crate::records::identity::Located {
+                    value: 10,
+                    offset: 0,
+                },
+                crate::records::identity::Located {
+                    value: 11,
+                    offset: 0,
+                },
+            ],
+        ),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(1).unwrap(),
+        0,
+        std::num::NonZeroU64::new(1).unwrap(),
+    )
+    .unwrap();
+    (vec![first, second], timeline)
+}
+
+fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool, per_stream: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let timelines = if with_timeline {
+        std::slice::from_ref(&timeline)
+    } else {
+        &[]
+    };
+    for limit in 0..25 {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = if per_stream {
+            crate::design::feature_project::authored_scope_ordinals_per_stream(
+                Some(&ctx),
+                &scopes,
+                timelines,
+            )
+        } else {
+            crate::design::feature_project::authored_scope_ordinals(Some(&ctx), &scopes, timelines)
+        };
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
+            other => panic!("expected {operation} refusal: {other:?}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn authored_stream_index_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream index", false, true);
+}
+
+#[test]
+fn authored_stream_scope_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream scope", false, true);
+}
+
+#[test]
+fn authored_scope_record_index_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope record index", false, true);
+}
+
+#[test]
+fn authored_scope_order_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope order", false, true);
+}
+
+#[test]
+fn authored_scope_ordinal_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored scope ordinal", false, true);
+}
+
+#[test]
+fn authored_stream_timeline_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored stream timeline", true, false);
+}
+
+#[test]
+fn authored_timeline_item_ordinal_refuses_collection_limit() {
+    assert_authored_ordinal_refusal("f3d authored timeline item ordinal", true, false);
+}
+
+fn history_graph_limit_fixture() -> Vec<DesignParameterScope> {
+    let mut first = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        10,
+    );
+    first
+        .try_edit(|draft| draft.history_state_id = Some(7))
+        .unwrap();
+    let mut second = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#11",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        11,
+    );
+    second
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    vec![first, second]
+}
+
+fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let max_limit = if retained { 512 } else { 24 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        match ScopeHistoryGraph::new(Some(&ctx), &scopes, &[], &[], &[], &[]) {
+            Err(cadmpeg_core::CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn component_history_scope_id_refuses_retained_limit() {
+    assert_history_graph_refusal("f3d component history scope id", true);
+}
+
+#[test]
+fn component_history_namespace_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d component history namespace", false);
+}
+
+#[test]
+fn history_state_stream_refuses_retained_limit() {
+    assert_history_graph_refusal("f3d history state stream", true);
+}
+
+#[test]
+fn history_state_index_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d history state index", false);
+}
+
+#[test]
+fn history_state_scope_refuses_collection_limit() {
+    assert_history_graph_refusal("f3d history state scope", false);
+}
+
+#[test]
+fn history_lookup_stream_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = graph.state_key(Some(&ctx), &scopes[1], 8).unwrap_err();
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d history lookup stream"));
+}
+
+#[test]
+fn predecessor_stream_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| true) else {
+        panic!("expected predecessor stream refusal");
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::RetainedBytes
+            && failure.operation == "f3d predecessor stream"));
+}
+
+#[test]
+fn predecessor_visited_scope_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let scopes = history_graph_limit_fixture();
+    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| false) else {
+        panic!("expected predecessor visited-scope refusal");
+    };
+    assert!(matches!(error, CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d predecessor visited scope"));
+}
+
+fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let unit = if operation == "f3d projected parameter unit" {
+        "custom"
+    } else {
+        "mm"
+    };
+    let expression_lookup = operation.starts_with("f3d expression ");
+    let mut parameter = parse_design_parameter_record(&parameter_record(
+        Some(40),
+        if expression_lookup {
+            "Width / 2"
+        } else {
+            "1 mm"
+        },
+        "FeatureInput",
+        Some(unit),
+        "InternalValue",
+        0.1,
+    ))
+    .unwrap();
+    parameter.id = "f3d:Design/BulkStream.dat:design-parameter#41".to_owned();
+    parameter.record_index = 41;
+    parameter
+        .try_set_source(
+            crate::records::parameters::DesignParameterSource::new(
+                parameter.source_kind().to_owned(),
+                Some(40),
+                parameter.family_discriminator(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:Design/BulkStream.dat:design-parameter-owner#40".to_owned(),
+            byte_offset: 0,
+            frame_length: 103,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 40,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.1,
+            evaluated_value_offset: 40,
+            parameter_record_index: 41,
+            owned_ordinal: 0,
+            variant: None,
+            companion_record_index: 42,
+        },
+    )
+    .unwrap();
+    let document_alias = operation.starts_with("f3d document alias");
+    let owners = if document_alias {
+        &[][..]
+    } else {
+        std::slice::from_ref(&owner)
+    };
+    let mut native = vec![parameter];
+    if expression_lookup {
+        let mut width = parse_design_parameter_record(&parameter_record(
+            None,
+            "2 mm",
+            "User Parameter",
+            Some("mm"),
+            "Width",
+            0.2,
+        ))
+        .unwrap();
+        width.id = "f3d:Design/BulkStream.dat:design-parameter#42".to_owned();
+        width.record_index = 42;
+        native.push(width);
+    }
+    let materialized = expression_lookup;
+    let max_limit = if retained { 4096 } else { 128 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if materialized {
+            policy.limits.max_materialized_bytes = limit;
+        } else if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_parameter_design_with_edge_identities(
+            Some(&ctx),
+            &crate::design::feature_project::ProjectInputs {
+                native: &native,
+                owners,
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+            },
+        );
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if materialized {
+                            ResourceDimension::MaterializedBytes
+                        } else if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn projected_scope_id_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected scope id index", false);
+}
+
+#[test]
+fn projected_parameter_owner_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter owner index", false);
+}
+
+#[test]
+fn projected_scope_parameter_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected scope parameter", false);
+}
+
+#[test]
+fn projected_feature_output_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected feature output", false);
+}
+
+#[test]
+fn projected_feature_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature id", true);
+}
+
+#[test]
+fn projected_feature_native_ref_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature native reference", true);
+}
+
+#[test]
+fn projected_parameter_property_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter property", false);
+}
+
+#[test]
+fn projected_parameter_source_kind_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter source kind", true);
+}
+
+#[test]
+fn projected_parameter_unit_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter unit", true);
+}
+
+#[test]
+fn projected_parameter_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter owner id", true);
+}
+
+#[test]
+fn projected_parameter_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter name", true);
+}
+
+#[test]
+fn projected_parameter_expression_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter expression", true);
+}
+
+#[test]
+fn projected_parameter_native_ref_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected parameter native reference", true);
+}
+
+#[test]
+fn projected_parameter_output_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d projected parameter output", false);
+}
+
+#[test]
+fn parameter_scope_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter scope index id", true);
+}
+
+#[test]
+fn parameter_scope_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d parameter scope index", false);
+}
+
+#[test]
+fn feature_alias_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias owner id", true);
+}
+
+#[test]
+fn feature_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias name", true);
+}
+
+#[test]
+fn feature_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature alias parameter id", true);
+}
+
+#[test]
+fn feature_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d feature alias index", false);
+}
+
+#[test]
+fn owned_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d owned alias name", true);
+}
+
+#[test]
+fn owned_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d owned alias parameter id", true);
+}
+
+#[test]
+fn owned_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d owned alias index", false);
+}
+
+#[test]
+fn owned_alias_member_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d owned alias member", false);
+}
+
+#[test]
+fn document_alias_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d document alias name", true);
+}
+
+#[test]
+fn document_alias_parameter_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d document alias parameter id", true);
+}
+
+#[test]
+fn document_alias_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d document alias index", false);
+}
+
+#[test]
+fn parameter_owner_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index id", true);
+}
+
+#[test]
+fn parameter_owner_index_owner_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index owner id", true);
+}
+
+#[test]
+fn parameter_owner_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d parameter owner index", false);
+}
+
+#[test]
+fn feature_order_index_id_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d feature order index id", true);
+}
+
+#[test]
+fn feature_order_index_refuses_collection_limit() {
+    assert_projected_feature_refusal("f3d feature order index", false);
+}
+
+fn assert_expression_dependency_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (scopes, timeline) = authored_ordinal_limit_fixture();
+    let parameter = |record_index, expression: &str, name: &str| {
+        let mut parameter = parse_design_parameter_record(&parameter_record(
+            None,
+            expression,
+            "User Parameter",
+            Some("mm"),
+            name,
+            1.0,
+        ))
+        .unwrap();
+        parameter.id = format!("f3d:Design/BulkStream.dat:design-parameter#{record_index}");
+        parameter.record_index = record_index;
+        parameter
+    };
+    let native = [
+        parameter(40, "1 mm", "Width"),
+        parameter(41, "Width / 2", "Half"),
+    ];
+    let materialized = operation == "f3d expression identifier lookup";
+    let max_limit = if retained { 4096 } else { 128 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if materialized {
+            policy.limits.max_materialized_bytes = limit;
+        } else if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_parameter_design_with_edge_identities(
+            Some(&ctx),
+            &crate::design::feature_project::ProjectInputs {
+                native: &native,
+                owners: &[],
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+            },
+        );
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if materialized {
+                            ResourceDimension::MaterializedBytes
+                        } else if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn expression_identifier_lookup_refuses_materialized_limit() {
+    assert_expression_dependency_refusal("f3d expression identifier lookup", false);
+}
+
+#[test]
+fn expression_owner_lookup_refuses_materialized_limit() {
+    assert_projected_feature_refusal("f3d expression owner lookup", false);
+}
+
+#[test]
+fn expression_feature_identifier_lookup_refuses_materialized_limit() {
+    assert_projected_feature_refusal("f3d expression feature identifier lookup", false);
+}
+
+#[test]
+fn parameter_dependency_refuses_collection_limit() {
+    assert_expression_dependency_refusal("f3d parameter dependency", false);
+}
+
+#[test]
+fn parameter_dependency_id_refuses_retained_limit() {
+    assert_expression_dependency_refusal("f3d parameter dependency id", true);
+}
+
+fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    let (mut scopes, timeline) = authored_ordinal_limit_fixture();
+    scopes[0]
+        .try_edit(|draft| draft.history_state_id = Some(7))
+        .unwrap();
+    scopes[1]
+        .try_edit(|draft| {
+            draft.history_state_id = Some(8);
+            draft.previous_history_state_id = Some(7);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let max_limit = if retained { 2048 } else { 48 };
+    for limit in 0..max_limit {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        if retained {
+            policy.limits.max_retained_bytes = limit;
+        } else {
+            policy.limits.max_collection_items = limit;
+        }
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = project_parameter_design_with_edge_identities(
+            Some(&ctx),
+            &crate::design::feature_project::ProjectInputs {
+                native: &[],
+                owners: &[],
+                scopes: &scopes,
+                timelines: std::slice::from_ref(&timeline),
+                construction_groups: &[],
+                fillet_radius_groups: &[],
+                edge_operands: &[],
+                edge_identity_operands: &[],
+                edge_treatment_vertex_operands: &[],
+                entity_selection_operands: &[],
+                curve_identities: &[],
+                face_operands: &[],
+                body_recipe_operands: &[],
+                legacy_loft_body_carriers: &[],
+                placements: &[],
+                body_bindings: &[],
+                component_naming_spaces: &[],
+                histories: &[],
+            },
+        );
+        match result {
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == operation
+                    && failure.dimension
+                        == (if retained {
+                            ResourceDimension::RetainedBytes
+                        } else {
+                            ResourceDimension::CollectionItems
+                        }) =>
+            {
+                return
+            }
+            Err(CodecError::ResourceLimit(_)) => {}
+            Ok(_) => panic!("expected {operation} refusal, got success"),
+            Err(error) => panic!("expected {operation} refusal: {error}"),
+        }
+    }
+    panic!("no {operation} refusal");
+}
+
+#[test]
+fn feature_history_state_index_refuses_collection_limit() {
+    assert_history_dependency_refusal("f3d feature history state index", false);
+}
+
+#[test]
+fn feature_history_state_id_refuses_retained_limit() {
+    assert_history_dependency_refusal("f3d feature history state id", true);
+}
+
+#[test]
+fn feature_dependency_refuses_collection_limit() {
+    assert_history_dependency_refusal("f3d feature dependency", false);
+}
+
+#[test]
+fn feature_dependency_id_refuses_retained_limit() {
+    assert_history_dependency_refusal("f3d feature dependency id", true);
+}
+
+#[test]
+fn projected_feature_name_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature name", true);
+}
+
+#[test]
+fn projected_feature_source_tag_refuses_retained_limit() {
+    assert_projected_feature_refusal("f3d projected feature source tag", true);
 }

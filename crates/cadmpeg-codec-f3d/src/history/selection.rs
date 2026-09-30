@@ -264,7 +264,7 @@ pub(super) fn bind_face_selection(
     };
     if native == &scope.id {
         if let Some(resolved) =
-            crate::design::feature_project::direct_face_selection(scope, operands)
+            crate::design::feature_project::direct_face_selection(Some(ctx), scope, operands)?
         {
             if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
                 *selection = resolved;
@@ -284,12 +284,13 @@ pub(super) fn bind_face_selection(
     }
     if let Some(resolved) =
         crate::design::face_resolve::resolved_historical_split_face_target_group_with_updated_faces(
+            Some(ctx),
             scope,
             scope.previous_history_state_id(),
             group,
             operands,
             updated_face_slots,
-        )
+        )?
     {
         *selection = resolved;
         return Ok(());

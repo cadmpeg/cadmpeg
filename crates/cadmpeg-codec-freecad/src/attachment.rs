@@ -131,17 +131,7 @@ pub(crate) fn transfer(
     for property in properties {
         let owner = property.owner.as_str();
         if !by_owner.contains_key(owner) {
-            ctx.charge_collection_items(1, "FreeCAD attachment owner lookup")?;
-            by_owner.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FreeCAD attachment owner lookup",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut by_owner, 1, "FreeCAD attachment owner lookup")?;
         }
         let owned = by_owner.entry(owner).or_default();
         ctx.reserve_vec(owned, 1, "FreeCAD attachment owner properties")?;

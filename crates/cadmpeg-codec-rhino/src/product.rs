@@ -16,22 +16,6 @@ use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
-fn reserve_map<K: Eq + std::hash::Hash, V>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    map: &mut HashMap<K, V>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, operation)?;
-    map.try_reserve(1).map_err(|_| {
-        CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-            cadmpeg_core::decode::ResourceDimension::CollectionItems,
-            u64::MAX,
-            1,
-            operation,
-        ))
-    })
-}
-
 #[derive(Debug, Serialize)]
 struct DefinitionRecord<'a> {
     id: String,
@@ -147,8 +131,7 @@ fn external_record(
         return Ok(None);
     }
     let definition = definition_id(ctx, definition_uuid)?;
-    let mut links = Vec::new();
-    ctx.reserve_vec(&mut links, 1, "Rhino external reference links")?;
+    let mut links = ctx.collection_vec(1, "Rhino external reference links")?;
     links.push(definition);
     let (full_path, relative_path, relative_path_preferred) = match link {
         LinkSource::None => return Ok(None),
@@ -227,7 +210,7 @@ pub(crate) fn install(
     for (source_order, object) in scan.objects.iter().enumerate() {
         if let Some(identity) = object.identity() {
             if !object_records.contains_key(&identity.object_id) {
-                reserve_map(ctx, &mut object_records, "Rhino product object keys")?;
+                ctx.reserve_map(&mut object_records, 1, "Rhino product object keys")?;
             }
             let rows = object_records.entry(identity.object_id).or_default();
             ctx.reserve_vec(rows, 1, "Rhino product object positions")?;
@@ -308,20 +291,12 @@ pub(crate) fn install(
     let mut definition_ids = HashSet::new();
     for definition in scan.definitions.definitions() {
         if !definition_ids.contains(&definition.id()) {
-            ctx.charge_collection_items(1, "Rhino product definition keys")?;
-            definition_ids.try_reserve(1).map_err(|_| {
-                CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                    u64::MAX,
-                    1,
-                    "Rhino product definition keys",
-                ))
-            })?;
+            ctx.reserve_set(&mut definition_ids, 1, "Rhino product definition keys")?;
         }
         definition_ids.insert(definition.id());
         for member in &definition.members {
             if !member_definitions.contains_key(member) {
-                reserve_map(ctx, &mut member_definitions, "Rhino product member keys")?;
+                ctx.reserve_map(&mut member_definitions, 1, "Rhino product member keys")?;
             }
             let parents = member_definitions.entry(*member).or_default();
             ctx.reserve_vec(parents, 1, "Rhino product member parents")?;
@@ -411,8 +386,7 @@ pub(crate) fn install(
                 "Rhino occurrence key",
             )?
         };
-        let mut links = Vec::new();
-        ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;
+        let mut links = ctx.collection_vec(1, "Rhino occurrence links")?;
         links.push(object_record);
         if definition_ids.contains(&reference.definition_id()) {
             ctx.reserve_vec(&mut links, 1, "Rhino occurrence links")?;

@@ -13,6 +13,86 @@ fn length(value: f64) -> Length {
 }
 
 #[test]
+fn spatial_profile_uniqueness_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let boundary = vec![SpatialSketchEntityUse {
+        entity: SpatialSketchEntityId::mint("test:model:entity#profile-edge").unwrap(),
+        reversed: false,
+    }];
+    let result = SpatialSketchProfile::try_new_charged(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        boundary,
+        &ctx,
+        "test spatial profile uniqueness",
+    );
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "test spatial profile uniqueness"));
+}
+
+#[test]
+fn polygon_uniqueness_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let entities = ["first", "second", "third"]
+        .map(|suffix| {
+            crate::sketches::SketchEntityId::mint(format!("test:model:entity#{suffix}")).unwrap()
+        })
+        .into_iter()
+        .collect();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let result =
+        crate::sketches::SketchPolygon::try_new_charged(entities, &ctx, "test polygon uniqueness");
+    assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "test polygon uniqueness"));
+}
+
+#[test]
+fn planar_offset_parameter_setter_preserves_admitted_pairs() {
+    use crate::features::ParameterId;
+    use crate::sketches::{
+        OffsetParameter, SketchConstraintDefinition, SketchConstraintDefinitionInput,
+        SketchEntityId, SketchOffsetPair,
+    };
+
+    let source = SketchEntityId::mint("test:model:entity#source").unwrap();
+    let result = SketchEntityId::mint("test:model:entity#result").unwrap();
+    let pair = SketchOffsetPair {
+        source,
+        result,
+        source_reversed: false,
+    };
+    let mut definition =
+        SketchConstraintDefinition::try_from(SketchConstraintDefinitionInput::Offset {
+            pairs: vec![pair.clone()],
+            distance: length(5.0),
+            parameter: None,
+        })
+        .unwrap();
+    let parameter = OffsetParameter {
+        id: ParameterId::mint("test:model:parameter#distance").unwrap(),
+        negated: true,
+    };
+    assert!(definition.set_offset_parameter(parameter.clone()));
+    assert!(matches!(definition.kind(),
+        SketchConstraintDefinitionInput::Offset { pairs, parameter: Some(driving), .. }
+            if pairs == &[pair] && driving == &parameter));
+}
+
+#[test]
 fn sketch_ellipse_serialization_keeps_its_wire_fields() {
     let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
         center: Point2::new(1.0, 2.0),

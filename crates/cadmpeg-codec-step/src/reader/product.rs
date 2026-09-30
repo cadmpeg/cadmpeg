@@ -54,22 +54,8 @@ fn join_product_references(
 ) -> Result<String, CodecError> {
     let mut text = String::new();
     for id in ids {
-        let numbered = format!("#{id}");
         let separator = if text.is_empty() { "" } else { ", " };
-        let additional = separator.len() + numbered.len();
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        text.try_reserve(additional).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            )
-        })?;
-        text.push_str(separator);
-        text.push_str(&numbered);
+        ctx.append_formatted_retained(&mut text, format_args!("{separator}#{id}"), operation)?;
     }
     Ok(text)
 }
@@ -82,20 +68,8 @@ fn join_product_texts<'a>(
     let mut text = String::new();
     for value in values {
         let separator = if text.is_empty() { "" } else { ", " };
-        let additional = separator.len() + value.len();
-        ctx.charge_retained(cadmpeg_core::decode::u64_from_index(additional), operation)?;
-        text.try_reserve(additional).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(operation),
-                    0,
-                    1,
-                    operation,
-                ),
-            )
-        })?;
-        text.push_str(separator);
-        text.push_str(value);
+        ctx.append_retained(&mut text, separator, operation)?;
+        ctx.append_retained(&mut text, value, operation)?;
     }
     Ok(text)
 }
@@ -141,19 +115,7 @@ pub(super) fn decode(
         let grouped = definitions_by_product_in_source_order
             .entry(product)
             .or_default();
-        ctx.charge_collection_items(1, "step_product_definition_group_members")?;
-        grouped.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_product_definition_group_members",
-                    ),
-                    0,
-                    1,
-                    "step_product_definition_group_members",
-                ),
-            )
-        })?;
+        ctx.reserve_vec(grouped, 1, "step_product_definition_group_members")?;
         grouped.push(definition);
     }
     for definitions in definitions_by_product_in_source_order.values_mut() {
@@ -382,8 +344,7 @@ pub(super) fn decode(
             ctx.reserve_vec(grouped, 1, "step_product_source_group_members")?;
             grouped.push(product_definition_id);
         }
-        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")
-            .map(|_| ())?;
+        ctx.insert_hash_set(&mut typed, step_id, "step_product_typed_claims")?;
     }
     let mut product_definition_ids_by_shape = BTreeMap::new();
     for (shape_id, record) in exchange.entities("PRODUCT_DEFINITION_SHAPE") {
@@ -397,8 +358,7 @@ pub(super) fn decode(
         product_definition_ids_by_shape.insert(shape_id, prototype.clone());
     }
     for id in formations.keys().chain(definitions.keys()) {
-        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")
-            .map(|_| ())?;
+        ctx.insert_hash_set(&mut typed, *id, "step_product_typed_claims")?;
     }
 
     let mut usages = BTreeMap::new();
@@ -548,19 +508,7 @@ pub(super) fn decode(
             ctx.charge_collection_items(1, "step_product_usage_parent_groups")?;
         }
         let grouped = usages_by_parent.entry(usage.parent_definition).or_default();
-        ctx.charge_collection_items(1, "step_product_usage_parent_members")?;
-        grouped.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec(
-                        "step_product_usage_parent_members",
-                    ),
-                    0,
-                    1,
-                    "step_product_usage_parent_members",
-                ),
-            )
-        })?;
+        ctx.reserve_vec(grouped, 1, "step_product_usage_parent_members")?;
         grouped.push(usage_id);
     }
     let had_roots = !pending_occurrences.is_empty();
@@ -687,8 +635,7 @@ pub(super) fn decode(
                 (usage.child_definition, id),
                 "step_pending_occurrence",
             )?;
-            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")
-                .map(|_| ())?;
+            ctx.insert_hash_set(&mut typed, usage_id, "step_product_typed_claims")?;
         }
     }
     if !had_roots && !usages.is_empty() {
@@ -739,8 +686,7 @@ pub(super) fn decode(
                 .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
                 .is_some()
         {
-            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")
-                .map(|_| ())?;
+            ctx.insert_hash_set(&mut typed, id, "step_product_typed_claims")?;
         }
     }
     for (&usage_id, source_ids) in &ambiguous_placements {

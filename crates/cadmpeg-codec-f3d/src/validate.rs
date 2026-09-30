@@ -1634,6 +1634,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
 
     let mut scope_positions = HashMap::<&str, u64>::new();
     match crate::design::feature_project::authored_scope_ordinals_per_stream(
+        None,
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
     ) {
@@ -1678,7 +1679,7 @@ fn validate_feature_timelines(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<
         let Some(position) = scope_positions.get(scope.id.as_str()).copied() else {
             continue;
         };
-        match scope_history.predecessor(scope, |candidate| {
+        match scope_history.predecessor(None, scope, |candidate| {
             scope_positions.contains_key(candidate.id.as_str())
         }) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
@@ -3256,11 +3257,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     records::feature::thread::DesignThreadForm::Standard
                     | records::feature::thread::DesignThreadForm::StandardLegacy => ctx
                         .collect_vec(
-                            scope
-                                .reference_members()
-                                .values()
-                                .next()
-                                .copied(),
+                            scope.reference_members().values().next().copied(),
                             "collect F3D standard thread face groups",
                         )?,
                     records::feature::thread::DesignThreadForm::Compact(_)
@@ -6214,12 +6211,20 @@ fn validate_body_recipe_operands<'a>(
     let operand_groups_by_index = &ctx.operand_groups_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let mut expected_operands = reload_native_arena(decode, ctx.ir, "design_body_recipe_operands")?;
-    design::decode::operands::bind_body_recipe_operand_candidates(
+    if let Err(error) = design::decode::operands::bind_body_recipe_operand_candidates(
+        None,
         &mut expected_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-    );
+    ) {
+        findings.push(Finding {
+            check: Check::NativeLinks,
+            severity: Severity::Error,
+            message: format!("Fusion Design body-recipe candidate binding failed: {error}"),
+            entity: None,
+        });
+    }
     history::bind_body_recipe_operand_history_candidates(
         decode,
         &mut expected_operands,
@@ -6967,12 +6972,17 @@ fn validate_edge_treatment_vertex_operands<'a>(
     findings: &mut Vec<Finding>,
 ) -> Result<HashSet<(&'a str, u32)>, CodecError> {
     let native = ctx.native;
-    let mut expected =
+    let mut expected: Vec<records::feature::work_geometry::DesignEdgeTreatmentVertexOperand> =
         reload_native_arena(decode, ctx.ir, "design_edge_treatment_vertex_operands")?;
-    design::decode::operands::bind_edge_treatment_vertex_candidates(
-        &mut expected,
-        &native.persistent_subentity_tags,
-    );
+    for operand in &mut expected {
+        for reference in &mut operand.recipe.recipe_references {
+            design::decode::dimension_frames::bind_recipe_reference_candidates(
+                reference,
+                &native.persistent_subentity_tags,
+                Some(&operand.id),
+            );
+        }
+    }
     let scope_histories = history::bind_scope_histories(
         decode,
         &native.design_parameter_scopes,

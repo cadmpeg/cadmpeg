@@ -141,7 +141,7 @@ fn vertex_recipe_scope_id_refuses_retained_limit() {
 
 #[test]
 fn vertex_recipe_input_states_refuse_collection_limit() {
-    let error = bind_input_states(0, u64::MAX).unwrap_err();
+    let error = bind_input_states(12, u64::MAX).unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "index F3D vertex recipe input states")

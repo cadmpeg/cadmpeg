@@ -107,7 +107,9 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
-        project_mirror(&body_scope, &body_groups, &[], &[]).expect("body mirror")
+        project_mirror(None, &body_scope, &body_groups, &[], &[])
+            .unwrap()
+            .expect("body mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -127,7 +129,9 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         group(10, 30, DesignOperandRole::ROLE_0X5),
     ];
     let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-        project_mirror(&face_scope, &face_groups, &[], &[]).expect("face mirror")
+        project_mirror(None, &face_scope, &face_groups, &[], &[])
+            .unwrap()
+            .expect("face mirror")
     else {
         panic!("mirror projects a pattern");
     };
@@ -136,4 +140,40 @@ fn mirror_seed_role_selects_body_or_face_semantics() {
         [PatternSeed::Faces(FaceSelection::Native(native))]
             if native == "f3d:Design/BulkStream.dat:group#40"
     ));
+}
+
+fn assert_mirror_seed_refusal(role: DesignOperandRole, operation: &'static str) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+
+    let scope = mirror_scope(20);
+    let groups = [
+        group(10, 20, role),
+        group(10, 30, DesignOperandRole::ROLE_0X5),
+    ];
+    for limit in 0..128 {
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_retained_bytes = limit;
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        if matches!(
+            project_mirror(Some(&ctx), &scope, &groups, &[], &[]),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::RetainedBytes
+                    && failure.operation == operation
+        ) {
+            return;
+        }
+    }
+    panic!("no mirror seed refusal at {operation}");
+}
+
+#[test]
+fn mirror_body_seed_id_refuses_retained_limit() {
+    assert_mirror_seed_refusal(DesignOperandRole::BODIES_B, "f3d mirror body seed id");
+}
+
+#[test]
+fn mirror_face_seed_id_refuses_retained_limit() {
+    assert_mirror_seed_refusal(DesignOperandRole::BODIES_A, "f3d mirror face seed id");
 }

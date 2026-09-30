@@ -900,6 +900,8 @@ pub enum HoleThreadDepth {
     TappedStandard,
 }
 
+mod decode_clone;
+
 #[cfg(test)]
 mod length_mapping_tests {
     use super::{HoleConstruction, HoleKind, HoleShape};

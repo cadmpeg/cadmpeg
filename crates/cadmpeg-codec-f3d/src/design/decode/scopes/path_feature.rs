@@ -28,44 +28,38 @@ fn exact_pipe_owner_lanes(
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<[(u32, FixedScalarFrame); 4]> {
     let stream = native_stream(&scope.id)?;
-    let mut owners = parameter_owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()) == Some(stream)
-                && owner.scope_record_index() == scope.record_index
-                && scope
-                    .reference_members()
-                    .values()
-                    .any(|value| value == &owner.record_index())
-                && owner.class_tag().as_str() == "342"
-                && owner.frame_length() == 103
-        })
-        .collect::<Vec<_>>();
-    owners.sort_by_key(|owner| owner.local_ordinal());
-    if owners.len() != 4
-        || owners
-            .iter()
-            .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
-    {
-        return None;
+    let mut owners = [None; 4];
+    for owner in parameter_owners.iter().filter(|owner| {
+        native_stream(owner.id()) == Some(stream)
+            && owner.scope_record_index() == scope.record_index
+            && scope
+                .reference_members()
+                .values()
+                .any(|value| value == &owner.record_index())
+            && owner.class_tag().as_str() == "342"
+            && owner.frame_length() == 103
+    }) {
+        let ordinal = usize::try_from(owner.local_ordinal()).ok()?;
+        let slot = owners.get_mut(ordinal)?;
+        if slot.replace(owner).is_some() {
+            return None;
+        }
     }
-    owners
-        .into_iter()
-        .map(|owner| {
-            Some((
-                owner.record_index(),
-                FixedScalarFrame {
-                    owner_record_index: Some(scope.record_index),
-                    ordinal: u8::try_from(owner.local_ordinal()).ok()?,
-                    value: owner.evaluated_value(),
-                    value_offset: owner.evaluated_value_offset(),
-                },
-            ))
-        })
-        .collect::<Option<Vec<_>>>()?
-        .try_into()
-        .ok()
+    let [Some(first), Some(second), Some(third), Some(fourth)] = owners else {
+        return None;
+    };
+    let lane = |owner: &DesignParameterOwner| {
+        Some((
+            owner.record_index(),
+            FixedScalarFrame {
+                owner_record_index: Some(scope.record_index),
+                ordinal: u8::try_from(owner.local_ordinal()).ok()?,
+                value: owner.evaluated_value(),
+                value_offset: owner.evaluated_value_offset(),
+            },
+        ))
+    };
+    Some([lane(first)?, lane(second)?, lane(third)?, lane(fourth)?])
 }
 
 pub(super) fn exact_path_feature_construction(
@@ -111,20 +105,19 @@ pub(super) fn exact_path_feature_construction(
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0) =>
         {
-            let lanes = scope
+            let mut lanes = scope
                 .reference_members()
                 .values()
                 .filter_map(|record_index| {
                     let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
                     (scalar.owner_record_index == Some(scope.record_index))
                         .then_some((*record_index, scalar))
-                })
-                .collect::<Vec<_>>();
-            let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] =
-                lanes.as_slice()
-            else {
+                });
+            let ((angle_record_index, angle), (opposite_angle_record_index, opposite)) =
+                (lanes.next()?, lanes.next()?);
+            if lanes.next().is_some() {
                 return None;
-            };
+            }
             if angle.ordinal != 0
                 || opposite.ordinal != 1
                 || angle.value.get() <= 0.0
@@ -137,10 +130,10 @@ pub(super) fn exact_path_feature_construction(
                     operation: operation(start + revolve::OPERATION)?,
                     operation_offset: u64::try_from(start + revolve::OPERATION).ok()?,
                     angle: cadmpeg_ir::scalar::PositiveAngle::new(angle.value.get())?,
-                    angle_record_index: *angle_record_index,
+                    angle_record_index,
                     angle_offset: angle.value_offset,
                     opposite_angle: Some(crate::records::identity::Located {
-                        value: *opposite_angle_record_index,
+                        value: opposite_angle_record_index,
                         offset: opposite.value_offset,
                     }),
                 },
@@ -226,16 +219,26 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Sweep => {
-            let lanes = scope
-                .reference_members()
-                .values()
-                .filter_map(|record_index| {
-                    let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                    (scalar.owner_record_index == Some(scope.record_index))
-                        .then_some((*record_index, scalar))
-                })
-                .collect::<Vec<_>>();
-            let lanes: [(u32, FixedScalarFrame); 6] = lanes.try_into().ok()?;
+            let mut candidate_lanes =
+                scope
+                    .reference_members()
+                    .values()
+                    .filter_map(|record_index| {
+                        let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
+                        (scalar.owner_record_index == Some(scope.record_index))
+                            .then_some((*record_index, scalar))
+                    });
+            let lanes = [
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+                candidate_lanes.next()?,
+            ];
+            if candidate_lanes.next().is_some() {
+                return None;
+            }
             if lanes
                 .iter()
                 .enumerate()
@@ -272,20 +275,27 @@ pub(super) fn exact_path_feature_construction(
             {
                 return None;
             }
-            let lanes = if owner_layout {
-                exact_pipe_owner_lanes(scope, parameter_owners)?.to_vec()
+            let lanes: [(u32, FixedScalarFrame); 4] = if owner_layout {
+                exact_pipe_owner_lanes(scope, parameter_owners)?
             } else {
-                scope
-                    .reference_members()
-                    .values()
-                    .filter_map(|record_index| {
-                        let scalar = exact_fixed_scalar(bytes, records, *record_index)?;
-                        (scalar.owner_record_index == Some(scope.record_index))
-                            .then_some((*record_index, scalar))
-                    })
-                    .collect::<Vec<_>>()
+                let mut matched = [None; 4];
+                let mut count = 0usize;
+                for record_index in scope.reference_members().values() {
+                    let Some(scalar) = exact_fixed_scalar(bytes, records, *record_index) else {
+                        continue;
+                    };
+                    if scalar.owner_record_index != Some(scope.record_index) {
+                        continue;
+                    }
+                    let slot = matched.get_mut(count)?;
+                    *slot = Some((*record_index, scalar));
+                    count += 1;
+                }
+                let [Some(first), Some(second), Some(third), Some(fourth)] = matched else {
+                    return None;
+                };
+                [first, second, third, fourth]
             };
-            let lanes: [(u32, FixedScalarFrame); 4] = lanes.try_into().ok()?;
             if lanes
                 .iter()
                 .enumerate()

@@ -5705,17 +5705,8 @@ pub(super) fn emit_passthrough_unknowns(
                 ))
             })?;
             let retained = ctx.copy_retained(retained, "retain ASM unknown record")?;
-            ctx.charge_collection_items(1, "retain ASM unknown record")?;
-            out.unknowns.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("retain ASM unknown record"),
-                        0,
-                        1,
-                        "retain ASM unknown record",
-                    ),
-                )
-            })?;
+
+            ctx.reserve_vec(&mut out.unknowns, 1, "retain ASM unknown record")?;
             out.unknowns.push(UnknownRecord::retained(
                 unknown_record_id(ctx, r, format)?,
                 cadmpeg_core::decode::u64_from_index(r.offset),
