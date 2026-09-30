@@ -31,10 +31,19 @@ fn only_a_face_recipe_kind_states_a_program_operand_length() {
 /// kind states, and it raises no finding.
 #[test]
 fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
+    use crate::records::recipes::ConstructionRecipeKind;
+
+
+    let admitted = face_findings(ConstructionRecipeKind::Face, 16, 1_047);
+    assert!(admitted.is_empty(), "{admitted:#?}");
+    assert_eq!(face_findings(ConstructionRecipeKind::Body, 16, 1_047).len(), 1);
+}
+
+fn face_findings(kind: crate::records::recipes::ConstructionRecipeKind, operand_length: u64, recipe_byte_offset: u64) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
         decal::DesignRecordHeader,
         feature::scope::{DesignFeatureKind, DesignParameterScope},
-        recipes::{ConstructionRecipe, ConstructionRecipeKind},
+        recipes::ConstructionRecipe,
         references::DesignClassTag,
         topology::{face::DesignFaceOperand, face::DesignFaceOperandDraft},
     };
@@ -42,7 +51,7 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
     let stream = "f3d:Design/BulkStream.dat";
     let operand_id = format!("{stream}:design-face-operand#100");
     let recipe_id = format!("{stream}:construction-recipe#0");
-    let findings_for = |kind: ConstructionRecipeKind, operand_length: u64| {
+
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let mut scope = DesignParameterScope::empty(
             &format!("{stream}:design-parameter-scope#10"),
@@ -60,22 +69,21 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
             })
             .unwrap();
         let class_tag = DesignClassTag::try_from("365".to_owned()).unwrap();
-        let recipe_byte_offset = 1_047;
-        let recipe_program_offset = recipe_byte_offset + operand_length;
+        let recipe_program_offset = recipe_byte_offset.saturating_add(operand_length);
         let operand = DesignFaceOperand::try_new(DesignFaceOperandDraft {
             id: operand_id.clone(),
             scope_record_index: 10,
             scope_reference_ordinal: 2,
             group: None,
             record_index: 100,
-            byte_offset: 1_000,
+            byte_offset: recipe_byte_offset - 47,
             class_tag: class_tag.clone(),
-            paired_byte_offset: 1_016,
+            paired_byte_offset: recipe_byte_offset - 31,
             paired_class_tag: DesignClassTag::try_from("366".to_owned()).unwrap(),
             recipe_record_index: 103,
-            recipe_record_byte_offset: 1_032,
+            recipe_record_byte_offset: recipe_byte_offset - 15,
             recipe_id: recipe_id.clone(),
-            recipe_prefix_offset: 1_043,
+            recipe_prefix_offset: recipe_byte_offset - 4,
             recipe_prefix_bytes: Vec::new(),
             recipe_references: Vec::new(),
             recipe_kind: kind,
@@ -91,7 +99,7 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
             resolved_face_slots: Vec::new(),
             resolved_active_face: None,
             next_record_index: 105,
-            next_byte_offset: recipe_program_offset + 8,
+            next_byte_offset: recipe_program_offset.saturating_add(8),
         })
         .unwrap();
         {
@@ -101,7 +109,7 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
                 id: format!("{stream}:design-record-header#100"),
                 record_index: 100,
                 class_tag,
-                byte_offset: 1_000,
+                byte_offset: recipe_byte_offset - 47,
             }];
             native.construction_recipes = vec![ConstructionRecipe {
                 id: recipe_id.clone(),
@@ -122,9 +130,16 @@ fn a_face_operand_whose_recipe_kind_states_no_face_operand_is_refused() {
                 && finding.entity.as_deref() == Some(operand_id.as_str())
         })
         .collect::<Vec<_>>()
-    };
+}
 
-    let admitted = findings_for(ConstructionRecipeKind::Face, 16);
-    assert!(admitted.is_empty(), "{admitted:#?}");
-    assert_eq!(findings_for(ConstructionRecipeKind::Body, 16).len(), 1);
+#[test]
+fn face_operand_rejects_overflowed_program_origin() {
+    let findings = face_findings(crate::records::recipes::ConstructionRecipeKind::Face, 16, u64::MAX - 15);
+    assert_eq!(findings.len(), 1);
+}
+
+#[test]
+fn face_operand_rejects_overflowed_program_extent() {
+    let findings = face_findings(crate::records::recipes::ConstructionRecipeKind::Face, 16, u64::MAX - 20);
+    assert_eq!(findings.len(), 1);
 }
