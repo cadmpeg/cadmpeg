@@ -86,14 +86,14 @@ fn set_limit(policy: &mut DecodePolicy, dimension: ResourceDimension, limit: u64
     }
 }
 
-fn assert_projection_refusal(dimension: ResourceDimension) {
+fn assert_projection_refusal(dimension: ResourceDimension, project: fn(&DecodePolicy) -> Result<(), CodecError>) {
     let mut policy = DecodePolicy::service();
-    run(&policy).unwrap();
+    project(&policy).unwrap();
     let mut lower = 0;
     let mut upper = 1;
     loop {
         set_limit(&mut policy, dimension, upper);
-        match run(&policy) {
+        match project(&policy) {
             Ok(()) => break,
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, dimension);
@@ -105,7 +105,7 @@ fn assert_projection_refusal(dimension: ResourceDimension) {
     while lower < upper {
         let midpoint = lower + (upper - lower) / 2;
         set_limit(&mut policy, dimension, midpoint);
-        match run(&policy) {
+        match project(&policy) {
             Ok(()) => upper = midpoint,
             Err(CodecError::ResourceLimit(limit)) => {
                 assert_eq!(limit.dimension, dimension);
@@ -116,27 +116,121 @@ fn assert_projection_refusal(dimension: ResourceDimension) {
     }
     assert!(upper > 0);
     set_limit(&mut policy, dimension, upper);
-    run(&policy).unwrap();
+    project(&policy).unwrap();
     set_limit(&mut policy, dimension, upper - 1);
-    assert!(matches!(run(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+    assert!(matches!(project(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_collection_limit() {
-    assert_projection_refusal(ResourceDimension::CollectionItems);
+    assert_projection_refusal(ResourceDimension::CollectionItems, run);
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_retained_limit() {
-    assert_projection_refusal(ResourceDimension::RetainedBytes);
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run);
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_nesting_limit() {
-    assert_projection_refusal(ResourceDimension::RecursionDepth);
+    assert_projection_refusal(ResourceDimension::RecursionDepth, run);
 }
 
 #[test]
 fn configuration_sketch_projection_refuses_carrier_work_limit() {
-    assert_projection_refusal(ResourceDimension::WorkUnits);
+    assert_projection_refusal(ResourceDimension::WorkUnits, run);
+}
+
+
+fn datum_model() -> cadmpeg_ir::CadIr {
+    use cadmpeg_ir::features::{
+        ConfigurationEvaluation, ConfigurationFeatureState, DatumPlaneReference,
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    let plane = FeatureId::mint("synthetic:test:id#plane").unwrap();
+    let first = FeatureId::mint("synthetic:test:id#offset-first").unwrap();
+    let second = FeatureId::mint("synthetic:test:id#offset-second").unwrap();
+    let definitions = [
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+            frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+                Point3::new(0.0, 0.0, 0.0), cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            ).unwrap(),
+        }),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature: plane.clone() }),
+            distance: cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+        }),
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::Feature { feature: first.clone() }),
+            distance: cadmpeg_ir::scalar::Length::new(3.0).unwrap(),
+        }),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for ((id, ordinal, dependencies), definition) in [
+        (plane.clone(), 0, Vec::new()),
+        (first, 1, vec![plane.clone()]),
+        (second.clone(), 2, vec![FeatureId::mint("synthetic:test:id#offset-first").unwrap()]),
+    ].into_iter().zip(definitions) {
+        ir.model.features.push(Feature {
+            id, ordinal, name: None, suppressed: Some(false),
+            dependencies: dependencies.try_into().unwrap(),
+            source_properties: std::collections::BTreeMap::new(), source_tag: None,
+            source_text: None, source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(definition), native_ref: None,
+        });
+    }
+    let mut configuration = design_configuration("datum", 0, Some(0), None);
+    configuration.feature_states.insert(second, ConfigurationFeatureState {
+        evaluation: ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() },
+        dependencies: vec![plane].try_into().unwrap(),
+        definition: FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: None, distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+        }),
+    });
+    ir.model.configurations.push(configuration);
+    ir
+}
+
+fn run_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = datum_model();
+    let mut expected = ir.clone();
+    let state = expected.model.configurations[0].feature_states
+        .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap()).unwrap();
+    state.definition = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Feature {
+            feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+        }),
+        distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+    });
+    state.dependencies = vec![
+        FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    ].try_into().unwrap();
+    super::inherit_configuration_reference_plane_states(&ctx, &mut ir)?;
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_datum_state_projection_refuses_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_datum);
+}
+
+#[test]
+fn configuration_datum_state_projection_refuses_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_datum);
+}
+
+#[test]
+fn configuration_datum_state_projection_refuses_nesting_limit() {
+    assert_projection_refusal(ResourceDimension::RecursionDepth, run_datum);
+}
+
+#[test]
+fn configuration_datum_state_projection_refuses_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_datum);
 }

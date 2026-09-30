@@ -3158,7 +3158,7 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.surfaces,
     )?;
-    crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
+    crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     let pattern_hole_nominals =
@@ -4372,7 +4372,7 @@ fn build_metadata_ir(
         "append SLDPRT configuration PMI losses",
     )?;
     pmi_losses.extend(configuration_losses);
-    crate::history::configuration::inherit_configuration_reference_plane_states(&mut ir);
+    crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
     stamp_feature_baseline(&mut ir)?;
     let native = crate::native::SldprtNative {

@@ -331,7 +331,7 @@ pub(crate) fn project_configuration_design_states(
             scoped_lanes,
             form_padding,
         )?;
-        inherit_configuration_reference_plane_semantics(&mut features, &resolved_base_features);
+        inherit_configuration_reference_plane_semantics(ctx, &mut features, &resolved_base_features)?;
         crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
             ctx,
             &mut features,
@@ -543,7 +543,7 @@ pub(crate) fn project_configuration_sketch_states(
                 Some(feature)
             })
             .collect::<Vec<_>>();
-        inherit_configuration_reference_plane_semantics(&mut features, &ir.model.features);
+        inherit_configuration_reference_plane_semantics(ctx, &mut features, &ir.model.features)?;
         let reusable_spatial_sketches = ir
             .model
             .spatial_sketches
@@ -819,7 +819,7 @@ pub(crate) fn project_configuration_sketch_states(
         }
         for (feature_id, state) in &mut configuration.feature_states {
             if let Some(base_definition) = base.get(ctx, feature_id)? {
-                inherit_configuration_shared_semantics(&mut state.definition, base_definition)?;
+                inherit_configuration_shared_semantics(ctx, &mut state.definition, base_definition)?;
                 if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
                     reference: Some(DatumPlaneReference::Feature { feature: reference }),
                     ..
@@ -835,6 +835,7 @@ pub(crate) fn project_configuration_sketch_states(
 }
 
 fn inherit_configuration_shared_semantics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     definition: &mut FeatureDefinition,
     base_definition: &FeatureDefinition,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -847,7 +848,7 @@ fn inherit_configuration_shared_semantics(
     ) = (&mut *definition, base_definition)
     {
         if reference.is_none() {
-            reference.clone_from(base_reference);
+            *reference = base_reference.as_ref().map(|reference| copy_configuration_plane_reference(ctx, reference)).transpose()?;
         } else if let (
             Some(cadmpeg_ir::features::DatumPlaneReference::Face { face }),
             Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: base_face }),
@@ -863,7 +864,7 @@ fn inherit_configuration_shared_semantics(
                 | cadmpeg_ir::features::FaceSelection::Native(_) => true,
             };
             if incomplete {
-                face.clone_from(base_face);
+                *face = base_face.try_clone_charged(ctx, "copy SLDPRT configuration datum face")?;
             }
         }
         return Ok(());
@@ -1025,177 +1026,185 @@ fn configuration_plane_frame_matches(
     .all(|(left, right)| same(left, right))
 }
 
-fn configuration_feature_plane_frame(
-    feature_id: &FeatureId,
-    features: &HashMap<FeatureId, &cadmpeg_ir::features::Feature>,
-    visiting: &mut HashSet<FeatureId>,
-) -> Option<ConfigurationPlaneFrame> {
-    if !visiting.insert(feature_id.clone()) {
-        return None;
-    }
-    let Some(feature) = features.get(feature_id) else {
-        visiting.remove(feature_id);
-        return None;
-    };
-    let frame = match feature.evaluation.definition() {
-        FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
-            Some(crate::resolved_features::compact_reference_planes::principal_sketch_frame(*plane))
-        }
-        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
-            valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
-                frame.origin().get(),
-                frame.normal().get(),
-                frame.u_axis().get(),
-            ))
-        }
-        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-            reference: Some(reference),
-            distance,
-        }) => configuration_reference_plane_frame(reference, features, visiting).and_then(
-            |(origin, normal, u_axis)| {
-                let normal_length = normal.norm();
-                (normal_length.is_finite() && normal_length > f64::EPSILON).then_some((
-                    Point3::new(
-                        origin.x + normal.x * distance.get() / normal_length,
-                        origin.y + normal.y * distance.get() / normal_length,
-                        origin.z + normal.z * distance.get() / normal_length,
-                    ),
-                    normal,
-                    u_axis,
-                ))
-            },
-        ),
-        _ => None,
-    };
-    visiting.remove(feature_id);
-    frame
-}
-
-fn configuration_reference_plane_frame(
-    reference: &DatumPlaneReference,
-    features: &HashMap<FeatureId, &cadmpeg_ir::features::Feature>,
-    visiting: &mut HashSet<FeatureId>,
-) -> Option<ConfigurationPlaneFrame> {
+fn configuration_reference_plane_frame<'features>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reference: &'features DatumPlaneReference,
+    features: &ConfigurationDefinitions<'features>,
+    visiting: &mut HashSet<&'features FeatureId>,
+) -> Result<Option<ConfigurationPlaneFrame>, cadmpeg_core::CodecError> {
     match reference {
-        DatumPlaneReference::Feature {
-            feature: feature_id,
-        } => configuration_feature_plane_frame(feature_id, features, visiting),
-        DatumPlaneReference::ResolvedPlane { frame } => {
-            valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
-                frame.origin().get(),
-                frame.normal().get(),
-                frame.u_axis().get(),
-            ))
+        DatumPlaneReference::Feature { feature: feature_id } => {
+            const OPERATION: &str = "resolve SLDPRT configuration datum frame";
+            let _depth = ctx.enter_nested(OPERATION)?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(visiting.len()), OPERATION)?;
+            let bytes = visiting.iter().try_fold(feature_id.as_str().len(), |bytes, id| {
+                bytes.checked_add(id.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+            })?;
+            let work = bytes.checked_add(1).and_then(|bytes| bytes.checked_mul(4))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            if visiting.contains(feature_id) { return Ok(None); }
+            ctx.charge_collection_items(1, OPERATION)?;
+            visiting.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            visiting.insert(feature_id);
+            let Some(definition) = features.get(ctx, feature_id)? else {
+                visiting.remove(feature_id);
+                return Ok(None);
+            };
+            let frame = match definition {
+                FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane { plane }) => {
+                    Some(crate::resolved_features::compact_reference_planes::principal_sketch_frame(*plane))
+                }
+                FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) => {
+                    valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
+                        frame.origin().get(), frame.normal().get(), frame.u_axis().get(),
+                    ))
+                }
+                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference: Some(reference), distance,
+                }) => configuration_reference_plane_frame(ctx, reference, features, visiting)?.and_then(
+                    |(origin, normal, u_axis)| {
+                        let normal_length = normal.norm();
+                        (normal_length.is_finite() && normal_length > f64::EPSILON).then_some((
+                            Point3::new(
+                                origin.x + normal.x * distance.get() / normal_length,
+                                origin.y + normal.y * distance.get() / normal_length,
+                                origin.z + normal.z * distance.get() / normal_length,
+                            ), normal, u_axis,
+                        ))
+                    },
+                ),
+                _ => None,
+            };
+            visiting.remove(feature_id);
+            Ok(frame)
         }
-        DatumPlaneReference::Face { .. } => None,
+        DatumPlaneReference::ResolvedPlane { frame } => Ok(
+            valid_plane_frame(frame.normal().get(), frame.u_axis().get()).then_some((
+                frame.origin().get(), frame.normal().get(), frame.u_axis().get(),
+            ))
+        ),
+        DatumPlaneReference::Face { .. } => Ok(None),
     }
 }
 
-/// Reuse a document-level datum reference when a scoped state omits the
-/// reference or retains its frame with only the face selector unresolved.
+fn copy_configuration_feature_id(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &FeatureId,
+    operation: &'static str,
+) -> Result<FeatureId, cadmpeg_core::CodecError> {
+    let work = id.as_str().len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+    FeatureId::mint(ctx.format_retained(format_args!("{}", id.as_str()), operation)?)
+        .map_err(cadmpeg_core::CodecError::malformed)
+}
+
+fn copy_configuration_plane_reference(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    reference: &DatumPlaneReference,
+) -> Result<DatumPlaneReference, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "copy SLDPRT configuration datum reference";
+    match reference {
+        DatumPlaneReference::Feature { feature } => Ok(DatumPlaneReference::Feature {
+            feature: copy_configuration_feature_id(ctx, feature, OPERATION)?,
+        }),
+        DatumPlaneReference::Face { face } => Ok(DatumPlaneReference::Face {
+            face: face.try_clone_charged(ctx, OPERATION)?,
+        }),
+        DatumPlaneReference::ResolvedPlane { frame } => Ok(DatumPlaneReference::ResolvedPlane { frame: *frame }),
+    }
+}
+
+fn inherit_configuration_reference_plane_definition(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &FeatureId,
+    definition: &mut FeatureDefinition,
+    dependencies: &mut cadmpeg_ir::features::DistinctMembers<FeatureId>,
+    base: &ConfigurationDefinitions<'_>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let Some(FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+        reference: Some(base_reference), ..
+    })) = base.get(ctx, id)? else { return Ok(()); };
+    let state_frame = match &*definition {
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference: None, .. }) => None,
+        FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+            reference: Some(DatumPlaneReference::ResolvedPlane { frame }), ..
+        }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some((
+            frame.origin().get(), frame.normal().get(), frame.u_axis().get(),
+        )),
+        _ => return Ok(()),
+    };
+    let Some(base_frame) = configuration_reference_plane_frame(ctx, base_reference, base, &mut HashSet::new())? else {
+        return Ok(());
+    };
+    if state_frame.is_some_and(|frame| !configuration_plane_frame_matches(frame, base_frame)) {
+        return Ok(());
+    }
+    let replacement = copy_configuration_plane_reference(ctx, base_reference)?;
+    if let DatumPlaneReference::Feature { feature } = &replacement {
+        const OPERATION: &str = "retain SLDPRT configuration datum dependency";
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(dependencies.len()), OPERATION)?;
+        let bytes = dependencies.iter().try_fold(feature.as_str().len(), |bytes, id| {
+            bytes.checked_add(id.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+        })?;
+        let work = dependencies.len().checked_add(1)
+            .and_then(|count| count.checked_mul(std::mem::size_of::<FeatureId>()))
+            .and_then(|slots| bytes.checked_mul(4).and_then(|bytes| bytes.checked_add(slots)))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+        if !dependencies.contains(feature) {
+            let id = copy_configuration_feature_id(ctx, feature, OPERATION)?;
+            dependencies.try_insert_charged(id, ctx, OPERATION)?;
+        }
+    }
+    if let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) = definition {
+        *reference = Some(replacement);
+    }
+    Ok(())
+}
+
+/// Reuse a document datum reference for an omitted or matching resolved frame.
 fn inherit_configuration_reference_plane_semantics(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     base_features: &[cadmpeg_ir::features::Feature],
-) {
-    let base_by_id = base_features
-        .iter()
-        .map(|feature| (feature.id.clone(), feature))
-        .collect::<HashMap<_, _>>();
+) -> Result<(), cadmpeg_core::CodecError> {
+    let base = ConfigurationDefinitions::new(ctx, base_features)?;
     for feature in features {
-        let Some(base_feature) = base_by_id.get(&feature.id) else {
-            continue;
-        };
-        let Some(base_reference) = (match base_feature.evaluation.definition() {
-            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                reference: Some(reference),
-                ..
-            }) => Some(reference),
-            _ => None,
-        }) else {
-            continue;
-        };
-        let replacement = (|| {
-            let state_frame = match feature.evaluation.definition() {
-                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference: None,
-                    ..
-                }) => None,
-                FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
-                    ..
-                }) if valid_plane_frame(frame.normal().get(), frame.u_axis().get()) => Some((
-                    frame.origin().get(),
-                    frame.normal().get(),
-                    frame.u_axis().get(),
-                )),
-                _ => return None,
-            };
-            let base_frame = configuration_reference_plane_frame(
-                base_reference,
-                &base_by_id,
-                &mut HashSet::new(),
-            )?;
-            if let Some(state_frame) = state_frame {
-                if !configuration_plane_frame_matches(state_frame, base_frame) {
-                    return None;
-                }
-            }
-            match base_reference {
-                DatumPlaneReference::Feature { .. } => Some(base_reference.clone()),
-                DatumPlaneReference::Face { face }
-                    if complete_configuration_face_selection(face) =>
-                {
-                    Some(base_reference.clone())
-                }
-                DatumPlaneReference::ResolvedPlane { .. } => Some(base_reference.clone()),
-                DatumPlaneReference::Face { .. } => None,
-            }
-        })();
-        let Some(replacement) = replacement else {
-            continue;
-        };
-        let dependency = match &replacement {
-            DatumPlaneReference::Feature { feature: reference } => Some(reference.clone()),
-            DatumPlaneReference::Face { .. } | DatumPlaneReference::ResolvedPlane { .. } => None,
-        };
-        let mut definition = feature.evaluation.definition().clone();
-        let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) =
-            &mut definition
-        else {
-            continue;
-        };
-        *reference = Some(replacement);
-        feature.evaluation.set_definition(definition);
-        if let Some(dependency) = dependency {
-            if !feature.dependencies.contains(&dependency) {
-                feature.dependencies.insert(dependency);
-            }
-        }
+        let mut result = Ok(());
+        feature.evaluation.edit(|definition, _| {
+            result = inherit_configuration_reference_plane_definition(ctx, &feature.id, definition, &mut feature.dependencies, &base);
+        });
+        result?;
     }
+    Ok(())
 }
 
-/// Apply late-resolved document datum references to every configuration state.
-pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::CadIr) {
-    let base_features = ir.model.features.clone();
+/// Apply document datum references directly to each matching configuration state.
+pub(crate) fn inherit_configuration_reference_plane_states(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
     for configuration in &mut ir.model.configurations {
-        let mut features = base_features
-            .iter()
-            .filter_map(|base_feature| {
-                let state = configuration.feature_states.get(&base_feature.id)?;
-                let mut feature = base_feature.clone();
-                apply_configuration_state(&mut feature, state);
-                Some(feature)
-            })
-            .collect::<Vec<_>>();
-        inherit_configuration_reference_plane_semantics(&mut features, &base_features);
-        for feature in features {
-            let Some(state) = configuration.feature_states.get_mut(&feature.id) else {
-                continue;
-            };
-            state.dependencies = feature.dependencies;
-            state.definition = feature.evaluation.into_parts().0;
+        const OPERATION: &str = "match SLDPRT configuration datum states";
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configuration.feature_states.len()), OPERATION)?;
+        let key_bytes = configuration.feature_states.keys().try_fold(0_usize, |bytes, id| {
+            bytes.checked_add(id.as_str().len())
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+        })?;
+        for feature in &ir.model.features {
+            let work = key_bytes.checked_add(feature.id.as_str().len()).and_then(|bytes| bytes.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            let Some(state) = configuration.feature_states.get_mut(&feature.id) else { continue; };
+            inherit_configuration_reference_plane_definition(ctx, &feature.id, &mut state.definition, &mut state.dependencies, &base)?;
         }
     }
+    Ok(())
 }
 
 struct ConfigurationCarrierIds<'id, T> {
