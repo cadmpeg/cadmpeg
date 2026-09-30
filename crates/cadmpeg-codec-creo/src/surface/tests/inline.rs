@@ -25,7 +25,7 @@ fn inline_close_refuses_nonfinite_values() {
 }
 
 fn push_inline_test_scalar(bytes: &mut Vec<u8>, value: f64) {
-    match value as i32 {
+    match cadmpeg_core::convert::truncate_f64_to_i32(value).expect("fixture scalar fits i32") {
         -1 => bytes.push(0x0d),
         -4..=-2 => {
             let raw = value.to_be_bytes();

@@ -1131,7 +1131,7 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         let token = crate::surface::SurfaceParameterScalar {
             value: Some(0.5),
@@ -1150,8 +1150,8 @@ fn round_rejects_conflicting_complete_direct_and_placed_cylinder_radii() {
                     crate::surface::SurfaceKind::Cylinder,
                 ),
                 boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-                offset: id as usize,
-                body_offset: id as usize + 1,
+                offset: usize::try_from(id).expect("fixture index fits usize"),
+                body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
             });
     }
 

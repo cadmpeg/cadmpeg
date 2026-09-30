@@ -111,7 +111,7 @@ fn counterbore_source_limit_scan() -> crate::container::ContainerScan<'static> {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan
@@ -619,7 +619,7 @@ fn counterbore_source_corner_envelopes_refuse_collection_limit() {
         assert_eq!(records.len(), 1);
         let mut record = records.remove(0);
         record.surface_id = id;
-        record.offset = id as usize;
+        record.offset = usize::try_from(id).expect("fixture index fits usize");
         assert_eq!(record.surface_id, id);
         assert!(record.type24_terminal_corner_envelope().is_some());
         scan.surfaces.parameters.push(record);
@@ -630,7 +630,7 @@ fn counterbore_source_corner_envelopes_refuse_collection_limit() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     let sources = [vec![10, 11]];
@@ -671,8 +671,8 @@ fn counterbore_patch_rows_refuse_collection_limit() {
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(source_id), None, None),
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(
@@ -692,7 +692,7 @@ fn counterbore_patch_rows_refuse_collection_limit() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features

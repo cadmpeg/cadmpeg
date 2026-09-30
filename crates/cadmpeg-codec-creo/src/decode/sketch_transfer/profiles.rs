@@ -821,7 +821,7 @@ mod tests {
         ];
         for (cap, operation) in operations.into_iter().enumerate() {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap as u64;
+            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
@@ -834,7 +834,7 @@ mod tests {
             );
         }
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "creo:featdefs:sketch_entity#917:42".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:42".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
             .expect_err("profile entity ID exceeds retained cap");
@@ -868,7 +868,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         definition.segments = Some(crate::feature::definitions::FeatureSegmentTable {
             declared_count: 2,
@@ -905,7 +905,7 @@ mod tests {
         ];
         for (cap, operation) in operations.into_iter().enumerate() {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_collection_items = cap as u64;
+            policy.limits.max_collection_items = cadmpeg_core::decode::u64_from_index(cap);
             let (ctx, _) =
                 DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
             let error = resolved_profile_chains(&ctx, &definition, &sketch, &emitted)
@@ -969,7 +969,7 @@ mod tests {
                     sense: 0,
                 },
             ],
-            offset: target as usize,
+            offset: usize::try_from(target).expect("fixture index fits usize"),
         }
     }
 
@@ -1080,7 +1080,7 @@ mod tests {
                 flags: 0,
                 status: 0,
                 items,
-                offset: target as usize + 1,
+                offset: usize::try_from(target).expect("fixture index fits usize") + 1,
             },
         );
         crate::decode::tests::synchronize_skamp_count(&mut definition);

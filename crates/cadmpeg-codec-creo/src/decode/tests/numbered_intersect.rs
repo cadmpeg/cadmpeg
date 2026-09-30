@@ -384,14 +384,14 @@ fn linear_plane_extent_requires_complete_generated_plane_evidence() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
         normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([row(31), row(32)]);
@@ -440,14 +440,14 @@ fn hole_outline_placement_requires_complete_feature_plane_evidence() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
         normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
@@ -480,14 +480,14 @@ fn hole_outline_placement_preserves_stored_plane_order() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| crate::surface::OutlinePlane {
         surface_id: id,
         origin: [0.0, 0.0, z],
         normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
         u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.surfaces.rows.extend([row(902), row(701)]);

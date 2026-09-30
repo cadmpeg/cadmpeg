@@ -1225,14 +1225,14 @@ mod tests {
     fn section_row_suffix_refuses_each_retained_choice() {
         for (unique, expected) in [(true, "42"), (false, "circle:offset:9")] {
             let mut policy = DecodePolicy::service();
-            policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
             assert!(
                 matches!(with_policy(&policy, |ctx| section_row_suffix(ctx, unique, 42, "circle", 9)),
                 Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                     if refusal.dimension == ResourceDimension::RetainedBytes
                         && refusal.operation == "creo section entity suffix")
             );
-            policy.limits.max_retained_bytes = expected.len() as u64;
+            policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
             assert_eq!(
                 with_policy(&policy, |ctx| section_row_suffix(
                     ctx, unique, 42, "circle", 9
@@ -1247,14 +1247,14 @@ mod tests {
     fn placed_section_source_refuses_before_object_id_formatting() {
         let expected = "FeatDefs:section#5:42";
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         assert!(
             matches!(with_policy(&policy, |ctx| placed_source_object(ctx, expected)),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))
                 if refusal.dimension == ResourceDimension::RetainedBytes
                     && refusal.operation == "creo placed section source object")
         );
-        policy.limits.max_retained_bytes = expected.len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len());
         let admitted = with_policy(&policy, |ctx| placed_source_object(ctx, expected))
             .expect("exact cap admits placed source");
         assert_eq!(admitted.object_id.as_str(), expected);
@@ -1292,7 +1292,7 @@ mod tests {
         let expected = "creo:featdefs:sketch#5:point#7";
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         assert!(matches!(admitted_endpoint_refs(&ctx, &sketch, [7]),
             Err(cadmpeg_core::CodecError::ResourceLimit(refusal))

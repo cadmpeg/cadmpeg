@@ -273,7 +273,7 @@ mod full_turn_carrier_allocation_tests {
                 reversed: false,
                 boundary_type: crate::surface::BoundaryType::Code00,
                 next_surface: 0,
-                offset: id as usize,
+                offset: usize::try_from(id).expect("fixture index fits usize"),
             });
             ir.model.surfaces.push(Surface {
                 id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("surface ID"),
@@ -771,7 +771,7 @@ mod allocation_tests {
         let scan = generator_scan();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let error =
@@ -788,7 +788,7 @@ mod allocation_tests {
     fn unresolved_section_profile_identity_refuses_retained_bytes() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error =
             unresolved_feature_profile_ref(&ctx, 50, "creo unresolved section profile identity")
@@ -816,7 +816,7 @@ mod allocation_tests {
     fn unresolved_named_profile_identity_refuses_retained_bytes() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "creo:model:feature#50".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("creo:model:feature#50".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error =
             unresolved_feature_profile_ref(&ctx, 50, "creo unresolved named profile identity")

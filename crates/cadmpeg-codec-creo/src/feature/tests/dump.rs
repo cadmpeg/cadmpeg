@@ -302,7 +302,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
-    let offset = scan.features.definitions[0].offset as u64;
+    let offset = cadmpeg_core::decode::u64_from_index(scan.features.definitions[0].offset);
     let variable_offset = scan.features.definitions[0]
         .variables
         .as_ref()
@@ -1123,7 +1123,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         &result.source_fidelity().annotations,
         "creo:model:feature#8053",
         "creo:DEPDB_DATA",
-        operation.offset as u64,
+        cadmpeg_core::decode::u64_from_index(operation.offset),
         "feature_recipe",
         Exactness::ByteExact,
     );

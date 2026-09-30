@@ -1642,19 +1642,19 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                 curve,
                 "crv_id",
                 IntegerPayload::Scalar { value: id },
-                id as usize,
+                usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "type",
                 IntegerPayload::Scalar { value: 0 },
-                100 + id as usize,
+                100 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "feat_id",
                 IntegerPayload::Scalar { value: 7 },
-                200 + id as usize,
+                200 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
@@ -1670,31 +1670,31 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
                     ],
                 )
                 .expect("complete numeric array"),
-                300 + id as usize,
+                300 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "crv_hdr_geom_ptr[0]",
                 IntegerPayload::Scalar { value: faces[0] },
-                400 + id as usize,
+                400 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "crv_hdr_geom_ptr[1]",
                 IntegerPayload::Scalar { value: faces[1] },
-                500 + id as usize,
+                500 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "next_crv_hdr_ptr[0]",
                 IntegerPayload::Scalar { value: next[0] },
-                600 + id as usize,
+                600 + usize::try_from(id).expect("fixture index fits usize"),
             ),
             integer(
                 curve,
                 "next_crv_hdr_ptr[1]",
                 IntegerPayload::Scalar { value: next[1] },
-                700 + id as usize,
+                700 + usize::try_from(id).expect("fixture index fits usize"),
             ),
         ]
     }

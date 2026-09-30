@@ -1244,7 +1244,7 @@ mod tests {
     fn principal_unit_attribute_refuses_before_retaining_token() {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = ("principal_unit".len() + "unknown:7".len() - 1) as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("principal_unit".len() + "unknown:7".len() - 1);
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root is admitted");
         let mut attributes = BTreeMap::new();

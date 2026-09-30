@@ -279,7 +279,7 @@ fn placed_outline_refuses_matrix_frame_id_node() {
 fn unique_positional_frame_fixture() -> (SurfaceParameterRecord, SurfaceRow) {
     let slot = |value, offset| SurfaceParameterScalar {
         value: Some(value),
-        raw: vec![offset as u8],
+        raw: vec![u8::try_from(offset).expect("fixture value fits u8")],
         offset,
     };
     let record = SurfaceParameterRecord {

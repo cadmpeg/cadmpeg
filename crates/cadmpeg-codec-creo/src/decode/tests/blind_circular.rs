@@ -96,7 +96,7 @@ fn blind_circular_sweep_requires_materialized_cap_and_cylinder_entries() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features.entity_tables.push(table);
@@ -230,7 +230,7 @@ fn two_cap_circular_sweep_joins_materialized_caps_and_one_cylinder() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend([
         row(828, crate::surface::SurfaceKind::Plane),
@@ -846,7 +846,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     let mut ir = CadIr::empty();
@@ -891,7 +891,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         if let Some(radius) = parameter {
             let first = crate::surface::SurfaceParameterScalar {
@@ -957,8 +957,8 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                         crate::surface::SurfaceKind::Cylinder,
                     ),
                     boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-                    offset: id as usize,
-                    body_offset: id as usize + 1,
+                    offset: usize::try_from(id).expect("fixture index fits usize"),
+                    body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
                 });
         }
     }
@@ -1042,7 +1042,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features
@@ -1150,7 +1150,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     scan.features

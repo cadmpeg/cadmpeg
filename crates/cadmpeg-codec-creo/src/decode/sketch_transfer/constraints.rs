@@ -2764,7 +2764,7 @@ mod tests {
             (sketch.as_str(), "creo equation sketch identity"),
             (native_ref, "creo sketch native reference"),
         ] {
-            total += text.len() as u64;
+            total += cadmpeg_core::decode::u64_from_index(text.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = total - 1;
@@ -2838,7 +2838,7 @@ mod tests {
         ];
         let mut total = 0u64;
         for (field, operation) in fields {
-            total += field.len() as u64;
+            total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = total - 1;
@@ -2907,7 +2907,7 @@ mod tests {
         ];
         let mut total = 0u64;
         for (field, operation) in fields {
-            total += field.len() as u64;
+            total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = DecodeArena::new();
             let mut policy = DecodePolicy::service();
             policy.limits.max_retained_bytes = total - 1;
@@ -3075,7 +3075,7 @@ mod tests {
         for (limit, operation) in [
             (0, "creo native relation property value"),
             (
-                "7".len() as u64 + "dimension_id".len() as u64 - 1,
+                cadmpeg_core::decode::u64_from_index("7".len()) + cadmpeg_core::decode::u64_from_index("dimension_id".len()) - 1,
                 "creo native relation property key",
             ),
         ] {
@@ -3113,11 +3113,11 @@ mod tests {
         let native_ref = "creo:featdefs:sketch#5";
         for (limit, operation) in [
             (
-                "relat_ptr".len() as u64 - 1,
+                cadmpeg_core::decode::u64_from_index("relat_ptr".len()) - 1,
                 "creo native relation operand kind",
             ),
             (
-                "relat_ptr".len() as u64 + native_ref.len() as u64 - 1,
+                cadmpeg_core::decode::u64_from_index("relat_ptr".len()) + cadmpeg_core::decode::u64_from_index(native_ref.len()) - 1,
                 "creo native relation operand reference",
             ),
         ] {
@@ -3166,7 +3166,7 @@ mod tests {
         );
         assert!(properties.is_empty());
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = "equation_id".len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("equation_id".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
             .expect_err("property key exceeds retained cap");
@@ -3175,7 +3175,7 @@ mod tests {
             if resource.dimension == ResourceDimension::RetainedBytes
                 && resource.operation == "creo native equation property keys")
         );
-        policy.limits.max_retained_bytes = "equation_id".len() as u64;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index("equation_id".len());
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = insert_native_equation_property(&ctx, &mut properties, "equation_id", 7)
             .expect_err("property value exceeds remaining retained cap");
@@ -3212,9 +3212,9 @@ mod tests {
         }
         for (cap, operation) in [
             (0, "creo equation operand kind"),
-            ("eqtn_arr".len() as u64, "creo equation operand field"),
+            (cadmpeg_core::decode::u64_from_index("eqtn_arr".len()), "creo equation operand field"),
             (
-                ("eqtn_arr".len() + "equation_id".len()) as u64,
+                cadmpeg_core::decode::u64_from_index("eqtn_arr".len() + "equation_id".len()),
                 "creo equation operand reference",
             ),
         ] {
@@ -3277,7 +3277,7 @@ mod tests {
                 && resource.operation == "creo emitted parameter ID nodes")
         );
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = close_sketch_constraint_parameter_references(&ctx, &mut document)
             .expect_err("ID copy exceeds retained cap");

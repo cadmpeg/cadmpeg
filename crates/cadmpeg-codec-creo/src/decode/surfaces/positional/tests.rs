@@ -292,8 +292,8 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
             ),
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: surface_id as usize,
-        body_offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces
         .parameters

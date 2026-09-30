@@ -640,7 +640,7 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
         offset: 0,
     };
     let segment_table = |rows: Vec<FeatureSegment>| FeatureSegmentTable {
-        declared_count: rows.len() as u32,
+        declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
         has_elided_prototype: false,
         entity_ref: None,
         rows: (rows)
@@ -669,7 +669,7 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     let variables = |points: Vec<FeatureSectionPoint>, rows: Vec<FeatureVariableRow>| {
         with_points(
             FeatureVariableTable {
-                declared_count: rows.len() as u32,
+                declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                 entity_ref: None,
                 rows,
                 offset: 0,
@@ -714,7 +714,7 @@ fn trim_vertex_intersection_resolves_settled_carrier_pairs() {
     derived_radius
         .rows
         .retain(|row| row.variable_type != VariableType::Radius);
-    derived_radius.declared_count = derived_radius.rows.len() as u32;
+    derived_radius.declared_count = u32::try_from(derived_radius.rows.len()).expect("fixture value fits u32");
     assert_eq!(
         entity_intersection(&[9, 10], Some(&bounded_unique), Some(&derived_radius)),
         Some([1.0, 0.0])

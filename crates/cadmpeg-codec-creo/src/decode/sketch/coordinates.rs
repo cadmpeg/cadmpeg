@@ -1581,7 +1581,7 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1671,7 +1671,7 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1762,7 +1762,7 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1834,7 +1834,7 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };
@@ -1913,7 +1913,7 @@ mod tests {
             \xe0\x01id\0\x00\xf1\xf7\x80\x9f\xe2"
             .to_vec();
         let mut equation = |id, function, arguments: &[u8]| {
-            body.extend_from_slice(&[id, function, 0xf8, arguments.len() as u8]);
+            body.extend_from_slice(&[id, function, 0xf8, u8::try_from(arguments.len()).expect("fixture value fits u8")]);
             body.extend_from_slice(arguments);
             body.extend_from_slice(b"\xf6\xe2");
         };

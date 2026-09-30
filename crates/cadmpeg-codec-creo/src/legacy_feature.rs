@@ -510,7 +510,7 @@ mod tests {
             directions: [1, 1],
             faces: [None, None],
             next_edges: [0, 0],
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         }
     }
 

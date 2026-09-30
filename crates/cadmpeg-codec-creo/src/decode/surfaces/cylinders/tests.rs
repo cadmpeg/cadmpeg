@@ -400,8 +400,8 @@ fn split_outline_scan() -> crate::container::ContainerScan<'static> {
             crate::surface::InlineSurfaceCarrier::CylinderBounds(bounds),
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: surface_id as usize,
-        body_offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces.parameters.extend([
         parameter(2, [[-0.3125, 1.3125], [0.3125, 1.625]]),
@@ -1117,8 +1117,8 @@ fn unresolved_round_type24_frame_is_not_admitted_as_constant_cylinder() {
             },
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
-        offset: surface_id as usize,
-        body_offset: surface_id as usize,
+        offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces
         .parameters
@@ -1468,7 +1468,7 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         }));
     scan.surfaces
         .parameters
@@ -1499,8 +1499,8 @@ fn counterbore_dimension_gate_scan(radius: f64) -> crate::container::ContainerSc
         entity_id,
         payload: crate::feature::entity::entry_payload(200, Some(source_entity_id), None, None),
         prefixed: false,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize + 1,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize") + 1,
     };
     scan.features.entity_tables.push(
         crate::feature::entity::FeatureEntityTable::new(

@@ -1052,7 +1052,7 @@ mod tests {
             "VisibGeom surface row 7 states no cubic-extrusion plane generator carrier: first lane; second lane"
         );
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = service[0].message.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(service[0].message.len()) - 1;
         let error = generator_loss_with_policy(policy).expect_err("message exceeds retained cap");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(refusal)

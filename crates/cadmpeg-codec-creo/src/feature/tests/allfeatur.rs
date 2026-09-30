@@ -110,7 +110,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         &result.source_fidelity().annotations,
         tables[0].id(),
         "creo:AllFeatur",
-        table.offset as u64,
+        cadmpeg_core::decode::u64_from_index(table.offset),
         "feature_entity_table",
         Exactness::ByteExact,
     );
@@ -297,7 +297,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(scan.features.entity_references[0].source_entity_id, Some(1));
     assert_eq!(scan.features.entity_references[0].target_entity_id, 2);
     assert!(
-        (scan.features.entity_references[0].target_entity_id as usize)
+        (usize::try_from(scan.features.entity_references[0].target_entity_id).expect("fixture index fits usize"))
             < scan.features.entities.len()
     );
     assert_eq!(scan.features.entity_references[1].source_entity_id, Some(2));
@@ -330,7 +330,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
         &result.source_fidelity().annotations,
         entities[0].id(),
         "creo:AllFeatur",
-        scan.features.entities[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.entities[0].offset),
         "feature_entity",
         Exactness::ByteExact,
     );
@@ -507,7 +507,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
         &result.source_fidelity().annotations,
         tables[0].id(),
         "creo:AllFeatur",
-        scan.features.geometry_tables[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.geometry_tables[0].offset),
         "feature_geometry_table",
         Exactness::ByteExact,
     );
@@ -560,7 +560,7 @@ fn scan_decodes_complete_allfeatur_loop_history_rosters() {
         &result.source_fidelity().annotations,
         records[0].id(),
         "creo:AllFeatur",
-        scan.features.loop_history_entries[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.loop_history_entries[0].offset),
         "feature_loop_history_entry",
         Exactness::ByteExact,
     );
@@ -797,7 +797,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         &result.source_fidelity().annotations,
         "creo:featdefs:feature_definition#2",
         "creo:DEPDB_DATA",
-        definition.offset as u64,
+        cadmpeg_core::decode::u64_from_index(definition.offset),
         "feature_definition_record",
         Exactness::ByteExact,
     );

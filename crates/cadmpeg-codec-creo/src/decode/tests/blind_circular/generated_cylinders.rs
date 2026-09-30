@@ -171,7 +171,7 @@ fn bounded_generated_cylinders_define_a_blind_extrusion() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows.extend([

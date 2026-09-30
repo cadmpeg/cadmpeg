@@ -175,7 +175,7 @@ fn equation_function_ten_transfers_axis_alignment_and_solves_missing_ordinate() 
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let mut definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -500,7 +500,7 @@ fn equation_function_zero_emits_polar_distance_constraint() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -694,7 +694,7 @@ fn equation_function_six_emits_fixed_distance_constraint() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -869,7 +869,7 @@ fn equation_functions_thirty_one_and_forty_two_emit_coordinate_constraints() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let sketch =
         cadmpeg_ir::sketches::SketchId::mint("creo:model:sketch#40").expect("valid test fixture");
@@ -1167,7 +1167,7 @@ fn equation_function_thirty_three_emits_equal_distance_pairs() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1323,7 +1323,7 @@ fn equation_function_thirty_five_emits_point_on_line() {
         radius2_ref: None,
         external_id,
         body: Vec::new(),
-        offset: external_id as usize,
+        offset: usize::try_from(external_id).expect("fixture index fits usize"),
     };
     let definition = crate::feature::definitions::FeatureDefinition {
         identity: crate::feature::definitions::DefinitionIdentity::Parsed {

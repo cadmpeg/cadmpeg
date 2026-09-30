@@ -149,7 +149,7 @@ fn generated_table_cap_classes_bind_the_ordered_cap_planes() {
         reversed: id == 31,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let plane = |id, z| Surface {
         id: SurfaceId::mint(format!("creo:visibgeom:surface#{id}")).expect("identity grammar"),
@@ -220,7 +220,7 @@ fn rectilinear_generated_planes_define_one_axial_extrusion_family() {
             reversed,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let mut scan = crate::container::scan_bytes_ok(Vec::new());
         scan.surfaces.rows.extend([

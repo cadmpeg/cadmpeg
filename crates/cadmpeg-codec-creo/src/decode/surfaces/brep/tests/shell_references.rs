@@ -65,7 +65,7 @@ fn brep_shell_face_references_refuse_collection_limit() {
 fn brep_shell_face_identities_refuse_retained_limit() {
     let shell_id = ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1);
     assert_refusal(
-        &references_result(16, shell_id.as_str().len() as u64)
+        &references_result(16, cadmpeg_core::decode::u64_from_index(shell_id.as_str().len()))
             .err()
             .expect("face ID refused"),
         ResourceDimension::RetainedBytes,
@@ -86,7 +86,7 @@ fn brep_shell_edge_references_refuse_collection_limit() {
 fn brep_shell_edge_identities_refuse_retained_limit() {
     let shell_id = ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1);
     let face_id = FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5);
-    let limit = (shell_id.as_str().len() + face_id.as_str().len()) as u64;
+    let limit = cadmpeg_core::decode::u64_from_index(shell_id.as_str().len() + face_id.as_str().len());
     assert_refusal(
         &references_result(16, limit).err().expect("edge ID refused"),
         ResourceDimension::RetainedBytes,
