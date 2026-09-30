@@ -8,7 +8,7 @@ use crate::records::{
 use crate::resolved_features::relation_loci::profile_loci_by_marker;
 use crate::resolved_features::relation_loci::typed_relation_definition;
 use crate::resolved_features::relation_loci::unique_linked_endpoint_locus;
-use crate::resolved_features::transforms::marker_entities;
+use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::typed_relations::typed_marker_relation_definition;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::{
@@ -126,7 +126,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_entities("reference", &markers, &joins),
+        marker_entities(&cadmpeg_test_support::service_decode_context(), "reference", &markers, &joins, MarkerEntityFilter::All).unwrap(),
         vec![first.clone()]
     );
     let mut wrapper = marker("wrapper", None);
@@ -143,7 +143,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(wrapper.id(), &wrapper);
     markers.insert(nested_reference.id(), &nested_reference);
     assert_eq!(
-        marker_entities("nested-reference", &markers, &joins),
+        marker_entities(&cadmpeg_test_support::service_decode_context(), "nested-reference", &markers, &joins, MarkerEntityFilter::All).unwrap(),
         vec![first.clone()]
     );
     let mut cycle = marker("cycle", None);
@@ -155,7 +155,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         }],
     );
     markers.insert(cycle.id(), &cycle);
-    assert!(marker_entities("cycle", &markers, &joins).is_empty());
+    assert!(marker_entities(&cadmpeg_test_support::service_decode_context(), "cycle", &markers, &joins, MarkerEntityFilter::All).unwrap().is_empty());
     assert_eq!(
         typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), markers["reference"], &markers, &joins,).unwrap(),
         Some(SketchConstraintDefinitionInput::Vertical {
