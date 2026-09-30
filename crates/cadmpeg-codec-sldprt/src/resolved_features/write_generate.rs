@@ -647,7 +647,7 @@ fn unique_generated_entity_marker(
 ) -> Result<u16, cadmpeg_core::CodecError> {
     for (_, point, kind, local_id) in markers
         .iter()
-        .filter(|(candidate, ..)| locus_entity(candidate) == *entity)
+        .filter(|(candidate, ..)| locus_entity(candidate) == entity)
     {
         let mut candidates = ir
             .model

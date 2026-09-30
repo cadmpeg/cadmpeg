@@ -397,7 +397,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                             sketch_entities
                                 .iter()
                                 .any(|entity| {
-                                    entity.sketch == *sketch && entity.id() == &locus_entity(&locus)
+                                    entity.sketch == *sketch && entity.id() == locus_entity(&locus)
                                 })
                                 .then_some(locus)
                         }
@@ -788,7 +788,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             for locus in loci {
                 let Some(entity) = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id() == &locus_entity(&locus))
+                    .find(|candidate| candidate.id() == locus_entity(&locus))
                 else {
                     return Some(native());
                 };
@@ -840,7 +840,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             for locus in loci {
                 let entity = sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id() == &locus_entity(&locus));
+                    .find(|candidate| candidate.id() == locus_entity(&locus));
                 if matches!(locus, SketchLocus::Entity(_))
                     && entity.is_some_and(|entity| {
                         matches!(
@@ -849,7 +849,9 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                         )
                     })
                 {
-                    if axis.replace(locus_entity(&locus)).is_some() {
+                    if axis.replace(match locus {
+                        SketchLocus::Entity(entity) | SketchLocus::Start(entity) | SketchLocus::End(entity) | SketchLocus::Center(entity) => entity,
+                    }).is_some() {
                         return Some(native());
                     }
                 } else {
@@ -1350,7 +1352,7 @@ pub(super) fn unique_axis_aligned_linked_loci(
     let point = |locus: &SketchLocus| {
         let entity = sketch_entities
             .iter()
-            .find(|entity| entity.id() == &locus_entity(locus))?;
+            .find(|entity| entity.id() == locus_entity(locus))?;
         sketch_entity_loci(entity)
             .into_iter()
             .find_map(|(point, candidate)| (candidate == *locus).then_some(point))

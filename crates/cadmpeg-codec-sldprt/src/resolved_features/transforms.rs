@@ -862,12 +862,12 @@ pub(super) fn locus_key(locus: &SketchLocus) -> (&str, u8) {
     }
 }
 
-pub(super) fn locus_entity(locus: &SketchLocus) -> SketchEntityId {
+pub(super) fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
     match locus {
         SketchLocus::Entity(entity)
         | SketchLocus::Start(entity)
         | SketchLocus::End(entity)
-        | SketchLocus::Center(entity) => entity.clone(),
+        | SketchLocus::Center(entity) => entity,
     }
 }
 
@@ -893,6 +893,7 @@ fn marker_entities_inner(
     let direct = loci_by_marker.get(marker_id).map(|loci| {
         loci.iter()
             .map(locus_entity)
+            .cloned()
             .collect::<HashSet<SketchEntityId>>()
     });
     if direct.as_ref().is_some_and(|entities| entities.len() == 1) {
