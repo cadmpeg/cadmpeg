@@ -130,26 +130,37 @@ pub(super) fn linked_midpoint_operands(
 }
 
 pub(super) fn relation_operand_loci(
-    relation: &SketchInputEntity,
-    markers_by_id: &HashMap<&str, &SketchInputEntity>,
-    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<Vec<SketchLocus>> {
-    let owners = relation_owner_markers(relation, markers_by_id);
-    let loci = relation
-        .links()
-        .iter()
-        .filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
-        .map(|link| link.entity_ref.as_str())
-        .chain(owners.iter().map(|owner| owner.id()))
-        .map(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
-        .collect::<Option<Vec<_>>>()?;
-    let loci = loci.into_iter().fold(Vec::new(), |mut unique, locus| {
-        if !unique.contains(&locus) {
-            unique.push(locus);
-        }
-        unique
-    });
-    (!loci.is_empty()).then_some(loci)
+    ctx: &DecodeContext<'_>, relation: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>, loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Result<Option<Vec<SketchLocus>>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT marker relation operand loci";
+    let owners = relation_owner_markers(ctx, relation, markers_by_id)?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(markers_by_id.len()), OPERATION)?;
+    let marker_bytes = markers_by_id.keys().try_fold(0u64, |bytes, key| bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.len())))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    for link in relation.links() {
+        ctx.charge_work(marker_bytes.checked_add(cadmpeg_core::decode::u64_from_index(link.entity_ref.len()))
+            .and_then(|bytes| bytes.checked_add(cadmpeg_core::decode::u64_from_index(relation.id().len())))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(64))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    }
+    let mut loci = Vec::new();
+    let mut locus_bytes = 0u64;
+    for marker in relation.links().iter().filter(|link| relation_link_is_geometric_operand(relation, link, markers_by_id))
+        .map(|link| link.entity_ref.as_str()).chain(owners.iter().map(|owner| owner.id())) {
+        let Some(locus) = marker_point_locus(marker, markers_by_id, loci_by_marker) else { return Ok(None); };
+        let bytes = cadmpeg_core::decode::u64_from_index(locus_entity(&locus).as_str().len());
+        ctx.charge_work(locus_bytes.checked_add(bytes).and_then(|bytes| bytes.checked_mul(4))
+            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(loci.len()).checked_add(1)?
+                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SketchLocus>()))?))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if loci.contains(&locus) { continue; }
+        let next_bytes = locus_bytes.checked_add(bytes).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.reserve_collection_vec(&mut loci, 1, OPERATION)?;
+        loci.push(locus);
+        locus_bytes = next_bytes;
+    }
+    Ok((!loci.is_empty()).then_some(loci))
 }
 
 pub(super) fn linked_single_entities(

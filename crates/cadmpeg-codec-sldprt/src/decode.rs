@@ -2062,21 +2062,14 @@ fn unprojected_sketch_relation_records(
                         })
                 })
                 .count();
-            let markers = lane
-                .sketch_entities
-                .iter()
-                .filter(|marker| {
-                    marker
-                        .feature_ref
-                        .as_deref()
-                        .is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
-                        && crate::resolved_features::typed_relations::marker_owns_constraint(
-                            marker,
-                            &markers_by_id,
-                        )
-                        && !projected.contains(marker.id())
-                })
-                .count();
+            let mut markers = 0;
+            for marker in &lane.sketch_entities {
+                if marker.feature_ref.as_deref().is_some_and(|feature_ref| sketch_feature_refs.contains(feature_ref))
+                    && crate::resolved_features::typed_relations::marker_owns_constraint(ctx, marker, &markers_by_id)?
+                    && !projected.contains(marker.id()) {
+                    markers += 1;
+                }
+            }
             total += instances + bindings + markers;
     }
     Ok(total)
@@ -2104,9 +2097,9 @@ fn multiply_projected_sketch_relation_records(
         }
         for marker in &lane.sketch_entities {
             if crate::resolved_features::typed_relations::marker_owns_constraint(
-                marker,
+                ctx, marker,
                 &markers_by_id,
-            ) {
+            )? {
                 insert_charged_set(
                     ctx,
                     &mut native_relation_ids,

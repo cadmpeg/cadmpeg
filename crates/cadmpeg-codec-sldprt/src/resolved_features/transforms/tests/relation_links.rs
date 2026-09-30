@@ -48,7 +48,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     ]);
 
     assert_eq!(
-        relation_owner_markers(&relation, &markers),
+        relation_owner_markers(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap(),
         vec![&owner, &point]
     );
     let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
@@ -94,7 +94,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation)]);
 
-    assert!(!marker_owns_constraint(&relation, &markers));
+    assert!(!marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
     assert_eq!(
         typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap(),
         None
@@ -121,7 +121,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation), (collision.id(), &collision)]);
 
-    assert!(!marker_owns_constraint(&relation, &markers));
+    assert!(!marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
     assert_eq!(
         typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap(),
         None
@@ -175,7 +175,7 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
 
-    assert!(marker_owns_constraint(&relation, &markers));
+    assert!(marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
     assert_eq!(
         typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
             &relation,
@@ -334,7 +334,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
     ]);
 
     assert_eq!(
-        relation_operand_loci(&relation, &markers, &loci),
+        relation_operand_loci(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
         Some(vec![
             SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
             SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-point").unwrap()),
