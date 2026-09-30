@@ -413,7 +413,7 @@ fn cyclic_history_native() -> crate::native::F3dNative {
 
 #[test]
 fn timeline_forward_history_finding_refuses_collection_limit() {
-    let error = timeline_error_with(forward_history_native(), 15, u64::MAX);
+    let error = timeline_error_with(forward_history_native(), 21, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -422,7 +422,7 @@ fn timeline_forward_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_forward_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(forward_history_native(), u64::MAX, 0);
+    let error = timeline_error_with(forward_history_native(), u64::MAX, 330);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")
@@ -431,7 +431,7 @@ fn timeline_forward_history_entity_refuses_retained_limit() {
 
 #[test]
 fn timeline_cyclic_history_finding_refuses_collection_limit() {
-    let error = timeline_error_with(cyclic_history_native(), 12, u64::MAX);
+    let error = timeline_error_with(cyclic_history_native(), 21, u64::MAX);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "collect F3D native validation findings")
@@ -440,7 +440,7 @@ fn timeline_cyclic_history_finding_refuses_collection_limit() {
 
 #[test]
 fn timeline_cyclic_history_entity_refuses_retained_limit() {
-    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 0);
+    let error = timeline_error_with(cyclic_history_native(), u64::MAX, 457);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "retain F3D validation entity")

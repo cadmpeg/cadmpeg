@@ -377,5 +377,7 @@ cadmpeg_core::named_optional_field!(deserialize_form, RadiusForm, "form");
 cadmpeg_core::named_optional_field!(deserialize_tangency_weight, FiniteReal, "tangency_weight");
 cadmpeg_core::named_optional_field!(deserialize_chamfer_spec_form, ChamferForm, "form");
 
+mod decode_clone;
+
 #[cfg(test)]
 mod tests;

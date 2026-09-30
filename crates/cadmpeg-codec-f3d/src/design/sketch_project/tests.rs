@@ -1,29 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![allow(clippy::cloned_ref_to_slice_refs)]
-use super::{
-    project_sketch_design, project_spatial_sketch_constraints, project_spatial_sketch_design,
-    sketch_text_horizontal_alignment, sketch_text_vertical_alignment,
-};
+use super::project_sketch_design;
+use super::project_spatial_sketch_constraints;
+use super::project_spatial_sketch_design;
+use super::sketch_text_horizontal_alignment;
+use super::sketch_text_vertical_alignment;
 use crate::design::constraints::project_sketch_constraints;
-use crate::design::dimensions::{exact_atomic_constraint, point_lies_on_sketch_geometry};
-use crate::design::geometry::{point_on_sketch_entity, sketch_entity_endpoints};
+use crate::design::dimensions::exact_atomic_constraint;
+use crate::design::dimensions::point_lies_on_sketch_geometry;
+use crate::design::geometry::point_on_sketch_entity;
+use crate::design::geometry::sketch_entity_endpoints;
 use crate::ids::neutral_sketch_curve_id;
-use crate::records::sketch_geometry::{SketchCurveGeometry, SketchSurface};
+use crate::records::sketch_geometry::SketchCurveGeometry;
+use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_geometry::SketchPoint;
+use crate::records::sketch_geometry::SketchSurface;
+use crate::records::sketch_geometry::SketchText;
+use crate::records::sketch_placement::DesignSketchPlacement;
+use crate::records::sketch_placement::DesignSketchVisibility;
 use crate::records::sketch_relations::SketchConstraintKind;
-use crate::records::{
-    sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchText},
-    sketch_placement::{DesignSketchPlacement, DesignSketchVisibility},
-    sketch_relations::{SketchRelation, SketchRelationMember, SketchRelationReturnMember},
-};
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{
-    SketchConstraintDefinitionInput, SketchCoordinateAxis, SketchEntity, SketchEntityId,
-    SketchGeometryDefinition,
-};
-use cadmpeg_ir::sketches::{
-    SketchTextHorizontalAlignment as Horizontal, SketchTextVerticalAlignment as Vertical,
-};
+use crate::records::sketch_relations::SketchRelation;
+use crate::records::sketch_relations::SketchRelationMember;
+use crate::records::sketch_relations::SketchRelationReturnMember;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::sketches::SketchCoordinateAxis;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchTextHorizontalAlignment as Horizontal;
+use cadmpeg_ir::sketches::SketchTextVerticalAlignment as Vertical;
 
 const EPS_POINT_PROJECTION: f64 = 1.0e-6;
 
@@ -539,12 +548,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         .iter()
         .find(|entity| entity.native_ref.as_deref() == Some("f3d:native:curve#218"))
         .expect("non-clamped NURBS projects");
-    let endpoints = sketch_entity_endpoints(nurbs).expect("non-clamped NURBS endpoints");
+    let endpoints = sketch_entity_endpoints(nurbs, None)
+        .unwrap()
+        .expect("non-clamped NURBS endpoints");
     assert_eq!(endpoints, [Point2::new(1.0, 0.0), Point2::new(3.0, 2.0)]);
-    assert!(point_on_sketch_entity(Point2::new(2.0, 1.0), nurbs, 1.0e-9)
-        .expect("resource allocation did not fail"));
     assert!(
-        point_lies_on_sketch_geometry(Point2::new(2.0, 1.0), &nurbs.geometry)
+        point_on_sketch_entity(None, Point2::new(2.0, 1.0), nurbs, EPS_CONTAINMENT_DISTANCE)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        point_lies_on_sketch_geometry(None, Point2::new(2.0, 1.0), &nurbs.geometry)
             .expect("resource allocation did not fail")
     );
 
@@ -689,11 +702,10 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     )
     .expect("valid relation definition");
     let constraints = project_sketch_constraints(
+        None,
         &placements,
         &[],
-        &points,
-        &curves,
-        &[],
+        (&points, &curves, &[]),
         &[
             relation(700, 217),
             horizontal_point,
@@ -703,7 +715,8 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
             spline_group,
         ],
         &entities,
-    );
+    )
+    .unwrap();
     assert!(matches!(
         constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { .. }
@@ -780,16 +793,20 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(point.geometry_ref.clone())
     .with_endpoint_refs(point.endpoint_refs.clone());
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::V
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
+        exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate { relation }) if relation.axis() == SketchCoordinateAxis::U
     ));
-    assert!(exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none());
+    assert!(
+        exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point], None)
+            .unwrap()
+            .is_none()
+    );
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
+        exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Midpoint { .. })
     ));
     for kind in [
@@ -797,7 +814,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, point]).is_none());
+        assert!(exact_atomic_constraint(kind, &[line, point], None)
+            .unwrap()
+            .is_none());
     }
     let other_line = SketchEntity::new(
         SketchEntityId::mint("generated:test:line#other").unwrap(),
@@ -809,15 +828,16 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
     .with_geometry_ref(line.geometry_ref.clone())
     .with_endpoint_refs(line.endpoint_refs.clone());
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Tangent, &[line, &other_line], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Tangent { .. })
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Curvature, &[line, &other_line], None)
+            .unwrap(),
         Some(SketchConstraintDefinitionInput::Curvature { .. })
     ));
     assert!(matches!(
-        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line]),
+        exact_atomic_constraint(SketchConstraintKind::Equal, &[line, &other_line], None).unwrap(),
         Some(SketchConstraintDefinitionInput::Equal { .. })
     ));
     for kind in [
@@ -829,7 +849,9 @@ fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         SketchConstraintKind::Curvature,
         SketchConstraintKind::Equal,
     ] {
-        assert!(exact_atomic_constraint(kind, &[line, line]).is_none());
+        assert!(exact_atomic_constraint(kind, &[line, line], None)
+            .unwrap()
+            .is_none());
     }
 }
 
@@ -1197,13 +1219,15 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
     let constraints = project_spatial_sketch_constraints(
+        None,
         &[placement],
         &relations,
         &points,
         &curves,
         &surfaces,
         &entities,
-    );
+    )
+    .unwrap();
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),
@@ -1312,15 +1336,6 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
     assert_eq!(spatial_entities.len(), 1);
 }
 
-#[test]
-fn sketch_nurbs_refuses_nonpositive_weight_before_projection() {
-    let error = crate::records::sketch_geometry::SketchNurbsPoles::from_wire(
-        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
-        vec![1.0, 0.0],
-    )
-    .expect_err("nonpositive weight must be refused at admission");
-    assert!(
-        error.contains("weight is not positive and finite"),
-        "{error}"
-    );
-}
+const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
+
+mod projection_limits;

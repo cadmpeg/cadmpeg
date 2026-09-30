@@ -446,30 +446,11 @@ fn record_error_reason(
     name: &str,
     description: &'static str,
 ) -> Result<String, StreamFailure> {
-    let length = "record `"
-        .len()
-        .checked_add(name.len())
-        .and_then(|length| length.checked_add("` ".len()))
-        .and_then(|length| length.checked_add(description.len()))
-        .ok_or_else(|| ctx.refuse_codec_limit("SAT record error text", u64::MAX, u64::MAX))?;
-    let requested = cadmpeg_core::decode::u64_from_index(length);
-    ctx.charge_retained(requested, "SAT record error text")?;
-    let mut reason = String::new();
-    reason.try_reserve(length).map_err(|_| {
-        cadmpeg_core::CodecError::ResourceLimit(
-            cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                cadmpeg_core::decode::ResourceDimension::Codec("SAT record error text"),
-                0,
-                requested,
-                "SAT record error text",
-            ),
-        )
-    })?;
-    reason.push_str("record `");
-    reason.push_str(name);
-    reason.push_str("` ");
-    reason.push_str(description);
-    Ok(reason)
+    ctx.format_retained(
+        format_args!("record `{name}` {description}"),
+        "SAT record error text",
+    )
+    .map_err(StreamFailure::Resource)
 }
 
 /// Parse a complete text stream into its header and typed record table.
@@ -551,22 +532,8 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
                 Prim::Close => subtype_depth -= 1,
                 _ => {}
             }
-            ctx.charge_collection_items(1, "frame SAT primitive")?;
-            scratch.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
-                Prim,
-            >()))?;
             ctx.charge_work(1, "lex SAT primitive")?;
-            prims.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::Codec("frame SAT primitive"),
-                        0,
-                        1,
-                        "frame SAT primitive",
-                    ),
-                )
-            })?;
-            prims.push(prim);
+            ctx.push_scoped_vec(&mut scratch, &mut prims, prim, "frame SAT primitive")?;
         }
         let head = name.split_once('-').map_or(name.as_str(), |(head, _)| head);
         let candidates = head_shapes(head).len() + 1;
@@ -614,22 +581,13 @@ pub fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<TextStream, Stream
             cadmpeg_core::decode::u64_from_index(tokens.len() * std::mem::size_of::<Token>()),
             "retain SAT typed tokens",
         )?;
-        ctx.charge_collection_items(1, "frame SAT record")?;
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(records.len() + 1),
             &mut admitted_entities,
             "admit SAT native records",
         )?;
-        records.try_reserve(1).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("frame SAT record"),
-                    0,
-                    1,
-                    "frame SAT record",
-                ),
-            )
-        })?;
+
+        ctx.reserve_vec(&mut records, 1, "frame SAT record")?;
         records.push(Record {
             index: records.len(),
             name,

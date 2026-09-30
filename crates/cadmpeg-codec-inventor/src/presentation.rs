@@ -14,7 +14,7 @@ use cadmpeg_ir::topology::Color;
 use crate::assembly::count_unresolved;
 use crate::pmdc::{type_id_string, PmDcPairedReferenceList, PmDcReference};
 use crate::record_identity::Located;
-use crate::record_issue::{admit_issue_detail, RecordIssue, RecordIssueFamily};
+use crate::record_issue::{RecordIssue, RecordIssueFamily};
 use crate::rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind};
 
 const DEFAULT_STYLE_TYPE: [u8; 16] = [
@@ -686,7 +686,10 @@ pub(crate) fn inventory<'a>(
                 }
                 ctx.charge_collection_items(1, "admit Inventor presentation issue")?;
                 ctx.charge_entities(1, "admit Inventor presentation issue")?;
-                admit_issue_detail(ctx, &error, "retain Inventor presentation issue detail")?;
+                ctx.charge_formatted_retained(
+                    format_args!("{error}"),
+                    "retain Inventor presentation issue detail",
+                )?;
                 ctx.charge_retained(
                     cadmpeg_core::decode::u64_from_index(segment.pair.token.as_str().len()),
                     "retain Inventor presentation issue token",

@@ -415,11 +415,8 @@ pub(super) fn consolidated_vertex_identities(
                 index
             } else {
                 let index = identities.len();
-                let id = crate::resource::format_usize_id(
-                    ctx,
-                    "catia:consolidated:vertex-identity#",
-                    index,
-                    0,
+                let id = ctx.format_retained(
+                    format_args!("catia:consolidated:vertex-identity#{index:00}"),
                     "catia_native_vertex_identity_id",
                 )?;
                 let mut reference_values = Vec::new();

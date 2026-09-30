@@ -16,13 +16,17 @@ pub(crate) mod edge_resolve;
 pub(crate) mod face_resolve;
 pub(crate) mod feature_project;
 pub(crate) mod geometry;
+mod identity;
 pub(crate) mod presentation;
 pub(crate) mod profile_select;
+mod relation_kinds;
 pub(crate) mod sketch_project;
+mod sort;
 #[cfg(test)]
 pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
+mod text;
 
 use crate::records::recipes::ConstructionRecipeKind;
 
@@ -170,3 +174,5 @@ pub(crate) const fn construction_recipe_family_name_len(kind: ConstructionRecipe
         ConstructionRecipeKind::Vertex => b"vertex_recipe_data".len(),
     }
 }
+
+mod json_value;

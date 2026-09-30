@@ -66,16 +66,13 @@ fn take_lp_utf8_capped(
     else {
         return Ok(None);
     };
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(count),
-        "Protein decoded string",
-    )?;
-    let value = value.to_owned();
+    let value = ctx.copy_retained_text(value, "Protein decoded string")?;
     *at = end;
     Ok(Some(value))
 }
 
 fn read_entry_bounded(
+    ctx: &DecodeContext<'_>,
     entry: &mut impl Read,
     declared_size: u64,
     name: &str,
@@ -93,28 +90,7 @@ fn read_entry_bounded(
         if read == 0 {
             break;
         }
-        let requested = bytes
-            .len()
-            .checked_add(read)
-            .map(cadmpeg_core::decode::u64_from_index)
-            .ok_or_else(|| {
-                cadmpeg_core::decode::refuse_local_limit(
-                    "Protein schema allocation",
-                    MAX_SCHEMA_BYTES,
-                    u64::MAX,
-                )
-            })?;
-        bytes.try_reserve(read).map_err(|_| {
-            cadmpeg_core::CodecError::ResourceLimit(
-                cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                    cadmpeg_core::decode::ResourceDimension::Codec("Protein schema allocation"),
-                    MAX_SCHEMA_BYTES,
-                    requested,
-                    "Protein schema allocation",
-                ),
-            )
-        })?;
-        bytes.extend_from_slice(&chunk[..read]);
+        ctx.extend_retained_bytes(&mut bytes, &chunk[..read], "Protein schema allocation")?;
     }
     if cadmpeg_core::decode::u64_from_index(bytes.len()) > MAX_SCHEMA_BYTES {
         return Err(CodecError::malformed(format_args!(
@@ -463,7 +439,7 @@ fn schemas(ctx: &DecodeContext<'_>, protein: &[u8]) -> Result<HashMap<String, Sc
         }
         let size = entry.size();
         let name = entry.name().to_owned();
-        let bytes = read_entry_bounded(&mut entry, size, &name)?;
+        let bytes = read_entry_bounded(ctx, &mut entry, size, &name)?;
         parse_schema_document(ctx, &name, &bytes, &mut schemas)?;
     }
     Ok(schemas)
@@ -958,6 +934,35 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
             .expect("fixture fits service profile");
         use_context(&ctx)
+    }
+
+    #[test]
+    fn schema_edit_reader_uses_the_caller_resource_limits() {
+        let arena = DecodeArena::new();
+        for dimension in [
+            ResourceDimension::RetainedBytes,
+            ResourceDimension::CollectionItems,
+        ] {
+            let mut policy = DecodePolicy::service();
+            match dimension {
+                ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 2,
+                ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
+                _ => unreachable!("test dimensions"),
+            }
+            let (ctx, _) = DecodeContext::from_root_bytes(b"xml", &arena, &policy).expect("root");
+            let mut reader = Cursor::new(b"xml");
+            assert!(
+                matches!(super::read_entry_bounded(&ctx, &mut reader, 3, "schema"),
+                Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension && limit.operation == "Protein schema allocation")
+            );
+        }
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(b"xml", &arena, &DecodePolicy::service()).expect("root");
+        assert_eq!(
+            super::read_entry_bounded(&ctx, &mut Cursor::new(b"xml"), 3, "schema")
+                .expect("service admission"),
+            b"xml"
+        );
     }
 
     #[test]

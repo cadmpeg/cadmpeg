@@ -2,9 +2,8 @@
 //! Charged fallible growth for CATIA decode collections.
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
-use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceLimit};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::decode::{Coverage, CoverageKey};
@@ -279,39 +278,6 @@ mod scoped_format_tests {
     }
 }
 
-pub(crate) fn format_usize_id(
-    ctx: &DecodeContext<'_>,
-    prefix: &'static str,
-    value: usize,
-    minimum_digits: usize,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let mut number = value;
-    let mut digits = 1usize;
-    while number >= 10 {
-        number /= 10;
-        digits += 1;
-    }
-    let length = prefix
-        .len()
-        .checked_add(digits.max(minimum_digits))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))?;
-    let bytes = cadmpeg_core::decode::u64_from_index(length);
-    ctx.charge_retained(bytes, operation)?;
-    let mut id = String::new();
-    id.try_reserve(length).map_err(|_| {
-        CodecError::ResourceLimit(ResourceLimit::allocation_failed(
-            ResourceDimension::Codec(operation),
-            cadmpeg_core::decode::u64_from_index(id.capacity()),
-            cadmpeg_core::decode::u64_from_index(length),
-            operation,
-        ))
-    })?;
-    id.push_str(prefix);
-    write!(&mut id, "{value:0minimum_digits$}").map_err(CodecError::malformed)?;
-    Ok(id)
-}
-
 pub(crate) fn compose_index_id<T>(
     ctx: &DecodeContext<'_>,
     namespace: &cadmpeg_ir::ids::IdentityNamespace,
@@ -366,11 +332,8 @@ mod id_format_tests {
     #[test]
     fn native_owner_id_format_refuses_retained_limit() {
         let limited = crate::test_support::with_retained_limit(39, |ctx| {
-            super::format_usize_id(
-                ctx,
-                "catia:consolidated:owner-packet#",
-                7,
-                10,
+            ctx.format_retained(
+                format_args!("catia:consolidated:owner-packet#{:010}", 7),
                 "catia_native_owner_packet_id",
             )
         });
@@ -379,11 +342,8 @@ mod id_format_tests {
             Err(cadmpeg_core::CodecError::ResourceLimit(_))
         ));
         let id = crate::test_support::with_service_context(|ctx| {
-            super::format_usize_id(
-                ctx,
-                "catia:consolidated:owner-packet#",
-                7,
-                10,
+            ctx.format_retained(
+                format_args!("catia:consolidated:owner-packet#{:010}", 7),
                 "catia_native_owner_packet_id",
             )
         })

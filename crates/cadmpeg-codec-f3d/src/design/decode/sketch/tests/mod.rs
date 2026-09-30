@@ -7,8 +7,12 @@
 )]
 
 mod curves;
+mod index;
+mod lost_edge;
+mod persistent;
 mod placement;
 mod points;
+mod reference_list;
 mod relation_classes;
 mod relations;
 mod surface;

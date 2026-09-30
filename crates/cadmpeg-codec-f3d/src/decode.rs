@@ -282,23 +282,17 @@ fn container_only_dimension_parameters(
     native: &F3dNative,
 ) -> Result<std::collections::HashSet<cadmpeg_ir::features::ParameterId>, CodecError> {
     let container_only = crate::design::dimensions::container_only_dimension_companions(
+        Some(ctx),
         &native.design_dimension_locus_pairs,
         &native.design_dimension_null_locus_pairs,
         &native.design_dimension_annotation_frames,
         &native.design_dimension_locus_groups,
         &native.design_dimension_recipe_records,
-    );
-    let container_only_index = collect_decode_set(
-        ctx,
-        container_only
-            .iter()
-            .map(|(stream, index)| (stream.as_str(), *index)),
-        "index F3D container-only dimension companions",
     )?;
     let mut parameters_by_id = std::collections::HashSet::new();
     for owner in &native.design_parameter_owners {
         let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-        if !container_only_index.contains(&(stream, owner.companion_record_index())) {
+        if !container_only.contains(&(stream, owner.companion_record_index())) {
             continue;
         }
         let mut parameters = native.design_parameters.iter().filter(|parameter| {
@@ -1396,12 +1390,13 @@ fn design_projection_gaps(
         let Some(feature) = projected_features.get(scope.id.as_str()) else {
             continue;
         };
-        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
+        let predecessor_scope = match scope_history.predecessor(Some(ctx), scope, |candidate| {
             projected_features.contains_key(candidate.id.as_str())
         }) {
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
                 predecessor
             }
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
                 ambiguous_history_dependencies += 1;
                 continue;
@@ -1517,11 +1512,15 @@ fn design_projection_gaps(
         }
     }
 
-    let authored_scopes = crate::design::feature_project::authored_scope_ordinals_per_stream(
+    let authored_scopes = match crate::design::feature_project::authored_scope_ordinals_per_stream(
+        Some(ctx),
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
-    )
-    .ok();
+    ) {
+        Ok(scopes) => Some(scopes),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => None,
+    };
     let mut gaps = DesignProjectionGaps {
         unresolved_body_bindings: native
             .design_body_bindings
@@ -1580,9 +1579,10 @@ fn design_projection_gaps(
         ),
         unresolved_expression_dependencies:
             crate::design::dimensions::unresolved_parameter_expression_dependency_count(
+                Some(ctx),
                 &native.design_parameters,
                 &ir.model.parameters,
-            ),
+            )?,
         native_sketch_relations,
         native_dimensions,
         unprojected_sketch_placements: native
@@ -2744,18 +2744,21 @@ impl<'a> F3dDecodeSession<'a> {
                 )?;
             }
         }
-        self.native.construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
+        self.native.construction_recipes =
+            crate::design::decode::parameters::decode_recipes(ctx, scan)?;
         self.native.persistent_references =
-            crate::design::decode::sketch::decode_persistent_references(scan)?;
+            crate::design::decode::sketch::decode_persistent_references(ctx, scan)?;
         self.native.lost_edge_references =
-            crate::design::decode::sketch::decode_lost_edge_references(scan)?;
+            crate::design::decode::sketch::decode_lost_edge_references(ctx, scan)?;
         self.native.design_material_assignments =
             crate::materials::decode_design_assignments(ctx, scan)?;
         self.native.design_types = crate::design::decode::meta::decode_types(ctx, scan)?;
-        self.native.design_parameters = crate::design::decode::parameters::decode_parameters(scan)?;
+        self.native.design_parameters =
+            crate::design::decode::parameters::decode_parameters(ctx, scan)?;
         self.native.design_entity_headers =
             crate::design::decode::sketch::decode_entity_headers(ctx, scan)?;
         self.native.design_record_headers = crate::design::decode::sketch::decode_record_headers(
+            ctx,
             scan,
             &self.native.design_entity_headers,
         )?;
@@ -2769,7 +2772,8 @@ impl<'a> F3dDecodeSession<'a> {
         self.native.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(ctx, scan)?;
         self.native.sketch_curve_identities =
             crate::design::decode::sketch::decode_sketch_curve_identities(ctx, scan)?;
-        self.native.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+        self.native.sketch_surfaces =
+            crate::design::decode::sketch::decode_sketch_surfaces(ctx, scan)?;
         crate::design::decode::sketch::bind_sketch_graph(
             ctx,
             &self.native.design_entity_headers,
@@ -2779,6 +2783,7 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_relations,
         )?;
         crate::design::decode::operands::bind_work_point_input_carriers(
+            ctx,
             scan,
             &mut self.native.design_parameter_scopes,
             &self.native.design_record_headers,
@@ -2787,12 +2792,13 @@ impl<'a> F3dDecodeSession<'a> {
             &self.native.sketch_points,
         )?;
         crate::design::decode::operands::bind_extrude_selection_geometry(
+            ctx,
             &mut self.native.design_extrude_selection_members,
             &self.native.design_extrude_selection_groups,
             &self.native.design_parameter_scopes,
             &self.native.sketch_points,
             &self.native.sketch_curve_identities,
-        );
+        )?;
         let dimension_inputs = crate::design::decode::dimension_frames::DimensionDecodeInputs {
             scan,
             placements: &self.native.design_sketch_placements,
@@ -2806,6 +2812,7 @@ impl<'a> F3dDecodeSession<'a> {
         };
         self.native.design_dimension_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_locus_pairs(
+                ctx,
                 &dimension_inputs,
             )?
             .try_into()
@@ -2824,11 +2831,13 @@ impl<'a> F3dDecodeSession<'a> {
             )?;
         self.native.design_dimension_locus_groups =
             crate::design::decode::dimension_frames::decode_dimension_locus_groups(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_entity_headers,
             )?;
         self.native.design_dimension_null_locus_pairs =
             crate::design::decode::dimension_frames::decode_dimension_null_locus_pairs(
+                ctx,
                 &dimension_inputs,
                 &self.native.design_dimension_locus_pairs,
                 &self.native.design_dimension_locus_groups,
@@ -2836,12 +2845,14 @@ impl<'a> F3dDecodeSession<'a> {
             .try_into()
             .map_err(|error: String| CodecError::malformed(format_args!("{error}")))?;
         crate::design::dimensions::remove_dimension_frame_relations(
+            ctx,
             &mut self.native.sketch_relations,
             &self.native.design_dimension_locus_pairs,
             &self.native.design_dimension_locus_groups,
             &self.native.design_dimension_null_locus_pairs,
-        );
+        )?;
         crate::design::dimensions::bind_dimension_loci(
+            ctx,
             &self.native.design_sketch_placements,
             &self.native.design_parameter_owners,
             &self.native.design_dimension_locus_pairs,
@@ -2851,7 +2862,8 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.native.sketch_points,
             &mut self.native.sketch_curve_identities,
         )?;
-        self.native.design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+        self.native.design_body_members =
+            crate::design::decode::body::decode_body_members(ctx, scan)?;
         if matches!(path, SessionPath::Bodyless) {
             self.native.design_body_bindings =
                 crate::design::decode::body::decode_design_body_bindings(
@@ -2862,13 +2874,15 @@ impl<'a> F3dDecodeSession<'a> {
                 )?;
         }
         self.native.design_body_bounds = crate::design::decode::body::decode_body_bounds(
+            ctx,
             scan,
             &self.native.design_entity_headers,
         )?;
         crate::design::decode::body::bind_body_bounds(
+            ctx,
             &mut self.native.design_body_bounds,
             &self.native.design_body_bindings,
-        );
+        )?;
         self.native.design_configurations =
             crate::design::configurations::decode_configurations(self.ctx, scan)?;
         self.ir.model.configurations = crate::design::configurations::project_configurations(
@@ -2902,10 +2916,11 @@ impl<'a> F3dDecodeSession<'a> {
                 },
             )?;
         crate::design::feature_project::bind_surface_trim_cell_selections(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_surface_trim_operations,
-        );
+        )?;
         if let SessionPath::Geometry(geometry_path) = path {
             let geometry = &geometry_path.index;
             bind_mesh_feature_definitions(
@@ -2915,13 +2930,15 @@ impl<'a> F3dDecodeSession<'a> {
                 &geometry.mesh_projection,
             )?;
         }
-        crate::design::feature_project::bind_form_cages(
+        crate::design::feature_project::form_cages::bind_form_cages(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &mut self.ir.model.features,
             &self.ir.model.subds,
         )?;
         let canvas_assets = crate::design::decode::canvas::project_canvas_images(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &self.native.design_canvas_images,
@@ -2929,6 +2946,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         extend_unique_assets(ctx, &mut self.ir.model.assets, canvas_assets)?;
         let decal_assets = crate::design::decode::decal::project_decal_images(
+            ctx,
             scan,
             &self.native.design_parameter_scopes,
             &self.native.design_decal_images,
@@ -2938,9 +2956,10 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         extend_unique_assets(ctx, &mut self.ir.model.assets, decal_assets)?;
         crate::design::configurations::bind_configuration_parameter_overrides(
+            Some(self.ctx),
             &mut self.ir.model.configurations,
             &self.ir.model.parameters,
-        );
+        )?;
         self.ir.model.feature_input_topologies = crate::history::project_feature_input_topologies(
             ctx,
             &self.ir.model.features,
@@ -3025,11 +3044,12 @@ impl<'a> F3dDecodeSession<'a> {
             self.ir.tolerances.linear.get(),
         )?;
         crate::design::feature_project::bind_work_point_sketch_point_constructions(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.ir.model.sketch_entities,
             &self.ir.model.spatial_sketch_entities,
-        );
+        )?;
         let arrangement_budget =
             ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
         crate::design::profile_select::bind_sweep_sketch_selections(
@@ -3045,7 +3065,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_split_face_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -3059,7 +3080,8 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_surface_trim_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -3073,8 +3095,10 @@ impl<'a> F3dDecodeSession<'a> {
                 spatial_sketches: &self.ir.model.spatial_sketches,
                 spatial_sketch_entities: &self.ir.model.spatial_sketch_entities,
             },
-        );
+            Some(ctx),
+        )?;
         crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
+            ctx,
             scan,
             &self.native.design_construction_operand_groups,
             &self.native.design_record_headers,
@@ -3093,21 +3117,23 @@ impl<'a> F3dDecodeSession<'a> {
             &mut self.ir.model.features,
         )?;
         crate::design::feature_project::bind_sketch_feature_geometry(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.native.design_parameter_scopes,
             &self.native.design_sketch_placements,
             &self.ir.model.sketches,
             &self.ir.model.spatial_sketches,
-        );
+        )?;
         self.ir.model.spatial_sketch_constraints =
             crate::design::sketch_project::project_spatial_sketch_constraints(
+                Some(self.ctx),
                 &self.native.design_sketch_placements,
                 &self.native.sketch_relations,
                 &self.native.sketch_points,
                 &self.native.sketch_curve_identities,
                 &self.native.sketch_surfaces,
                 &self.ir.model.spatial_sketch_entities,
-            );
+            )?;
         let scope_histories = crate::history::bind_scope_histories(
             Some(self.ctx),
             &self.native.design_parameter_scopes,
@@ -3156,24 +3182,29 @@ impl<'a> F3dDecodeSession<'a> {
             angular_tolerance: self.ir.tolerances.angular.get(),
         };
         crate::design::face_resolve::bind_extrude_start_planes(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        );
+        )?;
         crate::design::face_resolve::bind_extrude_target_faces(
+            Some(self.ctx),
             &mut self.ir.model.features,
             &self.ir.model.sketches,
             &mut extrude_face_resolution,
-        );
+        )?;
         self.ir.model.sketch_constraints = crate::design::constraints::project_sketch_constraints(
+            Some(self.ctx),
             &self.native.design_sketch_placements,
             &self.native.design_parameters,
-            &self.native.sketch_points,
-            &self.native.sketch_curve_identities,
-            &self.native.sketch_texts,
+            (
+                &self.native.sketch_points,
+                &self.native.sketch_curve_identities,
+                &self.native.sketch_texts,
+            ),
             &self.native.sketch_relations,
             &self.ir.model.sketch_entities,
-        );
+        )?;
         let constraint_inputs = crate::design::dimensions::DimensionConstraintInputs {
             placements: &self.native.design_sketch_placements,
             parameters: &self.native.design_parameters,
@@ -3190,12 +3221,14 @@ impl<'a> F3dDecodeSession<'a> {
         };
         let dimension_constraints = if self.native.design_dimension_presentation_frames.is_empty() {
             crate::design::dimensions::project_dimension_constraints(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 self.ir.tolerances.linear.get(),
             )
         } else {
             crate::design::dimensions::project_dimension_constraints_with_presentations(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.native.design_dimension_presentation_frames,
                 &self.ir.model.spatial_sketches,
@@ -3210,6 +3243,7 @@ impl<'a> F3dDecodeSession<'a> {
         )?;
         let spatial_dimension_constraints =
             crate::design::dimensions::project_spatial_dimension_constraints(
+                Some(self.ctx),
                 &constraint_inputs,
                 &self.ir.model.spatial_sketches,
                 &self.ir.model.spatial_sketch_entities,
@@ -3222,9 +3256,10 @@ impl<'a> F3dDecodeSession<'a> {
             "append F3D spatial dimension constraints",
         )?;
         crate::design::dimensions::bind_offset_dimension_parameters(
+            ctx,
             &mut self.ir.model.sketch_constraints,
             &self.native.design_parameters,
-        );
+        )?;
         self.ir
             .model
             .sketch_constraints
@@ -3234,9 +3269,10 @@ impl<'a> F3dDecodeSession<'a> {
             .spatial_sketch_constraints
             .sort_by(|a, b| a.id.cmp(&b.id));
         crate::design::configurations::bind_configuration_suppressed_features(
+            Some(ctx),
             &mut self.ir.model.configurations,
             &self.ir.model.features,
-        );
+        )?;
         Ok(())
     }
 
@@ -3368,6 +3404,7 @@ impl<'a> F3dDecodeSession<'a> {
         };
 
         let (components, occurrences) = crate::design::components::project_local_components(
+            self.ctx,
             &self.native.design_parameter_scopes,
             &self.native.design_component_occurrences,
         )?;
@@ -3389,6 +3426,7 @@ impl<'a> F3dDecodeSession<'a> {
         );
         let unresolved_component_inserts =
             crate::design::components::project_unresolved_component_insert_occurrences(
+                self.ctx,
                 &mut self.ir.model.features,
                 &self.native.design_parameter_scopes,
                 self.ir.model.occurrences.len(),
@@ -5151,7 +5189,8 @@ fn append_related_record_headers(
         }),
         "index F3D existing record headers",
     )?;
-    let mut related = crate::design::decode::sketch::decode_related_record_headers(scan, indices)?;
+    let mut related =
+        crate::design::decode::sketch::decode_related_record_headers(ctx, scan, indices)?;
     related.retain(|record| {
         crate::ids::native_stream(&record.id)
             .is_none_or(|stream| !existing.contains(&(stream, record.record_index)))
@@ -5193,6 +5232,7 @@ fn extend_related_design_records(
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+        ctx,
         scan,
         &native.design_parameters,
         &native.design_record_headers,
@@ -5212,16 +5252,18 @@ fn extend_related_design_records(
     append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
+            ctx,
             scan,
             &native.design_parameter_owners,
             &native.design_record_headers,
         )?;
     native.design_component_occurrences =
-        crate::design::decode::components::decode_component_occurrences(scan)?;
+        crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     native.design_parameter_scopes =
         crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(ctx, scan, native)?;
     native.design_surface_trim_operations =
         crate::design::decode::surface_trim::decode_surface_trim_operations(
+            ctx,
             scan,
             &native.design_parameter_scopes,
         )?;
@@ -5231,6 +5273,7 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     native.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
+        ctx,
         scan,
         &native.design_parameter_scopes,
     )?;
@@ -5238,10 +5281,16 @@ fn extend_related_design_records(
         crate::design::decode::meta::decode_feature_timelines(ctx, scan)?;
     native.design_component_naming_spaces =
         crate::design::decode::meta::decode_component_naming_spaces(ctx, scan)?;
-    native.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(scan, &native.design_parameter_scopes)?;
-    native.design_decal_images =
-        crate::design::decode::decal::decode_decal_images(scan, &native.design_parameter_scopes)?;
+    native.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
+        ctx,
+        scan,
+        &native.design_parameter_scopes,
+    )?;
+    native.design_decal_images = crate::design::decode::decal::decode_decal_images(
+        ctx,
+        scan,
+        &native.design_parameter_scopes,
+    )?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(
         &mut native.design_parameter_scopes,
         &native.design_parameter_owners,
@@ -5331,6 +5380,7 @@ fn extend_related_design_records(
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     crate::design::decode::operands::bind_sketch_profiles(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
@@ -5338,17 +5388,20 @@ fn extend_related_design_records(
     )?;
     native.design_construction_operand_groups =
         crate::design::decode::operands::decode_construction_operand_groups(
+            ctx,
             scan,
             &mut native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
     native.design_loft_legacy_body_carriers =
         crate::design::decode::operands::decode_loft_legacy_body_carriers(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_record_headers,
         )?;
     crate::design::decode::scopes::mirror::bind_mirror_constructions(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -5418,17 +5471,20 @@ fn extend_related_design_records(
     )?;
     append_related_record_headers(ctx, scan, native, &indices)?;
     crate::design::decode::operands::bind_construction_operand_trailing_records(
+        ctx,
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
     crate::design::decode::operands::bind_construction_operand_paths(
+        ctx,
         scan,
         &mut native.design_construction_operand_groups,
         &native.design_record_headers,
     )?;
     native.design_construction_operand_identities =
         crate::design::decode::operands::decode_construction_operand_identities(
+            ctx,
             scan,
             &native.design_construction_operand_groups,
             &native.design_record_headers,
@@ -5458,6 +5514,7 @@ fn extend_related_design_records(
     )?;
     native.design_edge_identity_operands =
         crate::design::decode::operands::decode_edge_identity_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
@@ -5489,12 +5546,14 @@ fn extend_related_design_records(
     });
     native.design_fillet_radius_groups =
         crate::design::decode::operands::decode_fillet_radius_groups(
+            ctx,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
             &native.design_parameter_owners,
             &native.design_parameters,
-        );
+        )?;
     crate::design::decode::operands::bind_lost_edge_groups(
+        ctx,
         &mut native.design_construction_operand_groups,
         &native.design_construction_operand_identities,
         &native.lost_edge_references,
@@ -5534,12 +5593,14 @@ fn extend_related_design_records(
     append_related_record_headers(ctx, scan, native, &indices)?;
     native.design_extrude_selection_members =
         crate::design::decode::operands::decode_extrude_selection_members(
+            ctx,
             scan,
             &native.design_extrude_selection_groups,
             &native.design_record_headers,
         )?;
     native.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
+            ctx,
             scan,
             &native.design_construction_operand_groups,
             &native.design_record_headers,
@@ -5557,6 +5618,7 @@ fn extend_related_design_records(
     )?;
     native.design_body_recipe_operands =
         crate::design::decode::operands::decode_body_recipe_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
@@ -5564,11 +5626,12 @@ fn extend_related_design_records(
             &native.construction_recipes,
         )?;
     crate::design::decode::operands::bind_body_recipe_operand_candidates(
+        Some(ctx),
         &mut native.design_body_recipe_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-    );
+    )?;
     crate::history::bind_body_recipe_operand_history_candidates(
         Some(ctx),
         &mut native.design_body_recipe_operands,
@@ -5577,9 +5640,10 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     crate::design::decode::operands::bind_extrude_selection_identities(
+        ctx,
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
-    );
+    )?;
     crate::history::selection::bind_extrude_selection_history(
         Some(ctx),
         &mut native.design_extrude_selection_members,
@@ -5609,6 +5673,7 @@ fn extend_related_design_records(
         &scope_histories,
     )?;
     native.design_edge_operands = crate::design::decode::operands::decode_edge_operands(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -5616,10 +5681,11 @@ fn extend_related_design_records(
         &native.construction_recipes,
     )?;
     crate::design::decode::operands::bind_edge_operand_candidates(
+        ctx,
         &mut native.design_edge_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_edge_operand_history_candidates(
         Some(ctx),
         &mut native.design_edge_operands,
@@ -5630,6 +5696,7 @@ fn extend_related_design_records(
     )?;
     native.design_edge_treatment_vertex_operands =
         crate::design::decode::operands::decode_edge_treatment_vertex_operands(
+            ctx,
             scan,
             &native.design_parameter_scopes,
             &native.design_construction_operand_groups,
@@ -5637,9 +5704,10 @@ fn extend_related_design_records(
             &native.construction_recipes,
         )?;
     crate::design::decode::operands::bind_edge_treatment_vertex_candidates(
+        ctx,
         &mut native.design_edge_treatment_vertex_operands,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_edge_treatment_vertex_history(
         Some(ctx),
         &mut native.design_edge_treatment_vertex_operands,
@@ -5648,6 +5716,7 @@ fn extend_related_design_records(
         &scope_histories,
     )?;
     crate::design::decode::operands::bind_work_plane_constructions(
+        ctx,
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
@@ -5656,9 +5725,10 @@ fn extend_related_design_records(
         &native.design_parameters,
     )?;
     crate::design::decode::operands::bind_vertex_recipe_candidates(
+        ctx,
         &mut native.design_parameter_scopes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_vertex_recipe_history(
         ctx,
         &mut native.design_parameter_scopes,
@@ -5666,6 +5736,7 @@ fn extend_related_design_records(
         &native.asm_histories,
     )?;
     native.design_face_operands = crate::design::decode::operands::decode_face_operands(
+        ctx,
         scan,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
@@ -5673,10 +5744,11 @@ fn extend_related_design_records(
         &native.construction_recipes,
     )?;
     crate::design::decode::operands::bind_face_operand_candidates(
+        ctx,
         &mut native.design_face_operands,
         &native.construction_recipes,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::history::bind_face_operand_history_candidates(
         Some(ctx),
         &mut native.design_face_operands,
@@ -5724,6 +5796,7 @@ fn extend_related_design_records(
     }
     native.design_parameter_companions =
         crate::design::decode::parameters::bind_parameter_companion_payloads(
+            ctx,
             std::mem::take(&mut native.design_parameter_companions),
             &crate::design::decode::parameters::ParameterCompanionInputs {
                 parameters: &native.design_parameters,
@@ -5734,9 +5807,10 @@ fn extend_related_design_records(
                 recipes: &native.construction_recipes,
                 stream_lengths: &stream_lengths,
             },
-        );
+        )?;
     native.design_dimension_recipe_records =
         crate::design::decode::dimension_frames::decode_dimension_recipe_records(
+            ctx,
             scan,
             &native.design_parameters,
             &native.design_parameter_owners,
@@ -5744,13 +5818,15 @@ fn extend_related_design_records(
             &native.construction_recipes,
         )?;
     crate::design::decode::dimension_frames::bind_dimension_recipe_reference_candidates(
+        ctx,
         &mut native.design_dimension_recipe_records,
         &native.persistent_subentity_tags,
-    );
+    )?;
     crate::design::decode::dimension_frames::bind_dimension_recipe_edge_operands(
+        ctx,
         &mut native.design_dimension_recipe_records,
         &native.design_edge_operands,
-    );
+    )?;
     Ok(())
 }
 
@@ -5893,7 +5969,7 @@ fn source_attributes_and_tolerances(
     {
         insert_source_attribute_owned(ctx, &mut attributes, "solved_record_len", off.to_string())?;
     }
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
         insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
     }
 
@@ -6117,7 +6193,7 @@ fn build_metadata_ir(
         "zip_entry_count",
         scan.entries.len().to_string(),
     )?;
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
+    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(ctx, scan)? {
         insert_source_attribute_owned(ctx, &mut attributes, "modeling_length_unit", unit)?;
     }
 

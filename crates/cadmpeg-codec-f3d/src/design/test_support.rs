@@ -3,6 +3,23 @@
 
 use crate::design::decode::parameters::design_parameter_discriminator;
 use crate::test_support::lp_utf16;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+/// Run a test with a decode context that has the default resource policy.
+pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    f(&ctx)
+}
+
+/// Build a record index under the default test decode policy.
+pub(in crate::design) fn indexed_record_offsets_for_test(
+    bytes: &[u8],
+) -> crate::design::decode::sketch::IndexedRecordOffsets {
+    with_test_decode_context(|ctx| {
+        crate::design::decode::sketch::IndexedRecordOffsets::build(ctx, bytes).unwrap()
+    })
+}
 
 pub(crate) fn parameter_record(
     owner: Option<u32>,

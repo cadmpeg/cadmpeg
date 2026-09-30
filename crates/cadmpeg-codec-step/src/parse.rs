@@ -292,48 +292,12 @@ impl EntityIndex {
         for (&id, record) in records {
             for partial in &record.partials {
                 if let Some(ids) = index.get_mut(partial.name.as_str()) {
-                    budget.charge_collection_items(1, "step_entity_index_ids")?;
-                    ids.try_reserve(1).map_err(|_| {
-                        ParseError::Resource(budget.refuse_codec_limit(
-                            "step_entity_index_ids",
-                            0,
-                            1,
-                        ))
-                    })?;
-                    ids.push(id);
+                    budget.push_vec(ids, id, "step_entity_index_ids")?;
                 } else {
-                    budget.charge_collection_items(1, "step_entity_index_names")?;
-                    budget.charge_collection_items(1, "step_entity_index_ids")?;
-                    budget.charge_retained(
-                        u64_from_index(partial.name.len()),
-                        "step_entity_index_name_storage",
-                    )?;
-                    let mut name = String::new();
-                    name.try_reserve_exact(partial.name.len()).map_err(|_| {
-                        ParseError::Resource(budget.refuse_codec_limit(
-                            "step_entity_index_names",
-                            0,
-                            1,
-                        ))
-                    })?;
-                    name.push_str(&partial.name);
-                    let mut ids = Vec::new();
-                    ids.try_reserve_exact(1).map_err(|_| {
-                        ParseError::Resource(budget.refuse_codec_limit(
-                            "step_entity_index_ids",
-                            0,
-                            1,
-                        ))
-                    })?;
-                    ids.push(id);
-                    index.try_reserve(1).map_err(|_| {
-                        ParseError::Resource(budget.refuse_codec_limit(
-                            "step_entity_index_names",
-                            0,
-                            1,
-                        ))
-                    })?;
-                    index.insert(name, ids);
+                    let name = budget
+                        .copy_retained_text(&partial.name, "step_entity_index_name_storage")?;
+                    let ids = budget.collect_vec([id], "step_entity_index_ids")?;
+                    budget.insert_hash_map(&mut index, name, ids, "step_entity_index_names")?;
                 }
             }
         }
@@ -392,11 +356,8 @@ impl Exchange {
             },
         );
         let len = len.ok_or_else(|| ctx.refuse_codec_limit(operation, 0, 1))?;
-        ctx.charge_retained(u64_from_index(len), operation)?;
-        let mut joined = String::new();
-        joined
-            .try_reserve_exact(len)
-            .map_err(|_| ctx.refuse_codec_limit(operation, 0, 1))?;
+        let mut joined = ctx.retained_string(len, operation)?;
+
         for identifier in self.schema_identifiers() {
             if !joined.is_empty() {
                 joined.push(',');
@@ -1116,21 +1077,16 @@ impl Parser<'_, '_, '_> {
         for record in records.values_mut() {
             if record.partials.len() == 1 && omitted_entity_name(&record.partials[0]) {
                 let parameters = &mut record.partials[0].parameters;
-                self.budget
-                    .charge_collection_items(1, "step_omitted_name_recovery_item")?;
+
                 if parameters.len() == parameters.capacity() {
                     self.budget.charge_retained(
                         u64_from_index(size_of::<Value>()),
                         "step_omitted_name_recovery_storage",
                     )?;
                 }
-                parameters.try_reserve_exact(1).map_err(|_| {
-                    ParseError::Resource(self.budget.refuse_codec_limit(
-                        "step_omitted_name_recovery_storage",
-                        0,
-                        1,
-                    ))
-                })?;
+
+                self.budget
+                    .reserve_vec(parameters, 1, "step_omitted_name_recovery_item")?;
                 record.partials[0]
                     .parameters
                     .insert(0, Value::String(Vec::new()));
@@ -2538,9 +2494,7 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                     return Err(message.into());
                 }
                 value_node_count(source, Self::MAX_EXPANDED_NODES, self.budget)?;
-                self.budget
-                    .charge_collection_items(1, "step_anchor_reference_stack")
-                    .map_err(ResolveError::Resource)?;
+
                 if stack.len() == stack.capacity() {
                     self.budget
                         .charge_retained(
@@ -2549,13 +2503,10 @@ impl<'a, 'ctx, 'arena> AnchorResolver<'a, 'ctx, 'arena> {
                         )
                         .map_err(ResolveError::Resource)?;
                 }
-                stack.try_reserve(1).map_err(|_| {
-                    ResolveError::Resource(self.budget.refuse_codec_limit(
-                        "step_anchor_reference_stack_storage",
-                        0,
-                        1,
-                    ))
-                })?;
+
+                self.budget
+                    .reserve_vec(stack, 1, "step_anchor_reference_stack")
+                    .map_err(ResolveError::Resource)?;
                 stack.push(name);
                 let resolved = self.resolve(source, stack, budget, depth + 1);
                 stack.pop();
@@ -2783,9 +2734,7 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 Ok(Value::Omitted)
             };
         };
-        self.budget
-            .charge_collection_items(1, "step_reference_stack")
-            .map_err(ResolveError::Resource)?;
+
         if self.stack.len() == self.stack.capacity() {
             self.budget
                 .charge_retained(
@@ -2794,13 +2743,10 @@ impl<'a, 'ctx, 'arena> ReferenceResolver<'a, 'ctx, 'arena> {
                 )
                 .map_err(ResolveError::Resource)?;
         }
-        self.stack.try_reserve(1).map_err(|_| {
-            ResolveError::Resource(self.budget.refuse_codec_limit(
-                "step_reference_stack_storage",
-                0,
-                1,
-            ))
-        })?;
+
+        self.budget
+            .reserve_vec(&mut self.stack, 1, "step_reference_stack")
+            .map_err(ResolveError::Resource)?;
         self.stack.push(key);
         let resolved = self.resolve_value(anchor, depth + 1);
         self.stack.pop();

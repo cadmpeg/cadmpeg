@@ -777,27 +777,16 @@ impl SketchRelation {
 
     /// Constraint kinds selected by `state`.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn constraint_kinds(&self) -> Vec<SketchConstraintKind> {
         constraint_kinds_from_state(self.definition.state()).0
     }
 
     /// Bits in `state` outside the defined constraint mask.
     #[must_use]
+    #[cfg(test)]
     pub(crate) fn unknown_constraint_bits(&self) -> u64 {
         constraint_kinds_from_state(self.definition.state()).1
-    }
-
-    /// The single constraint kind `state` selects, when it selects exactly one and no unknown bits.
-    #[must_use]
-    pub(crate) fn sole_constraint_kind(&self) -> Option<SketchConstraintKind> {
-        let (kinds, unknown) = constraint_kinds_from_state(self.definition.state());
-        if unknown != 0 {
-            return None;
-        }
-        match kinds.as_slice() {
-            [kind] => Some(*kind),
-            _ => None,
-        }
     }
 
     /// Record indices of the first reference run.

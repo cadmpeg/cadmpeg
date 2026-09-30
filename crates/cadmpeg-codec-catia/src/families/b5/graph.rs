@@ -1828,15 +1828,6 @@ fn parse_a8_class21_pcurve(
     object_id: u32,
     payload: &[u8],
 ) -> Result<Option<B5Pcurve>, CodecError> {
-    fn admit_items(
-        ctx: &DecodeContext<'_>,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        let items = u64_from_index(count);
-        ctx.charge_collection_items(items, operation)
-    }
-
     (|| -> Option<Result<B5Pcurve, CodecError>> {
         (payload.first() == Some(&0x81)).then_some(())?;
         let mut position = 1;
@@ -1859,7 +1850,9 @@ fn parse_a8_class21_pcurve(
         if position.checked_add(minimum_known_bytes)? > payload.len() {
             return None;
         }
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve distinct knots") {
+        if let Err(error) = ctx
+            .charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve distinct knots")
+        {
             return Some(Err(error));
         }
         let read_values = |position: &mut usize, values: &mut Vec<FiniteReal>| -> Option<()> {
@@ -1878,7 +1871,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_values(&mut position, &mut distinct_knots)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve knot values") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve knot values")
+        {
             return Some(Err(error));
         }
         let mut knot_values = Vec::new();
@@ -1909,7 +1904,9 @@ fn parse_a8_class21_pcurve(
             }
             Some(())
         };
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve u jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve u jet")
+        {
             return Some(Err(error));
         }
         let mut u = Vec::new();
@@ -1921,7 +1918,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut u)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve v jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve v jet")
+        {
             return Some(Err(error));
         }
         let mut v = Vec::new();
@@ -1933,7 +1932,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut v)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve du jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve du jet")
+        {
             return Some(Err(error));
         }
         let mut du = Vec::new();
@@ -1945,7 +1946,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut du)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve dv jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve dv jet")
+        {
             return Some(Err(error));
         }
         let mut dv = Vec::new();
@@ -1957,7 +1960,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut dv)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddu jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve ddu jet")
+        {
             return Some(Err(error));
         }
         let mut ddu = Vec::new();
@@ -1969,7 +1974,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut ddu)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve ddv jet") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve ddv jet")
+        {
             return Some(Err(error));
         }
         let mut ddv = Vec::new();
@@ -1981,7 +1988,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         read_lane(&mut position, &mut ddv)?;
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve point jets") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve point jets")
+        {
             return Some(Err(error));
         }
         let mut points = Vec::new();
@@ -1993,7 +2002,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         points.extend(u.into_iter().zip(v).map(|(u, v)| [u, v]));
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve first jets") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve first jets")
+        {
             return Some(Err(error));
         }
         let mut first = Vec::new();
@@ -2005,7 +2016,9 @@ fn parse_a8_class21_pcurve(
             return Some(Err(error));
         }
         first.extend(du.into_iter().zip(dv).map(|(u, v)| [u, v]));
-        if let Err(error) = admit_items(ctx, knot_count, "catia B5 pcurve second jets") {
+        if let Err(error) =
+            ctx.charge_collection_items(u64_from_index(knot_count), "catia B5 pcurve second jets")
+        {
             return Some(Err(error));
         }
         let mut second = Vec::new();

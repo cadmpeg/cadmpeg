@@ -57,17 +57,7 @@ pub(crate) fn parse(
     let mut entry_data = HashMap::new();
     for entry in entries {
         if !entry_data.contains_key(entry.name.as_str()) {
-            ctx.charge_collection_items(1, "FreeCAD element entry lookup")?;
-            entry_data.try_reserve(1).map_err(|_| {
-                cadmpeg_core::CodecError::ResourceLimit(
-                    cadmpeg_core::decode::ResourceLimit::allocation_failed(
-                        cadmpeg_core::decode::ResourceDimension::CollectionItems,
-                        ctx.policy().limits.max_collection_items,
-                        1,
-                        "FreeCAD element entry lookup",
-                    ),
-                )
-            })?;
+            ctx.reserve_map(&mut entry_data, 1, "FreeCAD element entry lookup")?;
         }
         entry_data.insert(entry.name.as_str(), entry.data.as_slice());
     }

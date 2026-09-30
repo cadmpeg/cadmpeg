@@ -3,43 +3,6 @@
 
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
-use std::fmt::Write;
-
-use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
-
-#[derive(Default)]
-struct ByteCounter(usize);
-
-impl Write for ByteCounter {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
-        Ok(())
-    }
-}
-
-pub(crate) fn admit_issue_detail(
-    ctx: &DecodeContext<'_>,
-    error: &CodecError,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    admit_formatted(ctx, format_args!("{error}"), operation)
-}
-
-pub(crate) fn admit_formatted(
-    ctx: &DecodeContext<'_>,
-    args: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<(), CodecError> {
-    let mut detail_len = ByteCounter::default();
-    detail_len.write_fmt(args).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor issue detail byte count", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_retained(
-        cadmpeg_core::decode::u64_from_index(detail_len.0),
-        operation,
-    )
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RecordIssueFamily {

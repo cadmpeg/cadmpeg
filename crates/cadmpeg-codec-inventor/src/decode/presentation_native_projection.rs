@@ -12,9 +12,7 @@ use crate::native::{
 use crate::presentation::PresentationInventory;
 use crate::record_issue::{RecordIssue, RecordIssueFamily};
 
-use super::{
-    charge_items, charge_retained_len, retained_format, retained_native_sha256, retained_sha256,
-};
+use super::{retained_native_sha256, retained_sha256};
 
 pub(super) struct PresentationNativeProjection {
     pub(super) default_styles: Vec<PmAppDefaultStyleRecord>,
@@ -40,8 +38,7 @@ pub(super) fn project(
         ctx.charge_collection_items(1, "collect Inventor native default style")?;
         ctx.charge_entities(1, "admit Inventor native default style")?;
         projection.default_styles.push(PmAppDefaultStyleRecord {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!(
                     "inventor:presentation:default-style#{token}-{}",
                     style.identity.record_ordinal
@@ -70,8 +67,7 @@ pub(super) fn project(
         let token = style.identity.segment_token.as_str();
         let extension = style.extension.as_ref();
         let wire = PmAppRenderingStyleRecordWire {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!(
                     "inventor:presentation:rendering-style#{token}-{}",
                     style.identity.record_ordinal
@@ -146,9 +142,8 @@ pub(super) fn project(
             &style.comment,
             style.extension.is_some(),
         ) {
-            charge_retained_len(
-                ctx,
-                detail.len(),
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(detail.len()),
                 "retain Inventor rendering conversion issue",
             )?;
         }
@@ -173,8 +168,7 @@ pub(super) fn project(
     }
     for face in &inventory.graphics_faces {
         let token = face.identity.segment_token.as_str();
-        let id = retained_format(
-            ctx,
+        let id = ctx.format_retained(
             format_args!(
                 "inventor:presentation:graphics-face#{token}-{}",
                 face.identity.record_ordinal
@@ -182,9 +176,8 @@ pub(super) fn project(
             "retain Inventor graphics face id",
         )?;
         let segment_token = ctx.copy_retained_text(token, "retain Inventor graphics face token")?;
-        charge_items(
-            ctx,
-            face.edge_references.references().len(),
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(face.edge_references.references().len()),
             "copy Inventor graphics face edge references",
         )?;
         ctx.charge_collection_items(1, "collect Inventor native graphics face")?;
@@ -210,8 +203,7 @@ pub(super) fn project(
     }
     for collection in &inventory.graphics_style_collections {
         let token = collection.identity.segment_token.as_str();
-        let id = retained_format(
-            ctx,
+        let id = ctx.format_retained(
             format_args!(
                 "inventor:presentation:graphics-style-collection#{token}-{}",
                 collection.identity.record_ordinal
@@ -220,9 +212,8 @@ pub(super) fn project(
         )?;
         let segment_token =
             ctx.copy_retained_text(token, "retain Inventor graphics style collection token")?;
-        charge_items(
-            ctx,
-            collection.style_references.references().len(),
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(collection.style_references.references().len()),
             "copy Inventor graphics style references",
         )?;
         ctx.charge_collection_items(1, "collect Inventor native graphics style collection")?;
@@ -244,8 +235,7 @@ pub(super) fn project(
         projection
             .graphics_primary_color_styles
             .push(PmGraphicsPrimaryColorStyleRecord {
-                id: retained_format(
-                    ctx,
+                id: ctx.format_retained(
                     format_args!(
                         "inventor:presentation:graphics-primary-color#{token}-{}",
                         style.identity.record_ordinal

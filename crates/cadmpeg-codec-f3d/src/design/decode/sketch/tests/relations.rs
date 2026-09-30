@@ -10,6 +10,15 @@ use crate::design::test_support::push_genesis_block;
 use crate::design::test_support::push_reference;
 use crate::records::sketch_relations::SketchConstraintKind;
 
+fn tested_parse_classed_sketch_relation(
+    payload: &[u8],
+    class: SketchRelationClass,
+) -> Option<crate::design::decode::sketch::ParsedSketchRelation> {
+    crate::design::test_support::with_test_decode_context(|ctx| {
+        parse_classed_sketch_relation(ctx, payload, class).unwrap()
+    })
+}
+
 #[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     // The eleven-byte reference form puts each pair at fifteen bytes: the
@@ -42,7 +51,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
     assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
+    let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
             .members
@@ -117,7 +126,8 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         0x100_0000_0000,
         &[2403, 2404],
     );
-    let parsed = parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::TextFrame).unwrap();
     assert_eq!(
         parsed
             .members
@@ -158,7 +168,7 @@ fn genesis_relation_parses_u64_text_frame_mask_and_relation_ordinals() {
         (vec![SketchConstraintKind::TextFrame], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextFrame {
                 text_reference: 2394
@@ -201,7 +211,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         0x200_0000_0000,
         &[237],
     );
-    let parsed = parse_classed_sketch_relation(
+    let mut parsed = tested_parse_classed_sketch_relation(
         &record,
         SketchRelationClass::TextPath { leading_flag: true },
     )
@@ -259,7 +269,7 @@ fn genesis_relation_parses_text_path_glyph_run() {
         (vec![SketchConstraintKind::TextPath], 0)
     );
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::TextPath {
                 text_reference: 304,
@@ -295,8 +305,9 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
         0x1000_0000,
         &[291, 327, 330, 280],
     );
-    let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::CircularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -315,7 +326,7 @@ fn genesis_relation_parses_circular_pattern_auxiliary_run() {
     );
     assert_eq!(parsed.state, 0x1000_0000);
     assert_eq!(
-        decode_pattern_definition(&record, &parsed),
+        decode_pattern_definition(&record, &mut parsed),
         Some(
             crate::records::sketch_relations::SketchPatternDefinition::Circular {
                 angle_parameter: 336,
@@ -358,8 +369,9 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
         0x2000_0000,
         &[353, 352, 442, 445],
     );
-    let parsed =
-        parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern).unwrap();
+    let mut parsed =
+        tested_parse_classed_sketch_relation(&record, SketchRelationClass::RectangularPattern)
+            .unwrap();
     assert_eq!(
         parsed
             .members
@@ -385,7 +397,7 @@ fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
     ));
     assert_eq!(parsed.state, 0x2000_0000);
     let Some(crate::records::sketch_relations::SketchPatternDefinition::Rectangular { directions }) =
-        decode_pattern_definition(&record, &parsed)
+        decode_pattern_definition(&record, &mut parsed)
     else {
         panic!("expected rectangular pattern definition");
     };
@@ -419,13 +431,47 @@ fn genesis_entity_header_variant_resolves_suffix_and_id() {
         entity_id_offset,
         optional_slot_present,
         end,
-    } = parse_genesis_entity_header(&bytes, 0).unwrap();
+    } = parse_genesis_entity_header(&cadmpeg_test_support::service_decode_context(), &bytes, 0)
+        .unwrap()
+        .unwrap();
     assert_eq!(entity_id_offset, payload_start);
     assert_eq!(entity_id.suffix(), 201);
     assert_eq!(entity_id.as_str(), "0_201");
     assert!(!optional_slot_present);
     assert_eq!(end, bytes.len());
-    assert!(parse_settled_entity_header(&bytes, 0).is_none());
+    assert!(parse_settled_entity_header(
+        &cadmpeg_test_support::service_decode_context(),
+        &bytes,
+        0
+    )
+    .unwrap()
+    .is_none());
+}
+
+#[test]
+fn genesis_entity_header_id_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"281");
+    bytes.extend_from_slice(&201u32.to_le_bytes());
+    bytes.extend_from_slice(&[0u8; 10]);
+    push_genesis_block(&mut bytes, 4);
+    bytes.extend_from_slice(&5u32.to_le_bytes());
+    for unit in "0_201".encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 4;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = parse_genesis_entity_header(&ctx, &bytes, 0).err().unwrap();
+    assert!(matches!(error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "f3d Design UTF-16 text"
+    ));
 }
 
 fn genesis_relation_record(

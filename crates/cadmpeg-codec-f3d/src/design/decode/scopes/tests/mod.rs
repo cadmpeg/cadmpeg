@@ -9,6 +9,7 @@
 mod assembly;
 mod assembly_variable_reference;
 mod combine;
+mod component_pattern;
 mod copy_paste_bodies;
 mod derived_instance;
 mod fixed_kind_operations;

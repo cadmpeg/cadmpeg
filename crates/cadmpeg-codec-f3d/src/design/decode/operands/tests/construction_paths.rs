@@ -5,6 +5,113 @@ use crate::design::decode::operands::parse_construction_operand_path;
 use crate::design::decode::operands::parse_construction_operand_transform;
 use crate::design::decode::operands::parse_construction_tracking_path;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
+use crate::design::decode::operands::push_construction_operand_record;
+use crate::design::decode::operands::push_loft_legacy_body_carrier;
+
+#[test]
+fn construction_operand_typed_runs_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    for operation in [
+        "f3d construction operand trailing transforms",
+        "f3d construction operand trailing dual transforms",
+        "f3d construction operand trailing flags",
+        "f3d construction operand auxiliary paths",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut records = Vec::new();
+        assert!(matches!(
+            push_construction_operand_record(&ctx, &mut records, 1u8, operation),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == ResourceDimension::CollectionItems
+                    && failure.operation == operation
+        ));
+        assert!(records.is_empty());
+    }
+}
+
+#[test]
+fn legacy_loft_body_carrier_output_refuses_collection_and_id_limits() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    fn reference(bytes: &mut Vec<u8>, record_index: u32) {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(record_index).to_le_bytes());
+        bytes.extend_from_slice(&[0, 0]);
+    }
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"322", 100);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&12u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    reference(&mut bytes, 900);
+    bytes.extend_from_slice(&89u32.to_le_bytes());
+    bytes.extend_from_slice(&1.25f64.to_le_bytes());
+    bytes.extend_from_slice(&89u32.to_le_bytes());
+    reference(&mut bytes, 102);
+    bytes.extend_from_slice(&[0, 0]);
+    reference(&mut bytes, 101);
+    indexed_header(&mut bytes, *b"262", 100);
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload =
+                crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
+                    crate::records::feature::path_features::DesignLoftConstruction {
+                        operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
+                        operation_offset: 0,
+                    },
+                )
+                .into();
+        })
+        .unwrap();
+    let header = crate::records::decal::DesignRecordHeader {
+        id: "header-322".into(),
+        record_index: 100,
+        class_tag: crate::records::references::DesignClassTag::try_from("322".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    let carrier = parse_loft_legacy_body_carrier(&bytes, &scope, &header)
+        .expect("class-322 legacy Loft carrier");
+    let stream = "Design/BulkStream.dat";
+    let native_scope_len = u64::try_from(crate::ids::native_scope(stream).len()).unwrap();
+    for (collection_limit, retained_limit, dimension, operation) in [
+        (
+            0,
+            u64::MAX,
+            ResourceDimension::CollectionItems,
+            "f3d legacy Loft body carrier output",
+        ),
+        (
+            1,
+            native_scope_len,
+            ResourceDimension::RetainedBytes,
+            "f3d legacy Loft body carrier ID",
+        ),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_collection_items = collection_limit;
+        policy.limits.max_retained_bytes = retained_limit;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut out = Vec::new();
+        assert!(matches!(
+            push_loft_legacy_body_carrier(&ctx, &mut out, carrier.clone(), stream, 0),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.dimension == dimension && failure.operation == operation
+        ));
+        assert!(out.is_empty());
+    }
+}
 use crate::records::decal::DesignRecordHeader;
 use crate::test_support::indexed_header;
 use crate::test_support::push_marked_reference;
