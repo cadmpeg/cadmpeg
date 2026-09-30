@@ -268,7 +268,7 @@ fn interpolation_curve_data(
     };
     let mut knots =
         ctx.alloc_filled(DEGREE + 1, parameters[0], "creo interpolation curve knots")?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut knots,
         point_count - 2 + DEGREE + 1,
         "creo interpolation curve knot tail",
@@ -276,7 +276,7 @@ fn interpolation_curve_data(
     knots.extend_from_slice(&parameters[1..point_count - 1]);
     knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
     let mut matrix = Vec::new();
-    ctx.try_reserve_items(&mut matrix, control_count, "creo interpolation matrix rows")?;
+    ctx.reserve_vec(&mut matrix, control_count, "creo interpolation matrix rows")?;
     for parameter in parameters {
         let mut row = ctx.alloc_filled(control_count, 0.0, "creo interpolation matrix values")?;
         for (index, value) in row.iter_mut().enumerate() {
@@ -301,7 +301,7 @@ fn interpolation_curve_data(
         matrix.push(row);
     }
     let mut values = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut values,
         control_count,
         "creo interpolation input values",
@@ -346,7 +346,7 @@ pub(in super::super) fn saved_spline_nurbs(
         return Ok(None);
     };
     let mut converted_controls = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut converted_controls,
         control_points.len(),
         "creo saved spline controls",
@@ -423,13 +423,11 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let Some(nurbs) = saved_spline_nurbs(ctx, spline, refusal)? else {
         return Ok(None);
     };
-    let knots = ctx.try_collection(
-        nurbs.knots().len(),
-        "creo saved spline sketch knots",
-        || nurbs.knots().try_clone(),
-    )?;
+    let knots = nurbs
+        .knots()
+        .try_clone_for_decode(ctx, "creo saved spline sketch knots")?;
     let mut controls = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut controls,
         nurbs.pole_count(),
         "creo saved spline sketch controls",
@@ -444,7 +442,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         }
         cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
             let mut weights = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut weights,
                 points.len(),
                 "creo saved spline sketch weights",
@@ -460,7 +458,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
     let poles =
         if let Some(weights) = weights {
             let mut paired = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut paired,
                 controls.len(),
                 "creo saved spline sketch paired poles",
@@ -472,7 +470,7 @@ pub(in super::super) fn saved_spline_sketch_geometry(
         } else {
             cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles::Polynomial { points: controls }
         };
-    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
+    match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
         nurbs.degree(),
         knots,
         poles,
@@ -525,7 +523,7 @@ pub(in super::super) fn interpolation_spline_surface(
     let mut u_knots = None;
     for v in 0..v_sample_count {
         let mut samples = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut samples,
             u_sample_count,
             "creo interpolation surface position samples",
@@ -560,7 +558,7 @@ pub(in super::super) fn interpolation_spline_surface(
     }
     for v_boundary in 0..2 {
         let mut samples = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut samples,
             u_sample_count,
             "creo interpolation surface derivative samples",
@@ -587,7 +585,7 @@ pub(in super::super) fn interpolation_spline_surface(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut control_points,
         control_count,
         "creo interpolation surface controls",
@@ -614,14 +612,14 @@ pub(in super::super) fn interpolation_spline_surface(
         return Ok(None);
     }
     let mut pole_rows = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut pole_rows,
         u_control_count,
         "creo interpolation surface NURBS pole rows",
     )?;
     for points in control_points.chunks(v_control_count) {
         let mut row = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut row,
             points.len(),
             "creo interpolation surface NURBS pole values",
@@ -691,9 +689,9 @@ pub(in super::super) fn extruded_nurbs_surface(
     let mut polynomial_rows = Vec::new();
     let mut rational_rows = Vec::new();
     if rational {
-        ctx.try_reserve_items(&mut rational_rows, count, "creo extruded NURBS pole rows")?;
+        ctx.reserve_vec(&mut rational_rows, count, "creo extruded NURBS pole rows")?;
     } else {
-        ctx.try_reserve_items(&mut polynomial_rows, count, "creo extruded NURBS pole rows")?;
+        ctx.reserve_vec(&mut polynomial_rows, count, "creo extruded NURBS pole rows")?;
     }
     for index in 0..count {
         let Some(point) = directrix.pole_rows().point_at(index) else {
@@ -724,7 +722,7 @@ pub(in super::super) fn extruded_nurbs_surface(
                 return Ok(None);
             };
             let mut row = Vec::new();
-            ctx.try_reserve_items(&mut row, 2, "creo extruded NURBS pole values")?;
+            ctx.reserve_vec(&mut row, 2, "creo extruded NURBS pole values")?;
             row.extend([
                 WeightedPole3 { point, weight },
                 WeightedPole3 {
@@ -735,7 +733,7 @@ pub(in super::super) fn extruded_nurbs_surface(
             rational_rows.push(row);
         } else {
             let mut row = Vec::new();
-            ctx.try_reserve_items(&mut row, 2, "creo extruded NURBS pole values")?;
+            ctx.reserve_vec(&mut row, 2, "creo extruded NURBS pole values")?;
             row.extend([point, translated]);
             polynomial_rows.push(row);
         }
@@ -749,15 +747,24 @@ pub(in super::super) fn extruded_nurbs_surface(
             rows: polynomial_rows,
         }
     };
-    let u_knots = ctx.try_collection(
-        directrix.knots().len(),
-        "creo extruded NURBS U knots",
-        || directrix.knots().try_clone(),
-    )?;
+    let u_knots = directrix
+        .knots()
+        .try_clone_for_decode(ctx, "creo extruded NURBS U knots")?;
     let mut v_knots = Vec::new();
-    ctx.try_reserve_items(&mut v_knots, 4, "creo extruded NURBS V knots")?;
+    ctx.reserve_vec(&mut v_knots, 4, "creo extruded NURBS V knots")?;
     v_knots.extend([0.0, 0.0, 1.0, 1.0]);
-    match NurbsSurface::new_admitted_grid(
+    let v_knots = match cadmpeg_ir::geometry::nurbs::KnotValue::admit(v_knots) {
+        Ok(knots) => knots,
+        Err(error) => {
+            refusal.note_checked(
+                ctx,
+                format_args!("creo extruded NURBS surface record for {record}"),
+                &error,
+            );
+            return Ok(None);
+        }
+    };
+    match NurbsSurface::from_admitted_grid(
         NurbsSurfaceAxis::new(directrix.degree(), u_knots, directrix.periodic()),
         NurbsSurfaceAxis::new(1, v_knots, false),
         poles,
@@ -775,6 +782,33 @@ pub(in super::super) fn extruded_nurbs_surface(
     }
 }
 
+/// Copies a pcurve NURBS with the knot lane and the pole lane each charged under its own operation.
+pub(super) fn copy_pcurve_nurbs(
+    ctx: &DecodeContext<'_>,
+    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
+    knot_operation: &'static str,
+    pole_operation: &'static str,
+) -> Result<cadmpeg_ir::geometry::pcurve::PcurveNurbs, CodecError> {
+    use cadmpeg_ir::geometry::pcurve::PcurveNurbsPoles;
+
+    let knots = curve.knots().try_clone_for_decode(ctx, knot_operation)?;
+    let poles = match curve.pole_rows() {
+        PcurveNurbsPoles::Polynomial { points } => PcurveNurbsPoles::Polynomial {
+            points: ctx.copy_retained_slice(points, pole_operation)?,
+        },
+        PcurveNurbsPoles::Rational { points } => PcurveNurbsPoles::Rational {
+            points: ctx.copy_retained_slice(points, pole_operation)?,
+        },
+    };
+    cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
+        curve.degree(),
+        knots,
+        poles,
+        curve.periodic(),
+    )
+    .map_err(CodecError::malformed)
+}
+
 pub(super) fn sketch_nurbs_curve(
     ctx: &DecodeContext<'_>,
     geometry: &SketchGeometry,
@@ -787,13 +821,13 @@ pub(super) fn sketch_nurbs_curve(
     let SketchGeometryDefinition::Nurbs { curve } = geometry.definition() else {
         return Ok(None);
     };
-    let knots = ctx.try_collection(curve.knots().len(), "creo sketch NURBS lift knots", || {
-        curve.knots().try_clone()
-    })?;
+    let knots = curve
+        .knots()
+        .try_clone_for_decode(ctx, "creo sketch NURBS lift knots")?;
     let poles = match curve.pole_rows() {
         PcurveNurbsPoles::Polynomial { points } => {
             let mut lifted = Vec::new();
-            ctx.try_reserve_items(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
+            ctx.reserve_vec(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
             for point in points {
                 let [x, y] = point.coordinates();
                 lifted.push(FinitePoint3::from_coordinates(x, y, FiniteReal::ZERO));
@@ -802,7 +836,7 @@ pub(super) fn sketch_nurbs_curve(
         }
         PcurveNurbsPoles::Rational { points } => {
             let mut lifted = Vec::new();
-            ctx.try_reserve_items(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
+            ctx.reserve_vec(&mut lifted, points.len(), "creo sketch NURBS lift poles")?;
             for pole in points {
                 let [x, y] = pole.point.coordinates();
                 lifted.push(WeightedPole3 {
@@ -853,15 +887,13 @@ pub(super) fn sketch_nurbs_pcurve(
     let Some(nurbs) = oriented_sketch_nurbs_curve(ctx, geometry, reversed)? else {
         return Ok(None);
     };
-    let knots = ctx.try_collection(
-        nurbs.knots().len(),
-        "creo sketch NURBS pcurve knots",
-        || nurbs.knots().try_clone(),
-    )?;
+    let knots = nurbs
+        .knots()
+        .try_clone_for_decode(ctx, "creo sketch NURBS pcurve knots")?;
     let poles = match nurbs.pole_rows() {
         NurbsPoles3::Polynomial { points } => {
             let mut projected = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut projected,
                 points.len(),
                 "creo sketch NURBS pcurve poles",
@@ -874,7 +906,7 @@ pub(super) fn sketch_nurbs_pcurve(
         }
         NurbsPoles3::Rational { points } => {
             let mut projected = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut projected,
                 points.len(),
                 "creo sketch NURBS pcurve poles",
@@ -889,7 +921,7 @@ pub(super) fn sketch_nurbs_pcurve(
             PcurveNurbsPoles::Rational { points: projected }
         }
     };
-    match PcurveNurbs::new_admitted_poles(nurbs.degree(), knots, poles, nurbs.periodic()) {
+    match PcurveNurbs::from_admitted_rows(nurbs.degree(), knots, poles, nurbs.periodic()) {
         Ok(nurbs) => Ok(Some(PcurveGeometry::Nurbs { nurbs })),
         Err(error) => {
             refusal.note_checked(
@@ -1246,14 +1278,14 @@ pub(in super::super) fn placed_tabulated_cylinder_directrix(
         return Ok(None);
     };
     let mut controls = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut controls,
         control_points.len(),
         "creo tabulated-cylinder directrix controls",
     )?;
     controls.extend(control_points);
     let mut knots = Vec::new();
-    ctx.try_reserve_items(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
+    ctx.reserve_vec(&mut knots, 8, "creo tabulated-cylinder directrix knots")?;
     knots.extend([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
     match NurbsCurve::from_lanes_admitted(ctx, 3, knots, controls, None, false)? {
         Ok(curve) => Ok(Some((curve, sweep))),

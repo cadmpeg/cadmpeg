@@ -3,6 +3,8 @@
 
 use super::compact::{CompactIndexAtom, NullableCompactIndex};
 use super::discriminators::DraftIdentityBranch;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
 /// Decoded prefix fields used only at the native wire boundary.
@@ -58,32 +60,43 @@ impl Prefix {
         }
     }
 
+    #[cfg(test)]
     fn raw(&self) -> Vec<u8> {
+        let (bytes, len) = self.raw_stack();
+        bytes[..len].to_vec()
+    }
+
+    fn raw_stack(&self) -> ([u8; 8], usize) {
         // The wire adapter receives the optional field by reference, including its absence.
         #[allow(clippy::ref_option)]
         fn nullable(atom: &Option<CompactIndexAtom>) -> &[u8] {
             atom.as_ref().map_or(&[0xff], CompactIndexAtom::raw)
         }
+        let mut bytes = [0_u8; 8];
+        let mut at = 0;
+        let mut append = |part: &[u8]| {
+            bytes[at..at + part.len()].copy_from_slice(part);
+            at += part.len();
+        };
         match self {
             Self::IndexedBranch {
                 first,
                 second,
                 branch,
             } => {
-                let mut bytes = vec![0x41];
-                bytes.extend_from_slice(first.raw());
-                bytes.push(0xf0);
-                bytes.extend_from_slice(nullable(second));
-                bytes.extend_from_slice(&[u8::from(*branch), 0x01]);
-                bytes
+                append(&[0x41]);
+                append(first.raw());
+                append(&[0xf0]);
+                append(nullable(second));
+                append(&[u8::from(*branch), 0x01]);
             }
             Self::Tagged { index } => {
-                let mut bytes = vec![0x41, 0xf0];
-                bytes.extend_from_slice(nullable(index));
-                bytes.extend_from_slice(&[0xff, 0x02, 0x01]);
-                bytes
+                append(&[0x41, 0xf0]);
+                append(nullable(index));
+                append(&[0xff, 0x02, 0x01]);
             }
         }
+        (bytes, at)
     }
 
     fn byte_len(&self) -> usize {
@@ -123,23 +136,37 @@ pub(crate) struct DraftIdentityFrame {
 }
 
 impl DraftIdentityFrame {
-    pub(super) fn read(bytes: &[u8], offset: usize) -> Option<Self> {
-        let prefix = Prefix::read(bytes.get(offset..)?)?;
-        let start = offset.checked_add(prefix.byte_len())?;
-        let tail = bytes.get(start..)?;
+    pub(super) fn read(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        offset: usize,
+    ) -> Result<Option<Self>, CodecError> {
+        let Some(prefix) = bytes.get(offset..).and_then(Prefix::read) else {
+            return Ok(None);
+        };
+        let Some(start) = offset.checked_add(prefix.byte_len()) else {
+            return Ok(None);
+        };
+        let Some(tail) = bytes.get(start..) else {
+            return Ok(None);
+        };
         let len = tail
             .iter()
             .take_while(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
             .count();
         if len == 0 || tail.get(len) != Some(&b'?') {
-            return None;
+            return Ok(None);
         }
-        let identity = tail[..len].iter().copied().map(char::from).collect();
-        Some(Self {
+        let Some(text) = std::str::from_utf8(&tail[..len]).ok() else {
+            return Ok(None);
+        };
+        let mut identity = ctx.retained_string(len, "NX draft identity text")?;
+        identity.push_str(text);
+        Ok(Some(Self {
             prefix,
             identity,
-            offset: offset as u64,
-        })
+            offset: u64_from_index(offset),
+        }))
     }
 
     pub(crate) fn from_wire(
@@ -162,7 +189,7 @@ impl DraftIdentityFrame {
             return Err("identity must contain nonempty lowercase hexadecimal digits");
         }
         offset
-            .checked_add(parsed.byte_len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(parsed.byte_len()))
             .ok_or("payload_offset overflows identity_payload_offset")?;
         Ok(Self {
             prefix: parsed,
@@ -174,8 +201,12 @@ impl DraftIdentityFrame {
     pub(crate) fn offset(&self) -> u64 {
         self.offset
     }
+    #[cfg(test)]
     pub(crate) fn prefix(&self) -> Vec<u8> {
         self.prefix.raw()
+    }
+    pub(crate) fn prefix_stack(&self) -> ([u8; 8], usize) {
+        self.prefix.raw_stack()
     }
     pub(crate) fn form(&self) -> DraftIdentityForm {
         self.prefix.form()
@@ -184,13 +215,27 @@ impl DraftIdentityFrame {
         &self.identity
     }
     pub(crate) fn identity_offset(&self) -> u64 {
-        self.offset + self.prefix.byte_len() as u64
+        self.offset + cadmpeg_core::decode::u64_from_index(self.prefix.byte_len())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{DraftIdentityForm, DraftIdentityFrame};
+
+    #[test]
+    fn draft_identity_text_refuses_retained_limit() {
+        let bytes = b"A\xf0\x27\xff\x02\x01abc123?";
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        let (ctx, _) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let error = DraftIdentityFrame::read(&ctx, bytes, 0).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
 
     #[test]
     fn tagged_prefix_retains_alternate_compact_and_null_encodings() {
@@ -208,13 +253,20 @@ mod tests {
             )
             .unwrap();
             assert_eq!(frame.prefix(), prefix);
-            assert_eq!(frame.identity_offset(), 10 + prefix.len() as u64);
+            assert_eq!(
+                frame.identity_offset(),
+                10 + cadmpeg_core::decode::u64_from_index(prefix.len())
+            );
             let mut bytes = prefix.to_vec();
             bytes.extend_from_slice(b"0af?");
-            let parsed = DraftIdentityFrame::read(&bytes, 0).unwrap();
+            let parsed = crate::test_support::with_decode_context(|ctx| {
+                DraftIdentityFrame::read(ctx, &bytes, 0)
+            })
+            .unwrap()
+            .unwrap();
             assert_eq!(parsed.prefix(), prefix);
             assert_eq!(parsed.form(), frame.form());
-            let limit = u64::MAX - prefix.len() as u64;
+            let limit = u64::MAX - cadmpeg_core::decode::u64_from_index(prefix.len());
             assert_eq!(
                 DraftIdentityFrame::from_wire(prefix, frame.form(), "0".into(), limit)
                     .unwrap()

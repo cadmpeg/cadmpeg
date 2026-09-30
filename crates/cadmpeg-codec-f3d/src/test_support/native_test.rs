@@ -11,6 +11,40 @@ use cadmpeg_ir::codec::write::Encoder;
 
 use crate::F3dCodec;
 
+pub(crate) fn assert_borrowed_native_retained_limit<T: Serialize>(
+    record: &T,
+    arena_name: &str,
+    reset_clone_count: impl FnOnce(),
+    clone_count: impl Fn() -> usize,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let needed = serde_json::to_vec(record).unwrap().len() + arena_name.len();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    reset_clone_count();
+    let error = namespace
+        .set_arena(&limited, arena_name, std::slice::from_ref(record))
+        .unwrap_err();
+    assert_eq!(clone_count(), 0);
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    namespace
+        .set_arena(&service, arena_name, std::slice::from_ref(record))
+        .unwrap();
+    assert_eq!(namespace.arenas()[arena_name].len(), 1);
+}
+
 pub(crate) trait TestEncode {
     fn encode(
         &self,

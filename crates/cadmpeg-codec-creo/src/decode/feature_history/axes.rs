@@ -118,21 +118,21 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
         match source_carriers.surface_geometry(surface) {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 let origin = cylinder_surface.origin().get();
-                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cylinder_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface)) => {
                 let origin = cone_surface.origin().get();
-                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((origin, *cone_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus_surface)) => {
                 let center = torus_surface.center().get();
-                ctx.try_reserve_items(&mut axes, 1, "creo full-turn revolution carrier axes")?;
+                ctx.reserve_vec(&mut axes, 1, "creo full-turn revolution carrier axes")?;
                 axes.push((center, *torus_surface.frame().axis()));
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut plane_normals,
                     1,
                     "creo full-turn revolution plane normals",
@@ -141,7 +141,7 @@ pub(in super::super) fn full_turn_revolution_carrier_axis(
             }
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
                 let center = sphere_surface.center().get();
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut sphere_centers,
                     1,
                     "creo full-turn revolution sphere centers",
@@ -478,7 +478,7 @@ pub(in super::super) fn section_profile_ref(
         Ok(ProfileRef::Planar(PlanarProfileRef::Sketch(
             sketch
                 .id
-                .copy_admitted(ctx, "creo section profile sketch identity")?,
+                .try_clone_for_decode(ctx, "creo section profile sketch identity")?,
         )))
     }
 }
@@ -550,7 +550,7 @@ pub(in super::super) fn geometry_generator_features(
             }
         };
         generator.offset = generator.offset.min(row.offset);
-        ctx.try_reserve_items(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
+        ctx.reserve_vec(&mut generator.surface_ids, 1, "creo generator surface IDs")?;
         generator.surface_ids.push(row.id);
     }
     for row in &scan.curves.topology_rows {
@@ -570,7 +570,7 @@ pub(in super::super) fn geometry_generator_features(
             }
         };
         generator.offset = generator.offset.min(row.offset);
-        ctx.try_reserve_items(&mut generator.curve_ids, 1, "creo generator curve IDs")?;
+        ctx.reserve_vec(&mut generator.curve_ids, 1, "creo generator curve IDs")?;
         generator.curve_ids.push(row.id);
     }
     let mut output = Vec::new();
@@ -581,7 +581,7 @@ pub(in super::super) fn geometry_generator_features(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut output, 1, "creo geometry generator features")?;
+        ctx.reserve_vec(&mut output, 1, "creo geometry generator features")?;
         output.push(generator);
     }
     crate::sort::stable_sort_by_key(

@@ -569,7 +569,7 @@ pub(super) fn surface_transfer_coverage(
         let extra = extrusion_surfaces.contains(&surface.id).then_some(
             crate::surface::SurfaceKind::Extrusion(crate::surface::ExtrusionVariant::Linear),
         );
-        ctx.try_reserve_items(&mut transferred, 1, "creo transferred surface rows")?;
+        ctx.reserve_vec(&mut transferred, 1, "creo transferred surface rows")?;
         transferred.push((id, [Some(kind), extra]));
     }
     let mut unknown_ids = BTreeSet::new();

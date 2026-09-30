@@ -570,7 +570,7 @@ pub(super) fn reference_line_records(
             ),
             "creo native reference line IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native reference line records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native reference line records")?;
         records.push(CreoReferenceLineRecord {
             id,
             kind: line.kind.clone(),
@@ -592,7 +592,7 @@ pub(super) fn reference_circle_records(
             format_args!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
             "creo native reference circle IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native reference circle records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native reference circle records")?;
         records.push(CreoReferenceCircleRecord {
             id,
             entity_id: circle.entity_id,
@@ -621,7 +621,7 @@ pub(super) fn reference_conic_records<'a>(
             format_args!("creo:mdl_ref_info:conic_record#{}", conic.offset),
             "creo native reference conic IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native reference conic records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native reference conic records")?;
         records.push(CreoReferenceConicRecord {
             id,
             entity_id: conic.entity_id,
@@ -657,7 +657,7 @@ pub(super) fn reference_ellipse_records(
             format_args!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
             "creo native reference ellipse source IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native reference ellipse records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native reference ellipse records")?;
         records.push(CreoReferenceEllipseRecord {
             id,
             source_conic_id,
@@ -703,10 +703,10 @@ pub(super) fn expanded_section_records(
         )?;
         let name = ctx.copy_retained_text(&section.name, "creo native expanded section names")?;
         let sha256 = ctx.format_retained(
-            HexDigest(sha256(&section.data)),
+            format_args!("{}", HexDigest(sha256(&section.data))),
             "creo native expanded section hashes",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native expanded section records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native expanded section records")?;
         records.push(CreoExpandedSectionRecord {
             id,
             name,
@@ -868,7 +868,7 @@ pub(super) fn feature_entity_records<'a>(
             format_args!("creo:allfeatur:entity#{}", entity.entity_id),
             "creo feature entity record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature entity records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature entity records")?;
         records.push(CreoFeatureEntityRecord {
             id,
             entity_id: entity.entity_id,
@@ -890,7 +890,7 @@ pub(super) fn feature_entity_reference_records(
             format_args!("creo:allfeatur:entity_reference#{}", reference.offset),
             "creo feature entity reference record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature entity reference records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature entity reference records")?;
         records.push(CreoFeatureEntityReferenceRecord {
             id,
             source_entity_id: reference.source_entity_id,
@@ -913,13 +913,13 @@ pub(super) fn feature_entity_table_records(
         let mut surface_ids = Vec::new();
         let mut non_surface_entity_ids = Vec::new();
         for entry in &table.entries {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut entry_ids,
                 1,
                 "creo feature entity table record entry ids",
             )?;
             entry_ids.push(entry.entity_id);
-            ctx.try_reserve_items(&mut entries, 1, "creo feature entity table record entries")?;
+            ctx.reserve_vec(&mut entries, 1, "creo feature entity table record entries")?;
             entries.push(CreoFeatureEntityTableEntryRecord {
                 entity_id: entry.entity_id,
                 class_id: entry.class_id(),
@@ -931,14 +931,14 @@ pub(super) fn feature_entity_table_records(
                 end_offset: entry.end_offset,
             });
             if table.contains_surface_id(entry.entity_id) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut surface_ids,
                     1,
                     "creo feature entity table record surface ids",
                 )?;
                 surface_ids.push(entry.entity_id);
             } else {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut non_surface_entity_ids,
                     1,
                     "creo feature entity table record non surface ids",
@@ -950,7 +950,7 @@ pub(super) fn feature_entity_table_records(
             format_args!("creo:allfeatur:entity_table#{}", table.offset),
             "creo feature entity table record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature entity table records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature entity table records")?;
         records.push(CreoFeatureEntityTableRecord {
             id,
             owner_feature_id: table.feature_id,
@@ -1073,7 +1073,7 @@ pub(super) fn feature_geometry_table_records<'a>(
             format_args!("creo:feature:geometry_table#{}", table.offset),
             "creo feature geometry table record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature geometry table records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature geometry table records")?;
         records.push(CreoFeatureGeometryTableRecord {
             id,
             owner_feature_id: table.feature_id,
@@ -1097,7 +1097,7 @@ pub(super) fn feature_loop_history_entry_records<'a>(
             format_args!("creo:feature:loop_history_entry#{}", entry.offset),
             "creo feature loop history record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature loop history records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature loop history records")?;
         records.push(CreoFeatureLoopHistoryEntryRecord {
             id,
             owner_feature_id: entry.feature_id,
@@ -1123,7 +1123,7 @@ pub(super) fn feature_affected_id_records<'a>(
             format_args!("creo:feature:affected_ids#{}", record.offset),
             "creo feature affected ids record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature affected ids records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature affected ids records")?;
         records.push(CreoFeatureAffectedIdsRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -1146,7 +1146,7 @@ pub(super) fn feature_replay_affected_id_records<'a>(
             format_args!("creo:feature:replay_affected_ids#{}", record.offset),
             "creo feature replay affected ids record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature replay affected ids records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature replay affected ids records")?;
         records.push(CreoFeatureReplayAffectedIdsRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -1174,7 +1174,7 @@ pub(super) fn surface_merge_replay_affected_id_records<'a>(
             ),
             "creo surface merge replay affected ids record id",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             1,
             "creo surface merge replay affected ids records",
@@ -1205,7 +1205,7 @@ pub(super) fn feature_loop_restore_direction_records<'a>(
             format_args!("creo:feature:loop_restore_direction#{}", record.offset),
             "creo feature loop restore direction record id",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             1,
             "creo feature loop restore direction records",
@@ -1235,7 +1235,7 @@ pub(super) fn feature_revolution_extent_records<'a>(
             format_args!("creo:feature:revolution_extent#{}", record.offset),
             "creo feature revolution extent record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature revolution extent records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature revolution extent records")?;
         records.push(CreoFeatureRevolutionExtentRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -1258,7 +1258,7 @@ pub(super) fn feature_choice_records<'a>(
             format_args!("creo:feature:choice#{}", choice.offset),
             "creo feature choice record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature choice records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature choice records")?;
         records.push(CreoFeatureChoiceRecord {
             id,
             owner_feature_id: choice.feature_id,
@@ -1283,7 +1283,7 @@ pub(super) fn feature_row_records<'a>(
             format_args!("creo:allfeatur:feature_row#{}", row.offset),
             "creo feature row record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo feature row records")?;
+        ctx.reserve_vec(&mut records, 1, "creo feature row records")?;
         records.push(CreoFeatureRowRecord {
             id,
             owner_feature_id: row.feature_id,
@@ -1309,7 +1309,7 @@ pub(super) fn depdb_recipe_row_records<'a>(
             format_args!("creo:depdb:recipe_row#{}", row.offset),
             "creo depdb recipe row record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo depdb recipe row records")?;
+        ctx.reserve_vec(&mut records, 1, "creo depdb recipe row records")?;
         records.push(CreoFeatureRowRecord {
             id,
             owner_feature_id: row.feature_id,
@@ -1539,7 +1539,7 @@ pub(super) fn feature_choice_field_records<'a>(
             format_args!("creo:feature:choice_field#{}", field.offset),
             "creo native feature choice field record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native feature choice field records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native feature choice field records")?;
         records.push(CreoFeatureChoiceFieldRecord {
             id,
             owner_feature_id: field.feature_id,
@@ -1712,7 +1712,7 @@ pub(super) fn half_edge_records<'a>(
             ),
             "creo native half edge record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native half edge records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native half edge records")?;
         records.push(CreoHalfEdgeRecord {
             id,
             curve_id: edge.id.curve_id,
@@ -1736,7 +1736,7 @@ pub(super) fn loop_records<'a>(
             format_args!("creo:topology:loop#{}", index + 1),
             "creo native loop record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native loop records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native loop records")?;
         records.push(CreoLoopRecord {
             id,
             face_id: record.face_id.map_or(0, std::num::NonZeroU32::get),
@@ -1769,7 +1769,7 @@ pub(super) fn loop_array_frame_records<'a>(
             format_args!("creo:loop_array:frame#{}", frame.offset),
             "creo native loop array frame record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native loop array frame records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native loop array frame records")?;
         records.push(CreoLoopArrayFrameRecord {
             id,
             variant: frame.variant,
@@ -1796,7 +1796,7 @@ pub(super) fn loop_array_record_records<'a>(
             format_args!("creo:loop_array:record#{}", record.offset),
             "creo native loop array record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native loop array records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native loop array records")?;
         records.push(CreoLoopArrayRecord {
             id,
             frame_offset: record.frame_offset,
@@ -1826,7 +1826,7 @@ pub(super) fn topological_vertex_records<'a>(
             format_args!("creo:topology:vertex#{}", record.id),
             "creo native topological vertex record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native topological vertex records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native topological vertex records")?;
         records.push(CreoTopologicalVertexRecord {
             id,
             vertex_id: record.id,
@@ -1849,7 +1849,7 @@ pub(super) fn half_edge_vertex_incidence_records(
             ),
             "creo native half edge vertex incidence record id",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             1,
             "creo native half edge vertex incidence records",
@@ -1874,7 +1874,7 @@ pub(super) fn face_component_records<'a>(
             format_args!("creo:topology:face_component#{}", index + 1),
             "creo native face component record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native face component records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native face component records")?;
         records.push(CreoFaceComponentRecord {
             id,
             face_ids: &record.face_ids,
@@ -2066,7 +2066,7 @@ pub(super) fn fc_curve_coordinate_records<'a>(
             format_args!("creo:curve:fc_coordinates#{}", record.curve_id),
             "creo native FC curve coordinate record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native FC curve coordinate records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native FC curve coordinate records")?;
         records.push(CreoFcCurveCoordinateRecord {
             id,
             curve_id: record.curve_id,
@@ -2092,7 +2092,7 @@ pub(super) fn prototype_pcurve_records<'a>(
             format_args!("creo:curve:prototype_pcurve#{}", record.curve_id),
             "creo native prototype pcurve record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native prototype pcurve records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native prototype pcurve records")?;
         records.push(CreoPrototypePcurveRecord {
             id,
             curve_id: record.curve_id,
@@ -2115,7 +2115,7 @@ pub(super) fn curve_prototype_topology_records<'a>(
             format_args!("creo:curve:prototype_topology#{}", record.curve_id),
             "creo native curve prototype topology record id",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             1,
             "creo native curve prototype topology records",
@@ -2144,7 +2144,7 @@ pub(super) fn curve_prototype_records<'a>(
             format_args!("{id_prefix}#{}:{}", record.offset, record.id),
             "creo native curve prototype record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native curve prototype records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native curve prototype records")?;
         records.push(CreoCurvePrototypeRecord {
             id,
             curve_id: record.id,
@@ -2170,7 +2170,7 @@ pub(super) fn plane_local_system_records<'a>(
             format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             "creo native plane local system record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native plane local system records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native plane local system records")?;
         records.push(CreoPlaneLocalSystemRecord {
             id,
             surface_id: record.surface_id,
@@ -2203,7 +2203,7 @@ pub(super) fn plane_envelope_records<'a>(
             format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             "creo native plane envelope record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native plane envelope records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native plane envelope records")?;
         records.push(CreoPlaneEnvelopeRecord {
             id,
             surface_id: record.surface_id,
@@ -2245,7 +2245,7 @@ pub(super) fn outline_plane_records<'a>(
             format_args!("{id_prefix}#{}:{}", record.offset, record.surface_id),
             "creo native outline plane record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native outline plane records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native outline plane records")?;
         records.push(CreoOutlinePlaneRecord {
             id,
             surface_id: record.surface_id,
@@ -2272,7 +2272,7 @@ pub(super) fn datum_plane_records<'a>(
             ),
             "creo native datum plane record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native datum plane records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native datum plane records")?;
         records.push(CreoDatumPlaneRecord {
             id,
             datum_id: record.id,
@@ -2300,7 +2300,7 @@ pub(super) fn datum_cylinder_records<'a>(
             ),
             "creo native datum cylinder record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native datum cylinder records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native datum cylinder records")?;
         records.push(CreoDatumCylinderRecord {
             id,
             datum_id: record.id,
@@ -2334,7 +2334,7 @@ pub(super) fn feature_section_transform_records<'a>(
             ),
             "creo native section transform record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native section transform records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native section transform records")?;
         records.push(CreoFeatureSectionTransformRecord {
             id,
             definition_id: record.definition_id,
@@ -2372,7 +2372,7 @@ pub(super) fn feature_placement_instruction_records<'a>(
                 ),
                 "creo native placement instruction record id",
             )?;
-            ctx.try_reserve_items(&mut records, 1, "creo native placement instruction records")?;
+            ctx.reserve_vec(&mut records, 1, "creo native placement instruction records")?;
             records.push(CreoFeaturePlacementInstructionRecord {
                 id,
                 definition_id: definition.identity.id(),
@@ -3038,7 +3038,7 @@ pub(super) fn surface_row_records<'a>(
             format_args!("creo:{namespace}:surface_row#{}", row.id),
             "creo native surface row record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native surface row records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native surface row records")?;
         records.push(CreoSurfaceRowRecord {
             id,
             surface_id: row.id,
@@ -3084,7 +3084,7 @@ pub(super) fn surface_prototype_records<'a>(
         };
         let mut parameters = Vec::new();
         for parameter in &record.parameters {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut parameters,
                 1,
                 "creo native surface prototype parameters",
@@ -3097,7 +3097,7 @@ pub(super) fn surface_prototype_records<'a>(
                 value_offset: parameter.value_offset,
             });
         }
-        ctx.try_reserve_items(&mut records, 1, "creo native surface prototype records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native surface prototype records")?;
         records.push(CreoSurfacePrototypeRecord {
             id,
             declared_family: record.family.name(),
@@ -3125,7 +3125,7 @@ pub(super) fn surface_contour_records<'a>(
             ),
             "creo native surface contour record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native surface contour records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native surface contour records")?;
         records.push(CreoSurfaceContourRecord {
             id,
             surface_id: record.surface_id,
@@ -3404,7 +3404,7 @@ pub(super) fn curve_parameter_records<'a>(
             ),
             "creo native curve parameter record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native curve parameter records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native curve parameter records")?;
         records.push(CreoCurveParameterRecord {
             id,
             curve_id: record.curve_id,
@@ -3449,7 +3449,7 @@ pub(super) fn cross_section_curve_row_records<'a>(
             ),
             "creo native cross section curve record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native cross section curve records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native cross section curve records")?;
         records.push(CreoCrossSectionCurveRowRecord {
             id,
             curve_id: row.id,
@@ -3493,7 +3493,7 @@ pub(super) fn curve_topology_row_records<'a>(
             ),
             "creo native curve topology record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native curve topology records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native curve topology records")?;
         records.push(CreoCurveTopologyRowRecord {
             id,
             curve_id: row.id,
@@ -3522,7 +3522,7 @@ pub(super) fn tabulated_cylinder_curve_replay_records<'a>(
             ),
             "creo native tabulated cylinder replay record id",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             1,
             "creo native tabulated cylinder replay records",
@@ -3752,7 +3752,7 @@ pub(super) fn surface_parameter_records<'a>(
             format_args!("creo:{namespace}:surface_parameter#{}", record.surface_id),
             "creo native surface parameter record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native surface parameter records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native surface parameter records")?;
         records.push(CreoSurfaceParameterRecord {
             id,
             surface_id: record.surface_id,
@@ -4004,7 +4004,10 @@ pub(super) fn feature_operation_state_records<'a>(
                 .name
                 .stored_name_prefix()
                 .map(|prefix| {
-                    ctx.format_retained(char::from(prefix), "creo native feature state prefix")
+                    ctx.format_retained(
+                        format_args!("{}", char::from(prefix)),
+                        "creo native feature state prefix",
+                    )
                 })
                 .transpose()?,
         };
@@ -4015,7 +4018,7 @@ pub(super) fn feature_operation_state_records<'a>(
             ),
             "creo native feature state IDs",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native feature state records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native feature state records")?;
         records.push(CreoFeatureOperationState {
             id,
             feature_id: state.feature_id,
@@ -4053,7 +4056,7 @@ pub(super) fn feature_reference_name_records(
             ctx.copy_retained_lossy_utf8(&record.name_bytes, "creo native feature reference text")?;
         let name_bytes =
             ctx.copy_retained(&record.name_bytes, "creo native feature reference bytes")?;
-        ctx.try_reserve_items(&mut records, 1, "creo native feature reference records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native feature reference records")?;
         records.push(CreoFeatureReferenceNameRecord {
             id,
             owner_feature_id: record.feature_id,
@@ -4087,7 +4090,7 @@ pub(super) fn pcurve_endpoint_records(
             format_args!("creo:visibgeom:pcurve_endpoints#{}", pcurve.curve_id),
             "creo native pcurve endpoint record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
         records.push((
             CreoPcurveEndpointRecord {
                 id,
@@ -4108,7 +4111,7 @@ pub(super) fn pcurve_endpoint_records(
             ),
             "creo native prototype pcurve endpoint record id",
         )?;
-        ctx.try_reserve_items(&mut records, 1, "creo native pcurve endpoint records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native pcurve endpoint records")?;
         records.push((
             CreoPcurveEndpointRecord {
                 id,
@@ -4212,7 +4215,7 @@ pub(super) fn curve_expression_records<'a>(
         let id = curve_expression_record_id(ctx, record)?;
         let mut lines = Vec::new();
         for line in &record.lines {
-            ctx.try_reserve_items(&mut lines, 1, "creo native curve expression lines")?;
+            ctx.reserve_vec(&mut lines, 1, "creo native curve expression lines")?;
             lines.push(CreoCurveExpressionLine {
                 text: &line.text,
                 offset: line.offset,
@@ -4220,7 +4223,7 @@ pub(super) fn curve_expression_records<'a>(
         }
         let mut assignments = Vec::new();
         for assignment in &record.assignments {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut assignments,
                 1,
                 "creo native curve expression assignments",
@@ -4231,7 +4234,7 @@ pub(super) fn curve_expression_records<'a>(
         for block in &record.solve_blocks {
             let mut equations = Vec::new();
             for equation in &block.equations {
-                ctx.try_reserve_items(&mut equations, 1, "creo native curve expression equations")?;
+                ctx.reserve_vec(&mut equations, 1, "creo native curve expression equations")?;
                 equations.push(CreoCurveExpressionEquation {
                     left: &equation.left,
                     right: &equation.right,
@@ -4241,14 +4244,14 @@ pub(super) fn curve_expression_records<'a>(
             }
             let mut block_assignments = Vec::new();
             for assignment in &block.assignments {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut block_assignments,
                     1,
                     "creo native curve expression block assignments",
                 )?;
                 block_assignments.push(curve_expression_assignment_projection(assignment));
             }
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut solve_blocks,
                 1,
                 "creo native curve expression solve blocks",
@@ -4262,7 +4265,7 @@ pub(super) fn curve_expression_records<'a>(
                 for_offset: block.for_offset,
             });
         }
-        ctx.try_reserve_items(&mut records, 1, "creo native curve expression records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native curve expression records")?;
         records.push(CreoCurveExpressionRecord {
             id,
             entity_id: record.entity_id,
@@ -4956,7 +4959,7 @@ pub(super) fn sketch_records<'a>(
                 "creo native sketch relation triples",
             )?,
         };
-        ctx.try_reserve_items(&mut records, 1, "creo sketch records")?;
+        ctx.reserve_vec(&mut records, 1, "creo sketch records")?;
         records.push(record);
     }
     Ok(records)
@@ -5223,7 +5226,7 @@ pub(super) fn feature_definition_records<'a>(
         let id = feature_definition_record_id(ctx, scan, definition)?;
         let mut parameter_frames = Vec::new();
         for frame in &definition.parameter_frames {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut parameter_frames,
                 1,
                 "creo native feature parameter frames",
@@ -5246,7 +5249,7 @@ pub(super) fn feature_definition_records<'a>(
         }
         let mut outlines = Vec::new();
         for outline in &definition.outlines {
-            ctx.try_reserve_items(&mut outlines, 1, "creo native feature outlines")?;
+            ctx.reserve_vec(&mut outlines, 1, "creo native feature outlines")?;
             outlines.push(CreoFeatureOutline {
                 phase: match outline.phase {
                     crate::feature::definitions::OutlinePhase::PreRollback => "pre_rollback",
@@ -5258,7 +5261,7 @@ pub(super) fn feature_definition_records<'a>(
                 offset: outline.offset,
             });
         }
-        ctx.try_reserve_items(&mut records, 1, "creo native feature definition records")?;
+        ctx.reserve_vec(&mut records, 1, "creo native feature definition records")?;
         records.push(CreoFeatureDefinitionRecord {
             id,
             definition_id: definition.identity.id(),

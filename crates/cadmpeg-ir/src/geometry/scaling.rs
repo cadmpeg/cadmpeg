@@ -146,9 +146,10 @@ impl SolvedSurfaceGeometry {
             Self::Nurbs(surface) => {
                 let mut surface = surface.clone();
                 surface
-                    .edit_control_points(|point| {
-                        scale_control_point(point, scale);
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let mut scaled = point.get();
+                        scale_control_point(&mut scaled, scale);
+                        FinitePoint3::new(scaled).ok_or_else(super::nurbs::non_finite_control_point)
                     })
                     .map_err(ScaleRefusal::ControlPoints)?;
                 Self::Nurbs(surface)
@@ -248,9 +249,10 @@ impl SolvedCurveGeometry {
             Self::Nurbs(curve) => {
                 let mut curve = curve.clone();
                 curve
-                    .edit_control_points(|point| {
-                        scale_control_point(point, scale);
-                        Ok(())
+                    .try_map_control_points(|_, point| {
+                        let mut scaled = point.get();
+                        scale_control_point(&mut scaled, scale);
+                        FinitePoint3::new(scaled).ok_or_else(super::nurbs::non_finite_control_point)
                     })
                     .map_err(ScaleRefusal::ControlPoints)?;
                 Self::Nurbs(curve)

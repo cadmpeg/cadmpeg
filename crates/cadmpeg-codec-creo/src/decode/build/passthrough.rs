@@ -107,7 +107,7 @@ pub(super) fn preserve_passthrough_sections(
             tag,
             exactness,
         )?;
-        ctx.try_reserve_items(&mut unknowns, 1, "creo passthrough unknown records")?;
+        ctx.reserve_vec(&mut unknowns, 1, "creo passthrough unknown records")?;
         unknowns.push(UnknownRecord::retained(
             id,
             offset as u64,

@@ -108,7 +108,7 @@ pub(in super::super) fn knit_class_100_operand_entity_ids(
             if producer.is_none() {
                 return Ok(None);
             }
-            ctx.try_reserve_items(&mut ids, 1, "creo knit class 100 operand IDs")?;
+            ctx.reserve_vec(&mut ids, 1, "creo knit class 100 operand IDs")?;
             ids.push(entry.entity_id);
         }
     }
@@ -133,7 +133,7 @@ fn knit_operand_entity_ids(
             }
             ctx.charge_collection_items(1, "creo knit quilt identity nodes")?;
             seen.insert(id);
-            ctx.try_reserve_items(&mut copied, 1, "creo knit quilt IDs")?;
+            ctx.reserve_vec(&mut copied, 1, "creo knit quilt IDs")?;
             copied.push(id);
         }
         return Ok(Some((copied, "surface_merge_quilts")));
@@ -207,7 +207,7 @@ pub(in super::super) fn knit_operand_surface_ids(
         }
         ctx.charge_collection_items(1, "creo knit surface identity nodes")?;
         seen.insert(surface_id);
-        ctx.try_reserve_items(&mut surface_ids, 1, "creo knit surface IDs")?;
+        ctx.reserve_vec(&mut surface_ids, 1, "creo knit surface IDs")?;
         surface_ids.push(surface_id);
     }
     Ok(Some(surface_ids))
@@ -394,7 +394,7 @@ pub(in super::super) fn feature_surface_transitions(
         }
         ctx.charge_collection_items(1, "creo transition source identity nodes")?;
         source_ids.insert(source_id);
-        ctx.try_reserve_items(&mut transitions, 1, "creo surface transitions")?;
+        ctx.reserve_vec(&mut transitions, 1, "creo surface transitions")?;
         transitions.push((source_id, output.entity_id));
     }
     Ok(output_ids.is_disjoint(&source_ids).then_some(transitions))
@@ -414,7 +414,7 @@ pub(in super::super) fn surface_transition_dependencies(
             continue;
         };
         if !dependencies.contains(&row.feature_id) {
-            ctx.try_reserve_items(&mut dependencies, 1, "creo transition dependencies")?;
+            ctx.reserve_vec(&mut dependencies, 1, "creo transition dependencies")?;
             dependencies.push(row.feature_id);
         }
     }
@@ -451,11 +451,11 @@ pub(in super::super) fn thicken_plane_offset(
         })() else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut offsets, 1, "creo thicken plane offsets")?;
+        ctx.reserve_vec(&mut offsets, 1, "creo thicken plane offsets")?;
         offsets.push(offset);
     }
     let mut magnitudes = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut magnitudes,
         offsets.len(),
         "creo thicken plane magnitudes",
@@ -510,7 +510,7 @@ pub(in super::super) fn feature_result_surface_ids(
             }
             ctx.charge_collection_items(1, "creo feature result surface identity nodes")?;
             seen.insert(surface_id);
-            ctx.try_reserve_items(&mut surface_ids, 1, "creo feature result surface IDs")?;
+            ctx.reserve_vec(&mut surface_ids, 1, "creo feature result surface IDs")?;
             surface_ids.push(surface_id);
         }
     }
@@ -556,7 +556,7 @@ pub(in super::super) fn feature_result_topology(
         )?;
         let id = NonBlankString::new(text)
             .ok_or_else(|| CodecError::Malformed("constructed face local ID is blank".into()))?;
-        ctx.try_reserve_items(&mut faces, 1, "creo feature result face members")?;
+        ctx.reserve_vec(&mut faces, 1, "creo feature result face members")?;
         faces.push(id);
     }
     let mut edges = Vec::new();
@@ -567,7 +567,7 @@ pub(in super::super) fn feature_result_topology(
         )?;
         let id = NonBlankString::new(text)
             .ok_or_else(|| CodecError::Malformed("constructed edge local ID is blank".into()))?;
-        ctx.try_reserve_items(&mut edges, 1, "creo feature result edge members")?;
+        ctx.reserve_vec(&mut edges, 1, "creo feature result edge members")?;
         edges.push(id);
     }
     if faces.is_empty() && edges.is_empty() {
@@ -626,7 +626,7 @@ pub(in super::super) fn generated_surface_face_refs(
         let Some(face) = GeneratedFaceRef::new(feature, local_id).ok() else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut generated, 1, "creo generated surface face references")?;
+        ctx.reserve_vec(&mut generated, 1, "creo generated surface face references")?;
         generated.push(face);
     }
     Ok(Some(generated))
@@ -657,7 +657,7 @@ pub(in super::super) fn emit_feature_result_topologies(
         else {
             continue;
         };
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut ir.model.feature_result_topologies,
             1,
             "creo model feature result topologies",

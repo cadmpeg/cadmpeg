@@ -1,16 +1,141 @@
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::{
-    analytic_offset_magnitude_agrees, counted_cardinality, evaluate_pcurve,
-    is_referenced_geometry_class, parse_circle_pcurve, parse_class_1a_pcurve,
-    parse_extrusion_surface, parse_line_pcurve, parse_offset_surface, parse_opaque_pcurve,
-    parse_profile, parse_sphere_great_circle_pcurve, parse_surface, rational_arc_pcurve,
-    surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
+    analytic_offset_magnitude_agrees, counted_cardinality, is_referenced_geometry_class,
+    parse_extrusion_surface, parse_offset_surface, parse_profile, parse_sphere_great_circle_pcurve,
+    parse_surface, surface_alias_target, B5ExtrusionDirectrix, B5ExtrusionSurface, B5OffsetSurface,
     B5OpaquePcurve, B5Pcurve, B5PcurveParameterization, B5Profile, B5Record,
     B5SphereGreatCirclePcurve, B5Surface,
 };
 use crate::wire;
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use std::collections::{BTreeMap, HashMap};
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::evaluate_pcurve(ctx, pcurve, parameter)
+    })
+    .expect("service budget")
+}
+
+fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_line_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_circle_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+fn parse_class_1a_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::parse_class_1a_pcurve(ctx, record)
+    })
+    .expect("service budget")
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rational_arc_pcurve(
+    record: &B5Record,
+    surface: u32,
+    center: [f64; 2],
+    reference_x: [f64; 2],
+    reference_y: [f64; 2],
+    radius: f64,
+    parameter_range: [f64; 2],
+    angle_range: [f64; 2],
+) -> Option<B5Pcurve> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::rational_arc_pcurve(
+            ctx,
+            crate::families::b5::graph::RationalArcPcurveInputs {
+                record,
+                surface,
+                center,
+                reference_x,
+                reference_y,
+                radius,
+                parameter_range,
+                angle_range,
+            },
+        )
+    })
+    .expect("service budget")
+}
+
+fn parse_opaque_pcurve(record: &B5Record) -> Option<B5OpaquePcurve> {
+    crate::test_support::with_service_context(|ctx| super::super::parse_opaque_pcurve(ctx, record))
+        .expect("service budget")
+}
+
+#[test]
+fn opaque_pcurve_payload_refuses_the_caller_retained_limit() {
+    let mut payload = vec![0x81, 0x82];
+    payload.extend_from_slice(&[0; 16]);
+    payload.extend_from_slice(&[0x05, 0x05]);
+    payload.extend_from_slice(&[0; 56]);
+    let record = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x1a,
+        object_id: 7,
+        payload,
+    };
+    let limited = crate::test_support::with_retained_limit(0, |ctx| {
+        super::super::parse_opaque_pcurve(ctx, &record)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_opaque_pcurve_payload")
+    );
+    assert!(parse_opaque_pcurve(&record).is_some());
+}
+
+#[test]
+fn analytic_pcurve_vectors_refuse_the_caller_collection_limit() {
+    let mut line_payload = vec![0x81, 0x82, 0x05];
+    for value in [3.0_f64, -2.0, 7.0] {
+        line_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let line = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x18,
+        object_id: 7,
+        payload: line_payload,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_line_pcurve(ctx, &line)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_line_pcurve_knots")
+    );
+
+    let mut circle_payload = vec![0x81, 0x18, 0x34, 0x12];
+    for value in [0.0, 0.0, 2.0, 0.0, 2.0 * std::f64::consts::PI, 1.0, 0.0] {
+        if circle_payload.len() == 20 {
+            circle_payload.extend_from_slice(&[0x05, 0x05]);
+        }
+        circle_payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let circle = B5Record {
+        offset: 0,
+        family: 0xb5,
+        class: 0x19,
+        object_id: 8,
+        payload: circle_payload,
+    };
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::parse_circle_pcurve(ctx, &circle)
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_arc_control_points")
+    );
+    assert!(parse_line_pcurve(&line).is_some());
+    assert!(parse_circle_pcurve(&circle).is_some());
+}
 
 #[test]
 fn circle_pcurve_rejects_unbounded_subdivision_counts() {
@@ -1637,4 +1762,35 @@ fn extrusion_surface_binds_two_mapped_directrix_supports() {
             "terminal controls {controls:02x?}"
         );
     }
+}
+
+#[test]
+fn point_cell_refuses_positive_spatial_overflow() {
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn point_cell_refuses_negative_spatial_overflow() {
+    let point =
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(-f64::MAX, 0.0, 0.0))
+            .expect("finite point");
+    let result =
+        crate::test_support::with_service_context(|ctx| super::super::point_index(ctx, &[point]));
+    assert!(matches!(
+        result,
+        Err(cadmpeg_core::CodecError::Malformed { .. })
+    ));
+}
+
+#[test]
+fn point_cell_refuses_nonfinite_coordinate() {
+    assert_eq!(super::super::point_cell([f64::NAN, 0.0, 0.0]), None);
 }

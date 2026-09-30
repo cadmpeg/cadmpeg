@@ -16,8 +16,8 @@ pub(super) fn push_report_loss(
     code: CreoLossCode,
     message: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let message = ctx.format_retained(message, "creo report loss text")?;
-    ctx.try_reserve_items(losses, 1, "creo report losses")?;
+    let message = ctx.format_retained(format_args!("{message}"), "creo report loss text")?;
+    ctx.reserve_vec(losses, 1, "creo report losses")?;
     losses.push(code.note(message));
     Ok(())
 }
@@ -918,7 +918,7 @@ pub(super) fn push_structural_layer_notes(
 
     if let Some(note) = unstatable_vertex_orbit_note(ctx, &scan.topology.unstatable_vertex_orbits)?
     {
-        ctx.try_reserve_items(losses, 1, "creo report losses")?;
+        ctx.reserve_vec(losses, 1, "creo report losses")?;
         losses.push(note);
     }
     // Named prototype fields whose bounded scalar body the decoder refused.

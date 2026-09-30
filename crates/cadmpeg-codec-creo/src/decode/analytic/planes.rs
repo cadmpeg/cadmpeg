@@ -163,13 +163,13 @@ pub(super) fn solve_carriers_with_diagnostics(
                 (CarrierEquation::Plane(plane), CarrierEquation::Sphere(sphere))
                 | (CarrierEquation::Sphere(sphere), CarrierEquation::Plane(plane)) => {
                     if let Some(point) = tangent_plane_sphere_point(plane, sphere) {
-                        ctx.try_reserve_items(&mut candidates, 1, "creo carrier pair candidates")?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo carrier pair candidates")?;
                         candidates.push(point);
                     }
                 }
                 (CarrierEquation::Sphere(first), CarrierEquation::Sphere(second)) => {
                     if let Some(point) = tangent_sphere_point(first, second) {
-                        ctx.try_reserve_items(&mut candidates, 1, "creo carrier pair candidates")?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo carrier pair candidates")?;
                         candidates.push(point);
                     }
                 }
@@ -191,34 +191,30 @@ pub(super) fn solve_carriers_with_diagnostics(
                 for carrier in triple {
                     match carrier {
                         CarrierEquation::Plane(plane) => {
-                            ctx.try_reserve_items(&mut planes, 1, "creo carrier triple groups")?;
+                            ctx.reserve_vec(&mut planes, 1, "creo carrier triple groups")?;
                             planes.push(plane);
                         }
                         CarrierEquation::Cylinder(cylinder) => {
-                            ctx.try_reserve_items(&mut cylinders, 1, "creo carrier triple groups")?;
+                            ctx.reserve_vec(&mut cylinders, 1, "creo carrier triple groups")?;
                             cylinders.push(cylinder);
                         }
                         CarrierEquation::Cone(cone) => {
-                            ctx.try_reserve_items(&mut cones, 1, "creo carrier triple groups")?;
+                            ctx.reserve_vec(&mut cones, 1, "creo carrier triple groups")?;
                             cones.push(cone);
                         }
                         CarrierEquation::Sphere(sphere) => {
-                            ctx.try_reserve_items(&mut spheres, 1, "creo carrier triple groups")?;
+                            ctx.reserve_vec(&mut spheres, 1, "creo carrier triple groups")?;
                             spheres.push(sphere);
                         }
                         CarrierEquation::Torus(torus) => {
-                            ctx.try_reserve_items(&mut tori, 1, "creo carrier triple groups")?;
+                            ctx.reserve_vec(&mut tori, 1, "creo carrier triple groups")?;
                             tori.push(torus);
                         }
                     }
                 }
                 if planes.len() == 3 {
                     if let Some(point) = solve_planes(&planes) {
-                        ctx.try_reserve_items(
-                            &mut candidates,
-                            1,
-                            "creo carrier triple candidates",
-                        )?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo carrier triple candidates")?;
                         candidates.push(point);
                     }
                 } else if planes.len() == 1
@@ -254,14 +250,14 @@ pub(super) fn solve_carriers_with_diagnostics(
                             first_quadric,
                             second_quadric,
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
                         )?;
                         candidates.extend(intersections);
                     } else {
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             reduced.len(),
                             "creo carrier triple candidates",
@@ -291,7 +287,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             ),
                             _ => Ok(Vec::new()),
                         }?;
-                    ctx.try_reserve_items(
+                    ctx.reserve_vec(
                         &mut candidates,
                         intersections.len(),
                         "creo carrier triple candidates",
@@ -301,7 +297,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
                         let intersections =
                             intersect_two_planes_with_torus(ctx, *first, *second, *torus)?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -318,7 +314,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             CarrierEquation::Cylinder(*cylinder),
                             CarrierEquation::Torus(*torus),
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -335,7 +331,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Sphere(*sphere),
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -352,7 +348,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Torus(*torus),
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -369,7 +365,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             CarrierEquation::Sphere(*sphere),
                             CarrierEquation::Torus(*torus),
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -384,7 +380,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                             CarrierEquation::Torus(*first),
                             CarrierEquation::Torus(*second),
                         )?;
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut candidates,
                             intersections.len(),
                             "creo carrier triple candidates",
@@ -410,7 +406,7 @@ pub(super) fn solve_carriers_with_diagnostics(
                 .zip(candidate)
                 .all(|(left, right)| (left - right).abs() <= EPS_POINT_UNIQUE)
         }) {
-            ctx.try_reserve_items(&mut unique, 1, "creo carrier unique candidates")?;
+            ctx.reserve_vec(&mut unique, 1, "creo carrier unique candidates")?;
             unique.push(candidate);
         }
     }
@@ -799,7 +795,7 @@ fn stored_frame_branch_constraints(
             })
             .count();
         if compatible != 0 {
-            ctx.try_reserve_items(&mut constraints, 1, "creo plane branch constraints")?;
+            ctx.reserve_vec(&mut constraints, 1, "creo plane branch constraints")?;
             constraints.push(PlaneBranchConstraint {
                 faces,
                 endpoint_sets,
@@ -974,7 +970,7 @@ fn fc05_cylinder_branch_witnesses(
                 && known.axis == cylinder.axis
                 && known.radius.to_bits() == cylinder.radius.to_bits()
         }) {
-            ctx.try_reserve_items(entries, 1, "creo FC05 cylinder witnesses")?;
+            ctx.reserve_vec(entries, 1, "creo FC05 cylinder witnesses")?;
             entries.push(cylinder);
         }
     }
@@ -1015,7 +1011,7 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
             .iter()
             .filter(|circle| circle.entity_id == *curve_id)
         {
-            ctx.try_reserve_items(&mut circles, 1, "creo FC05 witness circles")?;
+            ctx.reserve_vec(&mut circles, 1, "creo FC05 witness circles")?;
             circles.push(circle);
         }
     }
@@ -1226,7 +1222,7 @@ fn select_stored_frame_carrier_pcurve_branches(
             });
             if let (Some(candidate), None) = (retained.next(), retained.next()) {
                 let mut selected = Vec::new();
-                ctx.try_reserve_items(&mut selected, 1, "creo carrier pcurve plane branch")?;
+                ctx.reserve_vec(&mut selected, 1, "creo carrier pcurve plane branch")?;
                 selected.push(candidate);
                 domains.insert(plane_id, selected);
             }
@@ -1301,7 +1297,7 @@ fn select_stored_frame_branches(
                         .iter()
                         .any(|candidate| plane_candidates_equivalent(*candidate, option))
                     {
-                        ctx.try_reserve_items(known, 1, "creo plane origin domain candidates")?;
+                        ctx.reserve_vec(known, 1, "creo plane origin domain candidates")?;
                         known.push(option);
                     }
                 }
@@ -1319,7 +1315,7 @@ fn select_stored_frame_branches(
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))
             {
-                ctx.try_reserve_items(known, 1, "creo plane variable domain candidates")?;
+                ctx.reserve_vec(known, 1, "creo plane variable domain candidates")?;
                 known.push(option);
             }
         }
@@ -1336,7 +1332,7 @@ fn select_stored_frame_branches(
         });
         if let (Some(candidate), None) = (retained.next(), retained.next()) {
             let mut selected = Vec::new();
-            ctx.try_reserve_items(&mut selected, 1, "creo FC05 origin plane branch")?;
+            ctx.reserve_vec(&mut selected, 1, "creo FC05 origin plane branch")?;
             selected.push(candidate);
             variable_domains.insert(surface_id, selected);
         }
@@ -1348,7 +1344,7 @@ fn select_stored_frame_branches(
     let mut domains = BTreeMap::new();
     for (surface_id, options) in &variable_domains {
         let mut copied = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut copied,
             options.len(),
             "creo copied plane domain candidates",
@@ -1370,7 +1366,7 @@ fn select_stored_frame_branches(
         });
         if let (Some(candidate), None) = (retained.next(), retained.next()) {
             let mut selected = Vec::new();
-            ctx.try_reserve_items(&mut selected, 1, "creo FC05 tangent plane branch")?;
+            ctx.reserve_vec(&mut selected, 1, "creo FC05 tangent plane branch")?;
             selected.push(candidate);
             domains.insert(*surface_id, selected);
         }
@@ -1395,7 +1391,7 @@ fn select_stored_frame_branches(
         if let Some(fixed) = fixed {
             if !domains.contains_key(surface_id) {
                 let mut selected = Vec::new();
-                ctx.try_reserve_items(&mut selected, 1, "creo fixed plane domain candidates")?;
+                ctx.reserve_vec(&mut selected, 1, "creo fixed plane domain candidates")?;
                 selected.push(fixed);
                 ctx.charge_collection_items(1, "creo fixed plane domain nodes")?;
                 domains.insert(*surface_id, selected);
@@ -1421,11 +1417,7 @@ fn select_stored_frame_branches(
                     if second.iter().any(|other| {
                         pcurve_candidates_agree(*candidate, *other, constraint.endpoint_sets)
                     }) {
-                        ctx.try_reserve_items(
-                            &mut retained,
-                            1,
-                            "creo filtered first plane candidates",
-                        )?;
+                        ctx.reserve_vec(&mut retained, 1, "creo filtered first plane candidates")?;
                         retained.push(*candidate);
                     }
                 }
@@ -1447,11 +1439,7 @@ fn select_stored_frame_branches(
                     if first.iter().any(|other| {
                         pcurve_candidates_agree(*other, *candidate, constraint.endpoint_sets)
                     }) {
-                        ctx.try_reserve_items(
-                            &mut retained,
-                            1,
-                            "creo filtered second plane candidates",
-                        )?;
+                        ctx.reserve_vec(&mut retained, 1, "creo filtered second plane candidates")?;
                         retained.push(*candidate);
                     }
                 }
@@ -1471,7 +1459,7 @@ fn select_stored_frame_branches(
             continue;
         };
         let mut selected = Vec::new();
-        ctx.try_reserve_items(&mut selected, 1, "creo selected plane branch")?;
+        ctx.reserve_vec(&mut selected, 1, "creo selected plane branch")?;
         selected.push(*candidate);
         if !candidates.contains_key(&surface_id) {
             ctx.charge_collection_items(1, "creo selected plane branch nodes")?;
@@ -1564,7 +1552,7 @@ fn round_edge_envelopes_for_plane(
             record.type24_round_edge_envelope()
         })();
         if let Some(envelope) = envelope {
-            ctx.try_reserve_items(&mut envelopes, 1, "creo round-edge plane envelopes")?;
+            ctx.reserve_vec(&mut envelopes, 1, "creo round-edge plane envelopes")?;
             envelopes.push(envelope);
         }
     }
@@ -1647,7 +1635,7 @@ fn plane_candidates(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(planes, 1, "creo held plane equations")?;
+        ctx.reserve_vec(planes, 1, "creo held plane equations")?;
         planes.push(plane);
     }
     let mut held_planes = BTreeMap::new();
@@ -1668,7 +1656,7 @@ fn plane_candidates(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(outlines, 1, "creo frame-bound outlines")?;
+        ctx.reserve_vec(outlines, 1, "creo frame-bound outlines")?;
         outlines.push(outline);
     }
     let mut candidates = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
@@ -1711,7 +1699,7 @@ fn plane_candidates(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
     }
     let mut local_chart_ids = BTreeSet::new();
@@ -1755,7 +1743,7 @@ fn plane_candidates(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
     }
     for envelope in &scan.planes.envelopes {
@@ -1777,7 +1765,7 @@ fn plane_candidates(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(options, 1, "creo plane candidates")?;
+        ctx.reserve_vec(options, 1, "creo plane candidates")?;
         options.push(candidate);
     }
     for plane in &scan.planes.positional_frames {
@@ -1785,7 +1773,7 @@ fn plane_candidates(
             continue;
         }
         let mut options = Vec::new();
-        ctx.try_reserve_items(&mut options, 1, "creo plane candidates")?;
+        ctx.reserve_vec(&mut options, 1, "creo plane candidates")?;
         options.push(PlaneCandidate {
             equation: PlaneEquation {
                 origin: plane.origin,
@@ -1981,7 +1969,7 @@ pub(super) fn topology_bound_plane(
 ) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
     let mut points = Vec::new();
     for point in input_points {
-        ctx.try_reserve_items(&mut points, 1, "creo topology plane candidate points")?;
+        ctx.reserve_vec(&mut points, 1, "creo topology plane candidate points")?;
         points.push(point);
     }
     crate::sort::stable_sort_by(
@@ -2171,12 +2159,12 @@ pub(super) fn agreed_topology_bound_plane(
 ) -> Result<Option<PlaneEquation>, cadmpeg_core::CodecError> {
     let mut admitted_points = Vec::new();
     for point in points {
-        ctx.try_reserve_items(&mut admitted_points, 1, "creo plane boundary points")?;
+        ctx.reserve_vec(&mut admitted_points, 1, "creo plane boundary points")?;
         admitted_points.push(point);
     }
     let mut admitted_lines = Vec::new();
     for line in lines {
-        ctx.try_reserve_items(&mut admitted_lines, 1, "creo plane boundary lines")?;
+        ctx.reserve_vec(&mut admitted_lines, 1, "creo plane boundary lines")?;
         admitted_lines.push(line);
     }
     let mut candidates = Vec::new();
@@ -2185,7 +2173,7 @@ pub(super) fn agreed_topology_bound_plane(
         .chain(curve_planes)
         .chain(topology_bound_line_plane(&admitted_lines))
     {
-        ctx.try_reserve_items(&mut candidates, 1, "creo plane boundary candidates")?;
+        ctx.reserve_vec(&mut candidates, 1, "creo plane boundary candidates")?;
         candidates.push(candidate);
     }
     let Some(plane) = agreed_plane(&candidates) else {

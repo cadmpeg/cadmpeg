@@ -16,6 +16,33 @@ use std::io::Cursor;
 mod binders;
 
 #[test]
+fn design_census_identity_refuses_at_retained_limit() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::AdditiveBox" name="Box"/></Objects>
+<ObjectData Count="1"><Object name="Box"><Properties Count="3">
+<Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+<Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+<Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("design fixture");
+    let objects = result
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native namespace")
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    crate::test_support::assert_retained_refusal_at(&[], "FreeCAD native child identity", |ctx| {
+        super::super::census(ctx, &objects, &result.ir().model.features)
+    });
+}
+
+#[test]
 fn transfers_partdesign_refine_and_fuzzy_post_processing() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2">
@@ -332,7 +359,9 @@ fn rejects_malformed_polygon_vector_list_side_streams() {
 </Properties></Object></ObjectData></Document>"#;
     let encode = |points: &[(f64, f64, f64)]| {
         let mut bytes = Vec::with_capacity(4 + points.len() * 24);
-        bytes.extend_from_slice(&(points.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(points.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (x, y, z) in points {
             bytes.extend_from_slice(&x.to_le_bytes());
             bytes.extend_from_slice(&y.to_le_bytes());

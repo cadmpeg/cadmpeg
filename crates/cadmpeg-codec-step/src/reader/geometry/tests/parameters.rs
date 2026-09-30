@@ -21,6 +21,215 @@ use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use cadmpeg_ir::transform::{Transform, Transform2};
 use std::collections::{BTreeMap, BTreeSet};
 
+fn source_curve_refusal(
+    collection_limit: u64,
+    depth_limit: Option<u64>,
+) -> cadmpeg_core::CodecError {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CIRCLE();ENDSEC;END-ISO-10303-21;";
+    let (exchange, _) =
+        crate::test_support::with_service_context(source, crate::parse::parse_inner)
+            .expect("valid source curve exchange");
+    let scales = super::super::UnitScales {
+        default_length: PositiveReal::ONE,
+        default_angle: PositiveReal::ONE,
+        length: BTreeMap::new(),
+        angle: BTreeMap::new(),
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    if let Some(limit) = depth_limit {
+        policy.limits.max_recursion_depth = limit;
+    }
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(source, &arena, &policy).expect("source fits policy");
+    super::super::resolve_source_curve_parameter_scales(&exchange, &scales, &ctx)
+        .expect_err("source curve admission exceeds the limit")
+}
+
+#[test]
+fn source_curve_parameter_active_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(
+        source_curve_refusal(0, None),
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_source_curve_parameter_active"
+    ));
+}
+
+#[test]
+fn source_curve_parameter_scales_refuse_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(
+        source_curve_refusal(1, None),
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_source_curve_parameter_scales"
+    ));
+}
+
+#[test]
+fn source_curve_parameter_walk_refuses_depth_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert!(matches!(
+        source_curve_refusal(2, Some(0)),
+        cadmpeg_core::CodecError::ResourceLimit(refusal)
+            if refusal.dimension == ResourceDimension::RecursionDepth
+                && refusal.operation == "step_source_curve_parameter_walk"
+    ));
+}
+
+#[test]
+fn parameter_inference_point_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::CodecError;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::ids::PointId;
+    use cadmpeg_ir::topology::Point;
+
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::from(crate::ids::data(crate::ids::kind!("point"), 1)),
+        FinitePoint3::ZERO,
+        None,
+    ));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
+    assert!(matches!(
+        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == ResourceDimension::CollectionItems
+                && refusal.operation == "step_parameter_inference_points"
+    ));
+}
+
+fn parameter_inference_ir(with_edge: bool) -> CadIr {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+    use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
+
+    let mut ir = CadIr::empty();
+    for (number, x) in [(1, 0.0), (2, 1.0)] {
+        ir.model.points.push(Point::new(
+            PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
+                .expect("finite point"),
+            None,
+        ));
+        ir.model.vertices.push(Vertex {
+            id: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), number)),
+            point: PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
+            tolerance: None,
+        });
+    }
+    if with_edge {
+        let curve = CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 3));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
+                    .expect("finite line"),
+            )),
+            source_object: None,
+        });
+        ir.model.edges.push(Edge {
+            id: EdgeId::from(crate::ids::data(crate::ids::kind!("edge"), 4)),
+            carrier: EdgeCarrier::unbounded(Some(curve)),
+            start: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
+            end: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            tolerance: None,
+        });
+    }
+    ir
+}
+
+fn assert_parameter_inference_refusal(
+    with_edge: bool,
+    collection_limit: u64,
+    retained_limit: Option<u64>,
+    dimension: cadmpeg_core::decode::ResourceDimension,
+    operation: &str,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+
+    let mut ir = parameter_inference_ir(with_edge);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = collection_limit;
+    if let Some(limit) = retained_limit {
+        policy.limits.max_retained_bytes = limit;
+    }
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty input fits the policy");
+    assert!(matches!(
+        super::super::infer_edge_parameter_ranges(&mut ir, &ctx),
+        Err(CodecError::ResourceLimit(refusal))
+            if refusal.dimension == dimension && refusal.operation == operation
+    ));
+}
+
+#[test]
+fn parameter_inference_vertex_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        false,
+        2,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_vertices",
+    );
+}
+
+#[test]
+fn parameter_inference_candidate_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        4,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_candidates",
+    );
+}
+
+#[test]
+fn parameter_inference_range_refuses_collection_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        5,
+        None,
+        ResourceDimension::CollectionItems,
+        "step_parameter_inference_ranges",
+    );
+}
+
+#[test]
+fn parameter_inference_edge_curve_refuses_retained_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+
+    assert_parameter_inference_refusal(
+        true,
+        6,
+        Some(0),
+        ResourceDimension::RetainedBytes,
+        "step_parameter_inference_edge_curve",
+    );
+}
+
 #[test]
 fn periodic_nurbs_surface_parameter_periods_keep_usize_counts() {
     let surface = NurbsSurface::from_lanes(
@@ -191,14 +400,17 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     let end_point = nurbs_curve_point_at(&nurbs, 1.0).expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(&nurbs, start_point.get(), 1.0e-6, start_seed)
+        .expect("resource allocation did not fail")
         .expect("start witness")
         .get();
     let start_seed_end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, start)
+        .expect("resource allocation did not fail")
         .expect("unanchored end witness")
         .get();
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
     let end = nurbs_curve_parameter_near_point(&nurbs, end_point.get(), 1.0e-6, end_seed)
+        .expect("resource allocation did not fail")
         .expect("end witness")
         .get();
 
@@ -208,6 +420,12 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
 
 #[test]
 fn surface_parameter_units_follow_the_surface_chart() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+
     let ir = CadIr::empty();
     let plane = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
         cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -250,7 +468,9 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([10.0, 10.0])
     );
     assert_eq!(
@@ -261,7 +481,9 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -272,7 +494,9 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([0.25, 0.25])
     );
     assert_eq!(
@@ -283,7 +507,9 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([0.25, 10.0])
     );
     assert_eq!(
@@ -294,13 +520,21 @@ fn surface_parameter_units_follow_the_surface_chart() {
             10.0,
             0.25,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         None
     );
 }
 
 #[test]
 fn procedural_surface_units_follow_the_evaluated_parameter_order() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -329,7 +563,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         },
     ]);
     let _attached = ir.model.add_procedural_surface(
-        sweep.clone(),
+        &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -344,7 +578,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         ),
     );
     let _attached = ir.model.add_procedural_surface(
-        revolution.clone(),
+        &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
                 .expect("identity grammar"),
@@ -370,7 +604,9 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             length_scale,
             angle_scale,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([length_scale, 1.0])
     );
     assert_eq!(
@@ -381,13 +617,21 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             length_scale,
             angle_scale,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([angle_scale, length_scale])
     );
 }
 
 #[test]
 fn directrix_parameter_units_follow_step_curve_equations() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+
     let angle_scale = std::f64::consts::PI / 180.0;
     let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
         cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
@@ -424,30 +668,42 @@ fn directrix_parameter_units_follow_step_curve_equations() {
         directrix_geometry_parameter_scale(
             parabola.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
             hyperbola.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
     assert_eq!(
         directrix_geometry_parameter_scale(
             polyline.solved().expect("solved carrier"),
             0.001,
-            angle_scale
-        ),
+            angle_scale,
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some(1.0)
     );
 }
 
 #[test]
 fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
     ir.model.curves.push(Curve {
@@ -478,7 +734,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface.clone(),
+        &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
                 .expect("identity grammar"),
@@ -501,13 +757,21 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         None
     );
 }
 
 #[test]
 fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
+
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
@@ -528,7 +792,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         source_object: None,
     });
     let _attached = ir.model.add_procedural_surface(
-        surface_id.clone(),
+        &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
                 .expect("identity grammar"),
@@ -552,7 +816,9 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
-        ),
+            &ctx,
+        )
+        .expect("scale evaluation"),
         Some([std::f64::consts::PI / 180.0, 10.0])
     );
 }
@@ -662,29 +928,36 @@ fn every_iso_si_prefix_resolves_to_its_exact_factor() {
 
 #[test]
 fn prefixed_plane_angle_units_scale_to_radians() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=(NAMED_UNIT(*) SI_UNIT(.MILLI.,.RADIAN.));\
 #2=(NAMED_UNIT(*) SI_UNIT($,.RADIAN.));\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse plane-angle units");
-    let mut active = BTreeSet::new();
-    assert_eq!(
-        unit_scale_radians(1, &exchange, &mut active).map(PositiveReal::get),
-        Some(1.0e-3)
-    );
-    assert!(active.is_empty());
-    assert_eq!(
-        unit_scale_radians(2, &exchange, &mut active).map(PositiveReal::get),
-        Some(1.0)
-    );
-    assert!(active.is_empty());
+        let mut active = BTreeSet::new();
+        assert_eq!(
+            unit_scale_radians(1, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(1.0e-3)
+        );
+        assert!(active.is_empty());
+        assert_eq!(
+            unit_scale_radians(2, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(1.0)
+        );
+        assert!(active.is_empty());
+    });
 }
 
 #[test]
 fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
-    let (exchange, _) = crate::parse::parse(
+    crate::test_support::with_service_context(b"", |_, ctx| {
+        let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT(.MILLI.,.RADIAN.));\
 #2=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#1);\
@@ -693,24 +966,31 @@ fn conversion_based_plane_angle_units_multiply_prefixed_base_scales() {
 #5=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(2.),#4);\
 #6=(CONVERSION_BASED_UNIT('two radians',#5) NAMED_UNIT(*) PLANE_ANGLE_UNIT());\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse conversion-based plane-angle units");
-    let mut active = BTreeSet::new();
-    assert_eq!(
-        unit_scale_radians(3, &exchange, &mut active).map(PositiveReal::get),
-        Some(2.0e-3)
-    );
-    assert!(active.is_empty());
-    assert_eq!(
-        unit_scale_radians(6, &exchange, &mut active).map(PositiveReal::get),
-        Some(2.0)
-    );
-    assert!(active.is_empty());
+        let mut active = BTreeSet::new();
+        assert_eq!(
+            unit_scale_radians(3, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(2.0e-3)
+        );
+        assert!(active.is_empty());
+        assert_eq!(
+            unit_scale_radians(6, &exchange, &mut active, ctx)
+                .expect("unit scale evaluation")
+                .map(PositiveReal::get),
+            Some(2.0)
+        );
+        assert!(active.is_empty());
+    });
 }
 
 #[test]
 fn recursive_unit_and_pcurve_failures_release_active_ids() {
-    let (exchange, _) = crate::parse::parse(
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let (exchange, _) = crate::test_support::with_service_context(
         b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;\
 #1=CONVERSION_BASED_UNIT('',#2);\
 #2=UNKNOWN_FACTOR();\
@@ -720,41 +1000,57 @@ fn recursive_unit_and_pcurve_failures_release_active_ids() {
 #6=CURVE_REPLICA('',#6,#7);\
 #7=UNKNOWN_OPERATOR();\
 ENDSEC;END-ISO-10303-21;",
-    )
+        crate::parse::parse_inner)
     .expect("parse recursive failure graph");
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(b"", &arena, &policy).expect("empty root fits policy");
     let mut active = BTreeSet::new();
-    assert!(unit_scale_mm(1, &exchange, &mut active).is_none());
+    assert!(unit_scale_mm(1, &exchange, &mut active, &ctx)
+        .expect("unit scale evaluation")
+        .is_none());
     assert!(active.is_empty());
-    assert!(unit_scale_radians(1, &exchange, &mut active).is_none());
+    assert!(unit_scale_radians(1, &exchange, &mut active, &ctx)
+        .expect("unit scale evaluation")
+        .is_none());
     assert!(active.is_empty());
 
     let mut losses = Vec::new();
     assert!(decode_pcurve_geometry(
         3,
         &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
+        super::super::PcurveSources {
+            points: &BTreeMap::new(),
+            vectors: &BTreeMap::new(),
+            placements: &BTreeMap::new(),
+            transformations: &BTreeMap::new(),
+            angle_scale: 1.0
+        },
         &mut losses,
         &mut active,
         0,
+        &ctx
     )
+    .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());
     assert!(decode_pcurve_geometry(
         6,
         &exchange,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        &BTreeMap::new(),
-        1.0,
+        super::super::PcurveSources {
+            points: &BTreeMap::new(),
+            vectors: &BTreeMap::new(),
+            placements: &BTreeMap::new(),
+            transformations: &BTreeMap::new(),
+            angle_scale: 1.0
+        },
         &mut losses,
         &mut active,
         0,
+        &ctx
     )
+    .expect("no resource refusal")
     .is_none());
     assert!(active.is_empty());
 }

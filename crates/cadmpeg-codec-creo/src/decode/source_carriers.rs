@@ -46,7 +46,7 @@ impl SourceUnitCarriers {
             SketchGeometryDefinition::Nurbs { curve } => {
                 let operation = "creo source sketch NURBS copy";
                 Ok(SketchGeometry::nurbs(
-                    curve.copy_admitted(ctx, operation, operation)?,
+                    curve.try_clone_for_decode(ctx, operation)?,
                 ))
             }
             SketchGeometryDefinition::Text {
@@ -81,7 +81,7 @@ impl SourceUnitCarriers {
                     .transpose()?;
                 let object = copy_nonblank(object, "creo source sketch object")?;
                 let mut selectors = Vec::new();
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut selectors,
                     subelements.len(),
                     "creo source sketch subelements",
@@ -149,7 +149,7 @@ impl SourceUnitCarriers {
         if let Some(transform) = body.transform.as_mut() {
             self.scale_product_translation(ctx, transform)?;
         }
-        ctx.try_reserve_items(&mut ir.model.bodies, 1, "creo model bodies")?;
+        ctx.reserve_vec(&mut ir.model.bodies, 1, "creo model bodies")?;
         ir.model.bodies.push(body);
         Ok(())
     }
@@ -164,7 +164,7 @@ impl SourceUnitCarriers {
         if let Some(transform) = occurrence.linked_prototype.as_mut() {
             self.scale_product_translation(ctx, transform)?;
         }
-        ctx.try_reserve_items(&mut ir.model.occurrences, 1, "creo model occurrences")?;
+        ctx.reserve_vec(&mut ir.model.occurrences, 1, "creo model occurrences")?;
         ir.model.occurrences.push(occurrence);
         Ok(())
     }
@@ -183,7 +183,7 @@ impl SourceUnitCarriers {
             });
             result.map_err(Self::unrepresentable_length)?;
         }
-        ctx.try_reserve_items(&mut ir.model.features, 1, "creo model features")?;
+        ctx.reserve_vec(&mut ir.model.features, 1, "creo model features")?;
         ir.model.features.push(feature);
         Ok(())
     }
@@ -214,7 +214,7 @@ impl SourceUnitCarriers {
             crate::decode::build::units::scale_length(ctx, length, scale)
                 .map_err(Self::unrepresentable_length)?;
         }
-        ctx.try_reserve_items(&mut ir.model.parameters, 1, "creo model parameters")?;
+        ctx.reserve_vec(&mut ir.model.parameters, 1, "creo model parameters")?;
         ir.model.parameters.push(parameter);
         Ok(())
     }
@@ -240,7 +240,7 @@ impl SourceUnitCarriers {
             })?;
             sketch.placement = sketch.placement.with_origin(origin);
         }
-        ctx.try_reserve_items(&mut ir.model.sketches, 1, "creo model sketches")?;
+        ctx.reserve_vec(&mut ir.model.sketches, 1, "creo model sketches")?;
         ir.model.sketches.push(sketch);
         Ok(())
     }
@@ -270,7 +270,7 @@ impl SourceUnitCarriers {
                 source_geometry
             };
             self.sketch_entities.insert(source_id, source_geometry);
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut ir.model.sketch_entities,
                 1,
                 "creo model sketch entities",
@@ -292,7 +292,7 @@ impl SourceUnitCarriers {
         ir: &mut CadIr,
         constraints: Vec<SketchConstraint>,
     ) -> Result<(), CodecError> {
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut ir.model.sketch_constraints,
             constraints.len(),
             "creo model sketch constraints",
@@ -328,7 +328,7 @@ impl SourceUnitCarriers {
         .map_err(CodecError::malformed)?;
         let source_geometry = surface
             .geometry
-            .copy_admitted(ctx, "creo source surface geometry")?;
+            .try_clone_for_decode(ctx, "creo source surface geometry")?;
         if let (Some(scale), SurfaceGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut surface.geometry)
         {
@@ -340,7 +340,7 @@ impl SourceUnitCarriers {
             )?;
         }
         self.surfaces.insert(source_id, source_geometry);
-        ctx.try_reserve_items(&mut ir.model.surfaces, 1, "creo model surfaces")?;
+        ctx.reserve_vec(&mut ir.model.surfaces, 1, "creo model surfaces")?;
         ir.model.surfaces.push(surface);
         Ok(())
     }
@@ -359,7 +359,7 @@ impl SourceUnitCarriers {
         )
         .map_err(CodecError::malformed)?;
         let source_geometry =
-            geometry.copy_admitted(ctx, "creo replacement source surface geometry")?;
+            geometry.try_clone_for_decode(ctx, "creo replacement source surface geometry")?;
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -389,7 +389,7 @@ impl SourceUnitCarriers {
                 .map_err(CodecError::malformed)?;
         let source_geometry = curve
             .geometry
-            .copy_admitted(ctx, "creo source curve geometry")?;
+            .try_clone_for_decode(ctx, "creo source curve geometry")?;
         if let (Some(scale), CurveGeometry::Solved(geometry)) =
             (self.length_scale_mm, &mut curve.geometry)
         {
@@ -401,7 +401,7 @@ impl SourceUnitCarriers {
             )?;
         }
         self.curves.insert(source_id, source_geometry);
-        ctx.try_reserve_items(&mut ir.model.curves, 1, "creo model curves")?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "creo model curves")?;
         ir.model.curves.push(curve);
         Ok(())
     }
@@ -424,7 +424,7 @@ impl SourceUnitCarriers {
         )
         .map_err(CodecError::malformed)?;
         let source_geometry =
-            geometry.copy_admitted(ctx, "creo replacement source curve geometry")?;
+            geometry.try_clone_for_decode(ctx, "creo replacement source curve geometry")?;
         if let (Some(scale), CurveGeometry::Solved(solved)) = (self.length_scale_mm, &mut geometry)
         {
             crate::decode::build::units::scale_curve_geometry(ctx, solved, scale).map_err(
@@ -451,7 +451,7 @@ impl SourceUnitCarriers {
             })?;
             point.set_position(position);
         }
-        ctx.try_reserve_items(&mut ir.model.points, 1, "creo model points")?;
+        ctx.reserve_vec(&mut ir.model.points, 1, "creo model points")?;
         ir.model.points.push(point);
         Ok(())
     }
@@ -479,7 +479,7 @@ impl SourceUnitCarriers {
         mut vertex: Vertex,
     ) -> Result<(), CodecError> {
         self.scale_tolerance(ctx, &mut vertex.tolerance)?;
-        ctx.try_reserve_items(&mut ir.model.vertices, 1, "creo model vertices")?;
+        ctx.reserve_vec(&mut ir.model.vertices, 1, "creo model vertices")?;
         ir.model.vertices.push(vertex);
         Ok(())
     }
@@ -491,7 +491,7 @@ impl SourceUnitCarriers {
         mut face: Face,
     ) -> Result<(), CodecError> {
         self.scale_tolerance(ctx, &mut face.tolerance)?;
-        ctx.try_reserve_items(&mut ir.model.faces, 1, "creo model faces")?;
+        ctx.reserve_vec(&mut ir.model.faces, 1, "creo model faces")?;
         ir.model.faces.push(face);
         Ok(())
     }
@@ -533,7 +533,7 @@ impl SourceUnitCarriers {
                 self.edge_parameter_ranges.insert(id, source_range);
             }
         }
-        ctx.try_reserve_items(&mut ir.model.edges, 1, "creo model edges")?;
+        ctx.reserve_vec(&mut ir.model.edges, 1, "creo model edges")?;
         ir.model.edges.push(edge);
         Ok(())
     }
@@ -573,7 +573,7 @@ impl SourceUnitCarriers {
                     })?;
             }
         }
-        ctx.try_reserve_items(&mut ir.model.coedges, 1, "creo model coedges")?;
+        ctx.reserve_vec(&mut ir.model.coedges, 1, "creo model coedges")?;
         ir.model.coedges.push(coedge);
         Ok(())
     }
@@ -644,7 +644,7 @@ impl SourceUnitCarriers {
                     Err(error) => error,
                 })?;
         }
-        ctx.try_reserve_items(&mut ir.model.pcurves, 1, "creo model pcurves")?;
+        ctx.reserve_vec(&mut ir.model.pcurves, 1, "creo model pcurves")?;
         ir.model.pcurves.push(pcurve);
         Ok(())
     }
@@ -659,9 +659,14 @@ impl SourceUnitCarriers {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_surface(ctx, &mut procedural, scale)?;
         }
+        ctx.reserve_vec(
+            &mut ir.model.procedural_surfaces,
+            1,
+            "procedural surface arena",
+        )?;
         ir.model
-            .add_procedural_surface_admitted(ctx, owner, procedural)?;
-        Ok(())
+            .add_procedural_surface_charged(ctx, owner, procedural)?
+            .map_err(CodecError::malformed)
     }
 
     pub(super) fn admit_procedural_curve(
@@ -674,9 +679,10 @@ impl SourceUnitCarriers {
         if let Some(scale) = self.length_scale_mm {
             crate::decode::build::units::scale_procedural_curve(ctx, &mut procedural, scale)?;
         }
+        ctx.reserve_vec(&mut ir.model.procedural_curves, 1, "procedural curve arena")?;
         ir.model
-            .add_procedural_curve_admitted(ctx, owner, procedural)?;
-        Ok(())
+            .add_procedural_curve_charged(ctx, owner, procedural)?
+            .map_err(CodecError::malformed)
     }
 
     #[cfg(test)]

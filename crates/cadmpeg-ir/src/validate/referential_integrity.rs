@@ -15,7 +15,7 @@ pub(super) fn check_typed_references(
     findings: &mut Vec<Finding>,
 ) {
     macro_rules! check_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*];)*) => {
+        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.model.$field {
                 let owner = entity.identity();
                 let mut unresolved = Vec::new();
@@ -67,7 +67,8 @@ mod tests {
     fn unresolved_asset_reference_is_reported() {
         let missing = AssetId::mint("synthetic:test:asset#missing").expect("valid identity");
         let tessellation = Tessellation::new(
-            "synthetic:test:tessellation#textured",
+            crate::tessellation::TessellationId::mint("synthetic:test:tessellation#textured")
+                .expect("valid identity"),
             TessellationMesh::List {
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),

@@ -237,7 +237,7 @@ pub(crate) fn ellipse_carriers(
             }
         })();
         if let Some(major_direction) = antipodal_major_direction {
-            ctx.try_reserve_items(&mut result, 1, "creo reference ellipses")?;
+            ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
             result.push(ReferenceEllipse {
                 source_entity_id: conic.entity_id,
                 center: center_checked,
@@ -289,7 +289,7 @@ pub(crate) fn ellipse_carriers(
         if orientation.is_some_and(f64::is_sign_negative) {
             major_direction = major_direction.reversed();
         }
-        ctx.try_reserve_items(&mut result, 1, "creo reference ellipses")?;
+        ctx.reserve_vec(&mut result, 1, "creo reference ellipses")?;
         result.push(ReferenceEllipse {
             source_entity_id: conic.entity_id,
             center: center_checked,
@@ -683,7 +683,7 @@ pub(crate) fn named_conics(
             search = block_end.max(fields_start);
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo named reference conics")?;
+        ctx.reserve_vec(&mut result, 1, "creo named reference conics")?;
         result.push(ReferenceConic {
             entity_id,
             type_id: ConicType::from(type_id),
@@ -833,7 +833,7 @@ pub(crate) fn positional_conics(
             if after_type == after_id || payload.get(after_type) != Some(&0xe2) {
                 continue;
             }
-            ctx.try_reserve_items(&mut headers, 1, "creo positional conic headers")?;
+            ctx.reserve_vec(&mut headers, 1, "creo positional conic headers")?;
             headers.push((close, entity_id, type_id, after_type + 1));
         }
         for (index, &(close, entity_id, type_id, body_start)) in headers.iter().enumerate() {
@@ -849,7 +849,7 @@ pub(crate) fn positional_conics(
                 &cache,
             ) {
                 let conic = conic?;
-                ctx.try_reserve_items(&mut result, 1, "creo positional reference conics")?;
+                ctx.reserve_vec(&mut result, 1, "creo positional reference conics")?;
                 result.push(conic);
             }
         }
@@ -910,7 +910,7 @@ pub(crate) fn lines(
             .map(|relative| cursor + relative)
         {
             if starts.is_empty() || payload.get(start.wrapping_sub(1)) == Some(&0xe3) {
-                ctx.try_reserve_items(&mut starts, 1, "creo reference line starts")?;
+                ctx.reserve_vec(&mut starts, 1, "creo reference line starts")?;
                 starts.push(start);
             }
             cursor = start + ROW_START.len();
@@ -936,7 +936,7 @@ pub(crate) fn lines(
             ) else {
                 continue;
             };
-            ctx.try_reserve_items(&mut result, 1, "creo reference lines")?;
+            ctx.reserve_vec(&mut result, 1, "creo reference lines")?;
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line,
                 start: first,
@@ -1041,7 +1041,7 @@ pub(crate) fn line3d_lines(
                 continue;
             }
             let body_start = body_start + 1;
-            ctx.try_reserve_items(&mut headers, 1, "creo line3d headers")?;
+            ctx.reserve_vec(&mut headers, 1, "creo line3d headers")?;
             headers.push((close, body_start, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
@@ -1053,7 +1053,7 @@ pub(crate) fn line3d_lines(
             else {
                 continue;
             };
-            ctx.try_reserve_items(&mut result, 1, "creo line3d reference lines")?;
+            ctx.reserve_vec(&mut result, 1, "creo line3d reference lines")?;
             result.push(ReferenceLine {
                 kind: ReferenceLineKind::Line3d {
                     entity_id,
@@ -1223,7 +1223,7 @@ pub(crate) fn arc_z_circles(
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
-            ctx.try_reserve_items(&mut headers, 1, "creo arc-z headers")?;
+            ctx.reserve_vec(&mut headers, 1, "creo arc-z headers")?;
             headers.push((close, body_start + 1, id));
         }
         for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
@@ -1235,7 +1235,7 @@ pub(crate) fn arc_z_circles(
                 continue;
             };
             circle.offset = close + 1;
-            ctx.try_reserve_items(&mut result, 1, "creo arc-z circles")?;
+            ctx.reserve_vec(&mut result, 1, "creo arc-z circles")?;
             result.push(circle);
         }
         search = block_end.max(rows_start);

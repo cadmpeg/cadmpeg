@@ -57,13 +57,15 @@ pub(crate) enum VersionFlag {
 // runs the walk off the end of the array and fails to compile.
 const _: () = {
     let mut index = 0;
+    let mut expected = VersionFlag::MIN;
     let mut flag = VersionFlag::ALL[0];
     loop {
-        assert!(VersionFlag::ALL[index].value() == VersionFlag::MIN + index as i64);
+        assert!(VersionFlag::ALL[index].value() == expected);
         assert!(VersionFlag::ALL[index].value() == flag.value());
         match flag.next() {
             Some(following) => {
                 index += 1;
+                expected += 1;
                 flag = following;
             }
             None => break,
@@ -86,7 +88,7 @@ impl VersionFlag {
         Self::V5_2,
         Self::V5_3,
     ];
-    const MIN: i64 = Self::V1_0 as i64;
+    const MIN: i64 = 1;
 
     /// The entry after this one in the version table.
     ///
@@ -131,7 +133,19 @@ impl VersionFlag {
     }
 
     pub(crate) const fn value(self) -> i64 {
-        self as i64
+        match self {
+            Self::V1_0 => 1,
+            Self::AnsiY1426M1981 => 2,
+            Self::V2_0 => 3,
+            Self::V3_0 => 4,
+            Self::AsmeAnsiY1426M1987 => 5,
+            Self::V4_0 => 6,
+            Self::AsmeY1426M1989 => 7,
+            Self::V5_0 => 8,
+            Self::V5_1 => 9,
+            Self::V5_2 => 10,
+            Self::V5_3 => 11,
+        }
     }
 
     pub(crate) const fn name(self) -> &'static str {

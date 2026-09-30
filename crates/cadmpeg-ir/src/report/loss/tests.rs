@@ -8,6 +8,29 @@ use crate::report::{
 };
 
 #[test]
+fn owned_namespaced_loss_kind_keeps_taxonomy_and_rejects_reserved_namespace() {
+    let taxonomy = LossTaxonomy::TopologyNotTransferred;
+    let owned = NamespacedLossKind::new_owned(
+        "catia".to_owned(),
+        "topology.unresolved".to_owned(),
+        taxonomy,
+    )
+    .expect("codec namespace is admitted");
+    let borrowed = NamespacedLossKind::new(
+        LossNamespace::new("catia").expect("codec namespace"),
+        "topology.unresolved",
+        taxonomy,
+    );
+    assert_eq!(owned, borrowed);
+    assert!(NamespacedLossKind::new_owned(
+        "shared".to_owned(),
+        "topology.unresolved".to_owned(),
+        taxonomy,
+    )
+    .is_err());
+}
+
+#[test]
 fn loss_code_serializes_as_namespaced_object() {
     let note = LossNote::new(
         LossKind::shared(LossTaxonomy::TopologyNotTransferred),
@@ -252,4 +275,33 @@ fn namespaced_loss_rejects_reserved_namespace() {
         "namespace": "shared", "code": "wrong", "kind": "pcurve_omitted"
     }))
     .is_err());
+}
+
+#[test]
+fn loss_clone_admitted_refuses_retained_limit_and_preserves_provenance() {
+    let original = LossNote::new(
+        LossKind::namespaced(
+            LossNamespace::new("rhino").expect("codec namespace"),
+            "geometry-dropped",
+            LossTaxonomy::GeometryNotTransferred,
+        ),
+        "source geometry omitted",
+    )
+    .with_provenance(crate::SourceProvenance::root("rhino", 7).with_tag("object"));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty root is admitted");
+    let refusal = original
+        .clone_admitted(&ctx, "loss copy")
+        .expect_err("copied loss text exceeds zero retained bytes");
+    assert!(matches!(
+        refusal,
+        cadmpeg_core::CodecError::ResourceLimit(limit) if limit.operation == "loss copy"
+    ));
+    let copied = original
+        .clone_admitted(&cadmpeg_test_support::service_decode_context(), "loss copy")
+        .expect("service profile admits all copied fields");
+    assert_eq!(copied, original);
 }

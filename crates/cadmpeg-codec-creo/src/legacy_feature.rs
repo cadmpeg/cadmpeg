@@ -83,17 +83,13 @@ impl<'a> Index<'a> {
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         ctx.charge_collection_items(1, "creo legacy feature child index nodes")?;
                         let mut rows = Vec::new();
-                        ctx.try_reserve_items(
-                            &mut rows,
-                            1,
-                            "creo legacy feature child index rows",
-                        )?;
+                        ctx.reserve_vec(&mut rows, 1, "creo legacy feature child index rows")?;
                         rows.push(object);
                         entry.insert(rows);
                     }
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         let rows = entry.get_mut();
-                        ctx.try_reserve_items(rows, 1, "creo legacy feature child index rows")?;
+                        ctx.reserve_vec(rows, 1, "creo legacy feature child index rows")?;
                         rows.push(object);
                     }
                 }
@@ -209,7 +205,7 @@ pub(crate) fn scan(
         }
     }
     let mut visible_rounds = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut visible_rounds,
         rounds.len() - ambiguous_feature_ids.len(),
         "creo legacy round results",
@@ -252,7 +248,7 @@ fn full_data_dimension_rows<'a>(
     };
     let mut seen = BTreeSet::new();
     let mut rows = Vec::new();
-    ctx.try_reserve_items(&mut rows, elements.len(), "creo legacy dimension rows")?;
+    ctx.reserve_vec(&mut rows, elements.len(), "creo legacy dimension rows")?;
     for element_id in elements {
         if seen.contains(element_id.as_str()) {
             return Ok(None);
@@ -331,7 +327,7 @@ fn unique_feature_edge_ids(
         }
         ctx.charge_collection_items(1, "creo legacy round edge identities")?;
         seen.insert(row.id);
-        ctx.try_reserve_items(&mut ids, 1, "creo legacy round edge IDs")?;
+        ctx.reserve_vec(&mut ids, 1, "creo legacy round edge IDs")?;
         ids.push(row.id);
     }
     Ok((!ids.is_empty()).then_some(ids))

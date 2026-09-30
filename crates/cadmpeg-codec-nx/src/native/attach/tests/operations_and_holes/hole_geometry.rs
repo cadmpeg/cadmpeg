@@ -1,11 +1,292 @@
-use crate::native::attach::hole_axis_placements_for_operations;
-use crate::native::attach::hole_body_projection;
-use crate::native::attach::simple_hole_chamfers;
-use crate::native::attach::simple_hole_native_properties;
+use crate::native::attach::feature_projection::hole_axis_placements_for_operations;
+use crate::native::attach::feature_projection::hole_body_projection;
+use crate::native::attach::feature_projection::hole_operations_are_unique;
+use crate::native::attach::feature_projection::hole_operations_by_body;
+use crate::native::attach::feature_projection::insert_hole_output_body;
+use crate::native::attach::feature_projection::primary_hole_outputs;
+use crate::native::attach::feature_projection::simple_hole_chamfers;
+use crate::native::attach::feature_projection::simple_hole_native_properties;
 use crate::native::attach::tests::hole_diameters_for_operations;
 use crate::native::attach::tests::simple_hole_diameters;
-use crate::native::attach::SolvedSurfaceGeometry;
-use crate::native::attach::SurfaceGeometry;
+use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::geometry::SurfaceGeometry;
+
+fn simple_hole_property_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(
+        &ctx,
+        &mut properties,
+        "operation",
+        &[template],
+        &[],
+        &[],
+        &[],
+    )?;
+    assert_eq!(properties["simple_hole_template"], "template");
+    Ok(())
+}
+
+#[test]
+fn simple_hole_property_refuses_collection_limit() {
+    let error = simple_hole_property_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn simple_hole_property_refuses_retained_limit() {
+    let error =
+        simple_hole_property_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+fn chamfer_selection_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::Chamfer,
+        end_treatment: SimpleHoleEndTreatment::Chamfer,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let _ = simple_hole_chamfers(
+        &ctx,
+        &cadmpeg_ir::document::CadIr::empty(),
+        &[template],
+        &std::collections::BTreeMap::new(),
+    )?;
+    Ok(())
+}
+
+#[test]
+fn chamfer_selection_refuses_scoped_limit() {
+    let error = chamfer_selection_with_limit(|policy| policy.limits.max_materialized_bytes = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn chamfer_selection_refuses_work_limit() {
+    let error =
+        chamfer_selection_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn primary_hole_output_with_limit(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    use crate::native::features::holes::{
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".into(),
+        operation_label: "operation".into(),
+        payload_string: "payload".into(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::None,
+        end_treatment: SimpleHoleEndTreatment::None,
+    };
+    let references = std::collections::BTreeMap::from([("operation", 94)]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let outputs = primary_hole_outputs(
+        &ctx,
+        &[template],
+        &references,
+        &[],
+        &std::collections::BTreeMap::new(),
+    )?;
+    assert_eq!(outputs["operation"], []);
+    Ok(())
+}
+
+#[test]
+fn primary_hole_output_refuses_collection_limit() {
+    let error = primary_hole_output_with_limit(|policy| policy.limits.max_collection_items = 0)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn primary_hole_output_refuses_retained_limit() {
+    let error =
+        primary_hole_output_with_limit(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn primary_hole_output_refuses_work_limit() {
+    let error =
+        primary_hole_output_with_limit(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn hole_output_map_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-output-body").unwrap();
+    let mut outputs = std::collections::BTreeMap::new();
+    insert_hole_output_body(&ctx, &mut outputs, "operation", &body)?;
+    assert_eq!(outputs["operation"], [body]);
+    Ok(())
+}
+
+#[test]
+fn hole_output_map_refuses_collection_limit() {
+    let error =
+        hole_output_map_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn hole_output_map_refuses_retained_limit() {
+    let error = hole_output_map_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn hole_output_map_refuses_work_limit() {
+    let error = hole_output_map_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn hole_operation_uniqueness_refuses_work_limit() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = hole_operations_are_unique(&ctx, &["first".into(), "second".into()]).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+fn hole_body_group_result(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> Result<(), cadmpeg_core::CodecError> {
+    let body = cadmpeg_ir::ids::BodyId::mint("test:model:entity#hole-group-body").unwrap();
+    let operations = ["hole-operation".to_string()];
+    let outputs = std::collections::BTreeMap::from([(operations[0].clone(), vec![body])]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let groups = hole_operations_by_body(
+        &ctx,
+        &cadmpeg_ir::document::CadIr::empty(),
+        &operations,
+        &outputs,
+    )?;
+    assert_eq!(groups.unwrap().len(), 1);
+    Ok(())
+}
+
+#[test]
+fn hole_body_group_refuses_collection_limit() {
+    let error =
+        hole_body_group_result(|policy| policy.limits.max_collection_items = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn hole_body_group_refuses_retained_limit() {
+    let error = hole_body_group_result(|policy| policy.limits.max_retained_bytes = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn hole_body_group_refuses_work_limit() {
+    let error = hole_body_group_result(|policy| policy.limits.max_work_units = 0).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 
 #[test]
 fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
@@ -102,8 +383,21 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         ])
         .unwrap(),
     };
-    let properties =
-        simple_hole_native_properties(operation, &[template], &[lane], &[blocks], &[group]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(
+        &ctx,
+        &mut properties,
+        operation,
+        &[template],
+        &[lane],
+        &[blocks],
+        &[group],
+    )
+    .unwrap();
     assert_eq!(properties["simple_hole_template"], "template");
     assert_eq!(properties["simple_hole_repeated_scalar_lane"], "lane");
     assert_eq!(
@@ -111,14 +405,18 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         "blocks"
     );
     assert_eq!(properties["simple_hole_construction_group"], "group");
-    assert!(simple_hole_native_properties(
+    let mut empty_properties = std::collections::BTreeMap::new();
+    simple_hole_native_properties(
+        &ctx,
+        &mut empty_properties,
         "nx:feature-history:operation-label#1-5",
         &[],
         &[],
         &[],
         &[],
     )
-    .is_empty());
+    .unwrap();
+    assert!(empty_properties.is_empty());
 }
 
 #[test]
@@ -141,6 +439,11 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Region, Sense, Shell};
     use cadmpeg_ir::SourceObjectAssociation;
 
+    let default_arena = cadmpeg_core::decode::DecodeArena::new();
+    let default_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (default_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &default_arena, &default_policy)
+            .unwrap();
     let operations = ["hole-a".to_string(), "hole-b".to_string()];
     let templates = operations
         .iter()
@@ -181,7 +484,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
             id: surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
                 cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
-                    Point3::new(ordinal as f64, 0.0, 0.0),
+                    Point3::new(f64::from(ordinal), 0.0, 0.0),
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 0.0, 0.0),
                     2.55,
@@ -221,7 +524,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 id: curve.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                     cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                        Point3::new(ordinal as f64, boundary as f64, 0.0),
+                        Point3::new(f64::from(ordinal), f64::from(boundary), 0.0),
                         Vector3::new(0.0, 1.0, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         2.55,
@@ -278,11 +581,16 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     );
     let mut ir = CadIr::empty();
     ir.model = model;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let outputs = std::collections::BTreeMap::from([
         ("hole-a".to_string(), vec![body.clone()]),
         ("hole-b".to_string(), vec![body]),
     ]);
-    let inferred = hole_body_projection(&ir, &operations, &std::collections::BTreeMap::new())
+    let inferred = hole_body_projection(&ctx, &ir, &operations, &std::collections::BTreeMap::new())
+        .unwrap()
         .expect("complete bore bijection");
     assert_eq!(inferred.outputs, outputs);
     assert_eq!(
@@ -324,12 +632,18 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
             ),
         ])
     );
-    assert!(hole_axis_placements_for_operations(&ir, &operations, &outputs).is_empty());
+    assert!(
+        hole_axis_placements_for_operations(&ctx, &ir, &operations, &outputs)
+            .unwrap()
+            .is_empty()
+    );
     assert!(hole_axis_placements_for_operations(
+        &ctx,
         &ir,
         &operations,
         &std::collections::BTreeMap::new(),
     )
+    .unwrap()
     .is_empty());
     let mut single_hole = ir.clone();
     {
@@ -343,7 +657,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         outputs[&operations[1]].clone(),
     )]);
     assert_eq!(
-        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,)
+            .unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -373,7 +688,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     )
     .unwrap();
     assert_eq!(
-        hole_axis_placements_for_operations(&single_hole, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(&ctx, &single_hole, &single_operation, &single_output,)
+            .unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -426,7 +742,13 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         .unwrap();
     }
     assert_eq!(
-        hole_axis_placements_for_operations(&opposite_axis, &single_operation, &single_output,),
+        hole_axis_placements_for_operations(
+            &ctx,
+            &opposite_axis,
+            &single_operation,
+            &single_output,
+        )
+        .unwrap(),
         std::collections::BTreeMap::from([(
             operations[1].clone(),
             HolePlacement::Axis {
@@ -480,18 +802,22 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     }
     assert!(hole_diameters_for_operations(&different_radii, &operations, &outputs,).is_empty());
     assert!(hole_body_projection(
+        &ctx,
         &different_radii,
         &operations,
         &std::collections::BTreeMap::new(),
     )
+    .unwrap()
     .is_none());
     let unresolved_primary =
         std::collections::BTreeMap::from([(operations[0].clone(), Vec::<BodyId>::new())]);
     assert!(hole_body_projection(
+        &ctx,
         &ir,
         std::slice::from_ref(&operations[0]),
         &unresolved_primary,
     )
+    .unwrap()
     .is_none());
     assert_eq!(
         simple_hole_diameters(
@@ -569,10 +895,14 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         radius,
     )
     .unwrap();
-    assert!(
-        hole_axis_placements_for_operations(&nonparallel, &single_operation, &single_output,)
-            .is_empty()
-    );
+    assert!(hole_axis_placements_for_operations(
+        &ctx,
+        &nonparallel,
+        &single_operation,
+        &single_output,
+    )
+    .unwrap()
+    .is_empty());
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
@@ -745,7 +1075,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
                     cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
-                        Point3::new(bore as f64, end as f64, 0.0),
+                        Point3::new(f64::from(bore), f64::from(end), 0.0),
                         Vector3::new(0.0, if end == 0 { 1.0 } else { -1.0 }, 0.0),
                         Vector3::new(1.0, 0.0, 0.0),
                         0.0,
@@ -784,7 +1114,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
                     id: curve.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
-                            Point3::new(bore as f64, end as f64, 0.0),
+                            Point3::new(f64::from(bore), f64::from(end), 0.0),
                             Vector3::new(0.0, 1.0, 0.0),
                             Vector3::new(1.0, 0.0, 0.0),
                             radius,
@@ -813,7 +1143,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         }
     }
     assert_eq!(
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap(),
         std::collections::BTreeMap::from([
             (
                 "hole-a".into(),
@@ -838,7 +1168,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     policy.limits.max_collection_items = 1;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = simple_hole_chamfers(Some(&ctx), &chamfered, &templates, &outputs)
+    let error = simple_hole_chamfers(&ctx, &chamfered, &templates, &outputs)
         .expect_err("two bore cone counters exceed one admitted collection item");
     assert!(matches!(
         error,
@@ -847,19 +1177,21 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
     ));
     assert_eq!(
         simple_hole_chamfers(
-            None,
+            &default_ctx,
             &chamfered,
             &templates,
             &std::collections::BTreeMap::new()
         )
         .unwrap(),
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap()
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
-    assert!(simple_hole_chamfers(None, &sheet, &templates, &outputs)
-        .unwrap()
-        .is_empty());
+    assert!(
+        simple_hole_chamfers(&default_ctx, &sheet, &templates, &outputs)
+            .unwrap()
+            .is_empty()
+    );
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#unrelated-cone").expect("identity grammar"),
@@ -890,8 +1222,8 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         tolerance: None,
     });
     assert_eq!(
-        simple_hole_chamfers(None, &unrelated, &templates, &outputs).unwrap(),
-        simple_hole_chamfers(None, &chamfered, &templates, &outputs).unwrap()
+        simple_hole_chamfers(&default_ctx, &unrelated, &templates, &outputs).unwrap(),
+        simple_hole_chamfers(&default_ctx, &chamfered, &templates, &outputs).unwrap()
     );
     let mut unequal_chamfers = chamfered;
     let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) = &mut unequal_chamfers
@@ -913,7 +1245,7 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions_and_ref
         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(center, *axis, *ref_direction, radius)
             .unwrap();
     assert!(
-        simple_hole_chamfers(None, &unequal_chamfers, &templates, &outputs)
+        simple_hole_chamfers(&default_ctx, &unequal_chamfers, &templates, &outputs)
             .unwrap()
             .is_empty()
     );

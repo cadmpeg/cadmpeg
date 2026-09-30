@@ -1,11 +1,19 @@
 use crate::om::compact::LocatedCompactIndex;
 use crate::om::pattern::{PatternRows, PatternScalarEncoding};
-use crate::om::pattern_payload_transform_lane;
 use crate::om::pattern_references::{PatternPayloadReferenceLayout, PatternReferences};
 use crate::om::projected_references::ProjectedCurveReferences;
 use crate::om::scalar::ShiftedScalar;
 use crate::om::surface_payload_strings;
 use crate::om::PatternPayloadTransformLane;
+
+fn pattern_lane_for_test(
+    record: crate::om::operation_record::OperationPayload<'_>,
+) -> Option<PatternPayloadTransformLane> {
+    crate::test_support::with_decode_context(|ctx| {
+        crate::om::pattern_payload_transform_lane(ctx, record)
+    })
+    .unwrap()
+}
 
 struct ObservedPatternScalar {
     encoding: PatternScalarEncoding,
@@ -64,7 +72,11 @@ impl PatternPayloadTransformLane {
 #[test]
 fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
-    let strings = surface_payload_strings(bytes);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let strings = surface_payload_strings(&ctx, bytes).unwrap();
     assert_eq!(strings.len(), 2);
     assert_eq!(strings[0].offset, 0);
     assert_eq!(strings[0].value.as_str(), "Steel");
@@ -72,11 +84,58 @@ fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
     assert_eq!(strings[1].value.as_str(), "×");
 
     let truncated = b"\x66\x1b\x03\x05Steel";
-    assert!(surface_payload_strings(truncated).is_empty());
+    assert!(surface_payload_strings(&ctx, truncated).unwrap().is_empty());
     let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
-    assert!(surface_payload_strings(invalid_utf8).is_empty());
+    assert!(surface_payload_strings(&ctx, invalid_utf8)
+        .unwrap()
+        .is_empty());
     let control = b"\x66\x1b\x03\x01\n\0";
-    assert!(surface_payload_strings(control).is_empty());
+    assert!(surface_payload_strings(&ctx, control).unwrap().is_empty());
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_collection_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_retained_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn om_surface_payload_strings_refuse_work_limit() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_work_units = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let error = surface_payload_strings(&ctx, bytes).unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -251,7 +310,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     let label = "Pattern Feature";
     let record =
         crate::om::operation_record::OperationPayload::new(feature_payload, 200, label).unwrap();
-    let lane = pattern_payload_transform_lane(record).expect("feature lane");
+    let lane = pattern_lane_for_test(record).expect("feature lane");
     assert_eq!(lane.offset, 201);
     assert_eq!(lane.row_schema_index.get(), 0x60);
     assert!(matches!(lane.rows, PatternRows::Scalar(_)));
@@ -309,7 +368,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         "Pattern Geometry",
     )
     .unwrap();
-    let lane = pattern_payload_transform_lane(geometry_record).expect("geometry lane");
+    let lane = pattern_lane_for_test(geometry_record).expect("geometry lane");
     assert_eq!(lane.row_schema_index.get(), 0x60);
     assert!(matches!(lane.rows, PatternRows::Scalar(_)));
     assert_eq!(
@@ -356,7 +415,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         \x3d\x01\x00\x00\x50\xae\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
         \x3d\x01\x00\x00\x30\xb6\x80\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x04\x01\x03\x00\x00\xff\x00\x00\
         \x3c\x00\x00\x01";
-    let relative_lane = pattern_payload_transform_lane(
+    let relative_lane = pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             schema_relative_payload,
             record.payload_offset(),
@@ -393,7 +452,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         \x35\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\xb0\x0e\x6f\x0e\x13\x44\x54\xfd\x00\x00\x30\x0e\x6f\x0e\x13\x44\x54\xfd\x2f\xf3\xc6\xef\x37\x2f\xe9\x60\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\
         \x35\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x30\x02\xcf\x23\x04\x75\x5a\x46\x00\x00\xb0\x02\xcf\x23\x04\x75\x5a\x46\xb0\x09\xe3\x77\x9b\x97\xf4\xb9\x00\x00\x00\x00\x50\x0f\xff\xff\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\
         \x34\x00\x00\x02";
-    let wide_lane = pattern_payload_transform_lane(
+    let wide_lane = pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             wide_payload,
             record.payload_offset(),
@@ -452,7 +511,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .expect("exact-one terminal value")
         + 4;
     zero_terminal_value[terminal_value] = 0x00;
-    assert!(pattern_payload_transform_lane(
+    assert!(pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             &zero_terminal_value,
             record.payload_offset(),
@@ -470,7 +529,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .nth(1)
         .expect("second row");
     changed_schema[second_row] = 0x61;
-    assert!(pattern_payload_transform_lane(
+    assert!(pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             &changed_schema,
             record.payload_offset(),
@@ -482,7 +541,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
 
     let mut wrong_ordinal = feature_payload.to_vec();
     wrong_ordinal[29] = 2;
-    assert!(pattern_payload_transform_lane(
+    assert!(pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             &wrong_ordinal,
             record.payload_offset(),
@@ -491,7 +550,7 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .unwrap()
     )
     .is_none());
-    assert!(pattern_payload_transform_lane(
+    assert!(pattern_lane_for_test(
         crate::om::operation_record::OperationPayload::new(
             &feature_payload[..feature_payload.len() - 1],
             record.payload_offset(),
@@ -500,4 +559,42 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
         .unwrap()
     )
     .is_none());
+}
+
+fn pattern_transform_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let bytes = b"\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    configure(&mut policy);
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let record =
+        crate::om::operation_record::OperationPayload::new(bytes, 0, "Pattern Feature").unwrap();
+    crate::om::pattern_payload_transform_lane(&ctx, record).unwrap_err()
+}
+
+#[test]
+fn pattern_transform_refuses_collection_limit() {
+    let error = pattern_transform_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn pattern_transform_refuses_retained_limit() {
+    let error = pattern_transform_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn pattern_transform_refuses_work_limit() {
+    let error = pattern_transform_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }

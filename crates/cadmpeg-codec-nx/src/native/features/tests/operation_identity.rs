@@ -2,14 +2,23 @@
 
 use crate::native::features::assign_operation_header_identities;
 use crate::native::features::body_history_partition_stream;
+use crate::native::features::feature_body_reference_occurrences;
+use crate::native::features::feature_body_references;
 use crate::native::features::feature_body_write_group_partition_uses;
+use crate::native::features::feature_input_block_identity_groups;
+use crate::native::features::feature_input_blocks;
 use crate::native::features::feature_operation_body_identity_segment_uses;
 use crate::native::features::feature_operation_body_image_segment_uses;
 use crate::native::features::feature_operation_body_partition_uses;
 use crate::native::features::feature_operation_body_writes;
+use crate::native::features::feature_operation_common_frames;
 use crate::native::features::feature_operation_labels;
+use crate::native::features::feature_operation_object_references;
 use crate::native::features::feature_operation_records;
 use crate::native::features::feature_operation_state_journal_uses;
+use crate::native::features::feature_operation_terminal_frames;
+use crate::native::features::feature_payload_strings;
+use crate::native::features::feature_unlabeled_operation_records;
 use crate::native::features::operation_record::FeatureOperationRecord;
 use crate::native::features::FeatureOperationBodyWrite;
 use crate::native::features::FeatureOperationLabel;
@@ -22,6 +31,259 @@ use crate::test_support::test_om::composed_feature_history_payload;
 use crate::test_support::test_om::composed_feature_history_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use std::collections::BTreeMap;
+
+fn image_segment_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<crate::native::features::FeatureOperationBodyImageSegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_image_segment_uses(ctx, writes, bindings)
+    })
+    .expect("admitted body-image segment uses")
+}
+
+fn identity_segment_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<crate::native::features::FeatureOperationBodyIdentitySegmentUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_identity_segment_uses(ctx, writes, bindings)
+    })
+    .expect("admitted body-identity segment uses")
+}
+
+fn body_partition_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    image_uses: &[crate::native::features::FeatureOperationBodyImageSegmentUse],
+    bindings: &[SegmentBodyBinding],
+    streams: &[crate::parasolid::Stream],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<crate::native::features::FeatureOperationBodyPartitionUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_partition_uses(
+            ctx, writes, image_uses, bindings, streams, groups, members,
+        )
+    })
+    .expect("admitted body partition uses")
+}
+
+fn body_group_partition_uses_for_test(
+    writes: &[FeatureOperationBodyWrite],
+    unlabeled_writes: &[FeatureOperationBodyWrite],
+    groups: &[crate::native::parasolid::ParasolidGroupRecord],
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> Vec<crate::native::features::FeatureBodyWriteGroupPartitionUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_body_write_group_partition_uses(ctx, writes, unlabeled_writes, groups, members)
+    })
+    .expect("admitted body-write group partition uses")
+}
+
+#[derive(Clone, Copy)]
+enum BodySegmentJoinRoute {
+    Image,
+    Identity,
+}
+
+fn body_segment_join_refusal(
+    route: BodySegmentJoinRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        id: "nx:operation-body-write#0".to_string(),
+        operation_label: Some("operation#0".to_string()),
+        operation_record: "record#0".to_string(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
+            0,
+        )
+        .expect("body-write frame"),
+        body_image_data_block: Some("block#2".to_string()),
+    };
+    let binding = SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Plain,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 16,
+        source_offset: 0,
+    };
+    let call = |ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+                writes: &[FeatureOperationBodyWrite],
+                bindings: &[SegmentBodyBinding]| {
+        match route {
+            BodySegmentJoinRoute::Image => {
+                feature_operation_body_image_segment_uses(ctx, writes, bindings)
+                    .map(|values| values.len())
+            }
+            BodySegmentJoinRoute::Identity => {
+                feature_operation_body_identity_segment_uses(ctx, writes, bindings)
+                    .map(|values| values.len())
+            }
+        }
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        call(
+            ctx,
+            std::slice::from_ref(&write),
+            std::slice::from_ref(&binding),
+        )
+    })
+    .expect("admitted body segment use");
+    assert_eq!(admitted, 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    call(&ctx, &[write], &[binding]).expect_err("body segment use resource limit")
+}
+
+macro_rules! body_segment_join_limit_tests {
+    ($collection:ident, $retained:ident, $work:ident, $route:path) => {
+        #[test]
+        fn $collection() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+
+        #[test]
+        fn $retained() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+
+        #[test]
+        fn $work() {
+            let error = body_segment_join_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+body_segment_join_limit_tests!(
+    body_image_join_refuses_collection_limit,
+    body_image_join_refuses_retained_limit,
+    body_image_join_refuses_work_limit,
+    BodySegmentJoinRoute::Image
+);
+body_segment_join_limit_tests!(
+    body_identity_join_refuses_collection_limit,
+    body_identity_join_refuses_retained_limit,
+    body_identity_join_refuses_work_limit,
+    BodySegmentJoinRoute::Identity
+);
+
+fn body_partition_join_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        id: "nx:operation-body-write#0".to_string(),
+        operation_label: Some("operation#0".to_string()),
+        operation_record: "record#0".to_string(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(1, &[1]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form12,
+            crate::om::body_write::BodyWriteIndex::from_wire(2, &[2]).expect("image token"),
+            0,
+        )
+        .expect("body-write frame"),
+        body_image_data_block: Some("block#2".to_string()),
+    };
+    let image_use = crate::native::features::FeatureOperationBodyImageSegmentUse {
+        id: "image-use#0".to_string(),
+        operation_body_write: write.id.clone(),
+        body_image_data_block: "block#2".to_string(),
+        segment_body_binding: "binding#0".to_string(),
+    };
+    let binding = SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: crate::parasolid::StreamKind::Plain,
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 16,
+        source_offset: 0,
+    };
+    let stream = |subtype| crate::parasolid::Stream {
+        file_offset: 0,
+        consumed: 0,
+        inflated: Vec::new(),
+        body: crate::parasolid::StreamBody::Parasolid {
+            subtype,
+            schema: Some(
+                cadmpeg_parasolid::OwnedSchemaToken::try_from("SCH_TEST").expect("schema token"),
+            ),
+        },
+    };
+    let streams = [
+        stream(crate::parasolid::ParasolidSubtype::Plain),
+        stream(crate::parasolid::ParasolidSubtype::Partition),
+    ];
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_body_partition_uses(
+            ctx,
+            std::slice::from_ref(&write),
+            std::slice::from_ref(&image_use),
+            std::slice::from_ref(&binding),
+            &streams,
+            &[],
+            &[],
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body partition use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body partition use resource limit")
+}
+
+#[test]
+fn body_partition_join_refuses_collection_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn body_partition_join_refuses_retained_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn body_partition_join_refuses_work_limit() {
+    let error = body_partition_join_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
 
 fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabel {
     FeatureOperationLabel {
@@ -43,6 +305,39 @@ fn label(ordinal: u32, object_indices: [Option<u32>; 4]) -> FeatureOperationLabe
     }
 }
 
+fn unlabeled_history_fixture() -> crate::container::Container<'static> {
+    const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
+    let mut section = composed_feature_history_section(&[
+        (&[0xff; 4], "BLOCK", b"first".to_vec()),
+        (&[0xff; 4], "SKETCH", b"second".to_vec()),
+    ]);
+    let second_header = section
+        .windows(HEADER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == HEADER).then_some(offset))
+        .nth(1)
+        .expect("second operation header");
+    let mut unlabeled = HEADER.to_vec();
+    unlabeled.extend_from_slice(&[0xff; 4]);
+    unlabeled.extend_from_slice(b"unlabeled");
+    section.splice(second_header..second_header, unlabeled);
+    let payload_len = u32::try_from(section.len() - 16).expect("fixture value fits u32");
+    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&section);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("feature-history fixture")
+}
+
 #[test]
 fn operation_header_identity_witness_survives_reordering() {
     let block_identities = BTreeMap::from([
@@ -55,7 +350,10 @@ fn operation_header_identity_witness_survives_reordering() {
         label(1, [None; 4]),
         label(2, [Some(61), None, None, None]),
     ];
-    assign_operation_header_identities(&mut original, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut original, &block_identities)
+    })
+    .unwrap();
     let identity = original[0]
         .stable_identity
         .clone()
@@ -74,7 +372,10 @@ fn operation_header_identity_witness_survives_reordering() {
     for label in &mut reordered {
         label.stable_identity = None;
     }
-    assign_operation_header_identities(&mut reordered, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut reordered, &block_identities)
+    })
+    .unwrap();
     assert_eq!(
         reordered[1].stable_identity.as_deref(),
         Some(identity.as_str())
@@ -84,43 +385,208 @@ fn operation_header_identity_witness_survives_reordering() {
 
 #[test]
 fn feature_label_identity_retains_the_complete_header_ordinal() {
-    const HEADER: &[u8] = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff";
-    let mut section = composed_feature_history_section(&[
-        (&[0xff; 4], "BLOCK", b"first".to_vec()),
-        (&[0xff; 4], "SKETCH", b"second".to_vec()),
-    ]);
-    let second_header = section
-        .windows(HEADER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == HEADER).then_some(offset))
-        .nth(1)
-        .expect("second operation header");
-    let mut unlabeled = HEADER.to_vec();
-    unlabeled.extend_from_slice(&[0xff; 4]);
-    unlabeled.extend_from_slice(b"unlabeled");
-    section.splice(second_header..second_header, unlabeled);
-    let payload_len = (section.len() - 16) as u32;
-    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
-    let mut payload = Vec::new();
-    for word in [32u32, 9, 11, 1, 1, 24] {
-        payload.extend_from_slice(&word.to_le_bytes());
-    }
-    payload.resize(32, 0);
-    payload.extend_from_slice(&section);
-    let container = crate::test_support::with_decode_context(|ctx| {
-        crate::container::scan_bytes(
-            ctx,
-            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
-        )
-    })
-    .expect("feature-history fixture");
+    let container = unlabeled_history_fixture();
 
-    let labels = feature_operation_labels(&container);
+    let labels =
+        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &container))
+            .unwrap();
     assert_eq!(labels.len(), 2);
     assert!(labels[0].id.ends_with("-0000000000"));
     assert!(labels[1].id.ends_with("-0000000002"));
-    let records = feature_operation_records(&container);
+    let records =
+        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
+            .unwrap();
     assert_eq!(records[1].operation_label, labels[1].id);
+}
+
+fn feature_label_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = unlabeled_history_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_labels(&ctx, &container).unwrap_err()
+}
+
+fn feature_operation_record_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = unlabeled_history_fixture();
+    let admitted =
+        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &container))
+            .expect("admitted feature operation records");
+    assert_eq!(admitted.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_records(&ctx, &container)
+        .expect_err("feature operation record resource limit")
+}
+
+#[test]
+fn feature_operation_record_route_refuses_collection_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn feature_operation_record_route_refuses_retained_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn feature_operation_record_route_refuses_scoped_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn feature_operation_record_route_refuses_work_limit() {
+    let error = feature_operation_record_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn feature_label_route_refuses_collection_limit() {
+    let error = feature_label_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn feature_label_route_refuses_retained_limit() {
+    let error = feature_label_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn feature_label_route_refuses_scoped_limit() {
+    let error = feature_label_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn feature_label_route_refuses_work_limit() {
+    let error = feature_label_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn feature_label_identity_admits_full_ordinal_width() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let id = crate::native::features::format_feature_history_id(
+        &ctx,
+        "operation-label",
+        "0000000000",
+        usize::MAX,
+        None,
+    )
+    .expect("admitted label identity");
+    assert_eq!(
+        id,
+        format!(
+            "nx:feature-history:operation-label#0000000000-{value:010}",
+            value = usize::MAX
+        ),
+    );
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.len() - 1);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    let error = crate::native::features::format_feature_history_id(
+        &ctx,
+        "operation-label",
+        "0000000000",
+        usize::MAX,
+        None,
+    )
+    .expect_err("full identity exceeds retained limit");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+fn unlabeled_record_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let container = unlabeled_history_fixture();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_unlabeled_operation_records(&ctx, &container).unwrap_err()
+}
+
+#[test]
+fn unlabeled_record_route_preserves_source_order() {
+    let container = unlabeled_history_fixture();
+    let records = crate::test_support::with_decode_context(|ctx| {
+        feature_unlabeled_operation_records(ctx, &container)
+    })
+    .unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].id.ends_with("-0000000001"));
+}
+
+#[test]
+fn unlabeled_record_route_refuses_collection_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn unlabeled_record_route_refuses_retained_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn unlabeled_record_route_refuses_work_limit() {
+    let error = unlabeled_record_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -133,7 +599,10 @@ fn operation_header_identity_rejects_duplicate_tuples() {
         label(0, [Some(55), Some(56), None, None]),
         label(1, [Some(55), Some(56), None, None]),
     ];
-    assign_operation_header_identities(&mut labels, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+    })
+    .unwrap();
     assert!(labels.iter().all(|label| label.stable_identity.is_none()));
 }
 
@@ -166,8 +635,12 @@ fn operation_header_identity_survives_offset_store_insertion() {
     })
     .expect("second synthetic container");
 
-    let first_labels = feature_operation_labels(&first);
-    let second_labels = feature_operation_labels(&second);
+    let first_labels =
+        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &first))
+            .unwrap();
+    let second_labels =
+        crate::test_support::with_decode_context(|ctx| feature_operation_labels(ctx, &second))
+            .unwrap();
     assert_eq!(
         first_labels[0].objects.values(),
         [Some(1), Some(2), None, None]
@@ -181,8 +654,12 @@ fn operation_header_identity_survives_offset_store_insertion() {
         second_labels[0].stable_identity
     );
 
-    let first_records = feature_operation_records(&first);
-    let second_records = feature_operation_records(&second);
+    let first_records =
+        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &first))
+            .unwrap();
+    let second_records =
+        crate::test_support::with_decode_context(|ctx| feature_operation_records(ctx, &second))
+            .unwrap();
     assert_eq!(
         first_records[0].stable_identity,
         second_records[0].stable_identity
@@ -193,8 +670,30 @@ fn operation_header_identity_survives_offset_store_insertion() {
 fn operation_header_identity_requires_unique_resolved_blocks() {
     let block_identities = BTreeMap::from([(55, None), (56, Some("block-56".to_string()))]);
     let mut labels = vec![label(0, [Some(55), Some(56), None, None])];
-    assign_operation_header_identities(&mut labels, &block_identities);
+    crate::test_support::with_decode_context(|ctx| {
+        assign_operation_header_identities(ctx, &mut labels, &block_identities)
+    })
+    .unwrap();
     assert!(labels[0].stable_identity.is_none());
+}
+
+#[test]
+fn feature_operation_identity_refuses_scoped_keys_at_caller_limit() {
+    let block_identities = BTreeMap::from([(55, Some("block-55".to_string()))]);
+    let mut labels = vec![label(0, [Some(55), None, None, None])];
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 0;
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = assign_operation_header_identities(&ctx, &mut labels, &block_identities)
+        .expect_err("scoped key refusal");
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "reserve NX operation header keys"
+    ));
 }
 
 #[test]
@@ -211,7 +710,10 @@ fn operation_body_write_retains_identity_group_and_image() {
         )
     })
     .expect("synthetic body-write container");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    })
+    .unwrap();
     let [first, second] = writes.as_slice() else {
         panic!("two body-write frames");
     };
@@ -226,6 +728,490 @@ fn operation_body_write_retains_identity_group_and_image() {
         first.frame.group_node().value()
     );
     assert_eq!(second.frame.body_image().value(), 0x694);
+}
+
+fn operation_object_reference_refusal(
+    kind: crate::om::direct_reference::ReferenceFieldKind,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let field: &[u8] = match kind {
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03 => {
+            b"\x01\x02\x03\x07\x01\x00\x00\x00\x00\x00"
+        }
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17 => {
+            b"\x01\x02\x17\x07\xff\x80\x00\x00\x02"
+        }
+    };
+    let payload = composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", field.to_vec())], &[]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("synthetic direct-reference container");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_object_references(ctx, &container, kind)
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation object reference");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation object reference resource limit")
+}
+
+#[test]
+fn operation_object_reference_route_refuses_collection_limit() {
+    for kind in [
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+    ] {
+        let error = operation_object_reference_refusal(kind, |policy| {
+            policy.limits.max_collection_items = 0;
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_retained_limit() {
+    for kind in [
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+    ] {
+        let error =
+            operation_object_reference_refusal(kind, |policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_scoped_limit() {
+    for kind in [
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+    ] {
+        let error = operation_object_reference_refusal(kind, |policy| {
+            policy.limits.max_materialized_bytes = 0;
+        });
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+    }
+}
+
+#[test]
+fn operation_object_reference_route_refuses_work_limit() {
+    for kind in [
+        crate::om::direct_reference::ReferenceFieldKind::DataBlock03,
+        crate::om::direct_reference::ReferenceFieldKind::Tagged17,
+    ] {
+        let error =
+            operation_object_reference_refusal(kind, |policy| policy.limits.max_work_units = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
+    }
+}
+
+fn operation_common_frame_refusal(
+    terminal: bool,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let frame = [
+        0x00, 0x81, 0x5f, 0x80, 0xab, 0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00,
+        0x00, 0x81, 0x23, 0x81, 0x23, 0xff, 0x00,
+    ];
+    let payload = composed_feature_history_payload(&[(&[0xff; 4], "FSET", frame.to_vec())], &[]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("synthetic common-frame container");
+    let common = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_common_frames(ctx, &container)
+    })
+    .expect("admitted operation common frames");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        if terminal {
+            feature_operation_terminal_frames(ctx, &container, &common).map(|records| records.len())
+        } else {
+            feature_operation_common_frames(ctx, &container).map(|records| records.len())
+        }
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation frame route");
+    assert_eq!(admitted, 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation frame resource limit")
+}
+
+#[derive(Clone, Copy)]
+enum FeaturePayloadReferenceRoute {
+    Text,
+    PrimaryBody,
+    BodyOccurrences,
+}
+
+fn feature_payload_reference_refusal(
+    route_kind: FeaturePayloadReferenceRoute,
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let payload_bytes: &[u8] = match route_kind {
+        FeaturePayloadReferenceRoute::Text => b"\x04\x07BLOCK\0",
+        FeaturePayloadReferenceRoute::PrimaryBody
+        | FeaturePayloadReferenceRoute::BodyOccurrences => b"\x01\x02\x10\x07\xff",
+    };
+    let payload =
+        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", payload_bytes.to_vec())], &[]);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("synthetic feature payload container");
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| match route_kind {
+        FeaturePayloadReferenceRoute::Text => {
+            feature_payload_strings(ctx, &container).map(|items| items.len())
+        }
+        FeaturePayloadReferenceRoute::PrimaryBody => {
+            feature_body_references(ctx, &container).map(|items| items.len())
+        }
+        FeaturePayloadReferenceRoute::BodyOccurrences => {
+            feature_body_reference_occurrences(ctx, &container).map(|items| items.len())
+        }
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted feature payload route");
+    assert_eq!(admitted, 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("feature payload resource limit")
+}
+
+fn input_block_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload = composed_feature_history_payload(
+        &[(
+            &[1, 0xff, 0xff, 0xff],
+            "EXTRUDE",
+            b"\x01\x02\x10\x07\xff".to_vec(),
+        )],
+        &store,
+    );
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("synthetic input-block container");
+    let route =
+        |ctx: &cadmpeg_core::decode::DecodeContext<'_>| feature_input_blocks(ctx, &container);
+    let admitted =
+        crate::test_support::with_decode_context(|ctx| route(ctx)).expect("admitted input block");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("input block resource limit")
+}
+
+fn input_block_group_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let input = |id: &str, operation: &str, offset| crate::native::features::FeatureInputBlock {
+        id: id.to_string(),
+        operation_label: operation.to_string(),
+        input_slot: crate::om::header_references::HeaderSlot::Zero,
+        object: crate::om::reference_index::FeatureReferenceToken::from_wire(7, &[7])
+            .expect("input object token"),
+        data_block: "block#7".to_string(),
+        source_offset: offset,
+    };
+    let inputs = [
+        input("input#0", "operation#0", 20),
+        input("input#1", "operation#1", 30),
+    ];
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_input_block_identity_groups(ctx, &inputs)
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted input block identity group");
+    assert_eq!(admitted.len(), 1);
+    assert_eq!(admitted[0].members.len(), 2);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("input block identity group resource limit")
+}
+
+#[test]
+fn input_block_group_refuses_collection_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn input_block_group_refuses_retained_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn input_block_group_refuses_scoped_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn input_block_group_refuses_work_limit() {
+    let error = input_block_group_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+#[test]
+fn input_block_route_refuses_collection_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn input_block_route_refuses_retained_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn input_block_route_refuses_scoped_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn input_block_route_refuses_work_limit() {
+    let error = input_block_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
+macro_rules! feature_payload_reference_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $route:expr) => {
+        #[test]
+        fn $collection() {
+            let error = feature_payload_reference_refusal($route,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = feature_payload_reference_refusal($route,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $scoped() {
+            let error = feature_payload_reference_refusal($route,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = feature_payload_reference_refusal($route,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+feature_payload_reference_limit_tests!(
+    payload_string_route_refuses_collection_limit,
+    payload_string_route_refuses_retained_limit,
+    payload_string_route_refuses_scoped_limit,
+    payload_string_route_refuses_work_limit,
+    FeaturePayloadReferenceRoute::Text
+);
+feature_payload_reference_limit_tests!(
+    primary_body_route_refuses_collection_limit,
+    primary_body_route_refuses_retained_limit,
+    primary_body_route_refuses_scoped_limit,
+    primary_body_route_refuses_work_limit,
+    FeaturePayloadReferenceRoute::PrimaryBody
+);
+feature_payload_reference_limit_tests!(
+    body_occurrence_route_refuses_collection_limit,
+    body_occurrence_route_refuses_retained_limit,
+    body_occurrence_route_refuses_scoped_limit,
+    body_occurrence_route_refuses_work_limit,
+    FeaturePayloadReferenceRoute::BodyOccurrences
+);
+
+macro_rules! operation_frame_limit_tests {
+    ($collection:ident, $retained:ident, $scoped:ident, $work:ident, $terminal:expr) => {
+        #[test]
+        fn $collection() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_collection_items = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+        }
+        #[test]
+        fn $retained() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_retained_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+        }
+        #[test]
+        fn $scoped() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_materialized_bytes = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes));
+        }
+        #[test]
+        fn $work() {
+            let error = operation_common_frame_refusal($terminal,
+                |policy| policy.limits.max_work_units = 0);
+            assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
+        }
+    };
+}
+
+operation_frame_limit_tests!(
+    common_frame_route_refuses_collection_limit,
+    common_frame_route_refuses_retained_limit,
+    common_frame_route_refuses_scoped_limit,
+    common_frame_route_refuses_work_limit,
+    false
+);
+operation_frame_limit_tests!(
+    terminal_frame_route_refuses_collection_limit,
+    terminal_frame_route_refuses_retained_limit,
+    terminal_frame_route_refuses_scoped_limit,
+    terminal_frame_route_refuses_work_limit,
+    true
+);
+
+fn operation_body_write_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let body_write = b"\x01\x02\x0b\x31\x97\x75\x01\x02\x10\x41\xff";
+    let store = (0..65).map(|_| b"\0".as_slice()).collect::<Vec<_>>();
+    let payload =
+        composed_feature_history_payload(&[(&[0xff; 4], "EXTRUDE", body_write.to_vec())], &store);
+    let container = crate::test_support::with_decode_context(|ctx| {
+        crate::container::scan_bytes(
+            ctx,
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]),
+        )
+    })
+    .expect("synthetic body-write container");
+    let admitted = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    })
+    .expect("admitted operation body writes");
+    assert_eq!(admitted.len(), 1);
+    assert!(admitted[0].body_image_data_block.is_some());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    feature_operation_body_writes(&ctx, &container)
+        .expect_err("operation body-write resource limit")
+}
+
+#[test]
+fn operation_body_write_route_refuses_collection_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn operation_body_write_route_refuses_retained_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn operation_body_write_route_refuses_scoped_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+    );
+}
+
+#[test]
+fn operation_body_write_route_refuses_work_limit() {
+    let error = operation_body_write_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -244,7 +1230,10 @@ fn operation_body_write_resolves_one_unique_image_block() {
     })
     .expect("synthetic body-image store");
 
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    })
+    .unwrap();
 
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].frame.body_image().value(), 65);
@@ -269,7 +1258,10 @@ fn body_image_segment_use_requires_one_plain_alias() {
         )
     })
     .expect("synthetic body-image store");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    })
+    .unwrap();
     let binding = |id: &str, stream_kind: crate::parasolid::StreamKind| SegmentBodyBinding {
         id: id.to_string(),
         stream_link: format!("{id}:link"),
@@ -281,7 +1273,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         source_offset: 100,
     };
 
-    let uses = feature_operation_body_image_segment_uses(
+    let uses = image_segment_uses_for_test(
         &writes,
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -296,7 +1288,7 @@ fn body_image_segment_use_requires_one_plain_alias() {
         "nx:om-data-blocks-0:block#65"
     );
     assert_eq!(uses[0].segment_body_binding, "plain");
-    assert!(feature_operation_body_image_segment_uses(
+    assert!(image_segment_uses_for_test(
         &writes,
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -334,7 +1326,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
         source_offset: 100,
     };
 
-    let uses = feature_operation_body_identity_segment_uses(
+    let uses = identity_segment_uses_for_test(
         std::slice::from_ref(&write),
         &[
             binding("plain", crate::parasolid::StreamKind::Plain),
@@ -347,7 +1339,7 @@ fn body_identity_segment_use_does_not_require_an_image_block() {
     assert_eq!(uses[0].segment_body_binding, "plain");
 
     write.body_image_data_block = Some("irrelevant".into());
-    assert!(feature_operation_body_identity_segment_uses(
+    assert!(identity_segment_uses_for_test(
         &[write],
         &[
             binding("first", crate::parasolid::StreamKind::Plain),
@@ -372,7 +1364,10 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         )
     })
     .expect("synthetic body-image store");
-    let writes = feature_operation_body_writes(&container);
+    let writes = crate::test_support::with_decode_context(|ctx| {
+        feature_operation_body_writes(ctx, &container)
+    })
+    .unwrap();
     let binding =
         |id: &str, stream_ordinal, body_alias_object_index, stream_role| SegmentBodyBinding {
             id: id.to_string(),
@@ -385,7 +1380,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
             source_offset: 100,
         };
     let bindings = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 16)];
-    let image_uses = feature_operation_body_image_segment_uses(&writes, &bindings);
+    let image_uses = image_segment_uses_for_test(&writes, &bindings);
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
@@ -422,21 +1417,15 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         };
     let groups = [group("owned", 2), group("collision", 4)];
 
-    let uses = feature_operation_body_partition_uses(
-        &writes,
-        &image_uses,
-        &bindings,
-        &streams,
-        &groups,
-        &[],
-    );
+    let uses =
+        body_partition_uses_for_test(&writes, &image_uses, &bindings, &streams, &groups, &[]);
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
     let unterminated = [binding("plain-0", 0, 11, 10), binding("plain-1", 1, 12, 10)];
-    assert!(feature_operation_body_partition_uses(
+    assert!(body_partition_uses_for_test(
         &writes,
         &image_uses,
         &unterminated,
@@ -448,8 +1437,14 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
 
     let repeated_terminal = [binding("plain-0", 0, 11, 16), binding("plain-1", 1, 12, 16)];
     assert!(
-        body_history_partition_stream(&repeated_terminal[1], &repeated_terminal, &streams,)
-            .is_none()
+        crate::test_support::with_decode_context(|ctx| body_history_partition_stream(
+            ctx,
+            &repeated_terminal[1],
+            &repeated_terminal,
+            &streams,
+        ))
+        .expect("admitted body-history partition")
+        .is_none()
     );
 
     let interrupted_streams = [
@@ -457,7 +1452,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
         stream(crate::parasolid::ParasolidSubtype::Deltas),
         stream(crate::parasolid::ParasolidSubtype::Partition),
     ];
-    assert!(feature_operation_body_partition_uses(
+    assert!(body_partition_uses_for_test(
         &writes,
         &image_uses,
         &bindings,
@@ -501,7 +1496,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
             inflated_offset: 0,
         };
 
-    let uses = feature_body_write_group_partition_uses(
+    let uses = body_group_partition_uses_for_test(
         &[],
         std::slice::from_ref(&unlabeled),
         &[group("owned", 2)],
@@ -512,7 +1507,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     assert_eq!(uses[0].partition_stream_ordinal, 2);
     assert_eq!(uses[0].parasolid_group_records, ["owned"]);
 
-    assert!(feature_body_write_group_partition_uses(
+    assert!(body_group_partition_uses_for_test(
         &[],
         &[unlabeled],
         &[group("first", 2), group("collision", 4)],
@@ -521,17 +1516,106 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
     .is_empty());
 }
 
+fn body_group_partition_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let write = FeatureOperationBodyWrite {
+        operation_label: None,
+        id: "unlabeled-body-write".into(),
+        operation_record: "unlabeled-record".into(),
+        ordinal: 0,
+        frame: crate::om::body_write::BodyWriteFrame::<u64>::new(
+            11,
+            crate::om::body_write::BodyWriteIndex::from_wire(99, &[99]).expect("group token"),
+            crate::om::body_write::BodyImageTag::Form10,
+            crate::om::body_write::BodyWriteIndex::from_wire(20, &[20]).expect("image token"),
+            9,
+        )
+        .expect("body-write frame"),
+        body_image_data_block: Some("block".into()),
+    };
+    let group = crate::native::parasolid::ParasolidGroupRecord {
+        id: "owned".into(),
+        origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
+            stream_ordinal: 3,
+            partition_stream_ordinal: Some(2),
+        },
+        xmt: 10,
+        node_id: 99,
+        references: [3, 4, 5, 6, 7],
+        selector: crate::deltas::group::GroupSelector::Form4,
+        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        byte_len: 20,
+        inflated_offset: 0,
+    };
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_body_write_group_partition_uses(
+            ctx,
+            &[],
+            std::slice::from_ref(&write),
+            std::slice::from_ref(&group),
+            &[],
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted body-write group partition use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("body-write group partition resource limit")
+}
+
+#[test]
+fn body_group_partition_refuses_collection_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn body_group_partition_refuses_retained_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn body_group_partition_refuses_work_limit() {
+    let error = body_group_partition_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
+}
+
 fn journal_row(state_ordinal: u32, source_offset: u64) -> JournalRow {
     JournalRow::new(
         source_offset,
         1_700_000_000,
         crate::om::state_tagged_value::StateTaggedValue::read_at(
-            &[0xe0, 0, 0, 0, state_ordinal as u8],
+            &[
+                0xe0,
+                0,
+                0,
+                0,
+                u8::try_from(state_ordinal).expect("fixture value fits u8"),
+            ],
             0,
         )
         .unwrap(),
         crate::om::state_index::StateIndexToken::read_at(&[12], 0).unwrap(),
-        crate::om::state_index::StateIndexToken::read_at(&[state_ordinal as u8], 0).unwrap(),
+        crate::om::state_index::StateIndexToken::read_at(
+            &[u8::try_from(state_ordinal).expect("fixture value fits u8")],
+            0,
+        )
+        .unwrap(),
     )
     .unwrap()
 }
@@ -556,8 +1640,8 @@ fn operation_record(id: &str, operation_label: &str) -> FeatureOperationRecord {
         id: id.to_string(),
         operation_label: operation_label.to_string(),
         ordinal: 0,
-        sha256: crate::native::hex::Sha256Hex::digest(b"record-sha256"),
-        payload_sha256: crate::native::hex::Sha256Hex::digest(b"payload-sha256"),
+        sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"record-sha256"),
+        payload_sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(b"payload-sha256"),
         stable_identity: None,
         span: crate::native::features::operation_record::OperationRecordSpan::new(400, 404, 8)
             .unwrap(),
@@ -572,7 +1656,7 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         frame: crate::om::common_frame::TerminalFrame::<u64, Option<String>>::new(
             crate::om::common_frame::CommonFrameSuffix::from_wire(
                 local_ordinal,
-                &[local_ordinal as u8],
+                &[u8::try_from(local_ordinal).expect("fixture value fits u8")],
                 None,
                 &[0xff],
             )
@@ -583,6 +1667,79 @@ fn terminal_frame(operation_record: &str, local_ordinal: u32) -> FeatureOperatio
         )
         .unwrap(),
     }
+}
+
+fn state_journal_uses_for_test(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    terminal_frames: &[FeatureOperationTerminalFrame],
+    groups: &[OmOperationStateJournalGroup],
+) -> Vec<FeatureOperationStateJournalUse> {
+    crate::test_support::with_decode_context(|ctx| {
+        feature_operation_state_journal_uses(ctx, labels, records, terminal_frames, groups)
+    })
+    .expect("admitted operation state journal uses")
+}
+
+fn state_journal_use_refusal(
+    configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+) -> cadmpeg_core::CodecError {
+    let label = label(0, [None; 4]);
+    let record = operation_record(
+        "nx:feature-history:operation-record#0000000000-0000000000",
+        &label.id,
+    );
+    let group = journal_group(
+        "nx:feature-history:operation-state-journal-group#0000000000-0000000000",
+        &label.section_link,
+        vec![journal_row(7, 520)],
+    );
+    let frame = terminal_frame(&record.id, 7);
+    let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        feature_operation_state_journal_uses(
+            ctx,
+            std::slice::from_ref(&label),
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&frame),
+            std::slice::from_ref(&group),
+        )
+    };
+    let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+        .expect("admitted operation journal use");
+    assert_eq!(admitted.len(), 1);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    configure(&mut policy);
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+        .expect("empty test root");
+    route(&ctx).expect_err("operation journal use resource limit")
+}
+
+#[test]
+fn state_journal_use_route_refuses_collection_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_collection_items = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+    );
+}
+
+#[test]
+fn state_journal_use_route_refuses_retained_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_retained_bytes = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+    );
+}
+
+#[test]
+fn state_journal_use_route_refuses_work_limit() {
+    let error = state_journal_use_refusal(|policy| policy.limits.max_work_units = 0);
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+    );
 }
 
 #[test]
@@ -599,7 +1756,7 @@ fn operation_terminal_ordinal_joins_unique_section_journal_row() {
     );
     let frame = terminal_frame(&record.id, 7);
 
-    let uses = feature_operation_state_journal_uses(
+    let uses = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),
@@ -648,7 +1805,7 @@ fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
         vec![journal_row(7, 640)],
     );
 
-    let section_scoped = feature_operation_state_journal_uses(
+    let section_scoped = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),
@@ -657,7 +1814,7 @@ fn operation_terminal_ordinal_rejects_wrong_section_and_ambiguous_rows() {
     assert_eq!(section_scoped.len(), 1);
     assert_eq!(section_scoped[0].journal_source_offset, 620);
 
-    let ambiguous = feature_operation_state_journal_uses(
+    let ambiguous = state_journal_uses_for_test(
         std::slice::from_ref(&label),
         std::slice::from_ref(&record),
         std::slice::from_ref(&frame),

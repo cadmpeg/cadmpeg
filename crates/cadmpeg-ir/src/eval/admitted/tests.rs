@@ -25,18 +25,16 @@ fn curve() -> NurbsCurve {
 #[test]
 fn admitted_curve_point_refuses_each_scratch_collection() {
     let curve = curve();
-    for (cap, operation) in [(2, "IR B-spline basis"), (5, "IR local NURBS poles")] {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::service();
-        policy.limits.max_collection_items = cap;
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
-        assert!(matches!(super::nurbs_curve_point_at(&ctx, &curve, 0.5),
-            Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems
-                && resource.operation == operation));
-    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_collection_items = 6;
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(matches!(super::nurbs_curve_point_at(&ctx, &curve, 0.5),
+        Err(CodecError::ResourceLimit(resource)) if resource.dimension == ResourceDimension::CollectionItems
+            && resource.operation == "IR B-spline basis"));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 3;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
     assert_eq!(
         super::nurbs_curve_point_at(&ctx, &curve, 0.5).expect("exact scratch cap"),
@@ -133,10 +131,8 @@ fn admitted_pcurve_point_refuses_weights_poles_and_derivative_bases() {
     for (cap, operation) in [
         (2, "IR NURBS pcurve weights"),
         (5, "IR B-spline basis"),
-        (8, "IR local NURBS poles"),
-        (11, "IR B-spline derivative basis"),
-        (13, "IR B-spline derivative basis"),
-        (16, "IR B-spline second derivative basis"),
+        (10, "IR B-spline derivative basis"),
+        (13, "IR B-spline second derivative basis"),
     ] {
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
@@ -377,4 +373,25 @@ fn admitted_polar_pcurve_refuses_weight_copy() {
         .expect("service"),
         crate::eval::pcurve_uv(&geometry, 0.5)
     );
+}
+
+#[test]
+fn uncharged_scratch_reports_an_allocation_refusal_instead_of_no_value() {
+    use crate::eval::EvaluationFailure;
+    use cadmpeg_core::decode::ResourceFailure;
+
+    let scratch = super::Scratch::default();
+    assert!(scratch
+        .filled(usize::MAX, 0_u8, "IR test scratch")
+        .is_none());
+    let refusal = scratch
+        .refused()
+        .expect("the allocation refusal is recorded");
+    assert_eq!(refusal.reason, ResourceFailure::AllocationFailed);
+    assert_eq!(refusal.operation, "IR test scratch");
+    assert!(matches!(
+        scratch.settle::<(), ()>(Ok(())),
+        Err(EvaluationFailure::ResourceLimit(limit)) if limit == refusal
+    ));
+    assert!(scratch.work(1, "IR test scratch work").is_none());
 }

@@ -8,7 +8,8 @@ use crate::parasolid::entity_references::FieldPosition;
 
 use super::{ParasolidAttributeFieldUse, ParasolidAttributeFieldValueKind};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 pub(super) struct FieldUseWire {
     /// Globally unique relation identity.
     id: String,
@@ -36,6 +37,43 @@ pub(super) struct FieldUseWire {
     inflated_offset: u64,
 }
 
+#[derive(Serialize)]
+struct FieldUseRef<'a> {
+    id: &'a str,
+    stream_ordinal: u32,
+    attribute_class_use: &'a str,
+    entity_51_record: &'a str,
+    attribute_definition: &'a str,
+    field_ordinal: u32,
+    field_code: AttributeField,
+    reference_ordinal: u32,
+    value_kind: ParasolidAttributeFieldValueKind,
+    value_use: &'a str,
+    value_record: &'a str,
+    inflated_offset: u64,
+}
+
+impl Serialize for ParasolidAttributeFieldUse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FieldUseRef {
+            id: &self.id,
+            stream_ordinal: self.stream_ordinal,
+            attribute_class_use: &self.attribute_class_use,
+            entity_51_record: &self.entity_51_record,
+            attribute_definition: &self.attribute_definition,
+            field_ordinal: self.position.field_ordinal(),
+            field_code: self.value_kind.field_code(),
+            reference_ordinal: self.position.reference_ordinal(),
+            value_kind: self.value_kind,
+            value_use: &self.value_use,
+            value_record: &self.value_record,
+            inflated_offset: self.inflated_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[cfg(test)]
 impl From<ParasolidAttributeFieldUse> for FieldUseWire {
     fn from(value: ParasolidAttributeFieldUse) -> Self {
         Self {
@@ -83,13 +121,18 @@ impl TryFrom<FieldUseWire> for ParasolidAttributeFieldUse {
 
 #[cfg(test)]
 mod tests {
-    use super::ParasolidAttributeFieldUse;
+    use super::super::ATTRIBUTE_FIELD_USE_CLONE_COUNT;
+    use super::{FieldUseWire, ParasolidAttributeFieldUse};
 
     #[test]
     fn field_use_wire_preserves_and_checks_derived_fields() {
         let wire = r#"{"id":"field","stream_ordinal":0,"attribute_class_use":"class","entity_51_record":"entity","attribute_definition":"definition","field_ordinal":1,"field_code":2,"reference_ordinal":6,"value_kind":"doubles","value_use":"use","value_record":"value","inflated_offset":8}"#;
         let value: ParasolidAttributeFieldUse = serde_json::from_str(wire).unwrap();
         assert_eq!(serde_json::to_string(&value).unwrap(), wire);
+        assert_eq!(
+            serde_json::to_vec(&value).unwrap(),
+            serde_json::to_vec(&FieldUseWire::from(value.clone())).unwrap()
+        );
         for invalid in [
             wire.replace("\"field_ordinal\":1", "\"field_ordinal\":2"),
             wire.replace("\"field_code\":2", "\"field_code\":1"),
@@ -97,5 +140,34 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<ParasolidAttributeFieldUse>(&invalid).is_err());
         }
+    }
+
+    #[test]
+    fn attribute_field_use_retained_limit_refuses_borrowed_serialization() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+        use cadmpeg_ir::NativeNamespace;
+
+        let wire = r#"{"id":"nx:s3:attribute-field-use#2-8","stream_ordinal":3,"attribute_class_use":"class","entity_51_record":"entity","attribute_definition":"definition","field_ordinal":1,"field_code":2,"reference_ordinal":6,"value_kind":"doubles","value_use":"use","value_record":"value","inflated_offset":8}"#;
+        let record: ParasolidAttributeFieldUse = serde_json::from_str(wire).unwrap();
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(wire.len()).unwrap() - 1;
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| count.set(0));
+        let error = NativeNamespace::default()
+            .set_arena(&limited, "a", std::slice::from_ref(&record))
+            .unwrap_err();
+        ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
+        assert!(matches!(cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "serialize native record"));
+
+        let (service, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        NativeNamespace::default()
+            .set_arena(&service, "a", &[record])
+            .unwrap();
+        ATTRIBUTE_FIELD_USE_CLONE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

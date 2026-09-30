@@ -59,7 +59,7 @@ fn carrier_intersection_components(
         .into_iter()
         .chain(multi_component_intersection_candidates(first, second))
     {
-        ctx.try_reserve_items(&mut components, 1, "creo carrier intersection components")?;
+        ctx.reserve_vec(&mut components, 1, "creo carrier intersection components")?;
         components.push(component);
     }
     Ok(components)
@@ -77,7 +77,7 @@ pub(in super::super) fn intersect_plane_with_carrier_components(
             continue;
         };
         for point in intersect_plane_with_circle(ctx, plane, center, axis, radius)? {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut intersections,
                 1,
                 "creo plane-carrier component intersections",

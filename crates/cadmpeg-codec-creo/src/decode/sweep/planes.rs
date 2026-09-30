@@ -90,7 +90,7 @@ pub(in super::super) fn feature_plane_equations(
         let Some(plane) = reconciled_model_plane(&local_planes, ir, source_carriers, id) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut equations, 1, "creo feature plane equations")?;
+        ctx.reserve_vec(&mut equations, 1, "creo feature plane equations")?;
         equations.push(plane);
     }
     Ok(Some(equations))
@@ -168,7 +168,7 @@ pub(in super::super) fn feature_outline_planes(
         let Some(plane) = feature_outline_plane(scan, feature_id, row.id) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut planes, 1, "creo feature outline planes")?;
+        ctx.reserve_vec(&mut planes, 1, "creo feature outline planes")?;
         planes.push(plane);
     }
     Ok(Some(planes))
@@ -400,7 +400,7 @@ pub(in super::super) fn unique_available_positional_cylinder_frame_records(
             return Ok(None);
         }
         if let Some(frame) = first.and_then(SurfaceParameterRecord::positional_cylinder_frame) {
-            ctx.try_reserve_items(&mut frames, 1, "creo available positional cylinder frames")?;
+            ctx.reserve_vec(&mut frames, 1, "creo available positional cylinder frames")?;
             frames.push((*surface_id, frame));
         }
     }

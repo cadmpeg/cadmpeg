@@ -22,7 +22,7 @@ fn feature_operation_geometry_is_validated() {
         ir.model.features.push(Feature {
             id: FeatureId::mint(format!("synthetic:test:feature#invalid-{ordinal}"))
                 .expect("identity grammar"),
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             dependencies: crate::features::DistinctMembers::default(),
@@ -35,7 +35,9 @@ fn feature_operation_geometry_is_validated() {
             native_ref: None,
         });
     }
-    let findings = validate_neutral(&ir, Vec::new()).findings;
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(!findings
         .iter()
         .any(|finding| { finding.entity.as_deref() == Some("synthetic:test:feature#invalid-0") }));

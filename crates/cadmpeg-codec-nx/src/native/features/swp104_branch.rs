@@ -7,6 +7,8 @@ use crate::om::{
 };
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU8;
+
+mod borrowed_wires;
 #[derive(Serialize, Deserialize)]
 struct ReferenceWire {
     ordinal: u32,
@@ -22,11 +24,8 @@ struct ReferenceWire {
 }
 
 /// Exact leading construction branch in a `SWP104` payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureSwp104LeadingBranchWire",
-    into = "FeatureSwp104LeadingBranchWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureSwp104LeadingBranchWire")]
 pub(in crate::native) struct FeatureSwp104LeadingBranch {
     /// Globally unique leading-branch identity.
     id: String,
@@ -58,18 +57,26 @@ struct Reference {
 
 impl FeatureSwp104LeadingBranch {
     pub(super) fn from_source(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: String,
         operation_label: String,
         source_offset: u64,
         branch: Swp104PayloadLeadingBranch,
-        resolve: impl Fn(PayloadIndexToken) -> Option<String>,
-    ) -> Option<Self> {
-        source_offset.checked_add(branch.byte_len() as u64)?;
-        let reference = |token| Reference {
-            token,
-            data_block: resolve(token),
+        resolve: impl Fn(PayloadIndexToken) -> Result<Option<String>, cadmpeg_core::CodecError>,
+    ) -> Result<Option<Self>, cadmpeg_core::CodecError> {
+        if source_offset
+            .checked_add(cadmpeg_core::decode::u64_from_index(branch.byte_len()))
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let reference = |token| {
+            Ok(Reference {
+                token,
+                data_block: resolve(token)?,
+            })
         };
-        Some(Self {
+        Ok(Some(Self {
             id,
             operation_label,
             source_offset,
@@ -78,16 +85,18 @@ impl FeatureSwp104LeadingBranch {
             leading_zero: branch.leading_zero,
             mode: branch.mode,
             state_lane: branch.state_lane,
-            members: branch.members.map_indexed(|_, item| reference(item)),
-            terminal: reference(branch.terminal),
-        })
+            members: branch
+                .members
+                .try_map_indexed_charged(ctx, |_, item| reference(item))?,
+            terminal: reference(branch.terminal)?,
+        }))
     }
 
     fn members_offset(&self) -> u64 {
         40 + u64::from(self.leading_zero)
     }
     fn state_len(&self) -> u64 {
-        self.state_lane.byte_len() as u64
+        cadmpeg_core::decode::u64_from_index(self.state_lane.byte_len())
     }
     fn byte_len(&self) -> u64 {
         self.members_offset()
@@ -95,11 +104,11 @@ impl FeatureSwp104LeadingBranch {
                 .members
                 .as_slice()
                 .iter()
-                .map(|item| item.token.raw().len() as u64)
+                .map(|item| cadmpeg_core::decode::u64_from_index(item.token.raw().len()))
                 .sum::<u64>()
             + self.state_len()
             + 3
-            + self.terminal.token.raw().len() as u64
+            + cadmpeg_core::decode::u64_from_index(self.terminal.token.raw().len())
             + 1
     }
 }
@@ -127,17 +136,18 @@ struct FeatureSwp104LeadingBranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureSwp104LeadingBranch> for FeatureSwp104LeadingBranchWire {
     fn from(value: FeatureSwp104LeadingBranch) -> Self {
         let byte_len = value.byte_len();
         let mut at = value.source_offset + value.members_offset();
         let state_len = value.state_len();
-        let terminal_ordinal = value.members.len() as u32;
+        let terminal_ordinal = u32::from(value.members.declared_count() - 1);
         let members = value.members.map_indexed(|ordinal, reference| {
             let source_offset = at;
-            at += reference.token.raw().len() as u64;
+            at += cadmpeg_core::decode::u64_from_index(reference.token.raw().len());
             ReferenceWire {
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).expect("fixture value fits u32"),
                 token: reference.token,
                 data_block: reference.data_block,
                 source_offset,
@@ -184,27 +194,29 @@ impl TryFrom<FeatureSwp104LeadingBranchWire> for FeatureSwp104LeadingBranch {
             .checked_add(40 + u64::from(wire.leading_zero))
             .ok_or("source_offset overflow")?;
         for (ordinal, item) in wire.members.as_slice().iter().enumerate() {
-            if item.ordinal != ordinal as u32 {
+            if item.ordinal != u32::try_from(ordinal).map_err(|_| "members: count exceeds u32")? {
                 return Err("members ordinal does not match serialized order".to_owned());
             }
             if item.source_offset != at {
                 return Err("members source_offset does not match serialized position".to_owned());
             }
             at = at
-                .checked_add(item.token.raw().len() as u64)
+                .checked_add(cadmpeg_core::decode::u64_from_index(item.token.raw().len()))
                 .ok_or("source_offset overflow")?;
         }
         at = at
-            .checked_add(state_lane.byte_len() as u64 + 3)
+            .checked_add(cadmpeg_core::decode::u64_from_index(state_lane.byte_len()) + 3)
             .ok_or("source_offset overflow")?;
-        if wire.terminal.ordinal != wire.members.len() as u32 {
+        if wire.terminal.ordinal
+            != u32::try_from(wire.members.len()).map_err(|_| "members: count exceeds u32")?
+        {
             return Err("terminal ordinal does not match serialized order".to_owned());
         }
         if wire.terminal.source_offset != at {
             return Err("terminal source_offset does not match serialized position".to_owned());
         }
         let end = at
-            .checked_add(wire.terminal.token.raw().len() as u64 + 1)
+            .checked_add(cadmpeg_core::decode::u64_from_index(wire.terminal.token.raw().len()) + 1)
             .ok_or("source_offset overflow")?;
         if wire.byte_len != end - wire.source_offset {
             return Err("byte_len does not match serialized frame length".to_owned());
@@ -234,6 +246,28 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     use super::FeatureSwp104LeadingBranch;
 
+    fn from_source_for_test(
+        id: String,
+        operation_label: String,
+        source_offset: u64,
+        branch: crate::om::Swp104PayloadLeadingBranch,
+        resolve: impl Fn(
+            crate::om::reference_index::PayloadIndexToken,
+        ) -> Result<Option<String>, cadmpeg_core::CodecError>,
+    ) -> Option<FeatureSwp104LeadingBranch> {
+        crate::test_support::with_decode_context(|ctx| {
+            FeatureSwp104LeadingBranch::from_source(
+                ctx,
+                id,
+                operation_label,
+                source_offset,
+                branch,
+                resolve,
+            )
+        })
+        .unwrap()
+    }
+
     #[test]
     fn source_frames_derive_native_positions_for_all_optional_lanes() {
         for leading_zero in [false, true] {
@@ -260,13 +294,17 @@ mod tests {
                     let record =
                         crate::om::operation_record::OperationPayload::new(&payload, 200, "SWP104")
                             .unwrap();
-                    let source = crate::om::swp104_payload_leading_branch(record).unwrap();
-                    let branch = FeatureSwp104LeadingBranch::from_source(
+                    let source = crate::test_support::with_decode_context(|ctx| {
+                        crate::om::swp104_payload_leading_branch(ctx, record)
+                    })
+                    .unwrap()
+                    .unwrap();
+                    let branch = from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         1200,
                         source.clone(),
-                        |token| Some(format!("block#{}", token.value())),
+                        |token| Ok(Some(format!("block#{}", token.value()))),
                     )
                     .unwrap();
                     let wire = serde_json::to_value(&branch).unwrap();
@@ -285,12 +323,12 @@ mod tests {
                     let mut invalid = wire;
                     invalid["members"][0]["raw_object_index"] = serde_json::json!([1]);
                     assert!(serde_json::from_value::<FeatureSwp104LeadingBranch>(invalid).is_err());
-                    assert!(FeatureSwp104LeadingBranch::from_source(
+                    assert!(from_source_for_test(
                         "branch".to_owned(),
                         "operation".to_owned(),
                         u64::MAX,
                         source,
-                        |_| None
+                        |_| Ok(None)
                     )
                     .is_none());
                 }

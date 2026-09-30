@@ -115,7 +115,7 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             if entity_use.reversed {
                 std::mem::swap(&mut start, &mut end);
             }
-            ctx.try_reserve_items(&mut uses, 1, "creo connected profile uses")?;
+            ctx.reserve_vec(&mut uses, 1, "creo connected profile uses")?;
             uses.push((start, end));
         }
         if !valid {
@@ -140,13 +140,13 @@ pub(in super::super) fn connected_sketch_profile_vertices(
             continue;
         };
         let mut vertices = Vec::new();
-        ctx.try_reserve_items(&mut vertices, uses.len(), "creo connected profile vertices")?;
+        ctx.reserve_vec(&mut vertices, uses.len(), "creo connected profile vertices")?;
         vertices.extend(uses.iter().map(|(start, _)| *start));
         if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > EPS_ENDPOINT_AGREEMENT * scale {
-            ctx.try_reserve_items(&mut vertices, 1, "creo connected profile vertices")?;
+            ctx.reserve_vec(&mut vertices, 1, "creo connected profile vertices")?;
             vertices.push(terminal);
         }
-        ctx.try_reserve_items(&mut profiles, 1, "creo connected profile rows")?;
+        ctx.reserve_vec(&mut profiles, 1, "creo connected profile rows")?;
         profiles.push((profile_index, vertices));
     }
     Ok(profiles.into_iter())
@@ -223,13 +223,13 @@ pub(in super::super) fn circular_pcurve(
         return Ok(None);
     };
     let mut control_points = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut control_points,
         pole_count,
         "creo circular pcurve controls",
     )?;
     let mut weights = Vec::new();
-    ctx.try_reserve_items(&mut weights, pole_count, "creo circular pcurve weights")?;
+    ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")?;
     for segment in 0..segment_count {
         let first = start_angle + segment as f64 * step;
         let second = first + step;
@@ -254,14 +254,14 @@ pub(in super::super) fn circular_pcurve(
         weights.push(1.0);
     }
     let mut knots = Vec::new();
-    ctx.try_reserve_items(&mut knots, knot_count, "creo circular pcurve knots")?;
+    ctx.reserve_vec(&mut knots, knot_count, "creo circular pcurve knots")?;
     knots.extend([0.0; 3]);
     for boundary in 1..segment_count {
         knots.extend([boundary as f64 / segment_count as f64; 2]);
     }
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut weighted,
         pole_count,
         "creo circular pcurve weighted poles",
@@ -300,7 +300,7 @@ pub(in super::super) fn circular_pcurve(
             Ok(knots) => knots,
             Err(error) => return Ok(Err(error)),
         };
-        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_parts(
+        Ok(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_admitted_rows(
             2,
             knots,
             PcurveNurbsPoles::Rational { points: weighted },
@@ -561,8 +561,9 @@ impl ProfileGeometry {
                 radius: *radius,
             },
             Self::Nurbs { curve } => SketchGeometryDefinition::Nurbs {
-                curve: curve.copy_admitted(
+                curve: super::nurbs::copy_pcurve_nurbs(
                     ctx,
+                    curve,
                     "creo profile sketch NURBS knots",
                     "creo profile sketch NURBS poles",
                 )?,
@@ -671,7 +672,7 @@ pub(in super::super) fn resolved_sketch_profiles(
             let source_geometry = match source_geometry.definition() {
                 SketchGeometryDefinition::Nurbs { curve } => {
                     let operation = "creo resolved profile NURBS copy";
-                    SketchGeometry::nurbs(curve.copy_admitted(ctx, operation, operation)?)
+                    SketchGeometry::nurbs(curve.try_clone_for_decode(ctx, operation)?)
                 }
                 SketchGeometryDefinition::Line { .. }
                 | SketchGeometryDefinition::Arc { .. }
@@ -681,7 +682,7 @@ pub(in super::super) fn resolved_sketch_profiles(
             let Some(row) = ProfileEntity::new(ctx, source_geometry, entity_use.reversed)? else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(&mut geometries, 1, "creo resolved profile entities")?;
+            ctx.reserve_vec(&mut geometries, 1, "creo resolved profile entities")?;
             geometries.push(row);
         }
         if geometries.len() < minimum_entity_count {
@@ -702,7 +703,7 @@ pub(in super::super) fn resolved_sketch_profiles(
         {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut profiles, 1, "creo resolved profile rows")?;
+        ctx.reserve_vec(&mut profiles, 1, "creo resolved profile rows")?;
         profiles.push(geometries);
     }
     Ok(Some(profiles))
@@ -881,7 +882,7 @@ pub(in super::super) fn arcs_intersect(
     if distance <= tolerance {
         return false;
     }
-    cadmpeg_ir::math::planar::circle_intersections_fixed(
+    cadmpeg_ir::math::planar::circle_intersections(
         Point2::new(first.0[0], first.0[1]),
         first.1,
         Point2::new(second.0[0], second.0[1]),
@@ -975,7 +976,7 @@ fn append_nurbs_profile_span(
         if points.len() >= MAX_POINTS {
             return Ok(None);
         }
-        ctx.try_reserve_items(points, 1, "creo NURBS profile polyline points")?;
+        ctx.reserve_vec(points, 1, "creo NURBS profile polyline points")?;
         points.push(span.end_point);
         return Ok(Some(()));
     }
@@ -999,7 +1000,7 @@ fn append_nurbs_profile_span(
         if points.len() >= MAX_POINTS {
             return Ok(None);
         }
-        ctx.try_reserve_items(points, 1, "creo NURBS profile polyline points")?;
+        ctx.reserve_vec(points, 1, "creo NURBS profile polyline points")?;
         points.push(span.end_point);
         return Ok(Some(()));
     }
@@ -1054,7 +1055,7 @@ fn nurbs_profile_polyline(
         return Ok(None);
     };
     let mut points = Vec::new();
-    ctx.try_reserve_items(&mut points, 1, "creo NURBS profile polyline points")?;
+    ctx.reserve_vec(&mut points, 1, "creo NURBS profile polyline points")?;
     points.push(first);
     for pair in nurbs.knots().windows(2) {
         let start = pair[0].max(lower);
@@ -1069,7 +1070,7 @@ fn nurbs_profile_polyline(
             return Ok(None);
         };
         if points.last().copied() != Some(start_point) {
-            ctx.try_reserve_items(&mut points, 1, "creo NURBS profile polyline points")?;
+            ctx.reserve_vec(&mut points, 1, "creo NURBS profile polyline points")?;
             points.push(start_point);
         }
         if append_nurbs_profile_span(
@@ -1362,7 +1363,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
             }
         }
         if contains_all {
-            ctx.try_reserve_items(&mut outer, 1, "creo outer extrusion profile candidates")?;
+            ctx.reserve_vec(&mut outer, 1, "creo outer extrusion profile candidates")?;
             outer.push(candidate);
         }
     }
@@ -1390,7 +1391,7 @@ pub(in super::super) fn ordered_extrusion_profiles(
         let Some(profile) = ValidatedProfile::new(ctx, profile)? else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut validated, 1, "creo validated extrusion profiles")?;
+        ctx.reserve_vec(&mut validated, 1, "creo validated extrusion profiles")?;
         validated.push(profile);
     }
     let mut profiles = validated;

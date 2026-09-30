@@ -1,3 +1,14 @@
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn finite_real_index_refuses_an_inexact_f64_value() {
+    assert!(super::FiniteReal::from_index(9_007_199_254_740_993).is_none());
+}
+
+#[test]
+fn subnormal_units_refuses_an_inexact_f64_count() {
+    assert!(super::FiniteReal::subnormal_units(false, 9_007_199_254_740_993).is_none());
+}
+
 #[test]
 fn nonzero_angle_magnitude_carries_positive_admission() {
     use crate::scalar::NonZeroAngle;
@@ -462,7 +473,12 @@ fn finite_reals_halve_average_and_count_without_a_check() {
     assert_eq!(max.midpoint(max).get(), f64::MAX);
     assert_eq!(max.midpoint(max.negated()).get(), 0.0);
     assert_eq!(max.halved().get(), f64::MAX / 2.0);
-    assert_eq!(FiniteReal::from_index(7).get(), 7.0);
+    assert_eq!(
+        FiniteReal::from_index(7)
+            .expect("small index is exactly representable")
+            .get(),
+        7.0
+    );
     assert_eq!(
         FiniteVector::<2>::new([1.5, -2.0])
             .unwrap()

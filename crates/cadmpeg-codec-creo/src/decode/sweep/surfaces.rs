@@ -52,8 +52,8 @@ fn push_saved_spline_loss(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     message: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(message, "creo saved spline loss text")?;
-    ctx.try_reserve_items(losses, 1, "creo saved spline losses")?;
+    let message = ctx.format_retained(format_args!("{message}"), "creo saved spline loss text")?;
+    ctx.reserve_vec(losses, 1, "creo saved spline losses")?;
     losses.push(crate::loss::CreoLossCode::SectionSplineUnresolved.note(message));
     Ok(())
 }
@@ -315,7 +315,10 @@ pub(in super::super) fn transfer_saved_spline_curves(
                 continue;
             };
             let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
-                ctx.format_scoped(entity_id, "creo saved spline identity suffix")?
+                ctx.format_scoped(
+                    format_args!("{entity_id}"),
+                    "creo saved spline identity suffix",
+                )?
             } else {
                 ctx.format_scoped(
                     format_args!("offset{}", spline.offset),
@@ -431,16 +434,16 @@ pub(in super::super) fn revolved_nurbs_surface(
             .pole_rows()
             .weight_at(index)
             .map_or(1.0, |weight| weight);
-        ctx.try_reserve_items(&mut control_points, 1, "creo revolved NURBS pole rows")?;
-        ctx.try_reserve_items(&mut weights, 1, "creo revolved NURBS weight rows")?;
+        ctx.reserve_vec(&mut control_points, 1, "creo revolved NURBS pole rows")?;
+        ctx.reserve_vec(&mut weights, 1, "creo revolved NURBS weight rows")?;
         let mut point_row = Vec::new();
         let mut weight_row = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut point_row,
             angular_poles.len(),
             "creo revolved NURBS poles",
         )?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut weight_row,
             angular_weights.len(),
             "creo revolved NURBS weights",
@@ -459,7 +462,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         weights.push(weight_row);
     }
     let mut u_knots = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut u_knots,
         directrix.knots().as_slice().len(),
         "creo revolved NURBS u knots",
@@ -480,7 +483,7 @@ pub(in super::super) fn revolved_nurbs_surface(
         std::f64::consts::TAU,
     ];
     let mut v_knots = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut v_knots,
         angular_knots.len(),
         "creo revolved NURBS v knots",
@@ -851,7 +854,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                     ctx,
                     ir,
                     Curve {
-                        id: curve_id.copy_admitted(ctx, "creo construction curve identity copy")?,
+                        id: curve_id
+                            .try_clone_for_decode(ctx, "creo construction curve identity copy")?,
                         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)),
                         source_object: Some(SourceObjectAssociation {
                             format: cadmpeg_ir::CodecFormat::Creo,
@@ -907,7 +911,8 @@ pub(in super::super) fn transfer_feature_extrusion_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
+                    id: surface_id
+                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,

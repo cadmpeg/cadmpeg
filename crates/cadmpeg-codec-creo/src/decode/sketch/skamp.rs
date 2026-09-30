@@ -78,17 +78,18 @@ fn section_line_entity_fixed_coordinate_with_mode(
                 ctx.charge_collection_items(1, "creo fixed-coordinate adjacency nodes")?;
             }
             let neighbors = adjacency.entry(entity_id).or_default();
-            ctx.try_reserve_items(neighbors, 1, "creo fixed-coordinate adjacency links")?;
+            ctx.reserve_vec(neighbors, 1, "creo fixed-coordinate adjacency links")?;
             neighbors.push((neighbor, parity));
         }
     }
     ctx.charge_collection_items(1, "creo fixed-coordinate parity seed")?;
     let mut parities = BTreeMap::from([(entity_id, false)]);
     let mut pending = std::collections::VecDeque::new();
-    ctx.try_collection(1, "creo fixed-coordinate pending seed", || {
-        pending.try_reserve(1)
-    })?;
-    pending.push_back(entity_id);
+    ctx.push_back(
+        &mut pending,
+        entity_id,
+        "creo fixed-coordinate pending seed",
+    )?;
     while let Some(entity_id) = pending.pop_front() {
         ctx.charge_work(1, "creo fixed-coordinate graph traversal")?;
         let parity = parities[&entity_id];
@@ -99,11 +100,12 @@ fn section_line_entity_fixed_coordinate_with_mode(
                 Some(_) => {}
                 None => {
                     ctx.charge_collection_items(1, "creo fixed-coordinate parity nodes")?;
-                    ctx.try_collection(1, "creo fixed-coordinate pending nodes", || {
-                        pending.try_reserve(1)
-                    })?;
+                    ctx.push_back(
+                        &mut pending,
+                        neighbor,
+                        "creo fixed-coordinate pending nodes",
+                    )?;
                     parities.insert(neighbor, neighbor_parity);
-                    pending.push_back(neighbor);
                 }
             }
         }
@@ -469,7 +471,7 @@ pub(in crate::decode) fn section_segment_rows<'a>(
 ) -> Result<Vec<&'a crate::feature::definitions::FeatureSegment>, cadmpeg_core::CodecError> {
     let mut rows = Vec::new();
     if let Some(table) = definition.segments.as_ref() {
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut rows,
             table.rows.ordinary().count(),
             "creo section segment rows",
@@ -489,7 +491,7 @@ pub(in crate::decode) fn complete_section_segment_rows<'a>(
         .as_ref()
         .filter(|table| table.is_complete())
     {
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut rows,
             table.rows.ordinary().count(),
             "creo complete section segment rows",

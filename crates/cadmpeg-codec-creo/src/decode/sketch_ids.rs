@@ -46,7 +46,7 @@ pub(super) fn sketch_table_headers(
 ) -> Result<Vec<CreoSketchTableHeader>, cadmpeg_core::CodecError> {
     let mut headers = Vec::new();
     let mut push = |kind, row_count, offset| -> Result<(), cadmpeg_core::CodecError> {
-        ctx.try_reserve_items(&mut headers, 1, "creo sketch table headers")?;
+        ctx.reserve_vec(&mut headers, 1, "creo sketch table headers")?;
         headers.push(CreoSketchTableHeader {
             kind,
             row_count,
@@ -91,7 +91,7 @@ pub(super) fn sketch_table_headers(
     }
     if let Some(table) = &definition.trim_entities {
         let mut buckets = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut buckets,
             table.buckets.len(),
             "creo sketch trim entity headers",
@@ -115,7 +115,7 @@ pub(super) fn sketch_table_headers(
     }
     if let Some(table) = &definition.trim_vertices {
         let mut buckets = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut buckets,
             table.buckets.len(),
             "creo sketch trim vertex headers",

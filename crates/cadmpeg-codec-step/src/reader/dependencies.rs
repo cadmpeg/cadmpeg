@@ -3,70 +3,81 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, RawRecord, Value};
 
-use super::decode_text;
+use super::decode_text_charged;
 use super::StageOutcome;
 use super::{RecordExt, ValueExt};
 
-pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
+pub(super) fn decode(
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<StageOutcome<()>, CodecError> {
     let mut losses = Vec::new();
-    let documents = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            let parameters = document_parameters(record)?;
-            Some((
+    let mut documents = BTreeMap::new();
+    let mut sources = BTreeMap::new();
+    for (&id, record) in exchange.records() {
+        if let Some(parameters) = document_parameters(record) {
+            let identifier = parameters
+                .first()
+                .map(|value| {
+                    decode_text_charged(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "document identifier",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
+                })
+                .transpose()?
+                .flatten()
+                .unwrap_or_default();
+            let name = parameters
+                .get(1)
+                .map(|value| {
+                    decode_text_charged(
+                        exchange,
+                        value,
+                        &mut losses,
+                        id,
+                        "document name",
+                        StepLossCode::MetadataStringInvalid,
+                        ctx,
+                    )
+                })
+                .transpose()?
+                .flatten()
+                .unwrap_or_default();
+            ctx.charge_collection_items(1, "step_dependency_documents")?;
+            documents.insert(
                 id,
                 (
-                    parameters
-                        .first()
-                        .and_then(|value| {
-                            decode_text(
-                                exchange,
-                                value,
-                                &mut losses,
-                                id,
-                                "document identifier",
-                                StepLossCode::MetadataStringInvalid,
-                            )
-                        })
-                        .unwrap_or_default(),
-                    parameters
-                        .get(1)
-                        .and_then(|value| {
-                            decode_text(
-                                exchange,
-                                value,
-                                &mut losses,
-                                id,
-                                "document name",
-                                StepLossCode::MetadataStringInvalid,
-                            )
-                        })
-                        .unwrap_or_default(),
+                    identifier,
+                    name,
                     parameters.get(3).and_then(ValueExt::reference),
                 ),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let sources = exchange
-        .records()
-        .iter()
-        .filter_map(|(&id, record)| {
-            let parameters = record.partial("EXTERNAL_SOURCE")?.parameters.as_slice();
-            Some((
-                id,
-                parameters.first().and_then(|value| {
-                    source_text(exchange, value, &mut losses, id, "external source")
-                }),
-            ))
-        })
-        .filter_map(|(id, source)| source.map(|source| (id, source)))
-        .collect::<BTreeMap<_, _>>();
+            );
+        }
+        if let Some(partial) = record.partial("EXTERNAL_SOURCE") {
+            let parameters = partial.parameters.as_slice();
+            if let Some(source) = parameters
+                .first()
+                .map(|value| source_text(exchange, value, &mut losses, id, "external source", ctx))
+                .transpose()?
+                .flatten()
+            {
+                ctx.charge_collection_items(1, "step_dependency_sources")?;
+                sources.insert(id, source);
+            }
+        }
+    }
     let mut typed = HashSet::new();
     let mut notes = BTreeSet::new();
 
@@ -80,20 +91,30 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
             };
             let source = parameters
                 .get(1)
-                .and_then(|value| {
-                    decode_text(
+                .map(|value| {
+                    decode_text_charged(
                         exchange,
                         value,
                         &mut losses,
                         id,
                         "document reference source",
                         StepLossCode::MetadataStringInvalid,
+                        ctx,
                     )
                 })
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
-            notes.insert(document_note(identifier, name, &source));
-            typed.extend([id, document_id]);
-            typed.extend(kind);
+            ctx.insert_btree_set(
+                &mut notes,
+                document_note(identifier, name, &source, ctx)?,
+                "step_dependency_note_set",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_hash_set(&mut typed, document_id, "step_dependency_claims")?;
+            if let Some(kind) = kind {
+                ctx.insert_hash_set(&mut typed, *kind, "step_dependency_claims")?;
+            }
         }
         if let Some(partial) = record.partial("EXTERNALLY_DEFINED_ITEM") {
             let Some(source_id) = partial.parameters.get(1).and_then(ValueExt::reference) else {
@@ -105,19 +126,32 @@ pub(super) fn decode(exchange: &Exchange) -> StageOutcome<()> {
             let item = partial
                 .parameters
                 .first()
-                .and_then(|value| source_text(exchange, value, &mut losses, id, "external item"))
+                .map(|value| source_text(exchange, value, &mut losses, id, "external item", ctx))
+                .transpose()?
+                .flatten()
                 .unwrap_or_default();
-            notes.insert(format!("external source {source} item {item}"));
-            typed.extend([id, source_id]);
+            ctx.insert_btree_set(
+                &mut notes,
+                ctx.join_retained(
+                    &["external source ", source, " item ", &item],
+                    "",
+                    "step_dependency_note_text",
+                )?,
+                "step_dependency_note_set",
+            )?;
+            ctx.insert_hash_set(&mut typed, id, "step_dependency_claims")?;
+            ctx.insert_hash_set(&mut typed, source_id, "step_dependency_claims")?;
         }
     }
 
-    StageOutcome {
+    let mut ordered_notes = ctx.collection_vec(notes.len(), "step_dependency_note_vector")?;
+    ordered_notes.extend(notes);
+    Ok(StageOutcome {
         value: (),
         claims: typed,
-        notes: notes.into_iter().collect(),
+        notes: ordered_notes,
         losses,
-    }
+    })
 }
 
 fn document_parameters(record: &RawRecord) -> Option<&[Value]> {
@@ -140,33 +174,42 @@ fn source_text(
     losses: &mut Vec<LossNote>,
     record_id: u64,
     field: &str,
-) -> Option<String> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<String>, CodecError> {
     match value {
-        Value::String(_) => decode_text(
+        Value::String(_) => decode_text_charged(
             exchange,
             value,
             losses,
             record_id,
             field,
             StepLossCode::MetadataStringInvalid,
+            ctx,
         ),
-        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field),
-        _ => None,
+        Value::Typed(_, value) => source_text(exchange, value, losses, record_id, field, ctx),
+        _ => Ok(None),
     }
 }
 
-fn document_note(identifier: &str, name: &str, source: &str) -> String {
-    let identity = match (identifier.is_empty(), name.is_empty()) {
-        (false, false) => format!("{identifier} ({name})"),
-        (false, true) => identifier.to_owned(),
-        (true, false) => name.to_owned(),
-        (true, true) => "unnamed".to_owned(),
+fn document_note(
+    identifier: &str,
+    name: &str,
+    source: &str,
+    ctx: &DecodeContext<'_>,
+) -> Result<String, CodecError> {
+    let identity: &[&str] = match (identifier.is_empty(), name.is_empty()) {
+        (false, false) => &[identifier, " (", name, ")"],
+        (false, true) => &[identifier],
+        (true, false) => &[name],
+        (true, true) => &["unnamed"],
     };
-    if source.is_empty() {
-        format!("external document {identity}")
-    } else {
-        format!("external document {identity} from {source}")
+    let mut parts = Vec::new();
+    parts.push("external document ");
+    parts.extend_from_slice(identity);
+    if !source.is_empty() {
+        parts.extend([" from ", source]);
     }
+    ctx.join_retained(&parts, "", "step_dependency_note_text")
 }
 
 #[cfg(test)]

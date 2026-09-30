@@ -24,7 +24,7 @@ fn legacy_angular_payload(archive: ArchiveVersion) -> Vec<u8> {
         [2.0, 3.464_101_615_137_754_4],
         [5.196_152_422_706_632, 3.0],
     ];
-    annotation.extend((points.len() as i32).to_le_bytes());
+    annotation.extend((i32::try_from(points.len()).expect("fixture value fits i32")).to_le_bytes());
     for point in points {
         annotation.extend(point[0].to_le_bytes());
         annotation.extend(point[1].to_le_bytes());

@@ -252,7 +252,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             .section_coordinates
             .map(cadmpeg_ir::units::FinitePoint2::get)
         {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut coordinate_candidates,
                 1,
                 "creo sketch trim coordinate candidates",
@@ -291,7 +291,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             {
                 continue;
             }
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut coordinate_candidates,
                 1,
                 "creo sketch trim coordinate candidates",
@@ -313,7 +313,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 ctx.charge_collection_items(1, "creo sketch incident vertex nodes")?;
             }
             let entities = incident.entry(vertex).or_default();
-            ctx.try_reserve_items(entities, 1, "creo sketch incident vertex entities")?;
+            ctx.reserve_vec(entities, 1, "creo sketch incident vertex entities")?;
             entities.push(external_id);
         }
     }
@@ -339,7 +339,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                         _ => None,
                     };
                     if let Some(external_id) = external_id {
-                        ctx.try_reserve_items(
+                        ctx.reserve_vec(
                             &mut resolved,
                             1,
                             "creo sketch explicit incident entities",
@@ -353,7 +353,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                         ctx.charge_collection_items(1, "creo sketch explicit incident nodes")?;
                     }
                     let entities = result.entry(vertex.vertex_id).or_default();
-                    ctx.try_reserve_items(
+                    ctx.reserve_vec(
                         entities,
                         resolved.len(),
                         "creo sketch explicit incident entities",
@@ -447,7 +447,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
         }
         if let Some(point_id) = common_point.filter(|_| !multiple_common_points) {
             if let Some(coordinate) = points.get(&point_id) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut coordinate_candidates,
                     1,
                     "creo sketch trim coordinate candidates",
@@ -462,14 +462,14 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
                 complete = false;
                 break;
             };
-            ctx.try_reserve_items(&mut carriers, 1, "creo sketch incident carriers")?;
+            ctx.reserve_vec(&mut carriers, 1, "creo sketch incident carriers")?;
             carriers.push(carrier);
         }
         if !complete {
             continue;
         }
         if let Some(coordinate) = intersect_incident_section_carriers(&carriers) {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut coordinate_candidates,
                 1,
                 "creo sketch trim coordinate candidates",
@@ -539,7 +539,7 @@ pub(in crate::decode) fn resolved_trim_vertex_coordinates(
             } else {
                 continue;
             };
-            ctx.try_reserve_items(&mut additions, 1, "creo sketch propagated trim coordinates")?;
+            ctx.reserve_vec(&mut additions, 1, "creo sketch propagated trim coordinates")?;
             additions.push((trim.vertices[missing_index], stored[1 - matched]));
         }
         let crate::feature::definitions::ReconciledPoints {
@@ -580,7 +580,7 @@ fn reconciled_section_coordinates(
             ctx.charge_collection_items(1, "creo sketch reconciliation group nodes")?;
         }
         let group = grouped.entry(vertex).or_default();
-        ctx.try_reserve_items(group, 1, "creo sketch reconciliation group values")?;
+        ctx.reserve_vec(group, 1, "creo sketch reconciliation group values")?;
         group.push(coordinate);
     }
     let mut coordinates = BTreeMap::new();

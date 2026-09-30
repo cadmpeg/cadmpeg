@@ -2,14 +2,15 @@
 //! Constructive-solid primitive validation and native semantic ownership.
 
 use super::geometry::{
-    declared_orthogonal_vectors, declared_unit_vector, entity_loss, resolve_transform,
-    ProjectionOutcome,
+    declared_orthogonal_vectors, declared_unit_vector, resolve_transform, ProjectionOutcome,
 };
 use super::pointer;
+
 use crate::directory::{DirectoryEntry, UseFlag};
 use crate::global::ProjectedGlobal;
 use crate::parameter::ParameterRecord;
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,7 +24,8 @@ fn vector_or(record: &ParameterRecord, start: usize, default: Vector3) -> Option
 }
 
 fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
-    let curve = crate::ids::curve(&crate::ids::Stem::directory(sequence));
+    let mut storage = [0_u8; 64];
+    let curve = crate::ids::directory_lookup_key("iges:model:curve#D", sequence, &mut storage)?;
     let point = |vertex: &cadmpeg_ir::ids::VertexId| {
         let point_id = &ir
             .model
@@ -42,7 +44,7 @@ fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
         .model
         .edges
         .iter()
-        .filter(|edge| edge.curve() == Some(&curve))
+        .filter(|edge| edge.curve().is_some_and(|id| id.as_str() == curve))
     {
         let start = point(&edge.start)?;
         let end = point(&edge.end)?;
@@ -67,20 +69,22 @@ fn boolean_tree_is_valid(
     boolean_definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
     path: &mut BTreeSet<u32>,
     memo: &mut BTreeMap<u32, bool>,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<bool, CodecError> {
+    let _depth = ctx.enter_nested("iges boolean tree validation")?;
     if let Some(valid) = memo.get(&sequence) {
-        return *valid;
+        return Ok(*valid);
     }
-    if !path.insert(sequence) {
-        return false;
+    if !ctx.insert_btree_set(path, sequence, "iges boolean validation path")? {
+        return Ok(false);
     }
     let Some(entry) = entries.get(&sequence) else {
         path.remove(&sequence);
-        return false;
+        return Ok(false);
     };
     let Some(terms) = boolean_definitions.get(&sequence) else {
         path.remove(&sequence);
-        return false;
+        return Ok(false);
     };
     let has_direct_brep = terms.iter().any(|term| {
         matches!(
@@ -91,29 +95,41 @@ fn boolean_tree_is_valid(
                     .is_some_and(|target| target.entity_type == 186)
         )
     });
-    let operands_valid = terms.iter().all(|term| match term {
-        BooleanTerm::Operation => true,
-        BooleanTerm::Operand(target_sequence) => {
-            entries.get(target_sequence).is_some_and(|target| {
-                matches!(
-                    target.entity_type,
-                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
-                ) || (target.entity_type == 180
-                    && boolean_tree_is_valid(
-                        *target_sequence,
-                        entries,
-                        boolean_definitions,
-                        path,
-                        memo,
-                    ))
-                    || (entry.form == 1 && target.entity_type == 186)
-            })
+    let mut operands_valid = true;
+    for term in terms {
+        ctx.charge_work(1, "iges boolean term validation")?;
+        let valid = match term {
+            BooleanTerm::Operation => true,
+            BooleanTerm::Operand(target_sequence) => match entries.get(target_sequence) {
+                Some(target)
+                    if matches!(
+                        target.entity_type,
+                        150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 430
+                    ) =>
+                {
+                    true
+                }
+                Some(target) if target.entity_type == 180 => boolean_tree_is_valid(
+                    *target_sequence,
+                    entries,
+                    boolean_definitions,
+                    path,
+                    memo,
+                    ctx,
+                )?,
+                Some(target) => entry.form == 1 && target.entity_type == 186,
+                None => false,
+            },
+        };
+        if !valid {
+            operands_valid = false;
+            break;
         }
-    });
+    }
     let valid = operands_valid && has_direct_brep == (entry.form == 1);
     path.remove(&sequence);
-    memo.insert(sequence, valid);
-    valid
+    ctx.insert_btree_map(memo, sequence, valid, "iges boolean validity memo")?;
+    Ok(valid)
 }
 
 pub(super) fn project(
@@ -121,16 +137,26 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
-) -> ProjectionOutcome {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    ctx: &DecodeContext<'_>,
+) -> Result<ProjectionOutcome, CodecError> {
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        ctx.insert_btree_map(
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges csg parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        ctx.insert_btree_map(
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges csg directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
@@ -138,11 +164,16 @@ pub(super) fn project(
         matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168) && entry.form == 0
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -150,35 +181,48 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
-            losses.push(entity_loss(entry, "primitive placement is invalid"));
+        ) {
+            error.non_resource()?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive placement is invalid"),
+            )?;
             continue;
         }
-        let dimensions = match entry.entity_type {
-            150 | 168 => (1..=3)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            152 => (1..=4)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            154 => (1..=2)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            156 => [record.number(1), record.number(2), record.number_or(3, 0.0)]
-                .into_iter()
-                .collect::<Option<Vec<_>>>(),
-            158 => record.number(1).map(|value| vec![value]),
-            160 => (1..=2)
-                .map(|index| record.number(index))
-                .collect::<Option<Vec<_>>>(),
-            _ => None,
+        let dimension_count = match entry.entity_type {
+            150 | 156 | 168 => 3,
+            152 => 4,
+            154 | 160 => 2,
+            158 => 1,
+            _ => 0,
         };
-        let Some(dimensions) = dimensions else {
-            losses.push(entity_loss(entry, "primitive dimensions are not numeric"));
+        let mut dimensions = [0.0; 4];
+        let mut dimensions_present = true;
+        for (index, dimension) in dimensions.iter_mut().enumerate().take(dimension_count) {
+            let value = if entry.entity_type == 156 && index == 2 {
+                record.number_or(index + 1, 0.0)
+            } else {
+                record.number(index + 1)
+            };
+            if let Some(value) = value {
+                *dimension = value;
+            } else {
+                dimensions_present = false;
+                break;
+            }
+        }
+        if !dimensions_present {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive dimensions are not numeric"),
+            )?;
             continue;
-        };
+        }
+        let dimensions = &dimensions[..dimension_count];
         let dimensions_valid = match entry.entity_type {
             150 => dimensions
                 .iter()
@@ -214,10 +258,12 @@ pub(super) fn project(
             _ => false,
         };
         if !dimensions_valid {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "primitive dimension invariant is violated",
-            ));
+                format_args!("{}", "primitive dimension invariant is violated"),
+            )?;
             continue;
         }
         let (origin_start, x_axis_start, z_axis_start) = match entry.entity_type {
@@ -229,16 +275,31 @@ pub(super) fn project(
             160 => (3, None, Some(6)),
             168 => (4, Some(7), Some(10)),
             _ => {
-                losses.push(entity_loss(entry, "primitive solid type is unsupported"));
+                super::push_entity_loss(
+                    ctx,
+                    &mut losses,
+                    entry,
+                    format_args!("{}", "primitive solid type is unsupported"),
+                )?;
                 continue;
             }
         };
         let Some(origin) = vector_or(record, origin_start, Vector3::new(0.0, 0.0, 0.0)) else {
-            losses.push(entity_loss(entry, "primitive origin is invalid"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive origin is invalid"),
+            )?;
             continue;
         };
         if !origin.is_finite() {
-            losses.push(entity_loss(entry, "primitive origin is non-finite"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive origin is non-finite"),
+            )?;
             continue;
         }
         let x_axis =
@@ -263,10 +324,15 @@ pub(super) fn project(
                     )
                 })
         {
-            losses.push(entity_loss(entry, "primitive axes are not orthonormal"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "primitive axes are not orthonormal"),
+            )?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory.iter().filter(|entry| {
@@ -274,31 +340,60 @@ pub(super) fn project(
             || (entry.entity_type == 164 && entry.form == 0)
     }) {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let factor = global.length_factor_mm();
-        let Some(profile) = pointer(record, 1).filter(|sequence| {
-            ir.model
-                .curves
-                .iter()
-                .any(|curve| curve.id == crate::ids::curve(&crate::ids::Stem::directory(*sequence)))
-        }) else {
-            losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
+        let Some(profile) = pointer(record, 1) else {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid profile curve pointer is invalid"),
+            )?;
             continue;
         };
+        let mut profile_storage = [0_u8; 64];
+        let profile_id =
+            crate::ids::directory_lookup_key("iges:model:curve#D", profile, &mut profile_storage);
+        if !ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| Some(curve.id.as_str()) == profile_id)
+        {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid profile curve pointer is invalid"),
+            )?;
+            continue;
+        }
         let Some(amount) = record
             .number_or(2, 1.0)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
-            losses.push(entity_loss(entry, "solid sweep amount is invalid"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep amount is invalid"),
+            )?;
             continue;
         };
         if entry.entity_type == 162 && amount > 1.0 {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "solid revolution fraction is greater than one",
-            ));
+                format_args!("{}", "solid revolution fraction is greater than one"),
+            )?;
             continue;
         }
         let (origin, direction_start) = if entry.entity_type == 162 {
@@ -313,26 +408,35 @@ pub(super) fn project(
                     .is_none()
             })
         {
-            losses.push(entity_loss(entry, "solid sweep axis is invalid"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep axis is invalid"),
+            )?;
             continue;
         }
         let Some(closed) = profile_closed(ir, profile, global.minimum_resolution_mm()) else {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "solid profile endpoints are unavailable",
-            ));
+                format_args!("{}", "solid profile endpoints are unavailable"),
+            )?;
             continue;
         };
         if (entry.entity_type == 162 && entry.form == 0 && closed)
             || (entry.entity_type == 164 && !closed)
         {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "solid sweep form disagrees with profile closure",
-            ));
+                format_args!("{}", "solid sweep form disagrees with profile closure"),
+            )?;
             continue;
         }
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -340,13 +444,17 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
-            losses.push(entity_loss(entry, "solid sweep placement is invalid"));
+        ) {
+            error.non_resource()?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "solid sweep placement is invalid"),
+            )?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
     let mut boolean_definitions = BTreeMap::new();
@@ -355,18 +463,27 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(count) = record.count(1).filter(|count| *count > 2) else {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "Boolean postfix length is not greater than two",
-            ));
+                format_args!("{}", "Boolean postfix length is not greater than two"),
+            )?;
             continue;
         };
-        let terms = (0..count)
-            .map(|index| {
+        let mut terms = ctx.collection_vec(count, "iges Boolean postfix terms")?;
+        let mut terms_valid = true;
+        for index in 0..count {
+            let term = (|| {
                 let value = record.integer(2 + index)?;
                 if value < 0 {
                     let sequence = u32::try_from(value.checked_neg()?).ok()?;
@@ -376,12 +493,23 @@ pub(super) fn project(
                 } else {
                     None
                 }
-            })
-            .collect::<Option<Vec<_>>>();
-        let Some(terms) = terms else {
-            losses.push(entity_loss(entry, "Boolean postfix term is invalid"));
+            })();
+            if let Some(term) = term {
+                terms.push(term);
+            } else {
+                terms_valid = false;
+                break;
+            }
+        }
+        if !terms_valid {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean postfix term is invalid"),
+            )?;
             continue;
-        };
+        }
         let mut depth = 0_usize;
         let valid_stack = terms.iter().all(|term| match term {
             BooleanTerm::Operand(_) => {
@@ -395,10 +523,20 @@ pub(super) fn project(
             BooleanTerm::Operation => false,
         });
         if !valid_stack || depth != 1 {
-            losses.push(entity_loss(entry, "Boolean postfix stack is unbalanced"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean postfix stack is unbalanced"),
+            )?;
             continue;
         }
-        boolean_definitions.insert(entry.sequence, terms);
+        ctx.insert_btree_map(
+            &mut boolean_definitions,
+            entry.sequence,
+            terms,
+            "iges Boolean definition nodes",
+        )?;
     }
     let mut visited = BTreeSet::new();
     let mut boolean_validity = BTreeMap::new();
@@ -410,8 +548,9 @@ pub(super) fn project(
             &boolean_definitions,
             &mut BTreeSet::new(),
             &mut boolean_validity,
-        );
-        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
+            ctx,
+        )?;
+        let cyclic = super::directed_cycle(*sequence, &mut visited, ctx, |sequence| {
             boolean_definitions
                 .get(&sequence)
                 .into_iter()
@@ -422,17 +561,21 @@ pub(super) fn project(
                     }
                     BooleanTerm::Operand(_) | BooleanTerm::Operation => None,
                 })
-                .collect()
-        });
+        })?;
         if !operands_valid || cyclic {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "Boolean operands, form, or reference acyclicity is invalid",
-            ));
+                format_args!(
+                    "{}",
+                    "Boolean operands, form, or reference acyclicity is invalid"
+                ),
+            )?;
             continue;
         }
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -440,13 +583,17 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
-            losses.push(entity_loss(entry, "Boolean result placement is invalid"));
+        ) {
+            error.non_resource()?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Boolean result placement is invalid"),
+            )?;
             continue;
         }
-        decoded.insert(*sequence);
+        ctx.insert_btree_set(&mut decoded, *sequence, "iges csg decoded sequences")?;
     }
 
     for entry in directory
@@ -454,7 +601,12 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 182 && entry.form == 0)
     {
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(_tree) = pointer(record, 1).filter(|sequence| {
@@ -463,24 +615,29 @@ pub(super) fn project(
                     .get(sequence)
                     .is_some_and(|target| target.entity_type == 180)
         }) else {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "selected-component Boolean tree pointer is invalid",
-            ));
+                format_args!("{}", "selected-component Boolean tree pointer is invalid"),
+            )?;
             continue;
         };
-        let point = (2..=4)
-            .map(|index| record.number(index))
-            .collect::<Option<Vec<_>>>();
-        if point.is_none() || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
-            losses.push(entity_loss(
+        let point_valid = (2..=4).all(|index| record.number(index).is_some());
+        if !point_valid || entry.status.use_flag(global.global_table()) != Some(UseFlag::Other) {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "selected-component point or entity-use flag is invalid",
-            ));
+                format_args!(
+                    "{}",
+                    "selected-component point or entity-use flag is invalid"
+                ),
+            )?;
             continue;
         }
         let factor = global.length_factor_mm();
-        if resolve_transform(
+        if let Err(error) = resolve_transform(
             entry.transform,
             &entries,
             &records,
@@ -488,19 +645,20 @@ pub(super) fn project(
             global.real_precision(),
             &mut BTreeSet::new(),
             ctx,
-        )
-        .is_err()
-        {
-            losses.push(entity_loss(
+        ) {
+            error.non_resource()?;
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "selected-component placement is invalid",
-            ));
+                format_args!("{}", "selected-component placement is invalid"),
+            )?;
             continue;
         }
-        decoded.insert(entry.sequence);
+        ctx.insert_btree_set(&mut decoded, entry.sequence, "iges csg decoded sequences")?;
     }
 
-    ProjectionOutcome { decoded, losses }
+    Ok(ProjectionOutcome { decoded, losses })
 }
 
 #[cfg(test)]

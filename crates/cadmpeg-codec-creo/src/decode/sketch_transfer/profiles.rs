@@ -36,7 +36,7 @@ pub(in super::super) fn resolved_profile_chains(
     let mut rows = Vec::new();
     for row in &table.rows {
         if let Some(id) = trim_segment_id(definition, row) {
-            ctx.try_reserve_items(&mut rows, 1, "creo trim profile rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo trim profile rows")?;
             rows.push((row, id));
         }
     }
@@ -47,7 +47,7 @@ pub(in super::super) fn resolved_profile_chains(
                 ctx.charge_collection_items(1, "creo trim profile incidence nodes")?;
             }
             let indices = incident.entry(vertex).or_default();
-            ctx.try_reserve_items(indices, 1, "creo trim profile incidence rows")?;
+            ctx.reserve_vec(indices, 1, "creo trim profile incidence rows")?;
             indices.push(index);
         }
     }
@@ -67,7 +67,7 @@ pub(in super::super) fn resolved_profile_chains(
                     if !component.contains(adjacent) {
                         ctx.charge_collection_items(1, "creo trim profile component nodes")?;
                         component.insert(*adjacent);
-                        ctx.try_reserve_items(&mut frontier, 1, "creo trim profile frontier")?;
+                        ctx.reserve_vec(&mut frontier, 1, "creo trim profile frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -153,7 +153,7 @@ pub(in super::super) fn resolved_profile_chains(
             let Some(entity) = sketch_entity_id_admitted(ctx, sketch, external_id)? else {
                 continue;
             };
-            ctx.try_reserve_items(&mut profile, 1, "creo trim profile entity uses")?;
+            ctx.reserve_vec(&mut profile, 1, "creo trim profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
                 reversed: row_reversed ^ arc_orientation_reversed,
@@ -171,7 +171,7 @@ pub(in super::super) fn resolved_profile_chains(
             endpoints.contains(&vertex) && vertex != start_vertex
         };
         if unused.is_empty() && terminal_ok {
-            ctx.try_reserve_items(&mut profiles, 1, "creo resolved trim profiles")?;
+            ctx.reserve_vec(&mut profiles, 1, "creo resolved trim profiles")?;
             profiles.push(profile);
         }
     }
@@ -200,7 +200,7 @@ fn resolved_segment_profile_chains(
                     | crate::feature::definitions::FeatureSegmentKind::Arc(_)
             )
     }) {
-        ctx.try_reserve_items(&mut rows, 1, "creo segment profile rows")?;
+        ctx.reserve_vec(&mut rows, 1, "creo segment profile rows")?;
         rows.push(segment);
     }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
@@ -210,7 +210,7 @@ fn resolved_segment_profile_chains(
                 ctx.charge_collection_items(1, "creo segment profile incidence nodes")?;
             }
             let indices = incident.entry(point).or_default();
-            ctx.try_reserve_items(indices, 1, "creo segment profile incidence rows")?;
+            ctx.reserve_vec(indices, 1, "creo segment profile incidence rows")?;
             indices.push(index);
         }
     }
@@ -230,7 +230,7 @@ fn resolved_segment_profile_chains(
                     if !component.contains(adjacent) {
                         ctx.charge_collection_items(1, "creo segment profile component nodes")?;
                         component.insert(*adjacent);
-                        ctx.try_reserve_items(&mut frontier, 1, "creo segment profile frontier")?;
+                        ctx.reserve_vec(&mut frontier, 1, "creo segment profile frontier")?;
                         frontier.push(*adjacent);
                     }
                 }
@@ -289,7 +289,7 @@ fn resolved_segment_profile_chains(
             let Some(entity) = sketch_entity_id_admitted(ctx, sketch, segment.external_id)? else {
                 continue;
             };
-            ctx.try_reserve_items(&mut profile, 1, "creo segment profile entity uses")?;
+            ctx.reserve_vec(&mut profile, 1, "creo segment profile entity uses")?;
             profile.push(SketchEntityUse {
                 entity,
                 reversed: traversal_reversed ^ analytic_reversed,
@@ -302,7 +302,7 @@ fn resolved_segment_profile_chains(
             unused.remove(&index);
         }
         if unused.is_empty() && point == start {
-            ctx.try_reserve_items(&mut profiles, 1, "creo resolved segment profiles")?;
+            ctx.reserve_vec(&mut profiles, 1, "creo resolved segment profiles")?;
             profiles.push(profile);
         }
     }

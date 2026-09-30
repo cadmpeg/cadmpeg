@@ -47,18 +47,9 @@ impl<S: AsRef<str>, I: Copy> ParameterName<S, I> {
             .map(|start| &self.spelling.as_ref()[start..])
     }
 
+    #[cfg(test)]
     pub(crate) fn into_spelling(self) -> S {
         self.spelling
-    }
-}
-
-impl<I> ParameterName<&str, I> {
-    pub(crate) fn into_owned(self) -> ParameterName<String, I> {
-        ParameterName {
-            spelling: self.spelling.to_string(),
-            index: self.index,
-            qualifier_start: self.qualifier_start,
-        }
     }
 }
 

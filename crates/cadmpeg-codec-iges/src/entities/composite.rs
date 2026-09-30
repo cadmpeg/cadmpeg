@@ -1,27 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered composite-curve projection.
 
-use super::curve_conversion::{circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs};
-use super::geometry::{entity_loss, resolve_transform, source_object, WireProjectionOutcome};
+use super::curve_conversion::{
+    circular_arc_nurbs, elliptical_arc_nurbs, parabolic_arc_nurbs, CurveConversionError,
+};
+use super::geometry::{resolve_transform, source_object, WireProjectionOutcome};
 use crate::directory::{DirectoryEntry, Hierarchy, UseFlag};
 use crate::global::{GlobalTable, ProjectedGlobal};
 use crate::loss::IgesLossCode;
 use crate::parameter::ParameterRecord;
-use cadmpeg_core::decode::{alloc_filled, refuse_local_limit, DecodeContext};
+use cadmpeg_core::decode::{refuse_local_limit, u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::eval::finite_or_refusal;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
-    ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3},
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, SolvedCurveGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
+use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 const EPS_COMPOSITE_DEGENERATE: f64 = 1.0e-10;
 
@@ -82,7 +87,7 @@ struct CompositePointContext<'map, 'directory, 'parameter, 'decode> {
     entries: &'map BTreeMap<u32, &'directory DirectoryEntry>,
     records: &'map BTreeMap<u32, &'parameter ParameterRecord>,
     global: &'map ProjectedGlobal,
-    ctx: Option<&'map DecodeContext<'decode>>,
+    ctx: &'map DecodeContext<'decode>,
     tolerance: f64,
 }
 
@@ -93,14 +98,21 @@ impl CompositePointContext<'_, '_, '_, '_> {
             .is_some_and(|entry| composite_point_member(entry))
     }
 
-    fn member_point(&self, sequence: u32) -> Option<Point3> {
-        let entry = self.entries.get(&sequence).copied()?;
+    fn member_point(&self, sequence: u32) -> Result<Option<Point3>, CodecError> {
+        let Some(entry) = self.entries.get(&sequence).copied() else {
+            return Ok(None);
+        };
         if !composite_point_member(entry) {
-            return None;
+            return Ok(None);
         }
-        let record = self.records.get(&sequence).copied()?;
-        let [x, y, z] = [record.number(1)?, record.number(2)?, record.number(3)?];
-        let transform = resolve_transform(
+        let Some(record) = self.records.get(&sequence).copied() else {
+            return Ok(None);
+        };
+        let [Some(x), Some(y), Some(z)] = [record.number(1), record.number(2), record.number(3)]
+        else {
+            return Ok(None);
+        };
+        let transform = match resolve_transform(
             entry.transform,
             self.entries,
             self.records,
@@ -108,14 +120,19 @@ impl CompositePointContext<'_, '_, '_, '_> {
             self.global.real_precision(),
             &mut BTreeSet::new(),
             self.ctx,
-        )
-        .ok()?;
+        ) {
+            Ok(transform) => transform,
+            Err(error) => {
+                error.non_resource()?;
+                return Ok(None);
+            }
+        };
         let point = transform.apply_point(Point3::new(
             x * self.global.length_factor_mm(),
             y * self.global.length_factor_mm(),
             z * self.global.length_factor_mm(),
-        ))?;
-        Some(point.get())
+        ));
+        Ok(point.map(FinitePoint3::get))
     }
 }
 
@@ -125,7 +142,7 @@ fn composite_point_adjacency_valid(
     child_sequences: &[u32],
     curve_carriers: &BTreeMap<u32, CurveId>,
     context: &CompositePointContext<'_, '_, '_, '_>,
-) -> bool {
+) -> Result<bool, CodecError> {
     let all_points = child_sequences
         .iter()
         .copied()
@@ -135,75 +152,74 @@ fn composite_point_adjacency_valid(
         .any(|pair| context.is_point(pair[0]) && context.is_point(pair[1]))
         && !(all_points && child_sequences.len() == 2)
     {
-        return false;
+        return Ok(false);
     }
     for (position, sequence) in child_sequences.iter().enumerate() {
         if !context.is_point(*sequence) {
             continue;
         }
-        let Some(point) = context.member_point(*sequence) else {
-            return false;
+        let Some(point) = context.member_point(*sequence)? else {
+            return Ok(false);
         };
         if position > 0 && !context.is_point(child_sequences[position - 1]) {
             let Some(curve_id) = curve_carriers.get(&child_sequences[position - 1]) else {
-                return false;
+                return Ok(false);
             };
-            let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
-                return false;
+            let Some((_, end)) = curve_endpoints(ir, curve_id, index, context.tolerance)? else {
+                return Ok(false);
             };
             if !close_with_tolerance(end.get(), point, Some(context.tolerance)) {
-                return false;
+                return Ok(false);
             }
         }
         if position + 1 < child_sequences.len() && !context.is_point(child_sequences[position + 1])
         {
             let Some(curve_id) = curve_carriers.get(&child_sequences[position + 1]) else {
-                return false;
+                return Ok(false);
             };
-            let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance) else {
-                return false;
+            let Some((start, _)) = curve_endpoints(ir, curve_id, index, context.tolerance)? else {
+                return Ok(false);
             };
             if !close_with_tolerance(point, start.get(), Some(context.tolerance)) {
-                return false;
+                return Ok(false);
             }
         }
     }
-    true
+    Ok(true)
 }
 
 pub(super) fn curve_carrier_id(
     sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
-) -> Option<CurveId> {
-    let entry = entries.get(&sequence).copied()?;
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CurveId>, CodecError> {
+    let Some(entry) = entries.get(&sequence).copied() else {
+        return Ok(None);
+    };
     let carrier_sequence = if entry.entity_type == 142 && entry.form == 0 {
         // Type 142 is a relationship entity. In a Type 102 constituent its
         // curve geometry is the model-space C pointer; the UV B pointer is
         // not a three-dimensional composite segment. This is the same
         // choice made by OCCT's Curve3D transfer path.
-        records
+        let Some(carrier_sequence) = records
             .get(&sequence)
             .and_then(|record| record.integer(4))
             .and_then(|value| {
                 let sequence = u32::try_from(value).ok()?;
                 (sequence % 2 == 1).then_some(sequence)
-            })?
+            })
+        else {
+            return Ok(None);
+        };
+        carrier_sequence
     } else {
         sequence
     };
-    Some(crate::ids::curve(&crate::ids::Stem::directory(
-        carrier_sequence,
-    )))
-}
-
-fn degraded_carrier_loss(entry: &DirectoryEntry, reason: &str) -> LossNote {
-    IgesLossCode::CompositeCarrierDegraded
-        .note(format!(
-            "IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained",
-            entry.sequence
-        ))
-        .with_provenance(entry.loss_provenance())
+    Ok(Some(crate::ids::curve_admitted(
+        &crate::ids::Stem::directory(carrier_sequence),
+        ctx,
+    )?))
 }
 
 #[derive(Clone)]
@@ -221,39 +237,83 @@ pub(super) struct CompositeIndex {
 }
 
 impl CompositeIndex {
-    pub(super) fn from_ir(ir: &CadIr) -> Self {
+    pub(super) fn from_ir(ir: &CadIr, ctx: &DecodeContext<'_>) -> Result<Self, CodecError> {
         let mut curve_positions = BTreeMap::new();
         for (position, curve) in ir.model.curves.iter().enumerate() {
-            curve_positions.entry(curve.id.clone()).or_insert(position);
+            if !curve_positions.contains_key(&curve.id) {
+                let key = curve
+                    .id
+                    .try_clone_for_decode(ctx, "iges composite curve index keys")?;
+                ctx.insert_btree_map(
+                    &mut curve_positions,
+                    key,
+                    position,
+                    "iges composite curve index nodes",
+                )?;
+            }
         }
         let mut edges = BTreeMap::new();
         for edge in &ir.model.edges {
             if let Some(curve) = edge.curve() {
-                edges
-                    .entry(curve.clone())
-                    .or_insert_with(Vec::new)
-                    .push(CompositeEdge {
-                        start: edge.start.clone(),
-                        end: edge.end.clone(),
-                        param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
-                    });
+                if !edges.contains_key(curve) {
+                    let key = curve.try_clone_for_decode(ctx, "iges composite edge index keys")?;
+                    ctx.insert_btree_map(
+                        &mut edges,
+                        key,
+                        Vec::new(),
+                        "iges composite edge index nodes",
+                    )?;
+                }
+                let indexed = edges.get_mut(curve).ok_or_else(|| {
+                    CodecError::Malformed("IGES composite edge index is absent".into())
+                })?;
+                ctx.reserve_vec(indexed, 1, "iges composite indexed edges")?;
+                indexed.push(CompositeEdge {
+                    start: edge
+                        .start
+                        .try_clone_for_decode(ctx, "iges composite indexed start ids")?,
+                    end: edge
+                        .end
+                        .try_clone_for_decode(ctx, "iges composite indexed end ids")?,
+                    param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+                });
             }
         }
-        let mut points = BTreeMap::new();
+        let mut points = BTreeMap::<PointId, FinitePoint3>::new();
         for point in &ir.model.points {
-            points.entry(point.id.clone()).or_insert(point.position());
+            if !points.contains_key(&point.id) {
+                let key = point
+                    .id
+                    .try_clone_for_decode(ctx, "iges composite point index keys")?;
+                ctx.insert_btree_map(
+                    &mut points,
+                    key,
+                    point.position(),
+                    "iges composite point index nodes",
+                )?;
+            }
         }
         let mut vertex_points = BTreeMap::<VertexId, FinitePoint3>::new();
         for vertex in &ir.model.vertices {
             if let Some(point) = points.get(&vertex.point).copied() {
-                vertex_points.entry(vertex.id.clone()).or_insert(point);
+                if !vertex_points.contains_key(&vertex.id) {
+                    let key = vertex
+                        .id
+                        .try_clone_for_decode(ctx, "iges composite vertex index keys")?;
+                    ctx.insert_btree_map(
+                        &mut vertex_points,
+                        key,
+                        point,
+                        "iges composite vertex index nodes",
+                    )?;
+                }
             }
         }
-        Self {
+        Ok(Self {
             curve_positions,
             edges,
             vertex_points,
-        }
+        })
     }
 
     pub(super) fn curve_by_id<'a>(&self, ir: &'a CadIr, curve_id: &CurveId) -> Option<&'a Curve> {
@@ -264,16 +324,44 @@ impl CompositeIndex {
 
     fn add_model_entity(
         &mut self,
-        curve_id: CurveId,
+        curve_id: &CurveId,
         curve_index: usize,
         edge: CompositeEdge,
         endpoints: [(VertexId, FinitePoint3); 2],
-    ) {
-        self.curve_positions.insert(curve_id.clone(), curve_index);
-        self.edges.entry(curve_id).or_default().push(edge);
-        for (vertex, point) in endpoints {
-            self.vertex_points.insert(vertex, point);
+        ctx: &DecodeContext<'_>,
+    ) -> Result<(), CodecError> {
+        let position_key =
+            curve_id.try_clone_for_decode(ctx, "iges composite added curve index key")?;
+        ctx.insert_btree_map(
+            &mut self.curve_positions,
+            position_key,
+            curve_index,
+            "iges composite added curve index node",
+        )?;
+        if !self.edges.contains_key(curve_id) {
+            let edge_key =
+                curve_id.try_clone_for_decode(ctx, "iges composite added edge index key")?;
+            ctx.insert_btree_map(
+                &mut self.edges,
+                edge_key,
+                Vec::new(),
+                "iges composite added edge index node",
+            )?;
         }
+        let indexed = self.edges.get_mut(curve_id).ok_or_else(|| {
+            CodecError::Malformed("IGES composite added edge index is absent".into())
+        })?;
+        ctx.reserve_vec(indexed, 1, "iges composite added edge slots")?;
+        indexed.push(edge);
+        for (vertex, point) in endpoints {
+            ctx.insert_btree_map(
+                &mut self.vertex_points,
+                vertex,
+                point,
+                "iges composite added vertex index nodes",
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -327,42 +415,44 @@ fn select_composite_edge(
     geometry: &SolvedCurveGeometry,
     candidates: &[CompositeEdge],
     tolerance: f64,
-) -> Option<CompositeEdge> {
-    let usable = candidates
-        .iter()
-        .filter(|edge| {
-            let Some(range) = edge.param_range else {
-                return false;
-            };
-            if !matches!(geometry, SolvedCurveGeometry::Line(_)) {
-                return true;
-            }
+) -> Result<Option<CompositeEdge>, CodecError> {
+    let mut first: Option<&CompositeEdge> = None;
+    let mut agreement = true;
+    for edge in candidates {
+        let Some(range) = edge.param_range else {
+            continue;
+        };
+        if matches!(geometry, SolvedCurveGeometry::Line(_)) {
             let (Some(start), Some(end)) = (
                 point_for_vertex(ir, &edge.start, index),
                 point_for_vertex(ir, &edge.end, index),
             ) else {
-                return false;
+                continue;
             };
-            let (Ok(evaluated_start), Ok(evaluated_end)) = (
-                cadmpeg_ir::eval::curve_point_solved(geometry, range[0]),
-                cadmpeg_ir::eval::curve_point_solved(geometry, range[1]),
-            ) else {
-                return false;
+            let Some(evaluated_start) =
+                finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[0]))?
+            else {
+                continue;
             };
-            // GE-05: candidate admission uses the same strict MUR rule as joins.
-            close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
-                && close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
-        })
-        .collect::<Vec<_>>();
-    let first = usable.first()?;
-    usable
-        .iter()
-        .skip(1)
-        .all(|candidate| {
-            candidate.param_range == first.param_range
-                && composite_edge_endpoints_agree(ir, index, candidate, first, tolerance)
-        })
-        .then(|| (*first).clone())
+            let Some(evaluated_end) =
+                finite_or_refusal(cadmpeg_ir::eval::curve_point_solved(geometry, range[1]))?
+            else {
+                continue;
+            };
+            if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
+                || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
+            {
+                continue;
+            }
+        }
+        if let Some(previous) = first {
+            agreement &= edge.param_range == previous.param_range
+                && composite_edge_endpoints_agree(ir, index, edge, previous, tolerance);
+        } else {
+            first = Some(edge);
+        }
+    }
+    Ok(first.filter(|_| agreement).cloned())
 }
 
 fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
@@ -370,33 +460,32 @@ fn homogeneous_point_is_valid(point: &[f64; 4]) -> bool {
 }
 
 fn homogeneous_control_points(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
 ) -> Result<Option<Vec<[f64; 4]>>, CodecError> {
-    let control_count = curve.control_points().len();
-    let mut homogeneous = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            control_count,
-            [0.0; 4],
-            "iges composite homogeneous control points",
-        )?,
-        None => alloc_filled(
-            control_count,
-            [0.0; 4],
-            "iges composite homogeneous control points",
-        )?,
-    };
-    for (index, point) in curve.control_points().iter().enumerate() {
-        let Some(weight) = curve.weights().map_or(Some(1.0), |weights| {
-            weights.get(index).map(|weight| weight.get())
-        }) else {
+    let control_count = curve.pole_count();
+    let mut homogeneous = ctx.alloc_filled(
+        control_count,
+        [0.0; 4],
+        "iges composite homogeneous control points",
+    )?;
+    for (index, slot) in homogeneous.iter_mut().enumerate().take(control_count) {
+        let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
+        };
+        let weight = if matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }) {
+            let Some(weight) = curve.pole_rows().weight_at(index) else {
+                return Ok(None);
+            };
+            weight
+        } else {
+            1.0
         };
         let homogeneous_point = [weight, weight * point.x, weight * point.y, weight * point.z];
         if !homogeneous_point_is_valid(&homogeneous_point) {
             return Ok(None);
         }
-        homogeneous[index] = homogeneous_point;
+        *slot = homogeneous_point;
     }
     Ok(Some(homogeneous))
 }
@@ -407,24 +496,32 @@ struct EuclideanControlNet {
 }
 
 fn euclidean_control_points(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     homogeneous: Vec<[f64; 4]>,
     rational: bool,
 ) -> Result<Option<EuclideanControlNet>, CodecError> {
-    if let Some(ctx) = ctx {
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(homogeneous.len()),
+        "iges composite Euclidean control points",
+    )?;
+    if rational {
         ctx.charge_collection_items(
-            homogeneous.len() as u64,
-            "iges composite Euclidean control points",
+            cadmpeg_core::decode::u64_from_index(homogeneous.len()),
+            "iges composite Euclidean weights",
         )?;
-        if rational {
-            ctx.charge_collection_items(
-                homogeneous.len() as u64,
-                "iges composite Euclidean weights",
-            )?;
-        }
     }
-    let mut control_points = Vec::with_capacity(homogeneous.len());
-    let mut weights = rational.then(|| Vec::with_capacity(homogeneous.len()));
+    let mut control_points = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        homogeneous.len(),
+        "iges composite Euclidean control points",
+    )?;
+    let mut weights = if rational {
+        Some(cadmpeg_core::decode::DecodeContext::admitted_vec(
+            homogeneous.len(),
+            "iges composite Euclidean weights",
+        )?)
+    } else {
+        None
+    };
     for [weight, x, y, z] in homogeneous {
         let Some(weight) = PositiveReal::new(weight) else {
             return Ok(None);
@@ -445,7 +542,7 @@ fn euclidean_control_points(
 }
 
 fn elevate_bezier_homogeneous(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     control_points: &[[f64; 4]],
     source_degree: usize,
     target_degree: usize,
@@ -462,13 +559,15 @@ fn elevate_bezier_homogeneous(
     {
         return Ok(None);
     }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            control_points.len() as u64,
-            "iges composite Bezier source copy",
-        )?;
-    }
-    let mut elevated = control_points.to_vec();
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(control_points.len()),
+        "iges composite Bezier source copy",
+    )?;
+    let mut elevated = cadmpeg_core::decode::DecodeContext::admitted_vec(
+        control_points.len(),
+        "iges composite Bezier source copy",
+    )?;
+    elevated.extend_from_slice(control_points);
     let mut degree = source_degree;
     while degree < target_degree {
         let Some(next_degree) = degree.checked_add(1) else {
@@ -477,13 +576,23 @@ fn elevate_bezier_homogeneous(
         let Some(next_count) = next_degree.checked_add(1) else {
             return Ok(None);
         };
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(next_count as u64, "iges composite Bezier elevated net")?;
-        }
-        let mut next = Vec::with_capacity(next_count);
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(next_count),
+            "iges composite Bezier elevated net",
+        )?;
+        let mut next = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            next_count,
+            "iges composite Bezier elevated net",
+        )?;
         next.push(elevated[0]);
         for index in 1..=degree {
-            let alpha = index as f64 / next_degree as f64;
+            let Some(index_real) = cadmpeg_core::convert::f64_from_index(index) else {
+                return Ok(None);
+            };
+            let Some(degree_real) = cadmpeg_core::convert::f64_from_index(next_degree) else {
+                return Ok(None);
+            };
+            let alpha = index_real / degree_real;
             let previous = elevated[index - 1];
             let current = elevated[index];
             let point = [
@@ -536,8 +645,6 @@ impl<T> ConcatenatedSegments<T> {
     }
 }
 
-// This conversion consumes the input carrier at the typed construction boundary.
-#[allow(clippy::needless_pass_by_value)]
 /// Reflects a child about its own parameter domain.
 ///
 /// Every answer here is either the reversed child or a named cause: the values
@@ -552,7 +659,7 @@ fn reverse_nurbs(
             degree: curve.degree(),
         });
     };
-    let control_count = curve.control_points().len();
+    let control_count = curve.pole_count();
     let [start, end] = interval;
     let (Some(finite_start), Some(finite_end)) = (FiniteReal::new(start), FiniteReal::new(end))
     else {
@@ -561,9 +668,14 @@ fn reverse_nurbs(
     if start > end {
         return Err(CompositeCurveError::ReversedChildInterval { start, end });
     }
-    let knots = curve.knots().finite_knots().collect::<Vec<_>>();
-    let (lower, upper) = (knots[degree], knots[control_count]);
-    let (domain_start, domain_end) = (lower.get(), upper.get());
+    let (domain_start, domain_end) = (curve.knots()[degree], curve.knots()[control_count]);
+    let (Some(lower), Some(upper)) = (FiniteReal::new(domain_start), FiniteReal::new(domain_end))
+    else {
+        return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
+            domain_start,
+            domain_end,
+        });
+    };
     if domain_start >= domain_end {
         return Err(CompositeCurveError::ReversedChildReflectionNonFinite {
             domain_start,
@@ -587,14 +699,20 @@ fn reverse_nurbs(
             })
     };
     let reversed_range = [reflect(finite_end)?, reflect(finite_start)?];
-    let knots = knots
-        .into_iter()
-        .rev()
-        .map(reflect)
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut poles = curve.pole_rows().clone();
+    let (source_degree, admitted_knots, mut poles, periodic) = curve.into_parts();
+    let mut knots = admitted_knots.into_values();
+    knots.reverse();
+    for knot in &mut knots {
+        let finite = FiniteReal::new(*knot).ok_or(
+            CompositeCurveError::ReversedChildReflectionNonFinite {
+                domain_start,
+                domain_end,
+            },
+        )?;
+        *knot = reflect(finite)?;
+    }
     poles.reverse();
-    let reversed = NurbsCurve::new(curve.degree(), knots, poles, curve.periodic())?;
+    let reversed = NurbsCurve::new(source_degree, knots, poles, periodic)?;
     Ok((reversed, reversed_range))
 }
 
@@ -605,7 +723,7 @@ struct InsertedKnotNet {
 }
 
 fn insert_homogeneous_knot(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     control_points: &[[f64; 4]],
     knots: &[f64],
     degree: usize,
@@ -644,10 +762,7 @@ fn insert_homogeneous_knot(
     let Some(knot_count) = knots.len().checked_add(1) else {
         return Ok(None);
     };
-    let mut inserted_knots = match ctx {
-        Some(ctx) => ctx.alloc_filled(knot_count, 0.0, "iges composite inserted knots")?,
-        None => alloc_filled(knot_count, 0.0, "iges composite inserted knots")?,
-    };
+    let mut inserted_knots = ctx.alloc_filled(knot_count, 0.0, "iges composite inserted knots")?;
     inserted_knots.clear();
     let Some(left_knots) = knots.get(..=span) else {
         return Ok(None);
@@ -665,18 +780,11 @@ fn insert_homogeneous_knot(
     let Some(inserted_count) = control_count.checked_add(1) else {
         return Ok(None);
     };
-    let mut inserted_control_points = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            inserted_count,
-            [0.0; 4],
-            "iges composite knot-insertion control points",
-        )?,
-        None => alloc_filled(
-            inserted_count,
-            [0.0; 4],
-            "iges composite knot-insertion control points",
-        )?,
-    };
+    let mut inserted_control_points = ctx.alloc_filled(
+        inserted_count,
+        [0.0; 4],
+        "iges composite knot-insertion control points",
+    )?;
     let Some(tail_start) = span.checked_sub(multiplicity) else {
         return Ok(None);
     };
@@ -720,7 +828,7 @@ fn insert_homogeneous_knot(
 /// Trim a curve to `interval`. `Ok(None)` states an interval the curve cannot
 /// be trimmed to; `Err` states trimmed lanes the carrier refuses.
 fn trim_nurbs_to_interval(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     interval: [f64; 2],
 ) -> Result<Option<NurbsCurve>, CompositeCurveError> {
@@ -728,7 +836,18 @@ fn trim_nurbs_to_interval(
     else {
         return Ok(None);
     };
-    let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+    let weights = weights
+        .map(|weights| {
+            let mut converted =
+                ctx.collection_vec(weights.len(), "iges composite trimmed weight conversion")?;
+            converted.extend(
+                weights
+                    .into_iter()
+                    .map(cadmpeg_ir::scalar::NonZeroReal::from),
+            );
+            Ok::<_, CodecError>(converted)
+        })
+        .transpose()?;
     Ok(Some(NurbsCurve::from_checked_lanes(
         curve.degree(),
         trimmed_knots,
@@ -741,14 +860,14 @@ fn trim_nurbs_to_interval(
 type TrimmedLanes = (Vec<FinitePoint3>, Option<Vec<PositiveReal>>, Vec<f64>);
 
 fn trim_nurbs_lanes(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     curve: &NurbsCurve,
     interval: [f64; 2],
 ) -> Result<Option<TrimmedLanes>, CodecError> {
     let Ok(degree) = usize::try_from(curve.degree()) else {
         return Ok(None);
     };
-    let control_count = curve.control_points().len();
+    let control_count = curve.pole_count();
     if curve.periodic() {
         return Ok(None);
     }
@@ -772,10 +891,8 @@ fn trim_nurbs_lanes(
     let Some(mut homogeneous) = homogeneous_control_points(ctx, curve)? else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(curve.knots().len() as u64, "iges composite trim knot copy")?;
-    }
-    let mut knots = curve.knots().to_vec();
+    let mut knots = ctx.collection_vec(curve.knots().len(), "iges composite trim knot copy")?;
+    knots.extend_from_slice(curve.knots());
     for value in [start, end] {
         let Some(target_multiplicity) = degree.checked_add(1) else {
             return Ok(None);
@@ -810,15 +927,11 @@ fn trim_nurbs_lanes(
     ) else {
         return Ok(None);
     };
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            homogeneous_slice.len() as u64,
-            "iges composite trimmed controls",
-        )?;
-        ctx.charge_collection_items(knot_slice.len() as u64, "iges composite trimmed knots")?;
-    }
-    let trimmed_homogeneous = homogeneous_slice.to_vec();
-    let trimmed_knots = knot_slice.to_vec();
+    let mut trimmed_homogeneous =
+        ctx.collection_vec(homogeneous_slice.len(), "iges composite trimmed controls")?;
+    trimmed_homogeneous.extend_from_slice(homogeneous_slice);
+    let mut trimmed_knots = ctx.collection_vec(knot_slice.len(), "iges composite trimmed knots")?;
+    trimmed_knots.extend_from_slice(knot_slice);
     let Some(expected_knots) = trimmed_homogeneous
         .len()
         .checked_add(degree)
@@ -832,7 +945,11 @@ fn trim_nurbs_lanes(
     let Some(EuclideanControlNet {
         control_points,
         weights,
-    }) = euclidean_control_points(ctx, trimmed_homogeneous, curve.weights().is_some())?
+    }) = euclidean_control_points(
+        ctx,
+        trimmed_homogeneous,
+        matches!(curve.pole_rows(), NurbsPoles3::Rational { .. }),
+    )?
     else {
         return Ok(None);
     };
@@ -945,6 +1062,9 @@ pub(super) enum CompositeCurveError {
     /// A carrier the IR refuses.
     #[error(transparent)]
     Carrier(#[from] cadmpeg_ir::geometry::nurbs::NurbsError),
+    /// A bounded analytic carrier could not be built.
+    #[error(transparent)]
+    Conversion(#[from] CurveConversionError),
     /// A child that does not raise to the composite degree.
     #[error("{0}")]
     Elevation(#[from] DegreeElevationError),
@@ -1067,7 +1187,9 @@ impl CompositeCurveError {
     /// Return a decode resource refusal before a caller considers geometric fallback.
     pub(super) fn non_resource(self) -> Result<Self, CodecError> {
         match self {
-            Self::Budget(error) | Self::ChildWeightAllocation(error) => Err(error),
+            Self::Budget(error)
+            | Self::ChildWeightAllocation(error)
+            | Self::Conversion(CurveConversionError::Resource(error)) => Err(error),
             Self::Elevation(DegreeElevationError::Allocation(error)) => Err(error),
             error => Ok(error),
         }
@@ -1075,7 +1197,7 @@ impl CompositeCurveError {
 }
 
 fn elevate_nurbs_to_degree(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     curve: &mut NurbsCurve,
     interval: [f64; 2],
     target_degree: u32,
@@ -1138,22 +1260,20 @@ fn elevate_nurbs_to_degree(
     // point, so no second pass over the net can observe one.
     let mut homogeneous =
         homogeneous_control_points(ctx, curve).map_err(DegreeElevationError::Allocation)?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            curve.knots().len() as u64,
-            "iges composite elevation knot copy",
-        )
+    let mut knots = ctx
+        .collection_vec(curve.knots().len(), "iges composite elevation knot copy")
         .map_err(DegreeElevationError::Allocation)?;
-    }
-    let mut knots = curve.knots().to_vec();
+    knots.extend_from_slice(curve.knots());
     let mut internal_values = Vec::new();
     for &knot in &knots {
         if knot > interval[0] && knot < interval[1] && internal_values.last().copied() != Some(knot)
         {
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(1, "iges composite internal knot values")
-                    .map_err(DegreeElevationError::Allocation)?;
-            }
+            ctx.reserve_vec(
+                &mut internal_values,
+                1,
+                "iges composite internal knot values",
+            )
+            .map_err(DegreeElevationError::Allocation)?;
             internal_values.push(knot);
         }
     }
@@ -1201,7 +1321,7 @@ fn elevate_nurbs_to_degree(
     {
         return Err(DegreeElevationError::RefinedKnotVector.into());
     }
-    let rational = curve.weights().is_some();
+    let rational = matches!(curve.pole_rows(), NurbsPoles3::Rational { .. });
     let mut pieces = Vec::new();
     for span in source_degree..=refined_count {
         let start = knots[span];
@@ -1237,67 +1357,74 @@ fn elevate_nurbs_to_degree(
             }
             .into());
         };
-        let mut piece_knots = match ctx {
-            Some(ctx) => {
-                ctx.alloc_filled(target_knot_count, start, "iges composite elevated knots")
-            }
-            None => alloc_filled(target_knot_count, start, "iges composite elevated knots"),
-        }
+        let mut piece_knots =
+            { ctx.alloc_filled(target_knot_count, start, "iges composite elevated knots") }
+                .map_err(DegreeElevationError::Allocation)?;
+        ctx.reserve_vec(
+            &mut piece_knots,
+            target_knot_count,
+            "iges composite elevated knot suffix",
+        )
         .map_err(DegreeElevationError::Allocation)?;
-        let end_knots = match ctx {
-            Some(ctx) => ctx.alloc_filled(target_knot_count, end, "iges composite elevated knots"),
-            None => alloc_filled(target_knot_count, end, "iges composite elevated knots"),
-        }
-        .map_err(DegreeElevationError::Allocation)?;
-        piece_knots.extend(end_knots);
-        let weights = weights.map(|weights| weights.into_iter().map(Into::into).collect());
+        let complete_knot_count = piece_knots
+            .len()
+            .checked_add(target_knot_count)
+            .ok_or_else(|| {
+                DegreeElevationError::Allocation(refuse_local_limit(
+                    "iges composite elevated knot suffix",
+                    u64::MAX,
+                    1,
+                ))
+            })?;
+        piece_knots
+            .extend(std::iter::repeat_with(|| end).take(complete_knot_count - piece_knots.len()));
+        let weights = weights
+            .map(|weights| {
+                let mut converted =
+                    ctx.collection_vec(weights.len(), "iges composite elevated weight conversion")?;
+                converted.extend(
+                    weights
+                        .into_iter()
+                        .map(cadmpeg_ir::scalar::NonZeroReal::from),
+                );
+                Ok::<_, CodecError>(converted)
+            })
+            .transpose()
+            .map_err(DegreeElevationError::Allocation)?;
+        ctx.reserve_vec(&mut pieces, 1, "iges composite elevated span")
+            .map_err(DegreeElevationError::Allocation)?;
         let piece = NurbsCurve::from_checked_lanes(
-            target_degree as u32,
+            u32::try_from(target_degree).map_err(|_| DegreeElevationError::TargetDegree {
+                degree: stated_target,
+                bound: MAX_COMPOSITE_DEGREE,
+            })?,
             piece_knots,
             control_points,
             weights,
             false,
         )?;
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(1, "iges composite elevated span")
-                .map_err(DegreeElevationError::Allocation)?;
-        }
         pieces.push((piece, [start, end], ()));
     }
     let Some(concatenated) = concatenate_nurbs(ctx, pieces, join_tolerance)? else {
         return Err(DegreeElevationError::SpansDoNotJoin.into());
     };
-    let elevated_degree = concatenated.nurbs.degree();
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            concatenated.nurbs.knots().len() as u64,
-            "iges composite translated elevated knots",
-        )
-        .map_err(DegreeElevationError::Allocation)?;
+    let (elevated_degree, admitted_knots, poles, _) = concatenated.nurbs.into_parts();
+    let mut elevated_knots = admitted_knots.into_values();
+    for knot in &mut elevated_knots {
+        *knot += interval[0];
     }
-    let mut elevated_knots: Vec<f64> = concatenated
-        .nurbs
-        .knots()
-        .iter()
-        .map(|knot| knot + interval[0])
-        .collect();
     // Translation must preserve every copy of each clamped source endpoint.
     // Adding the origin back can round past the declared endpoint.
     elevated_knots[..=target_degree].fill(interval[0]);
     let end_start = elevated_knots.len() - target_degree - 1;
     elevated_knots[end_start..].fill(interval[1]);
-    let elevated = NurbsCurve::new(
-        elevated_degree,
-        elevated_knots,
-        concatenated.nurbs.pole_rows().clone(),
-        false,
-    )?;
+    let elevated = NurbsCurve::new(elevated_degree, elevated_knots, poles, false)?;
     *curve = elevated;
     Ok(())
 }
 
 fn concatenate_nurbs<T>(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     children: Vec<(NurbsCurve, [f64; 2], T)>,
     join_tolerance: Option<f64>,
 ) -> Result<Option<ConcatenatedNurbs<T>>, CompositeCurveError> {
@@ -1350,7 +1477,7 @@ fn concatenate_nurbs<T>(
             });
         }
     }
-    let degree_usize = degree as usize;
+    let degree_usize = cadmpeg_core::decode::index_from_u32(degree);
     // Every refusal below names its own cause; the `Ok(None)` that survives is
     // the endpoint join, and only the endpoint join.
     let prepare_child = |(curve, interval, child): (NurbsCurve, [f64; 2], T),
@@ -1358,43 +1485,29 @@ fn concatenate_nurbs<T>(
      -> Result<_, CompositeCurveError> {
         let child_start = interval[0];
         let child_end = interval[1];
-        if let Some(ctx) = ctx {
-            ctx.charge_collection_items(
-                curve.knots().len() as u64,
-                "iges composite shifted child knots",
-            )?;
-            ctx.charge_collection_items(
-                curve.pole_count() as u64,
-                "iges composite child control points",
-            )?;
-            if curve.weights().is_some() {
-                ctx.charge_collection_items(
-                    curve.pole_count() as u64,
-                    "iges composite child weight copy",
-                )?;
-            }
+        let control_count = curve.pole_count();
+        let (_, admitted_knots, poles, _) = curve.into_parts();
+        let mut shifted_knots = admitted_knots.into_values();
+        for knot in &mut shifted_knots {
+            *knot = (*knot - child_start) + cursor;
         }
-        let shifted_knots = curve
-            .knots()
-            .iter()
-            .map(|knot| (knot - child_start) + cursor)
-            .collect::<Vec<_>>();
-        let child_control_points = curve.pole_rows().raw_points();
-        let child_weights = match curve.pole_rows().weights() {
-            Some(weights) => weights,
-            None => match ctx {
-                Some(ctx) => ctx.alloc_filled(
-                    child_control_points.len(),
-                    1.0,
-                    "iges composite child weights",
-                ),
-                None => alloc_filled(
-                    child_control_points.len(),
-                    1.0,
-                    "iges composite child weights",
-                ),
+        let mut child_control_points =
+            ctx.collection_vec(control_count, "iges composite child control points")?;
+        let child_weights = match poles {
+            NurbsPoles3::Polynomial { points } => {
+                child_control_points.extend(points);
+                ctx.alloc_filled(control_count, 1.0, "iges composite child weights")
+                    .map_err(CompositeCurveError::ChildWeightAllocation)?
             }
-            .map_err(CompositeCurveError::ChildWeightAllocation)?,
+            NurbsPoles3::Rational { points } => {
+                let mut weights =
+                    ctx.collection_vec(control_count, "iges composite child weight copy")?;
+                for pole in points {
+                    child_control_points.push(pole.point);
+                    weights.push(pole.weight.get());
+                }
+                weights
+            }
         };
         if let Some(weight) = child_weights.iter().copied().find(|weight| *weight <= 0.0) {
             return Err(CompositeCurveError::ChildWeight { weight });
@@ -1415,19 +1528,16 @@ fn concatenate_nurbs<T>(
         ))
     };
     let (mut knots, mut control_points, mut weights, last) = prepare_child(first, 0.0)?;
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(children.len() as u64, "iges composite segment slots")?;
-    }
     let mut segments = ConcatenatedSegments {
-        preceding: Vec::with_capacity(children.len()),
+        preceding: ctx.collection_vec(children.len(), "iges composite segment slots")?,
         last,
     };
     for child in children {
         let (shifted_knots, child_control_points, mut child_weights, next) =
             prepare_child(child, segments.end())?;
         if !close_with_tolerance(
-            control_points[control_points.len() - 1],
-            child_control_points[0],
+            control_points[control_points.len() - 1].get(),
+            child_control_points[0].get(),
             join_tolerance,
         ) {
             return Ok(None);
@@ -1452,11 +1562,41 @@ fn concatenate_nurbs<T>(
             };
         }
         if degree_usize == 0 {
+            ctx.reserve_vec(
+                &mut knots,
+                shifted_knots.len() - 1,
+                "iges composite joined knots",
+            )?;
+            ctx.reserve_vec(
+                &mut control_points,
+                child_control_points.len(),
+                "iges composite joined controls",
+            )?;
+            ctx.reserve_vec(
+                &mut weights,
+                child_weights.len(),
+                "iges composite joined weights",
+            )?;
             knots.extend_from_slice(&shifted_knots[1..]);
             control_points.extend_from_slice(&child_control_points);
             weights.extend_from_slice(&child_weights);
         } else {
             knots.pop();
+            ctx.reserve_vec(
+                &mut knots,
+                shifted_knots.len() - degree_usize - 1,
+                "iges composite joined knots",
+            )?;
+            ctx.reserve_vec(
+                &mut control_points,
+                child_control_points.len() - 1,
+                "iges composite joined controls",
+            )?;
+            ctx.reserve_vec(
+                &mut weights,
+                child_weights.len() - 1,
+                "iges composite joined weights",
+            )?;
             knots.extend_from_slice(&shifted_knots[degree_usize + 1..]);
             control_points.extend_from_slice(&child_control_points[1..]);
             weights.extend_from_slice(&child_weights[1..]);
@@ -1468,19 +1608,39 @@ fn concatenate_nurbs<T>(
     let rational = weights
         .first()
         .is_some_and(|first| weights.iter().any(|weight| weight != first));
-    let nurbs = NurbsCurve::from_lanes(
-        degree,
-        knots,
-        control_points,
-        rational.then_some(weights),
-        false,
-    )?;
+    let poles = if rational {
+        let mut weighted =
+            ctx.collection_vec(control_points.len(), "iges composite joined weighted poles")?;
+        for (index, (point, weight)) in control_points.into_iter().zip(weights).enumerate() {
+            let Some(admitted_weight) = NonZeroReal::new(weight) else {
+                let field = ctx
+                    .format_retained(format_args!("poles"), "iges composite weight error field")?;
+                return Err(NurbsError::UnusableWeight {
+                    field,
+                    index,
+                    weight,
+                }
+                .into());
+            };
+            weighted.push(WeightedPole3 {
+                point,
+                weight: admitted_weight,
+            });
+        }
+        NurbsPoles3::Rational { points: weighted }
+    } else {
+        NurbsPoles3::Polynomial {
+            points: control_points,
+        }
+    };
+    let nurbs = NurbsCurve::new(degree, knots, poles, false)?;
     // The joined carrier evaluates at both of its own endpoints: reading the
     // two points is the statement, and each names its own parameter when the
     // carrier does not answer.
     let endpoint = |t: f64| -> Result<FinitePoint3, CompositeCurveError> {
-        cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t)
-            .map_err(|_| CompositeCurveError::EndpointEvaluation { t })
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, t))
+            .map_err(CodecError::from)?
+            .ok_or(CompositeCurveError::EndpointEvaluation { t })
     };
     endpoint(0.0)?;
     endpoint(cursor)?;
@@ -1492,36 +1652,48 @@ fn bounded_edge_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
-) -> Option<CompositeEdge> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<CompositeEdge>, CodecError> {
     let curve = match index {
         Some(index) => index
             .curve_positions
             .get(curve_id)
-            .and_then(|position| ir.model.curves.get(*position))?,
-        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id)?,
+            .and_then(|position| ir.model.curves.get(*position)),
+        None => ir.model.curves.iter().find(|curve| curve.id == *curve_id),
+    };
+    let Some(curve) = curve else {
+        return Ok(None);
     };
     let edge_candidates: Cow<'_, [CompositeEdge]> = match index {
         Some(index) => Cow::Borrowed(index.edges.get(curve_id).map_or(&[][..], Vec::as_slice)),
-        None => Cow::Owned(
-            ir.model
+        None => {
+            let edges = ir
+                .model
                 .edges
                 .iter()
-                .filter(|edge| edge.curve() == Some(curve_id))
-                .map(|edge| CompositeEdge {
-                    start: edge.start.clone(),
-                    end: edge.end.clone(),
+                .filter(|edge| edge.curve() == Some(curve_id));
+            let mut candidates = ctx.collection_vec(
+                edges.clone().count(),
+                "iges composite scanned edge candidates",
+            )?;
+            for edge in edges {
+                candidates.push(CompositeEdge {
+                    start: edge
+                        .start
+                        .try_clone_for_decode(ctx, "iges composite scanned edge start ID")?,
+                    end: edge
+                        .end
+                        .try_clone_for_decode(ctx, "iges composite scanned edge end ID")?,
                     param_range: edge.param_range().map(cadmpeg_ir::units::FiniteVector::get),
-                })
-                .collect(),
-        ),
+                });
+            }
+            Cow::Owned(candidates)
+        }
     };
-    select_composite_edge(
-        ir,
-        index,
-        curve.geometry.solved()?,
-        &edge_candidates,
-        tolerance,
-    )
+    let Some(geometry) = curve.geometry.solved() else {
+        return Ok(None);
+    };
+    select_composite_edge(ir, index, geometry, &edge_candidates, tolerance)
 }
 
 fn bounded_nurbs_for_id(
@@ -1529,25 +1701,28 @@ fn bounded_nurbs_for_id(
     curve_id: &CurveId,
     depth: usize,
     join_tolerance: Option<f64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     index: Option<&CompositeIndex>,
 ) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
-    let _nested = ctx
-        .map(|ctx| ctx.enter_nested("iges_composite_flatten"))
-        .transpose()?;
-    let depth_limit = ctx
-        .and_then(|ctx| usize::try_from(ctx.policy().limits.max_recursion_depth).ok())
+    let _nested = ctx.enter_nested("iges_composite_flatten")?;
+    let depth_limit = usize::try_from(ctx.policy().limits.max_recursion_depth)
+        .ok()
         .map_or(MAX_COMPOSITE_DEPTH, |policy| {
             policy.min(MAX_COMPOSITE_DEPTH)
         });
     if depth >= depth_limit {
-        let requested = depth.saturating_add(1) as u64;
-        return Err(CompositeCurveError::Budget(match ctx {
-            Some(ctx) => {
-                ctx.refuse_codec_limit("iges_composite_depth", depth_limit as u64, requested)
-            }
-            None => refuse_local_limit("iges_composite_depth", depth_limit as u64, requested),
-        }));
+        let refusal = |requested| {
+            ctx.refuse_codec_limit(
+                "iges_composite_depth",
+                u64_from_index(depth_limit),
+                requested,
+            )
+        };
+        let requested = depth
+            .checked_add(1)
+            .map(u64_from_index)
+            .ok_or_else(|| CompositeCurveError::Budget(refusal(u64::MAX)))?;
+        return Err(CompositeCurveError::Budget(refusal(requested)));
     }
     let curve = match index {
         Some(index) => index
@@ -1560,7 +1735,14 @@ fn bounded_nurbs_for_id(
         return Ok(None);
     };
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
-        let mut children = Vec::with_capacity(segments.len());
+        ctx.charge_collection_items(
+            u64_from_index(segments.len()),
+            "iges composite nested children",
+        )?;
+        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            segments.len(),
+            "iges composite nested children",
+        )?;
         for segment in segments {
             let Some(child) =
                 bounded_nurbs_for_id(ir, &segment.curve, depth + 1, join_tolerance, ctx, index)?
@@ -1580,7 +1762,8 @@ fn bounded_nurbs_for_id(
         let range = [0.0, concatenated.segments.end()];
         return Ok(Some((concatenated.nurbs, range)));
     }
-    let Some(edge) = bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index)
+    let Some(edge) =
+        bounded_edge_for_curve(ir, curve_id, join_tolerance.unwrap_or(0.0), index, ctx)?
     else {
         return Ok(None);
     };
@@ -1601,8 +1784,12 @@ fn bounded_nurbs_for_id(
             ) else {
                 return Ok(None);
             };
+            let mut knots = ctx.collection_vec(4, "iges composite line knots")?;
+            knots.extend([0.0, 0.0, 1.0, 1.0]);
+            let mut points = ctx.collection_vec(2, "iges composite line points")?;
+            points.extend([start, end]);
             Some((
-                NurbsCurve::from_lanes(1, vec![0.0, 0.0, 1.0, 1.0], vec![start, end], None, false)?,
+                NurbsCurve::new(1, knots, NurbsPoles3::Polynomial { points }, false)?,
                 [0.0, 1.0],
             ))
         }
@@ -1611,23 +1798,22 @@ fn bounded_nurbs_for_id(
             let axis = circle_curve.frame().axis().as_raw();
             let ref_direction = circle_curve.frame().reference().as_raw();
             let radius = circle_curve.radius();
-            let Some(mut nurbs) =
-                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval)?
+            let Some(nurbs) =
+                circular_arc_nurbs(center, *axis, *ref_direction, radius, interval, ctx)?
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
-            )
-            .is_none()
-            {
+            )?
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
@@ -1636,29 +1822,29 @@ fn bounded_nurbs_for_id(
             let major_direction = ellipse_curve.frame().reference().as_raw();
             let major_radius = ellipse_curve.major_radius();
             let minor_radius = ellipse_curve.minor_radius();
-            let Some(mut nurbs) = elliptical_arc_nurbs(
+            let Some(nurbs) = elliptical_arc_nurbs(
                 center,
                 *axis,
                 *major_direction,
                 major_radius,
                 minor_radius,
                 interval,
+                ctx,
             )?
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
-            )
-            .is_none()
-            {
+            )?
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -1666,23 +1852,28 @@ fn bounded_nurbs_for_id(
             let axis = parabola_curve.frame().axis().as_raw();
             let major_direction = parabola_curve.frame().reference().as_raw();
             let focal_distance = parabola_curve.focal_distance();
-            let Some(mut nurbs) =
-                parabolic_arc_nurbs(vertex, *axis, *major_direction, focal_distance, interval)?
+            let Some(nurbs) = parabolic_arc_nurbs(
+                vertex,
+                *axis,
+                *major_direction,
+                focal_distance,
+                interval,
+                ctx,
+            )?
             else {
                 return Ok(None);
             };
-            if anchor_analytic_nurbs_endpoint_poles(
-                &mut nurbs,
+            let Some(nurbs) = anchor_analytic_nurbs_endpoint_poles(
+                nurbs,
                 interval,
                 ir,
                 index,
                 &edge,
                 join_tolerance,
-            )
-            .is_none()
-            {
+            )?
+            else {
                 return Ok(None);
-            }
+            };
             Some((nurbs, interval))
         }
         _ => None,
@@ -1694,7 +1885,7 @@ fn bounded_nurbs(
     index: &CompositeIndex,
     curve_id: &CurveId,
     join_tolerance: f64,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
 ) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(ir, curve_id, 0, Some(join_tolerance), ctx, Some(index))
 }
@@ -1702,7 +1893,7 @@ fn bounded_nurbs(
 pub(super) fn bounded_nurbs_for_curve(
     ir: &CadIr,
     curve_id: &CurveId,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     index: Option<&CompositeIndex>,
 ) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(ir, curve_id, 0, None, ctx, index)
@@ -1713,15 +1904,17 @@ pub(super) fn bounded_parameter_range_for_curve(
     curve_id: &CurveId,
     tolerance: f64,
     index: Option<&CompositeIndex>,
-) -> Option<[f64; 2]> {
-    bounded_edge_for_curve(ir, curve_id, tolerance, index)?.param_range
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    Ok(bounded_edge_for_curve(ir, curve_id, tolerance, index, ctx)?
+        .and_then(|edge| edge.param_range))
 }
 
 pub(super) fn bounded_nurbs_for_curve_with_tolerance(
     ir: &CadIr,
     curve_id: &CurveId,
     tolerance: Option<f64>,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     index: Option<&CompositeIndex>,
 ) -> Result<Option<(NurbsCurve, [f64; 2])>, CompositeCurveError> {
     bounded_nurbs_for_id(
@@ -1772,59 +1965,77 @@ fn curve_endpoints(
     curve_id: &CurveId,
     index: &CompositeIndex,
     tolerance: f64,
-) -> Option<(FinitePoint3, FinitePoint3)> {
-    let curve_position = index.curve_positions.get(curve_id)?;
-    let curve = ir.model.curves.get(*curve_position)?;
-    let candidates = index.edges.get(curve_id)?;
-    let edge = select_composite_edge(
-        ir,
-        Some(index),
-        curve.geometry.solved()?,
-        candidates,
-        tolerance,
-    )?;
-    Some((
-        point_for_vertex(ir, &edge.start, Some(index))?,
-        point_for_vertex(ir, &edge.end, Some(index))?,
-    ))
+) -> Result<Option<(FinitePoint3, FinitePoint3)>, CodecError> {
+    let Some(curve_position) = index.curve_positions.get(curve_id) else {
+        return Ok(None);
+    };
+    let Some(curve) = ir.model.curves.get(*curve_position) else {
+        return Ok(None);
+    };
+    let Some(candidates) = index.edges.get(curve_id) else {
+        return Ok(None);
+    };
+    let Some(geometry) = curve.geometry.solved() else {
+        return Ok(None);
+    };
+    let edge = select_composite_edge(ir, Some(index), geometry, candidates, tolerance)?;
+    Ok(edge.and_then(|edge| {
+        Some((
+            point_for_vertex(ir, &edge.start, Some(index))?,
+            point_for_vertex(ir, &edge.end, Some(index))?,
+        ))
+    }))
 }
 
 fn anchor_analytic_nurbs_endpoint_poles(
-    nurbs: &mut NurbsCurve,
+    nurbs: NurbsCurve,
     interval: [f64; 2],
     ir: &CadIr,
     index: Option<&CompositeIndex>,
     edge: &CompositeEdge,
     tolerance: Option<f64>,
-) -> Option<()> {
+) -> Result<Option<NurbsCurve>, CodecError> {
     let Some(tolerance) = tolerance else {
-        return Some(());
+        return Ok(Some(nurbs));
     };
-    let start = point_for_vertex(ir, &edge.start, index)?;
-    let end = point_for_vertex(ir, &edge.end, index)?;
-    let evaluated_start = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[0]).ok()?;
-    let evaluated_end = cadmpeg_ir::eval::nurbs_curve_point_at(nurbs, interval[1]).ok()?;
+    let (Some(start), Some(end)) = (
+        point_for_vertex(ir, &edge.start, index),
+        point_for_vertex(ir, &edge.end, index),
+    ) else {
+        return Ok(None);
+    };
+    let Some(evaluated_start) =
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, interval[0]))?
+    else {
+        return Ok(None);
+    };
+    let Some(evaluated_end) =
+        finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, interval[1]))?
+    else {
+        return Ok(None);
+    };
     if !close_with_tolerance(evaluated_start.get(), start.get(), Some(tolerance))
         || !close_with_tolerance(evaluated_end.get(), end.get(), Some(tolerance))
     {
-        return None;
+        return Ok(None);
     }
-    let last = nurbs.pole_count().checked_sub(1)?;
-    let mut visited = 0usize;
-    nurbs
-        .map_control_points(|point| {
-            let mapped = if visited == last {
+    let Some(last) = nurbs.pole_count().checked_sub(1) else {
+        return Ok(None);
+    };
+    let mut nurbs = nurbs;
+    Ok(nurbs
+        .try_map_control_points(|index, point| {
+            let mapped = if index == last {
                 end
-            } else if visited == 0 {
+            } else if index == 0 {
                 start
             } else {
                 point
             };
-            visited += 1;
-            Ok(mapped)
+            Ok::<_, ()>(mapped)
         })
-        .ok()?;
-    Some(())
+        .ok()
+        .map(|()| nurbs))
 }
 
 fn project_native_composite(
@@ -1833,112 +2044,204 @@ fn project_native_composite(
     entry: &DirectoryEntry,
     child_curves: &[CurveId],
     join_tolerance: f64,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> Option<EdgeId> {
+) -> Result<Option<EdgeId>, CodecError> {
     if child_curves
         .iter()
         .any(|curve_id| !index.curve_positions.contains_key(curve_id))
     {
-        return None;
+        return Ok(None);
     }
-    let endpoints = child_curves
-        .iter()
-        .map(|curve_id| curve_endpoints(ir, curve_id, index, join_tolerance))
-        .collect::<Option<Vec<_>>>()?;
-    let start = endpoints.first()?.0;
-    let end = endpoints.last()?.1;
-    let segments = child_curves
-        .iter()
-        .enumerate()
-        .map(|(index, curve)| CompositeCurveSegment {
-            curve: curve.clone(),
+    let mut endpoints =
+        ctx.collection_vec(child_curves.len(), "iges composite native endpoints")?;
+    for curve_id in child_curves {
+        let Some(endpoint) = curve_endpoints(ir, curve_id, index, join_tolerance)? else {
+            return Ok(None);
+        };
+        endpoints.push(endpoint);
+    }
+    let (Some(start), Some(end)) = (
+        endpoints.first().map(|pair| pair.0),
+        endpoints.last().map(|pair| pair.1),
+    ) else {
+        return Ok(None);
+    };
+    let mut segments = ctx.collection_vec(child_curves.len(), "iges composite native segments")?;
+    for (position, curve) in child_curves.iter().enumerate() {
+        segments.push(CompositeCurveSegment {
+            curve: curve.try_clone_for_decode(ctx, "iges composite native segment curve ids")?,
             same_sense: true,
-            transition: if index > 0
+            transition: if position > 0
                 && close_with_tolerance(
-                    endpoints[index - 1].1.get(),
-                    endpoints[index].0.get(),
+                    endpoints[position - 1].1.get(),
+                    endpoints[position].0.get(),
                     Some(join_tolerance),
                 ) {
                 CompositeCurveTransition::Continuous
             } else {
                 CompositeCurveTransition::Discontinuous
             },
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let stem = crate::ids::Stem::directory(entry.sequence);
-    let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-    sequences.record_point(&start_point, &stem);
-    let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-    sequences.record_point(&end_point, &stem);
-    let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-    let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-    let curve_id = crate::ids::curve(&stem);
-    let edge_id = crate::ids::edge(&stem);
+    let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+    sequences.record_point(&start_point, &stem, ctx)?;
+    let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+    sequences.record_point(&end_point, &stem, ctx)?;
+    let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+    let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+    let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
+    let edge_id = crate::ids::edge_admitted(&stem, ctx)?;
+    ctx.reserve_vec(&mut ir.model.points, 2, "iges composite native point slots")?;
+    ctx.reserve_vec(
+        &mut ir.model.vertices,
+        2,
+        "iges composite native vertex slots",
+    )?;
+    ctx.charge_entities(2, "iges_geometry_composites")?;
     ir.model.points.extend([
-        Point::new(start_point.clone(), start, None),
-        Point::new(end_point.clone(), end, None),
+        Point::new(
+            start_point.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            start,
+            None,
+        ),
+        Point::new(
+            end_point.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            end,
+            None,
+        ),
     ]);
+    ctx.charge_entities(2, "iges_geometry_composites")?;
     ir.model.vertices.extend([
         Vertex {
-            id: start_vertex.clone(),
+            id: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             point: start_point,
             tolerance: None,
         },
         Vertex {
-            id: end_vertex.clone(),
+            id: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             point: end_point,
             tolerance: None,
         },
     ]);
-    sequences.record_curve(&curve_id, entry.sequence);
+    sequences.record_curve(&curve_id, entry.sequence, ctx)?;
+    let Some(segments) = cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()
+    else {
+        return Ok(None);
+    };
+    let source = match source_object(entry, ctx) {
+        Ok(source) => source,
+        Err(error) => {
+            super::non_resource_error(error, ctx)?;
+            return Ok(None);
+        }
+    };
+    ctx.reserve_vec(&mut ir.model.curves, 1, "iges composite native curve slots")?;
+    ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.model.curves.push(Curve {
-        id: curve_id.clone(),
+        id: curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
-            segments: cadmpeg_ir::geometry::CompositeCurveSegments::try_from(segments).ok()?,
+            segments,
             self_intersect: None,
         }),
-        source_object: Some(source_object(entry).ok()?),
+        source_object: Some(source),
     });
+    ctx.reserve_vec(&mut ir.model.edges, 1, "iges composite native edge slots")?;
+    ctx.charge_entities(1, "iges_geometry_composites")?;
     ir.model.edges.push(Edge {
-        id: edge_id.clone(),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        id: edge_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+        carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
+            curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+        )),
+        start: start_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+        end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
         tolerance: None,
     });
     index.add_model_entity(
-        curve_id.clone(),
+        &curve_id,
         ir.model.curves.len() - 1,
         CompositeEdge {
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            start: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             param_range: None,
         },
         [(start_vertex, start), (end_vertex, end)],
-    );
-    Some(edge_id)
+        ctx,
+    )?;
+    Ok(Some(edge_id))
 }
 
 /// The degraded carrier, if one was built, and the loss it charges either way.
+#[derive(Clone, Copy)]
+struct CompositeCarrier<'a> {
+    entry: &'a DirectoryEntry,
+    child_curves: &'a [CurveId],
+    join_tolerance: f64,
+}
+
+enum CompositeRefusal {
+    NoChildCarrier,
+    Child(CompositeCurveError),
+    JoinedCarrier(CompositeCurveError),
+    Elevation(CompositeCurveError),
+    Other(CompositeCurveError),
+}
+
+impl fmt::Display for CompositeRefusal {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoChildCarrier => {
+                formatter.write_str("a child has no bounded line or NURBS carrier")
+            }
+            Self::Child(error) => write!(formatter, "a child states no curve carrier: {error}"),
+            Self::JoinedCarrier(error) => write!(
+                formatter,
+                "the joined children state no curve carrier: {error}"
+            ),
+            Self::Elevation(error) => write!(
+                formatter,
+                "a child does not raise to the composite degree: {error}"
+            ),
+            Self::Other(error) => error.fmt(formatter),
+        }
+    }
+}
+
 fn project_degraded_composite(
     ir: &mut CadIr,
     index: &mut CompositeIndex,
-    entry: &DirectoryEntry,
-    child_curves: &[CurveId],
-    join_tolerance: f64,
-    reason: &str,
+    carrier: CompositeCarrier<'_>,
+    reason: impl fmt::Display,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
-) -> (Option<EdgeId>, LossNote) {
-    let edge = project_native_composite(ir, index, entry, child_curves, join_tolerance, sequences);
-    let loss = if edge.is_some() {
-        degraded_carrier_loss(entry, reason)
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<EdgeId>, CodecError> {
+    let edge = project_native_composite(
+        ir,
+        index,
+        carrier.entry,
+        carrier.child_curves,
+        carrier.join_tolerance,
+        ctx,
+        sequences,
+    )?;
+    if edge.is_some() {
+        super::push_attributed_loss(
+            ctx, losses, carrier.entry, IgesLossCode::CompositeCarrierDegraded,
+            format_args!("IGES Type 102 entity D{} has no admitted concatenated carrier because {reason}; the ordered native composite carrier was retained", carrier.entry.sequence),
+        )?;
     } else {
-        entity_loss(
-            entry,
-            format!("{reason}, and no ordered native composite carrier can be constructed"),
-        )
-    };
-    (edge, loss)
+        super::push_entity_loss(
+            ctx,
+            losses,
+            carrier.entry,
+            format_args!("{reason}, and no ordered native composite carrier can be constructed"),
+        )?;
+    }
+    Ok(edge)
 }
 
 pub(super) fn project(
@@ -1946,7 +2249,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, false)
@@ -1957,7 +2260,7 @@ pub(super) fn project_type_130_children(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<WireProjectionOutcome, CodecError> {
     project_with_type_130_policy(ir, directory, parameters, global, ctx, sequences, true)
@@ -1997,22 +2300,32 @@ fn project_with_type_130_policy(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
     only_type_130_children: bool,
 ) -> Result<WireProjectionOutcome, CodecError> {
-    let records = parameters
-        .iter()
-        .map(|record| (record.directory_sequence, record))
-        .collect::<BTreeMap<_, _>>();
-    let entries = directory
-        .iter()
-        .map(|entry| (entry.sequence, entry))
-        .collect::<BTreeMap<_, _>>();
+    let mut records = BTreeMap::new();
+    for record in parameters {
+        ctx.insert_btree_map(
+            &mut records,
+            record.directory_sequence,
+            record,
+            "iges composite parameter index",
+        )?;
+    }
+    let mut entries = BTreeMap::new();
+    for entry in directory {
+        ctx.insert_btree_map(
+            &mut entries,
+            entry.sequence,
+            entry,
+            "iges composite directory index",
+        )?;
+    }
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut wire_edges = Vec::new();
-    let mut index = CompositeIndex::from_ir(ir);
+    let mut index = CompositeIndex::from_ir(ir, ctx)?;
     let join_tolerance = global.minimum_resolution_mm();
 
     for entry in directory
@@ -2029,10 +2342,12 @@ fn project_with_type_130_policy(
             .use_flag(global.global_table())
             .filter(|use_flag| composite_use_flag_valid(*use_flag, global.global_table()))
         else {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "Type 102 Entity Use Flag must be 00 in IGES 4.0",
-            ));
+                format_args!("{}", "Type 102 Entity Use Flag must be 00 in IGES 4.0"),
+            )?;
             continue;
         };
         if !composite_line_font_valid(
@@ -2040,27 +2355,42 @@ fn project_with_type_130_policy(
             entry.status.hierarchy(),
             global.global_table(),
         ) {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01",
-            ));
+                format_args!(
+                    "{}",
+                    "Type 102 Line Font must be nonzero in IGES 4.0 unless Hierarchy is 01"
+                ),
+            )?;
             continue;
         }
         let Some(record) = records.get(&entry.sequence).copied() else {
-            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "Parameter Data record is missing"),
+            )?;
             continue;
         };
         let Some(raw_child_count) = record.integer(1) else {
-            losses.push(entity_loss(entry, "child count is invalid"));
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "child count is invalid"),
+            )?;
             continue;
         };
         if let Some(observed) = u64::try_from(raw_child_count)
             .ok()
-            .filter(|count| *count > MAX_COMPOSITE_CHILDREN as u64)
+            .filter(|count| *count > cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN))
         {
             return Err(refuse_local_limit(
                 "iges_composite_children",
-                MAX_COMPOSITE_CHILDREN as u64,
+                cadmpeg_core::decode::u64_from_index(MAX_COMPOSITE_CHILDREN),
                 observed,
             ));
         }
@@ -2069,23 +2399,38 @@ fn project_with_type_130_policy(
             .ok()
             .filter(|count| *count >= minimum_child_count)
         else {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                format!("child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"),
-            ));
+                format_args!(
+                    "child count is outside {minimum_child_count}..={MAX_COMPOSITE_CHILDREN}"
+                ),
+            )?;
             continue;
         };
-        let Some(child_sequences) = (0..child_count)
-            .map(|index| {
-                record
-                    .integer(index + 2)
-                    .and_then(|value| u32::try_from(value).ok())
-            })
-            .collect::<Option<Vec<_>>>()
-        else {
-            losses.push(entity_loss(entry, "child pointer list is invalid"));
+        let mut child_sequences =
+            ctx.collection_vec(child_count, "iges composite child pointer slots")?;
+        let mut valid_child_pointers = true;
+        for index in 0..child_count {
+            let Some(sequence) = record
+                .integer(index + 2)
+                .and_then(|value| u32::try_from(value).ok())
+            else {
+                valid_child_pointers = false;
+                break;
+            };
+            child_sequences.push(sequence);
+        }
+        if !valid_child_pointers {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
+                entry,
+                format_args!("{}", "child pointer list is invalid"),
+            )?;
             continue;
-        };
+        }
         let is_logical_connector = child_sequences.len() == 2
             && child_sequences.iter().all(|sequence| {
                 entries
@@ -2097,17 +2442,19 @@ fn project_with_type_130_policy(
             is_logical_connector,
             global.global_table(),
         ) {
-            losses.push(entity_loss(
-                entry,
-                "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later",
-            ));
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "Type 102 logical connectors made of exactly two Type 132 Connect Points require Entity Use Flag 04 in IGES 5.0 and later"))?;
             continue;
         }
         if entry.transform != 0 {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "placed composite curves require transformed child-carrier projection",
-            ));
+                format_args!(
+                    "{}",
+                    "placed composite curves require transformed child-carrier projection"
+                ),
+            )?;
             continue;
         }
         if child_sequences.iter().any(|sequence| {
@@ -2116,10 +2463,7 @@ fn project_with_type_130_policy(
                     || !child.status.is_physically_dependent()
             })
         }) {
-            losses.push(entity_loss(
-                entry,
-                "composite child is missing, outside the effective specification family, or is not physically dependent",
-            ));
+            super::push_entity_loss(ctx, &mut losses, entry, format_args!("{}", "composite child is missing, outside the effective specification family, or is not physically dependent"))?;
             continue;
         }
         let point_context = CompositePointContext {
@@ -2129,88 +2473,127 @@ fn project_with_type_130_policy(
             ctx,
             tolerance: join_tolerance,
         };
-        let curve_carriers = child_sequences
-            .iter()
-            .copied()
-            .filter(|sequence| {
-                entries
-                    .get(sequence)
-                    .is_none_or(|entry| !composite_point_member(entry))
-            })
-            .filter_map(|sequence| {
-                curve_carrier_id(sequence, &entries, &records).map(|curve_id| (sequence, curve_id))
-            })
-            .collect::<BTreeMap<_, _>>();
+        let is_curve_sequence = |sequence: &u32| {
+            entries
+                .get(sequence)
+                .is_none_or(|entry| !composite_point_member(entry))
+        };
+        let mut curve_carriers = BTreeMap::new();
+        for sequence in child_sequences.iter().copied().filter(is_curve_sequence) {
+            if let Some(curve_id) = curve_carrier_id(sequence, &entries, &records, ctx)? {
+                ctx.insert_btree_map(
+                    &mut curve_carriers,
+                    sequence,
+                    curve_id,
+                    "iges composite child carrier nodes",
+                )?;
+            }
+        }
         if !composite_point_adjacency_valid(
             ir,
             &index,
             &child_sequences,
             &curve_carriers,
             &point_context,
-        ) {
-            losses.push(entity_loss(
+        )? {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "point or connect-point adjacency is invalid",
-            ));
+                format_args!("{}", "point or connect-point adjacency is invalid"),
+            )?;
             continue;
         }
-        let curve_sequences = child_sequences
+        let curve_count = child_sequences
             .iter()
-            .copied()
-            .filter(|sequence| {
-                entries
-                    .get(sequence)
-                    .is_none_or(|entry| !composite_point_member(entry))
-            })
-            .collect::<Vec<_>>();
+            .filter(|sequence| is_curve_sequence(sequence))
+            .count();
+        let mut curve_sequences =
+            ctx.collection_vec(curve_count, "iges composite curve child sequences")?;
+        curve_sequences.extend(child_sequences.iter().copied().filter(is_curve_sequence));
         if curve_sequences.is_empty() {
-            losses.push(entity_loss(
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "composite has no parameterized curve constituent",
-            ));
+                format_args!("{}", "composite has no parameterized curve constituent"),
+            )?;
             continue;
         }
-        let Some(curve_ids) = curve_sequences
-            .iter()
-            .map(|sequence| curve_carriers.get(sequence).cloned())
-            .collect::<Option<Vec<_>>>()
-        else {
-            losses.push(entity_loss(
+        let mut curve_ids =
+            { ctx.collection_vec(curve_sequences.len(), "iges composite child curve ids")? };
+        let mut missing_curve = false;
+        for sequence in &curve_sequences {
+            let Some(curve) = curve_carriers.get(sequence) else {
+                missing_curve = true;
+                break;
+            };
+            curve_ids
+                .push(curve.try_clone_for_decode(ctx, "iges composite child curve ID copies")?);
+        }
+        if missing_curve {
+            super::push_entity_loss(
+                ctx,
+                &mut losses,
                 entry,
-                "a Type 142 constituent has no valid model-space curve pointer",
-            ));
+                format_args!(
+                    "{}",
+                    "a Type 142 constituent has no valid model-space curve pointer"
+                ),
+            )?;
             continue;
+        }
+        let carrier = CompositeCarrier {
+            entry,
+            child_curves: &curve_ids,
+            join_tolerance,
         };
-        let mut children = Vec::with_capacity(curve_ids.len());
+        ctx.charge_collection_items(
+            u64_from_index(curve_ids.len()),
+            "iges composite projected children",
+        )?;
+        let mut children = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            curve_ids.len(),
+            "iges composite projected children",
+        )?;
         let mut child_refusal = None;
         for curve_id in &curve_ids {
             match bounded_nurbs(ir, &index, curve_id, join_tolerance, ctx) {
-                Ok(Some((curve, range))) => children.push((curve, range, curve_id.clone())),
+                Ok(Some((curve, range))) => children.push((
+                    curve,
+                    range,
+                    curve_id
+                        .try_clone_for_decode(ctx, "iges composite projected child curve IDs")?,
+                )),
                 Ok(None) => {
-                    child_refusal = Some("a child has no bounded line or NURBS carrier".to_owned());
+                    child_refusal = Some(CompositeRefusal::NoChildCarrier);
                     break;
                 }
                 Err(error) => {
                     let error = error.non_resource()?;
-                    child_refusal = Some(format!("a child states no curve carrier: {error}"));
+                    child_refusal = Some(CompositeRefusal::Child(error));
                     break;
                 }
             }
         }
         if let Some(reason) = child_refusal {
-            let (edge, loss) = project_degraded_composite(
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
-                &reason,
+                carrier,
+                reason,
+                ctx,
                 sequences,
-            );
-            losses.push(loss);
+                &mut losses,
+            )?;
             if let Some(edge) = edge {
+                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                ctx.insert_btree_set(
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
             }
             continue;
         }
@@ -2219,143 +2602,199 @@ fn project_with_type_130_policy(
             Ok(None) => None,
             Err(error) => {
                 let error = error.non_resource()?;
-                let (edge, loss) = project_degraded_composite(
+                let edge = project_degraded_composite(
                     ir,
                     &mut index,
-                    entry,
-                    &curve_ids,
-                    join_tolerance,
+                    carrier,
                     // The error names its own cause: a carrier the IR
                     // refuses, or a child that does not raise to the
                     // composite degree.
-                    &match error {
-                        CompositeCurveError::Carrier(error) => {
-                            format!("the joined children state no curve carrier: {error}")
+                    match error {
+                        error @ CompositeCurveError::Carrier(_) => {
+                            CompositeRefusal::JoinedCarrier(error)
                         }
-                        CompositeCurveError::Elevation(error) => {
-                            format!("a child does not raise to the composite degree: {error}")
+                        error @ CompositeCurveError::Elevation(_) => {
+                            CompositeRefusal::Elevation(error)
                         }
-                        error => error.to_string(),
+                        error => CompositeRefusal::Other(error),
                     },
+                    ctx,
                     sequences,
-                );
-                losses.push(loss);
+                    &mut losses,
+                )?;
                 if let Some(edge) = edge {
+                    ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
                     wire_edges.push(edge);
-                    decoded.insert(entry.sequence);
+                    ctx.insert_btree_set(
+                        &mut decoded,
+                        entry.sequence,
+                        "iges composite decoded sequences",
+                    )?;
                 }
                 continue;
             }
         };
         let Some(ConcatenatedNurbs { nurbs, segments }) = concatenated else {
-            let (edge, loss) = project_degraded_composite(
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "child endpoints do not join within the Global minimum resolution",
+                ctx,
                 sequences,
-            );
-            losses.push(loss);
+                &mut losses,
+            )?;
             if let Some(edge) = edge {
+                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                ctx.insert_btree_set(
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
         };
         let cursor = segments.end();
-        let Ok(start) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0) else {
-            let (edge, loss) = project_degraded_composite(
+        let Some(start) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, 0.0))?
+        else {
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "its start cannot be evaluated",
+                ctx,
                 sequences,
-            );
-            losses.push(loss);
+                &mut losses,
+            )?;
             if let Some(edge) = edge {
+                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                ctx.insert_btree_set(
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
         };
-        let Ok(end) = cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor) else {
-            let (edge, loss) = project_degraded_composite(
+        let Some(end) = finite_or_refusal(cadmpeg_ir::eval::nurbs_curve_point_at(&nurbs, cursor))?
+        else {
+            let edge = project_degraded_composite(
                 ir,
                 &mut index,
-                entry,
-                &curve_ids,
-                join_tolerance,
+                carrier,
                 "its end cannot be evaluated",
+                ctx,
                 sequences,
-            );
-            losses.push(loss);
+                &mut losses,
+            )?;
             if let Some(edge) = edge {
+                ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
                 wire_edges.push(edge);
-                decoded.insert(entry.sequence);
+                ctx.insert_btree_set(
+                    &mut decoded,
+                    entry.sequence,
+                    "iges composite decoded sequences",
+                )?;
                 continue;
             }
             continue;
         };
         let stem = crate::ids::Stem::directory(entry.sequence);
-        let start_point = crate::ids::point(&stem.tail(crate::ids::Word::Start));
-        sequences.record_point(&start_point, &stem);
-        let end_point = crate::ids::point(&stem.tail(crate::ids::Word::End));
-        sequences.record_point(&end_point, &stem);
-        let start_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::Start));
-        let end_vertex = crate::ids::vertex(&stem.tail(crate::ids::Word::End));
-        let curve_id = crate::ids::curve(&stem);
-        let edge = crate::ids::edge(&stem);
+        let start_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        sequences.record_point(&start_point, &stem, ctx)?;
+        let end_point = crate::ids::point_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        sequences.record_point(&end_point, &stem, ctx)?;
+        let start_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::Start), ctx)?;
+        let end_vertex = crate::ids::vertex_admitted(&stem.tail(crate::ids::Word::End), ctx)?;
+        let curve_id = crate::ids::curve_admitted(&stem, ctx)?;
+        let edge = crate::ids::edge_admitted(&stem, ctx)?;
+        ctx.reserve_vec(&mut ir.model.points, 2, "iges composite solved point slots")?;
+        ctx.reserve_vec(
+            &mut ir.model.vertices,
+            2,
+            "iges composite solved vertex slots",
+        )?;
+        ctx.charge_entities(2, "iges_geometry_composites")?;
         ir.model.points.extend([
-            Point::new(start_point.clone(), start, None),
-            Point::new(end_point.clone(), end, None),
+            Point::new(
+                start_point.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                start,
+                None,
+            ),
+            Point::new(
+                end_point.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                end,
+                None,
+            ),
         ]);
+        ctx.charge_entities(2, "iges_geometry_composites")?;
         ir.model.vertices.extend([
             Vertex {
-                id: start_vertex.clone(),
+                id: start_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 point: start_point,
                 tolerance: None,
             },
             Vertex {
-                id: end_vertex.clone(),
+                id: end_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 point: end_point,
                 tolerance: None,
             },
         ]);
-        sequences.record_curve(&curve_id, entry.sequence);
+        sequences.record_curve(&curve_id, entry.sequence, ctx)?;
+        ctx.reserve_vec(&mut ir.model.curves, 1, "iges composite solved curve slots")?;
+        ctx.charge_entities(1, "iges_geometry_composites")?;
         ir.model.curves.push(Curve {
-            id: curve_id.clone(),
+            id: curve_id.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
-            source_object: Some(source_object(entry)?),
+            source_object: Some(source_object(entry, ctx)?),
         });
+        ctx.reserve_vec(&mut ir.model.edges, 1, "iges composite solved edge slots")?;
+        ctx.charge_entities(1, "iges_geometry_composites")?;
         ir.model.edges.push(Edge {
-            id: edge.clone(),
+            id: edge.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(
-                Some(curve_id.clone()),
+                Some(
+                    curve_id
+                        .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                ),
                 Some([0.0, cursor]),
             )
             .map_err(CodecError::malformed)?,
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            start: start_vertex
+                .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+            end: end_vertex.try_clone_for_decode(ctx, "iges composite projection identity copy")?,
             tolerance: None,
         });
         index.add_model_entity(
-            curve_id.clone(),
+            &curve_id,
             ir.model.curves.len() - 1,
             CompositeEdge {
-                start: start_vertex.clone(),
-                end: end_vertex.clone(),
+                start: start_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
+                end: end_vertex
+                    .try_clone_for_decode(ctx, "iges composite projection identity copy")?,
                 param_range: Some([0.0, cursor]),
             },
             [(start_vertex, start), (end_vertex, end)],
-        );
-        let mut boundaries = vec![0.0];
-        let mut components = Vec::new();
+            ctx,
+        )?;
+        let component_count = segments.preceding.len().checked_add(1).ok_or_else(|| {
+            refuse_local_limit("iges composite procedural components", u64::MAX, 1)
+        })?;
+        let boundary_count = component_count.checked_add(1).ok_or_else(|| {
+            refuse_local_limit("iges composite procedural boundaries", u64::MAX, 1)
+        })?;
+        let mut boundaries =
+            { ctx.collection_vec(boundary_count, "iges composite procedural boundaries")? };
+        boundaries.push(0.0);
+        let mut components =
+            { ctx.collection_vec(component_count, "iges composite procedural components")? };
         for segment in segments.into_iter() {
             boundaries.push(segment.end);
             components.push(cadmpeg_ir::geometry::CompoundComponent {
@@ -2363,10 +2802,16 @@ fn project_with_type_130_policy(
                 component: segment.child,
             });
         }
+        ctx.reserve_vec(
+            &mut ir.model.procedural_curves,
+            1,
+            "iges composite procedural curve slots",
+        )?;
+        ctx.charge_entities(1, "iges_geometry_composites")?;
         let _attached = ir.model.add_procedural_curve(
-            curve_id,
+            &curve_id,
             ProceduralCurve::new(
-                crate::ids::procedural_curve(&stem),
+                crate::ids::procedural_curve_admitted(&stem, ctx)?,
                 ProceduralCurveDefinition::Compound(
                     cadmpeg_ir::geometry::CompoundCurveConstruction::try_new(
                         boundaries, components, None,
@@ -2375,8 +2820,13 @@ fn project_with_type_130_policy(
                 ),
             ),
         );
+        ctx.reserve_vec(&mut wire_edges, 1, "iges composite wire edge ids")?;
         wire_edges.push(edge);
-        decoded.insert(entry.sequence);
+        ctx.insert_btree_set(
+            &mut decoded,
+            entry.sequence,
+            "iges composite decoded sequences",
+        )?;
     }
 
     Ok(WireProjectionOutcome {

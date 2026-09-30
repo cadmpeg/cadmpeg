@@ -1,9 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact conversions from bounded analytic curves to NURBS carriers.
 
-use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsError, NurbsPoles3, WeightedPole3};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::scalar::{NonZeroReal, PositiveLength};
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum CurveConversionError {
+    #[error(transparent)]
+    Carrier(#[from] NurbsError),
+    #[error(transparent)]
+    Resource(#[from] CodecError),
+}
 
 const EPS_CURVE_CONVERSION_EXACT_GEOMETRY: f64 = 1.0e-12;
 
@@ -24,9 +35,13 @@ pub(super) fn angularly_equal(left: f64, right: f64) -> bool {
 /// it carries last-place noise and the platform's libm decides which side of the
 /// boundary it falls on. Backing the sweep off by [`ANGULAR_TOLERANCE`] first
 /// keeps an exact multiple of a quarter turn on the lower side.
-pub(super) fn quarter_turn_spans(sweep: f64) -> usize {
+pub(super) fn quarter_turn_spans(sweep: f64) -> Option<usize> {
     let quarters = (sweep - ANGULAR_TOLERANCE) / std::f64::consts::FRAC_PI_2;
-    quarters.ceil().max(1.0) as usize
+    if quarters <= 1.0 {
+        Some(1)
+    } else {
+        cadmpeg_core::convert::truncate_f64_to_usize(quarters.ceil())
+    }
 }
 
 pub(crate) fn circular_arc_nurbs(
@@ -35,8 +50,9 @@ pub(crate) fn circular_arc_nurbs(
     reference: Vector3,
     radius: PositiveLength,
     interval: [f64; 2],
-) -> Result<Option<NurbsCurve>, NurbsError> {
-    elliptical_arc_nurbs(center, axis, reference, radius, radius, interval)
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CurveConversionError> {
+    elliptical_arc_nurbs(center, axis, reference, radius, radius, interval, ctx)
 }
 
 pub(crate) fn elliptical_arc_nurbs(
@@ -46,7 +62,8 @@ pub(crate) fn elliptical_arc_nurbs(
     major_radius: PositiveLength,
     minor_radius: PositiveLength,
     interval: [f64; 2],
-) -> Result<Option<NurbsCurve>, NurbsError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CurveConversionError> {
     let delta = interval[1] - interval[0];
     if !delta.is_finite() || delta <= 0.0 || delta > std::f64::consts::TAU + ANGULAR_TOLERANCE {
         return Ok(None);
@@ -55,21 +72,31 @@ pub(crate) fn elliptical_arc_nurbs(
     let minor_radius = minor_radius.get();
     let delta = delta.min(std::f64::consts::TAU);
     let transverse = axis.cross(major_direction);
-    let spans = quarter_turn_spans(delta);
-    let step = delta / spans as f64;
-    let mut knots = Vec::with_capacity(spans * 2 + 4);
-    let mut control_points = Vec::with_capacity(spans * 2 + 1);
-    let mut weights = Vec::with_capacity(spans * 2 + 1);
+    let Some(spans) = quarter_turn_spans(delta) else {
+        return Ok(None);
+    };
+    let Some(span_count) = cadmpeg_core::convert::f64_from_index(spans) else {
+        return Ok(None);
+    };
+    let step = delta / span_count;
+    let mut knots = ctx.collection_vec(spans * 2 + 4, "iges analytic arc knots")?;
+    let mut poles = ctx.collection_vec(spans * 2 + 1, "iges analytic arc weighted poles")?;
     for span in 0..spans {
         let start = if span == 0 {
             interval[0]
         } else {
-            interval[0] + step * span as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let end = if span + 1 == spans {
             interval[1]
         } else {
-            interval[0] + step * (span + 1) as f64
+            let Some(span) = cadmpeg_core::convert::f64_from_index(span + 1) else {
+                return Ok(None);
+            };
+            interval[0] + step * span
         };
         let middle = (start + end) * 0.5;
         let middle_weight = ((end - start) * 0.5).cos();
@@ -77,39 +104,51 @@ pub(crate) fn elliptical_arc_nurbs(
             return Ok(None);
         }
         if span == 0 {
-            control_points.push(
-                center
-                    .translated(major_direction, major_radius * start.cos())
-                    .translated(transverse, minor_radius * start.sin()),
-            );
-            weights.push(1.0);
+            let point = center
+                .translated(major_direction, major_radius * start.cos())
+                .translated(transverse, minor_radius * start.sin());
+            poles.push(WeightedPole3 {
+                point: finite_arc_point(point)?,
+                weight: NonZeroReal::ONE,
+            });
             knots.extend([start, start, start]);
         } else {
             knots.extend([start, start]);
         }
-        control_points.push(
-            center
-                .translated(major_direction, major_radius * middle.cos() / middle_weight)
-                .translated(transverse, minor_radius * middle.sin() / middle_weight),
-        );
-        weights.push(middle_weight);
-        control_points.push(
-            center
-                .translated(major_direction, major_radius * end.cos())
-                .translated(transverse, minor_radius * end.sin()),
-        );
-        weights.push(1.0);
+        let middle_point = center
+            .translated(major_direction, major_radius * middle.cos() / middle_weight)
+            .translated(transverse, minor_radius * middle.sin() / middle_weight);
+        let weight = NonZeroReal::new(middle_weight).ok_or_else(|| NurbsError::UnusableWeight {
+            field: "poles".into(),
+            index: poles.len(),
+            weight: middle_weight,
+        })?;
+        poles.push(WeightedPole3 {
+            point: finite_arc_point(middle_point)?,
+            weight,
+        });
+        let end_point = center
+            .translated(major_direction, major_radius * end.cos())
+            .translated(transverse, minor_radius * end.sin());
+        poles.push(WeightedPole3 {
+            point: finite_arc_point(end_point)?,
+            weight: NonZeroReal::ONE,
+        });
         if span + 1 == spans {
             knots.extend([end, end, end]);
         }
     }
-    Ok(Some(NurbsCurve::from_lanes(
+    Ok(Some(NurbsCurve::new(
         2,
         knots,
-        control_points,
-        Some(weights),
+        NurbsPoles3::Rational { points: poles },
         false,
     )?))
+}
+
+fn finite_arc_point(point: Point3) -> Result<FinitePoint3, NurbsError> {
+    FinitePoint3::new(point)
+        .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
 }
 
 pub(crate) fn parabolic_arc_nurbs(
@@ -118,7 +157,8 @@ pub(crate) fn parabolic_arc_nurbs(
     major_direction: Vector3,
     focal_distance: PositiveLength,
     interval: [f64; 2],
-) -> Result<Option<NurbsCurve>, NurbsError> {
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<NurbsCurve>, CurveConversionError> {
     let [start, end] = interval;
     let delta = end - start;
     if !start.is_finite() || !end.is_finite() || start >= end {
@@ -174,11 +214,16 @@ pub(crate) fn parabolic_arc_nurbs(
     {
         return Ok(None);
     }
-    Ok(Some(NurbsCurve::from_lanes(
+    let mut knots = ctx.collection_vec(6, "iges parabolic arc knots")?;
+    knots.extend([start, start, start, end, end, end]);
+    let mut points = ctx.collection_vec(3, "iges parabolic arc poles")?;
+    for point in [start_point, middle_point, end_point] {
+        points.push(finite_arc_point(point)?);
+    }
+    Ok(Some(NurbsCurve::new(
         2,
-        vec![start, start, start, end, end, end],
-        vec![start_point, middle_point, end_point],
-        None,
+        knots,
+        NurbsPoles3::Polynomial { points },
         false,
     )?))
 }

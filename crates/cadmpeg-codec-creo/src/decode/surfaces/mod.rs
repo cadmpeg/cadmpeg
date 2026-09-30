@@ -391,7 +391,7 @@ pub(super) fn transfer_part_product(
     )?;
     ctx.charge_entities(1, "admit Creo model product_definitions")?;
     let mut bodies = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut bodies,
         ir.model.bodies.len(),
         "creo product body references",
@@ -409,7 +409,7 @@ pub(super) fn transfer_part_product(
     let source_name = ctx.copy_retained_text(model_name, "creo product source name")?;
     let label = ctx.copy_retained_text(model_name, "creo product label")?;
     let part_number = ctx.copy_retained_text(model_name, "creo product part number")?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut ir.model.product_definitions,
         1,
         "creo model product definitions",

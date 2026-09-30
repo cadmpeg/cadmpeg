@@ -162,8 +162,8 @@ impl AsmEditSet {
         let limit =
             asm_header::solved_record_limit_with_header(bytes, &header).unwrap_or(bytes.len());
         let ref_width = header.width;
-        let records = sab::frame_for_edit(bytes, start, limit, ref_width).map_err(|failure| {
-            failure.into_codec_error(|error| {
+        let records = sab::frame(&ctx, bytes, start, limit, ref_width).map_err(|failure| {
+            failure.into_codec_error(&ctx, |error| {
                 CodecError::malformed(format_args!("cannot frame active BREP: {error}"))
             })
         })?;
@@ -338,9 +338,9 @@ impl AsmEditSet {
         value: &str,
     ) -> Result<(), CodecError> {
         let offset = self.required_payload_field(bytes, record, index, 0x07)?;
-        let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
+        let encoded_length = usize::from(bytes.get(offset + 1).copied().ok_or_else(|| {
             CodecError::malformed(format_args!("{} record string is truncated", record.head()))
-        })? as usize;
+        })?);
         if value.len() != encoded_length || !value.is_ascii() {
             return Err(CodecError::NotImplemented(format!(
                 "{} record {} string edit must retain its encoded ASCII length",
@@ -462,7 +462,7 @@ impl AsmEditSet {
         width: RefWidth,
         value: i64,
     ) -> Result<(), CodecError> {
-        if width == RefWidth::Four && i64::from(value as i32) != value {
+        if width == RefWidth::Four && i32::try_from(value).is_err() {
             return Err(CodecError::NotImplemented(
                 "F3D NURBS integer edit exceeds BinaryFile4 range".into(),
             ));
@@ -835,6 +835,7 @@ impl AsmEditSet {
         let record_bytes = record_slice(bytes, record, "rolling-ball")?;
         let layout =
             crate::nurbs::proc_curve::rolling_ball_patch_layout(record_bytes, self.ref_width)
+                .transpose()?
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!(
                         "spline record {} lacks a writable rolling-ball radius pair",
@@ -1956,6 +1957,37 @@ mod tests {
     use crate::kernel_header::RefWidth;
 
     #[test]
+    fn edit_framing_uses_default_subtype_depth_limit() {
+        fn stream(depth: usize) -> Vec<u8> {
+            let mut bytes = b"ASM BinaryFile4".to_vec();
+            bytes.resize(crate::layout::asmheader_binaryfile4::LEN, 0);
+            bytes.extend_from_slice(&[7, 0, 7, 0, 7, 0]);
+            for _ in 0..3 {
+                bytes.push(6);
+                bytes.extend_from_slice(&1.0_f64.to_le_bytes());
+            }
+            bytes.extend_from_slice(&[0x0d, 1, b'x']);
+            bytes.extend(std::iter::repeat_n(0x0f, depth));
+            bytes.extend(std::iter::repeat_n(0x10, depth));
+            bytes.push(0x11);
+            bytes
+        }
+
+        assert_eq!(
+            AsmEditSet::frame(&stream(1))
+                .expect("one subtype fits the default policy")
+                .records()
+                .len(),
+            1
+        );
+        assert!(matches!(
+            AsmEditSet::frame(&stream(257)),
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+        ));
+    }
+
+    #[test]
     fn double_field_retains_current_payload_bits_and_checks_its_actual_tag() {
         for width in [RefWidth::Four, RefWidth::Eight] {
             let mut bytes = vec![0x0d, 1, b'x', 0x06];
@@ -2039,7 +2071,12 @@ mod tests {
         double(&mut bytes, -2.0);
         double(&mut bytes, 3.0);
         for values in [vec![0.25], vec![], vec![0.5, 0.75]] {
-            integer(&mut bytes, 0x04, values.len() as i64, width);
+            integer(
+                &mut bytes,
+                0x04,
+                i64::try_from(values.len()).expect("test value fits"),
+                width,
+            );
             for value in values {
                 double(&mut bytes, value);
             }

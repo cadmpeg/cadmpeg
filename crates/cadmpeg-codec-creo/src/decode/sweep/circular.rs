@@ -55,7 +55,7 @@ fn circular_item<T>(
     operation: &'static str,
 ) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let mut values = Vec::new();
-    ctx.try_reserve_items(&mut values, 1, operation)?;
+    ctx.reserve_vec(&mut values, 1, operation)?;
     values.push(value);
     Ok(values)
 }
@@ -70,8 +70,9 @@ fn copy_circular_pcurve(
         ));
     };
     Ok(cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
-        nurbs: nurbs.copy_admitted(
+        nurbs: super::nurbs::copy_pcurve_nurbs(
             ctx,
+            nurbs,
             "creo circular cap pcurve knot copy",
             "creo circular cap pcurve pole copy",
         )?,
@@ -184,7 +185,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                             "creo circular extrusion rejection text",
                         )?
                     };
-                    ctx.try_reserve_items(losses, 1, "creo circular extrusion losses")?;
+                    ctx.reserve_vec(losses, 1, "creo circular extrusion losses")?;
                     losses.push(crate::loss::CreoLossCode::ExtrusionBodyRejected.note(note));
                     continue;
                 }
@@ -260,7 +261,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Surface {
-                    id: cap_surface.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: cap_surface
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     geometry: cap_surface_geometry,
                     source_object: None,
                 },
@@ -270,7 +272,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Curve {
-                    id: curve_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: curve_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
                         cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                             Point3::new(
@@ -299,7 +302,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Point::new(
-                    point_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    point_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     finite_position,
                     None,
                 ),
@@ -309,7 +312,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Vertex {
-                    id: vertex_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: vertex_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     point: point_id,
                     tolerance: None,
                 },
@@ -319,38 +323,43 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Edge {
-                    id: edge_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: edge_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                         Some(curve_id),
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    start: vertex_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     end: vertex_id,
                     tolerance: None,
                 },
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut ir.model.loops,
                 1,
                 "creo model circular extrusion loops",
             )?;
             ir.model.loops.push(IrLoop {
-                id: cap_loop.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                face: cap_face.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                id: cap_loop.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                face: cap_face
+                    .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                         ctx,
                         circular_item(
                             ctx,
-                            cap_coedge
-                                .copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                            cap_coedge.try_clone_for_decode(
+                                ctx,
+                                "creo circular extrusion identity copy",
+                            )?,
                             "creo circular cap ring coedges",
                         )?,
                         Vec::new(),
-                        "creo circular cap ring validation",
-                    )?,
+                    )?
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
@@ -358,12 +367,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Coedge {
-                    id: cap_coedge.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: cap_coedge
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     owner_loop: cap_loop
-                        .copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                    edge: edge_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                    edge: edge_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     radial_next: side_coedge
-                        .copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     sense: if side_index == 0 {
                         Sense::Reversed
                     } else {
@@ -386,8 +397,10 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Face {
-                    id: cap_face.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                    shell: shell_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: cap_face
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                    shell: shell_id
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     surface: cap_surface,
                     sense: if side_index == 0 {
                         Sense::Reversed
@@ -404,11 +417,11 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     tolerance: None,
                 },
             )?;
-            ctx.try_reserve_items(&mut face_ids, 1, "creo circular shell face IDs")?;
+            ctx.reserve_vec(&mut face_ids, 1, "creo circular shell face IDs")?;
             face_ids.push(cap_face);
-            ctx.try_reserve_items(&mut cap_coedges, 1, "creo circular cap coedge IDs")?;
+            ctx.reserve_vec(&mut cap_coedges, 1, "creo circular cap coedge IDs")?;
             cap_coedges.push(cap_coedge);
-            ctx.try_reserve_items(&mut side_coedges, 1, "creo circular side coedge rows")?;
+            ctx.reserve_vec(&mut side_coedges, 1, "creo circular side coedge rows")?;
             side_coedges.push((side_coedge, edge_id, side_pcurve));
         }
         let side_face: FaceId = circular_identity(ctx, feature_id, "face:side")?;
@@ -418,7 +431,8 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ctx,
             ir,
             Surface {
-                id: side_surface.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                id: side_surface
+                    .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 geometry: side_surface_geometry,
                 source_object: None,
             },
@@ -429,25 +443,29 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             let loop_id: LoopId =
                 circular_identity(ctx, feature_id, format_args!("loop:side:{side}"))?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut ir.model.loops,
                 1,
                 "creo model circular extrusion loops",
             )?;
             ir.model.loops.push(IrLoop {
-                id: loop_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                face: side_face.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                id: loop_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                face: side_face
+                    .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                         ctx,
                         circular_item(
                             ctx,
-                            coedge.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                            coedge.try_clone_for_decode(
+                                ctx,
+                                "creo circular extrusion identity copy",
+                            )?,
                             "creo circular side ring coedges",
                         )?,
                         Vec::new(),
-                        "creo circular side ring validation",
-                    )?,
+                    )?
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             ctx.charge_entities(1, "admit Creo model coedges")?;
@@ -455,12 +473,13 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 ctx,
                 ir,
                 Coedge {
-                    id: coedge.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                    id: coedge
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     owner_loop: loop_id
-                        .copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     edge,
                     radial_next: cap_coedges[side_index]
-                        .copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                        .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                     sense: if side_index == 0 {
                         Sense::Forward
                     } else {
@@ -478,7 +497,7 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                     use_curve: None,
                 },
             )?;
-            ctx.try_reserve_items(&mut side_loops, 1, "creo circular side face loops")?;
+            ctx.reserve_vec(&mut side_loops, 1, "creo circular side face loops")?;
             side_loops.push(loop_id);
         }
         ctx.charge_entities(1, "admit Creo model faces")?;
@@ -486,8 +505,9 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             ctx,
             ir,
             Face {
-                id: side_face.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                shell: shell_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                id: side_face.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                shell: shell_id
+                    .try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 surface: side_surface,
                 sense: Sense::Forward,
                 loops: cadmpeg_ir::topology::FaceLoops::unspecified(side_loops),
@@ -496,18 +516,18 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
                 tolerance: None,
             },
         )?;
-        ctx.try_reserve_items(&mut face_ids, 1, "creo circular shell face IDs")?;
+        ctx.reserve_vec(&mut face_ids, 1, "creo circular shell face IDs")?;
         face_ids.push(side_face);
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut ir.model.shells,
             1,
             "creo model circular extrusion shells",
         )?;
         ir.model.shells.push(
             match Shell::new(
-                shell_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-                region_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+                shell_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+                region_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
                 face_ids,
                 Vec::new(),
                 Vec::new(),
@@ -519,14 +539,14 @@ pub(in super::super) fn transfer_resolved_circular_extrusion_breps(
             },
         );
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut ir.model.regions,
             1,
             "creo model circular extrusion regions",
         )?;
         ir.model.regions.push(Region {
-            id: region_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
-            body: body_id.copy_admitted(ctx, "creo circular extrusion identity copy")?,
+            id: region_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
+            body: body_id.try_clone_for_decode(ctx, "creo circular extrusion identity copy")?,
             shells: circular_item(ctx, shell_id, "creo circular region shells")?,
         });
         ctx.charge_entities(1, "admit Creo model bodies")?;

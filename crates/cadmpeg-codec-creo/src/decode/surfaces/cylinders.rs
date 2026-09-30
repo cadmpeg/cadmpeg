@@ -96,7 +96,7 @@ pub(in super::super) fn rowless_round_cylinder_pairs(
             .then_some(())?;
         Some((rowless.entity_id, cylinder.entity_id, table.offset))
     }) {
-        ctx.try_reserve_items(&mut pairs, 1, "creo rowless round cylinder pairs")?;
+        ctx.reserve_vec(&mut pairs, 1, "creo rowless round cylinder pairs")?;
         pairs.push(pair);
     }
     Ok(pairs)
@@ -213,7 +213,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             else {
                 break;
             };
-            ctx.try_reserve_items(&mut planes, 1, "creo constrained slot plane rows")?;
+            ctx.reserve_vec(&mut planes, 1, "creo constrained slot plane rows")?;
             planes.push(plane);
         }
         if planes.len() != affected.len() {
@@ -599,7 +599,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 ir,
                 Surface {
                     id,
-                    geometry: geometry.copy_admitted(ctx, "creo split cylinder geometry")?,
+                    geometry: geometry.try_clone_for_decode(ctx, "creo split cylinder geometry")?,
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
                         object_id: cadmpeg_core::text::NonBlankString::new(ctx.format_retained(
@@ -796,7 +796,7 @@ fn unique_support_tangent_cylinder_frame(
 ) -> Result<Option<crate::surface::PositionalCylinderFrame>, cadmpeg_core::CodecError> {
     let axis = unit_length(*stored.frame().orthonormal_frame().axis());
     let mut origins = Vec::new();
-    ctx.try_reserve_items(&mut origins, 1, "creo support tangent initial origins")?;
+    ctx.reserve_vec(&mut origins, 1, "creo support tangent initial origins")?;
     origins.push(stored.frame().origin());
     let mut witnessed_axis = [false; 3];
     let mut witnessed_planes = Vec::new();
@@ -841,7 +841,7 @@ fn unique_support_tangent_cylinder_frame(
             continue;
         }
         witnessed_axis[axis_index] = true;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut witnessed_planes,
             1,
             "creo support tangent witness planes",
@@ -861,7 +861,7 @@ fn unique_support_tangent_cylinder_frame(
                             <= EPS_CYLINDER_POSITION * left.abs().max(right.abs()).max(1.0)
                     })
                 }) {
-                    ctx.try_reserve_items(&mut next, 1, "creo support tangent next origins")?;
+                    ctx.reserve_vec(&mut next, 1, "creo support tangent next origins")?;
                     next.push(candidate);
                 }
             }
@@ -1056,7 +1056,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             if let Some(plane) =
                 reconciled_model_plane(&local_planes, ir, source_carriers, plane_id)
             {
-                ctx.try_reserve_items(&mut planes, 1, "creo positional support planes")?;
+                ctx.reserve_vec(&mut planes, 1, "creo positional support planes")?;
                 planes.push(plane);
             }
         }
@@ -1234,7 +1234,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                 .iter()
                 .filter(|circle| entity_ids.contains(&circle.entity_id))
             {
-                ctx.try_reserve_items(&mut circles, 1, "creo reference cylinder circles")?;
+                ctx.reserve_vec(&mut circles, 1, "creo reference cylinder circles")?;
                 circles.push(circle);
             }
             let generated_cylinder_count = scan

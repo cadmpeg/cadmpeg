@@ -77,7 +77,10 @@ fn zero_entity_directory_markers_stay_outside_the_record_stream() {
             .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 0);
     assert_eq!(scan.variant, Variant::Unknown);
-    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::container::consolidated_record_ranges(ctx, &scan)
+    })
+    .expect("service budget admits record ranges");
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert!(native.zero_entity_records.is_empty());
     assert!(native.zero_entity_support_runs.is_empty());
@@ -107,7 +110,10 @@ fn zero_entity_finjpl_records_stay_outside_the_record_stream() {
             .expect("service resource budget");
     assert_eq!(scan.census.a9_records, 1);
     assert_eq!(scan.variant, Variant::ZeroEntity);
-    let ranges = crate::container::consolidated_record_ranges(&scan);
+    let ranges = crate::test_support::with_service_context(|ctx| {
+        crate::container::consolidated_record_ranges(ctx, &scan)
+    })
+    .expect("service budget admits record ranges");
     let native = crate::native::CatiaNative::decode_with_record_ranges(&scan.data, &ranges);
     assert_eq!(native.zero_entity_records.len(), 1);
 }
@@ -140,7 +146,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -221,7 +228,8 @@ fn decode_zero_entity_transfers_parametric_surface_curve_without_a_cache() {
     assert_eq!(context.sides()[1].surface, None);
     assert_eq!(context.sides()[1].pcurve, None);
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
@@ -257,7 +265,8 @@ fn decode_zero_entity_transfers_exact_model_curve_directly() {
     ));
     assert!(result.ir().model.procedural_curves.is_empty());
 
-    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 

@@ -5,8 +5,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::container::Container;
-use crate::parasolid::Stream;
+use crate::container::{Container, SegmentStreamWrapper};
+use crate::parasolid::{Stream, StreamKind};
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
+use std::fmt::Write;
 
 use crate::native::features::{
     FeatureBodyDataBlockUse, FeatureBodyReference, FeatureBooleanOperation, FeatureInputBlock,
@@ -16,6 +19,15 @@ use crate::native::om::{DataBlock, DataBlockRole, OmSchemaRole};
 pub(super) mod om_location;
 use om_location::OmLocation;
 mod row_wire;
+
+fn decimal_digits(mut value: usize) -> usize {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
 
 /// Classify the semantic role of one linked OM registry.
 ///
@@ -30,18 +42,17 @@ fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
             .iter()
             .any(|definition| definition.name == name)
     };
-    let specialized_roles = [
+    let mut specialized_roles = [
         ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
         ("UGS::EXP_expression", OmSchemaRole::Expressions),
         ("UGS::Solid::Topol", OmSchemaRole::Model),
     ]
     .into_iter()
-    .filter_map(|(name, role)| has(name).then_some(role))
-    .collect::<Vec<_>>();
-    match specialized_roles.as_slice() {
-        [role] => *role,
-        [] if has("UGS::OM::SaveAuditTrail") => OmSchemaRole::AuditTrail,
-        [] => OmSchemaRole::Other,
+    .filter_map(|(name, role)| has(name).then_some(role));
+    match (specialized_roles.next(), specialized_roles.next()) {
+        (Some(role), None) => role,
+        (None, _) if has("UGS::OM::SaveAuditTrail") => OmSchemaRole::AuditTrail,
+        (None, _) => OmSchemaRole::Other,
         _ => OmSchemaRole::Ambiguous,
     }
 }
@@ -66,25 +77,65 @@ pub(super) struct SegmentIndexRow {
 }
 
 /// Decode the canonical `UG_PART` segment-index rows.
-pub(super) fn segment_index_rows(container: &Container) -> Vec<SegmentIndexRow> {
+pub(super) fn segment_index_rows(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<SegmentIndexRow>, CodecError> {
     let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    index
-        .rows
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, row)| SegmentIndexRow {
-            id: format!("nx:segment-index:row#{ordinal}"),
-            ordinal: ordinal as u32,
+    let count = index.rows().count();
+    let count_u64 = cadmpeg_core::decode::u64_from_index(count);
+    ctx.charge_collection_items(count_u64, "nx segment index rows")?;
+    ctx.charge_entities(count_u64, "nx segment index rows")?;
+    let slot_bytes = count
+        .checked_mul(std::mem::size_of::<SegmentIndexRow>())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| ctx.refuse_codec_limit("nx segment index rows", 0, count_u64))?;
+    ctx.charge_retained(slot_bytes, "nx segment index rows")?;
+    let mut rows = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut rows,
+        count,
+        "nx segment index rows",
+    )?;
+    for (ordinal, row) in index.rows().enumerate() {
+        let ordinal_u32 = u32::try_from(ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment index ordinal", 0, count_u64))?;
+        let digits = decimal_digits(ordinal);
+        let prefix = "nx:segment-index:row#";
+        let id_len = prefix
+            .len()
+            .checked_add(digits)
+            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row identity", 0, count_u64))?;
+        let mut id = ctx.retained_string(id_len, "nx segment index row identity")?;
+        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment index row identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
+            )
+        })?;
+        let name_len = entry.name.len();
+        let mut source_entry = ctx.retained_string(name_len, "nx segment index source entry")?;
+        source_entry.push_str(&entry.name);
+        let byte_offset = ordinal
+            .checked_mul(12)
+            .and_then(|offset| u64::try_from(offset).ok())
+            .and_then(|offset| entry_offset.checked_add(offset))
+            .ok_or_else(|| ctx.refuse_codec_limit("nx segment index row offset", 0, count_u64))?;
+        rows.push(SegmentIndexRow {
+            id,
+            ordinal: ordinal_u32,
             type_code: row.type_code,
             subtype_code: row.subtype_code,
             value: row.value,
-            source_entry: entry.name.clone(),
-            source_offset: entry_offset + (ordinal * 12) as u64,
-        })
-        .collect()
+            source_entry,
+            source_offset: byte_offset,
+        });
+    }
+    Ok(rows)
 }
 
 /// Word position within one segment-index row.
@@ -100,8 +151,9 @@ pub(super) enum SegmentIndexSlot {
 }
 
 /// Validated link from a segment-index word to a compressed stream wrapper.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "row_wire::Wire", into = "row_wire::Wire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "row_wire::Wire")]
 pub(super) struct SegmentStreamLink {
     /// Globally unique link identity.
     pub(super) id: String,
@@ -117,6 +169,64 @@ pub(super) struct SegmentStreamLink {
     wrapper_byte_len: u32,
     /// Absolute file offset of the wrapper.
     pub(super) source_offset: u64,
+}
+
+#[derive(Clone, Copy)]
+struct SegmentStreamCandidate {
+    wrapper: SegmentStreamWrapper,
+    slot: SegmentIndexSlot,
+    stream_ordinal: usize,
+    stream_kind: StreamKind,
+}
+
+fn segment_stream_candidates<'a>(
+    ctx: &'a DecodeContext<'_>,
+    container: &'a Container<'_>,
+    streams: &'a [Stream],
+) -> impl Iterator<Item = Result<Option<SegmentStreamCandidate>, CodecError>> + 'a {
+    container.segment_stream_wrappers().map(move |wrapper| {
+        let slot = match wrapper.word_ordinal {
+            0 => SegmentIndexSlot::TypeCode,
+            1 => SegmentIndexSlot::SubtypeCode,
+            2 => SegmentIndexSlot::Value,
+            _ => return Ok(None),
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(streams.len()),
+            "nx segment stream matching",
+        )?;
+        Ok(streams
+            .iter()
+            .enumerate()
+            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
+            .map(|(stream_ordinal, stream)| SegmentStreamCandidate {
+                wrapper,
+                slot,
+                stream_ordinal,
+                stream_kind: stream.kind(),
+            }))
+    })
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static STREAM_LINK_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for SegmentStreamLink {
+    fn clone(&self) -> Self {
+        STREAM_LINK_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            row: self.row,
+            slot: self.slot,
+            stream_ordinal: self.stream_ordinal,
+            stream_kind: self.stream_kind,
+            wrapper_byte_len: self.wrapper_byte_len,
+            source_offset: self.source_offset,
+        }
+    }
 }
 
 /// Body-image identity carried beside one validated Parasolid stream wrapper.
@@ -221,6 +331,7 @@ pub(super) struct SegmentOmLink {
 /// within each section.
 #[allow(clippy::too_many_arguments)]
 fn terminal_feature_body_indices(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -229,90 +340,151 @@ fn terminal_feature_body_indices(
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
     inputs: &[FeatureInputBlock],
-) -> Option<BTreeSet<u32>> {
-    let offset_store_references = data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
+) -> Result<Option<BTreeSet<u32>>, cadmpeg_core::CodecError> {
+    let scan_work = references
+        .len()
+        .checked_mul(references.len())
+        .and_then(|count| count.checked_add(references.len().checked_mul(data_block_uses.len())?))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX terminal body references", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "scan NX terminal body references",
+    )?;
+    let mut offset_store_reservation =
+        ctx.reserve_scoped(0, "NX terminal offset-store references")?;
+    let mut offset_store_references = BTreeSet::new();
+    for use_ in data_block_uses {
+        ctx.charge_collection_items(1, "NX terminal offset-store references")?;
+        offset_store_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        offset_store_references.insert(use_.feature_body_reference.as_str());
+    }
     let offset_store_operations =
-        crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    let unique_references = crate::native::features::unique_feature_body_references(references);
-    let object_references = unique_references
-        .into_iter()
-        .filter(|(_, reference)| {
-            !offset_store_references.contains(reference.id.as_str())
-                && !offset_store_operations.contains(reference.operation_label.as_str())
-        })
-        .map(|(_, reference)| reference)
-        .collect::<Vec<_>>();
+        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
+    let unique_references =
+        crate::native::features::unique_feature_body_references(ctx, references)?;
+    let mut object_reservation = ctx.reserve_scoped(0, "NX terminal body object references")?;
+    let mut object_references = Vec::new();
+    for (_, reference) in unique_references {
+        if offset_store_references.contains(reference.id.as_str())
+            || offset_store_operations.contains(reference.operation_label.as_str())
+        {
+            continue;
+        }
+        ctx.reserve_scoped_vec(
+            &mut object_reservation,
+            &mut object_references,
+            1,
+            "NX terminal body object references",
+        )?;
+        object_references.push(reference);
+    }
     if object_references.is_empty() && bindings.is_empty() {
-        return None;
+        return Ok(None);
     }
     let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(labels);
-    let positions = chronological_labels
-        .iter()
-        .enumerate()
-        .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let aliases = body_alias_roots(bindings)?;
+        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
+    let mut positions_reservation = ctx.reserve_scoped(0, "NX terminal label positions")?;
+    let mut positions = BTreeMap::new();
+    for (position, label) in chronological_labels.iter().enumerate() {
+        ctx.charge_collection_items(1, "NX terminal label positions")?;
+        positions_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, usize)>() * 4,
+        ))?;
+        positions.insert(label.id.as_str(), position);
+    }
+    let aliases = body_alias_roots(ctx, bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let segment_boolean_operations = segment_boolean_operation_labels(booleans, data_blocks);
-    let operation_kinds = chronological_labels
-        .iter()
-        .map(|label| (label.id.as_str(), label.value.as_str()))
-        .collect::<BTreeMap<_, _>>();
-    let mut last_writers = bindings
-        .iter()
-        .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index])
-        .map(|identity| (canonical(identity), None))
-        .collect::<BTreeMap<u32, Option<usize>>>();
+    let segment_boolean_operations = segment_boolean_operation_labels(ctx, booleans, data_blocks)?;
+    let mut kinds_reservation = ctx.reserve_scoped(0, "NX terminal operation kinds")?;
+    let mut operation_kinds = BTreeMap::new();
+    for label in &chronological_labels {
+        ctx.charge_collection_items(1, "NX terminal operation kinds")?;
+        kinds_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(&str, &str)>() * 4,
+        ))?;
+        operation_kinds.insert(label.id.as_str(), label.value.as_str());
+    }
+    let mut writers_reservation = ctx.reserve_scoped(0, "NX terminal last writers")?;
+    let mut last_writers = BTreeMap::<u32, Option<usize>>::new();
+    for binding in bindings {
+        for identity in [binding.body_object_index, binding.body_alias_object_index] {
+            ctx.charge_collection_items(1, "NX terminal last writers")?;
+            writers_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(u32, Option<usize>)>() * 4,
+            ))?;
+            last_writers.insert(canonical(identity), None);
+        }
+    }
     {
-        let mut record_writer = |body, position| {
+        let mut record_writer = |body, position| -> Result<(), cadmpeg_core::CodecError> {
+            ctx.charge_collection_items(1, "NX terminal last writers")?;
+            writers_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(u32, Option<usize>)>() * 4,
+            ))?;
             let writer = last_writers.entry(body).or_default();
             if writer.is_none_or(|writer| writer < position) {
                 *writer = Some(position);
             }
+            Ok(())
         };
         for reference in &object_references {
-            let position = *positions.get(reference.operation_label.as_str())?;
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
+                return Ok(None);
+            };
             if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
                 continue;
             }
-            record_writer(canonical(reference.body.value()), position);
+            record_writer(canonical(reference.body.value()), position)?;
         }
         for operation in booleans
             .iter()
             .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
         {
-            let position = *positions.get(operation.operation_label.as_str())?;
-            record_writer(canonical(operation.target.token.value()), position);
+            let Some(&position) = positions.get(operation.operation_label.as_str()) else {
+                return Ok(None);
+            };
+            record_writer(canonical(operation.target.token.value()), position)?;
         }
     }
     let mut consumed = BTreeSet::new();
+    let mut consumed_reservation = ctx.reserve_scoped(0, "NX consumed segment bodies")?;
     for operation in booleans
         .iter()
         .filter(|operation| segment_boolean_operations.contains(&operation.operation_label))
     {
-        let position = *positions.get(operation.operation_label.as_str())?;
+        let Some(&position) = positions.get(operation.operation_label.as_str()) else {
+            return Ok(None);
+        };
         for tool in &operation.tools {
             let tool = canonical(tool.token.value());
             if last_writers
                 .get(&tool)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
+                ctx.charge_collection_items(1, "NX consumed segment bodies")?;
+                consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<u32>() * 4,
+                ))?;
                 consumed.insert(tool);
             }
         }
     }
     for reference in &object_references {
         if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
-            let position = *positions.get(reference.operation_label.as_str())?;
+            let Some(&position) = positions.get(reference.operation_label.as_str()) else {
+                return Ok(None);
+            };
             let body = canonical(reference.body.value());
             if last_writers
                 .get(&body)
                 .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
+                ctx.charge_collection_items(1, "NX consumed segment bodies")?;
+                consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<u32>() * 4,
+                ))?;
                 consumed.insert(body);
             }
         }
@@ -329,36 +501,49 @@ fn terminal_feature_body_indices(
         {
             continue;
         }
-        let position = *positions.get(operand.operation_label.as_str())?;
+        let Some(&position) = positions.get(operand.operation_label.as_str()) else {
+            return Ok(None);
+        };
         let body = canonical(operand.operand.atom.value());
         if last_writers
             .get(&body)
             .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
         {
+            ctx.charge_collection_items(1, "NX consumed segment bodies")?;
+            consumed_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<u32>() * 4,
+            ))?;
             consumed.insert(body);
         }
     }
-    let terminal_roots = last_writers
-        .into_keys()
-        .filter(|body| !consumed.contains(body))
-        .collect::<BTreeSet<_>>();
-    Some(
-        object_references
-            .iter()
-            .map(|reference| reference.body.value())
-            .chain(
-                bindings.iter().flat_map(|binding| {
-                    [binding.body_object_index, binding.body_alias_object_index]
-                }),
-            )
-            .filter(|identity| terminal_roots.contains(&canonical(*identity)))
-            .collect(),
-    )
+    let mut terminal = BTreeSet::new();
+    for identity in object_references
+        .iter()
+        .map(|reference| reference.body.value())
+        .chain(
+            bindings
+                .iter()
+                .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index]),
+        )
+    {
+        let root = canonical(identity);
+        if !last_writers.contains_key(&root) || consumed.contains(&root) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX terminal segment bodies")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<u32>() * 4),
+            "NX terminal segment bodies",
+        )?;
+        terminal.insert(identity);
+    }
+    Ok(Some(terminal))
 }
 
 /// Resolve one atomic terminal status for every segment-bound body image.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn segment_body_lineage_statuses(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     data_block_uses: &[FeatureBodyDataBlockUse],
@@ -367,8 +552,9 @@ pub(super) fn segment_body_lineage_statuses(
     operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
     inputs: &[FeatureInputBlock],
-) -> Option<Vec<SegmentBodyLineageStatus>> {
+) -> Result<Option<Vec<SegmentBodyLineageStatus>>, cadmpeg_core::CodecError> {
     let terminal = terminal_feature_body_indices(
+        ctx,
         labels,
         references,
         data_block_uses,
@@ -378,28 +564,42 @@ pub(super) fn segment_body_lineage_statuses(
         bindings,
         inputs,
     )?;
-    bindings
-        .iter()
-        .map(|binding| {
-            let statuses = [binding.body_object_index, binding.body_alias_object_index]
-                .map(|identity| terminal.contains(&identity));
-            if statuses[0] != statuses[1] {
-                return None;
-            }
-            let key = binding
-                .id
-                .rsplit_once('#')
-                .map_or(binding.id.as_str(), |(_, key)| key);
-            Some(SegmentBodyLineageStatus {
-                id: format!("nx:segment-body-lineage:status#{key}"),
-                segment_body_binding: binding.id.clone(),
-                body_object_index: binding.body_object_index,
-                body_alias_object_index: binding.body_alias_object_index,
-                terminal: statuses[0],
-                source_offset: binding.source_offset,
-            })
-        })
-        .collect()
+    let Some(terminal) = terminal else {
+        return Ok(None);
+    };
+    let mut output = Vec::new();
+    for binding in bindings {
+        let statuses = [binding.body_object_index, binding.body_alias_object_index]
+            .map(|identity| terminal.contains(&identity));
+        if statuses[0] != statuses[1] {
+            return Ok(None);
+        }
+        let key = binding
+            .id
+            .rsplit_once('#')
+            .map_or(binding.id.as_str(), |(_, key)| key);
+        let prefix = "nx:segment-body-lineage:status#";
+        let id_len = prefix
+            .len()
+            .checked_add(key.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX segment lineage status identity", 0, 1))?;
+        let mut id = ctx.retained_string(id_len, "NX segment lineage status identity")?;
+        id.push_str(prefix);
+        id.push_str(key);
+        let mut segment_body_binding =
+            ctx.retained_string(binding.id.len(), "NX segment lineage binding identity")?;
+        segment_body_binding.push_str(&binding.id);
+        ctx.reserve_retained_vec(&mut output, 1, "NX segment lineage statuses")?;
+        output.push(SegmentBodyLineageStatus {
+            id,
+            segment_body_binding,
+            body_object_index: binding.body_object_index,
+            body_alias_object_index: binding.body_alias_object_index,
+            terminal: statuses[0],
+            source_offset: binding.source_offset,
+        });
+    }
+    Ok(Some(output))
 }
 
 /// Namespace proof for one Boolean's target and ordered tool participants.
@@ -418,55 +618,68 @@ pub(super) enum BooleanOffsetStoreResolution {
 /// A partial, duplicate, or cross-store offset-store relation is unresolved;
 /// it must not fall back to a segment-body alias with the same integer.
 pub(super) fn boolean_offset_store_resolution(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     operation: &FeatureBooleanOperation,
     data_blocks: &[DataBlock],
-) -> BooleanOffsetStoreResolution {
+) -> Result<BooleanOffsetStoreResolution, cadmpeg_core::CodecError> {
+    let participant_count = operation
+        .tools
+        .len()
+        .checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    let work = participant_count
+        .checked_mul(data_blocks.len())
+        .and_then(|count| count.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX Boolean participants", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan NX Boolean participants",
+    )?;
     let participants = std::iter::once(operation.target.token.value())
-        .chain(operation.tools.iter().map(|token| token.token.value()))
-        .collect::<Vec<_>>();
-    let mut blocks_by_ordinal = BTreeMap::<u32, Vec<&DataBlock>>::new();
-    for block in data_blocks {
-        if block.role != DataBlockRole::Column {
-            continue;
-        }
-        blocks_by_ordinal
-            .entry(block.block_ordinal)
-            .or_default()
-            .push(block);
-    }
+        .chain(operation.tools.iter().map(|token| token.token.value()));
     let mut has_offset_store_evidence = false;
-    let mut resolved = Vec::with_capacity(participants.len());
-    for object_index in &participants {
-        let Some(matches) = blocks_by_ordinal.get(object_index) else {
+    let mut resolved_count = 0usize;
+    let mut section_ordinal = None;
+    for object_index in participants.clone() {
+        let mut matches = data_blocks.iter().filter(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        });
+        let Some(block) = matches.next() else {
             continue;
         };
         has_offset_store_evidence = true;
-        let [block] = matches.as_slice() else {
-            return BooleanOffsetStoreResolution::Unresolved;
-        };
-        resolved.push((*object_index, *block));
+        if matches.next().is_some()
+            || section_ordinal.is_some_and(|section| section != block.section_ordinal)
+        {
+            return Ok(BooleanOffsetStoreResolution::Unresolved);
+        }
+        section_ordinal = Some(block.section_ordinal);
+        resolved_count += 1;
     }
     if !has_offset_store_evidence {
-        return BooleanOffsetStoreResolution::None;
+        return Ok(BooleanOffsetStoreResolution::None);
     }
-    if resolved.len() != participants.len() {
-        return BooleanOffsetStoreResolution::Unresolved;
+    if resolved_count != participant_count {
+        return Ok(BooleanOffsetStoreResolution::Unresolved);
     }
-    let Some(section_ordinal) = resolved.first().map(|(_, block)| block.section_ordinal) else {
-        return BooleanOffsetStoreResolution::Unresolved;
-    };
-    if resolved
-        .iter()
-        .any(|(_, block)| block.section_ordinal != section_ordinal)
-    {
-        return BooleanOffsetStoreResolution::Unresolved;
+    let mut complete = BTreeMap::new();
+    for object_index in participants {
+        let Some(block) = data_blocks.iter().find(|block| {
+            block.role == DataBlockRole::Column && block.block_ordinal == object_index
+        }) else {
+            return Ok(BooleanOffsetStoreResolution::Unresolved);
+        };
+        ctx.charge_collection_items(1, "NX Boolean offset-store participants")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, String)>() * 4),
+            "NX Boolean offset-store participant slots",
+        )?;
+        let mut id =
+            ctx.retained_string(block.id.len(), "NX Boolean offset-store block identity")?;
+        id.push_str(&block.id);
+        complete.insert(object_index, id);
     }
-    BooleanOffsetStoreResolution::Complete(
-        resolved
-            .into_iter()
-            .map(|(object_index, block)| (object_index, block.id.clone()))
-            .collect(),
-    )
+    Ok(BooleanOffsetStoreResolution::Complete(complete))
 }
 
 /// Return Boolean operations that are safe to treat as segment-object
@@ -475,80 +688,160 @@ pub(super) fn boolean_offset_store_resolution(
 /// namespaces is not an identity proof. Only operations with no offset-store
 /// participant evidence retain the native Boolean lineage rules.
 fn segment_boolean_operation_labels(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     booleans: &[FeatureBooleanOperation],
     data_blocks: &[DataBlock],
-) -> BTreeSet<String> {
-    booleans
-        .iter()
-        .filter(|operation| {
-            matches!(
-                boolean_offset_store_resolution(operation, data_blocks),
-                BooleanOffsetStoreResolution::None
-            )
-        })
-        .map(|operation| operation.operation_label.clone())
-        .collect()
+) -> Result<BTreeSet<String>, cadmpeg_core::CodecError> {
+    let mut labels = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX segment Boolean operation labels")?;
+    for operation in booleans {
+        if !matches!(
+            boolean_offset_store_resolution(ctx, operation, data_blocks)?,
+            BooleanOffsetStoreResolution::None
+        ) {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX segment Boolean operation labels")?;
+        let bytes = (std::mem::size_of::<String>() * 4)
+            .checked_add(operation.operation_label.len())
+            .ok_or_else(|| ctx.refuse_codec_limit("NX segment Boolean operation labels", 0, 1))?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        let mut label = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut label,
+            operation.operation_label.len(),
+            "allocate NX segment Boolean operation label",
+        )?;
+        label.push_str(&operation.operation_label);
+        labels.insert(label);
+    }
+    Ok(labels)
 }
 
 /// Map each segment body identity to the smallest identity in its transitive alias component.
-pub(super) fn body_alias_roots(bindings: &[SegmentBodyBinding]) -> Option<BTreeMap<u32, u32>> {
+pub(super) fn body_alias_roots(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bindings: &[SegmentBodyBinding],
+) -> Result<BTreeMap<u32, u32>, cadmpeg_core::CodecError> {
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
+    let mut adjacency_reservation = ctx.reserve_scoped(0, "NX segment alias adjacency")?;
     for binding in bindings {
+        ctx.charge_collection_items(2, "NX segment alias identities")?;
+        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, BTreeSet<u32>)>() * 8,
+        ))?;
         adjacency
             .entry(binding.body_object_index)
             .or_default()
             .insert(binding.body_alias_object_index);
+        ctx.charge_collection_items(2, "NX segment alias links")?;
+        adjacency_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<u32>() * 8,
+        ))?;
         adjacency
             .entry(binding.body_alias_object_index)
             .or_default()
             .insert(binding.body_object_index);
     }
+    let work = bindings
+        .len()
+        .checked_mul(8)
+        .ok_or_else(|| ctx.refuse_codec_limit("walk NX segment aliases", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "walk NX segment aliases",
+    )?;
     let mut roots = BTreeMap::new();
     for identity in adjacency.keys().copied() {
         if roots.contains_key(&identity) {
             continue;
         }
         let mut component = BTreeSet::new();
-        let mut pending = vec![identity];
+        let mut component_reservation = ctx.reserve_scoped(0, "NX segment alias component")?;
+        let mut pending_reservation = ctx.reserve_scoped(0, "NX segment alias traversal")?;
+        let mut pending = Vec::new();
+        ctx.reserve_scoped_vec(
+            &mut pending_reservation,
+            &mut pending,
+            1,
+            "NX segment alias traversal",
+        )?;
+        pending.push(identity);
         while let Some(member) = pending.pop() {
+            ctx.charge_collection_items(1, "NX segment alias component")?;
+            component_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<u32>() * 4,
+            ))?;
             if !component.insert(member) {
                 continue;
             }
-            pending.extend(
-                adjacency
-                    .get(&member)
-                    .into_iter()
-                    .flatten()
-                    .filter(|neighbor| !component.contains(neighbor))
-                    .copied(),
-            );
+            for neighbor in adjacency.get(&member).into_iter().flatten() {
+                if component.contains(neighbor) {
+                    continue;
+                }
+                ctx.reserve_scoped_vec(
+                    &mut pending_reservation,
+                    &mut pending,
+                    1,
+                    "NX segment alias traversal",
+                )?;
+                pending.push(*neighbor);
+            }
         }
-        let root = *component.first()?;
-        roots.extend(component.into_iter().map(|member| (member, root)));
+        let root = component.iter().copied().fold(identity, u32::min);
+        for member in component {
+            ctx.charge_collection_items(1, "NX segment alias roots")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(u32, u32)>() * 4),
+                "NX segment alias roots",
+            )?;
+            roots.insert(member, root);
+        }
     }
-    Some(roots)
+    Ok(roots)
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
-pub(super) fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
+pub(super) fn segment_om_links(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<SegmentOmLink>, cadmpeg_core::CodecError> {
     let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    let sections = container
-        .om_sections()
-        .into_iter()
-        .filter(|(candidate, _)| candidate.name == entry.name)
-        .map(|(_, section)| (section.offset, classify_om_schema_role(&section)))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let sections = container.om_sections(ctx)?;
+    let type_count = sections
+        .iter()
+        .try_fold(0usize, |count, (_, section)| {
+            count.checked_add(section.types.len())
+        })
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let per_lookup = type_count
+        .checked_mul(4)
+        .and_then(|count| count.checked_add(sections.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    let work = index
+        .rows()
+        .count()
+        .checked_mul(3)
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_mul(per_lookup))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan NX segment OM links", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan NX segment OM links",
+    )?;
     let mut links = Vec::new();
-    for (row_ordinal, row) in index.rows.into_iter().enumerate() {
+    for (row_ordinal, row) in index.rows().enumerate() {
         for (slot, relative) in [
             (SegmentIndexSlot::TypeCode, row.type_code),
             (SegmentIndexSlot::SubtypeCode, row.subtype_code),
             (SegmentIndexSlot::Value, row.value),
         ] {
-            let relative = relative as usize;
+            let relative = usize::try_from(relative).map_err(|_| {
+                ctx.refuse_codec_limit("NX segment OM relative offset", 0, u64::from(relative))
+            })?;
             let Some(relative_u64) = u64::try_from(relative).ok() else {
                 continue;
             };
@@ -556,122 +849,337 @@ pub(super) fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
                 .checked_add(relative_u64)
                 .and_then(|offset| container.bounded_entry_bytes(offset, 4))
                 .is_some_and(|bytes| bytes == [0xc0, 0xd1, 0xf1, 0xed]);
-            let (separator_byte_len, schema_role) = if let Some(role) = sections.get(&relative) {
-                (0usize, *role)
+            let role_at = |offset| {
+                sections
+                    .iter()
+                    .rev()
+                    .find(|(candidate, section)| {
+                        candidate.name == entry.name && section.offset == offset
+                    })
+                    .map(|(_, section)| classify_om_schema_role(section))
+            };
+            let (separator_byte_len, schema_role) = if let Some(role) = role_at(relative) {
+                (0usize, role)
             } else if separated_marker {
-                let Some(role) = sections.get(&(relative + 4)) else {
+                let Some(offset) = relative.checked_add(4) else {
                     continue;
                 };
-                (4, *role)
+                let Some(role) = role_at(offset) else {
+                    continue;
+                };
+                (4, role)
             } else {
                 continue;
             };
-            let Some(location) = entry_offset
-                .checked_add(relative as u64)
-                .and_then(|offset| OmLocation::new(offset, separator_byte_len as u32))
-            else {
+            let Some(location) = entry_offset.checked_add(relative_u64).and_then(|offset| {
+                OmLocation::new(offset, u32::try_from(separator_byte_len).ok()?)
+            }) else {
                 continue;
             };
+            ctx.reserve_retained_vec(&mut links, 1, "NX segment OM links")?;
+            let id = segment_link_identity(ctx, "nx:segment-om-links:link#", links.len())?;
+            let row = segment_link_identity(ctx, "nx:segment-index:row#", row_ordinal)?;
             links.push(SegmentOmLink {
-                id: format!("nx:segment-om-links:link#{}", links.len()),
-                row: format!("nx:segment-index:row#{row_ordinal}"),
+                id,
+                row,
                 slot,
                 schema_role,
                 location,
             });
         }
     }
-    links
+    Ok(links)
+}
+
+fn segment_link_identity(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    ordinal: usize,
+) -> Result<String, CodecError> {
+    let length = prefix
+        .len()
+        .checked_add(decimal_digits(ordinal))
+        .ok_or_else(|| ctx.refuse_codec_limit("NX segment link identity length", 0, 1))?;
+    let mut identity = ctx.retained_string(length, "retain NX segment link identity")?;
+    write!(identity, "{prefix}{ordinal}")
+        .map_err(|_| ctx.refuse_codec_limit("write NX segment link identity", 0, 1))?;
+    Ok(identity)
 }
 
 /// Resolve segment-index words that point to validated compressed wrappers.
 pub(super) fn segment_stream_links(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     streams: &[Stream],
-) -> Vec<SegmentStreamLink> {
+) -> Result<Vec<SegmentStreamLink>, CodecError> {
     let mut links = Vec::new();
-    for wrapper in container.segment_stream_wrappers() {
-        let slot = match wrapper.word_ordinal {
-            0 => SegmentIndexSlot::TypeCode,
-            1 => SegmentIndexSlot::SubtypeCode,
-            2 => SegmentIndexSlot::Value,
-            _ => continue,
-        };
-        let Some((stream_ordinal, stream)) = streams
-            .iter()
-            .enumerate()
-            .find(|(_, stream)| stream.file_offset == wrapper.zlib_offset)
-        else {
+    for candidate in segment_stream_candidates(ctx, container, streams) {
+        let Some(candidate) = candidate? else {
             continue;
         };
+        let ordinal = links.len();
+        let digits = decimal_digits(ordinal);
+        let prefix = "nx:segment-stream-links:link#";
+        let id_len = prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment stream link identity", 0, u64::MAX)
+        })?;
+        let stream_ordinal = u32::try_from(candidate.stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
+        let wrapper_byte_len = u32::try_from(candidate.wrapper.wrapper_byte_len)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper size", 0, u64::MAX))?;
+        let source_offset = u64::try_from(candidate.wrapper.wrapper_offset)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment wrapper offset", 0, u64::MAX))?;
+        ctx.charge_collection_items(1, "nx segment stream links")?;
+        ctx.charge_entities(1, "nx segment stream links")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentStreamLink>()),
+            "nx segment stream links",
+        )?;
+        let mut id = ctx.retained_string(id_len, "nx segment stream link identity")?;
+        write!(&mut id, "{prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment stream link identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
+            )
+        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut links,
+            1,
+            "nx segment stream links",
+        )?;
         links.push(SegmentStreamLink {
-            id: format!("nx:segment-stream-links:link#{}", links.len()),
-            row: wrapper.row_ordinal,
-            slot,
-            stream_ordinal: stream_ordinal as u32,
-            stream_kind: stream.kind(),
-            wrapper_byte_len: wrapper.wrapper_byte_len as u32,
-            source_offset: wrapper.wrapper_offset as u64,
+            id,
+            row: candidate.wrapper.row_ordinal,
+            slot: candidate.slot,
+            stream_ordinal,
+            stream_kind: candidate.stream_kind,
+            wrapper_byte_len,
+            source_offset,
         });
     }
-    links
+    Ok(links)
 }
 
 /// Bind partition and cached-body streams to feature-history body object indices.
 pub(super) fn segment_body_bindings(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     streams: &[Stream],
-) -> Vec<SegmentBodyBinding> {
+) -> Result<Vec<SegmentBodyBinding>, CodecError> {
     let Some((entry, index)) = container.segment_index() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-    let words = index
-        .rows
-        .iter()
-        .flat_map(|row| [row.type_code, row.subtype_code, row.value])
-        .collect::<Vec<_>>();
-    segment_stream_links(container, streams)
-        .into_iter()
-        .filter(|link| {
-            matches!(
-                link.stream_kind,
-                crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+    let word_at = |word: usize| {
+        let row = index.row(word / 3)?;
+        Some(match word % 3 {
+            0 => row.type_code,
+            1 => row.subtype_code,
+            _ => row.value,
+        })
+    };
+    let mut bindings = Vec::new();
+    let mut link_ordinal = 0usize;
+    for candidate in segment_stream_candidates(ctx, container, streams) {
+        let Some(candidate) = candidate? else {
+            continue;
+        };
+        let ordinal = link_ordinal;
+        link_ordinal = link_ordinal
+            .checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit("nx segment link ordinal", 0, u64::MAX))?;
+        if !matches!(
+            candidate.stream_kind,
+            crate::parasolid::StreamKind::Partition | crate::parasolid::StreamKind::Plain
+        ) {
+            continue;
+        }
+        let slot = match candidate.slot {
+            SegmentIndexSlot::TypeCode => 0,
+            SegmentIndexSlot::SubtypeCode => 1,
+            SegmentIndexSlot::Value => 2,
+        };
+        let Some(pointer_word) = candidate
+            .wrapper
+            .row_ordinal
+            .checked_mul(3)
+            .and_then(|row| row.checked_add(slot))
+        else {
+            continue;
+        };
+        let Some(fields) = pointer_word.checked_add(1).and_then(|after| {
+            (word_at(after) == Some(0)).then_some((
+                word_at(after.checked_add(1)?)?,
+                word_at(after.checked_add(2)?)?,
+                word_at(after.checked_add(3)?)?,
+            ))
+        }) else {
+            continue;
+        };
+        let (body_object_index, body_alias_object_index, stream_role) = fields;
+        if body_object_index == 0 || body_alias_object_index == 0 {
+            continue;
+        }
+        let Some(source_offset) = pointer_word
+            .checked_add(2)
+            .and_then(|word| word.checked_mul(4))
+            .and_then(|offset| u64::try_from(offset).ok())
+            .and_then(|offset| entry_offset.checked_add(offset))
+        else {
+            continue;
+        };
+        let link_prefix = "nx:segment-stream-links:link#";
+        let binding_prefix = "nx:segment-body-bindings:binding#";
+        let digits = decimal_digits(ordinal);
+        let id_len = binding_prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment body binding identity", 0, u64::MAX)
+        })?;
+        let link_len = link_prefix.len().checked_add(digits).ok_or_else(|| {
+            ctx.refuse_codec_limit("nx segment body stream link identity", 0, u64::MAX)
+        })?;
+        let stream_ordinal = u32::try_from(candidate.stream_ordinal)
+            .map_err(|_| ctx.refuse_codec_limit("nx segment stream ordinal", 0, u64::MAX))?;
+        ctx.charge_collection_items(1, "nx segment body bindings")?;
+        ctx.charge_entities(1, "nx segment body bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SegmentBodyBinding>()),
+            "nx segment body bindings",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_len),
+            "nx segment body binding identity",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(link_len),
+            "nx segment body stream link identity",
+        )?;
+        let mut id = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id,
+            id_len,
+            "nx segment body binding identity",
+        )?;
+        write!(&mut id, "{binding_prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment body binding identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
             )
-        })
-        .filter_map(|link| {
-            let row = link.row;
-            let slot = match link.slot {
-                SegmentIndexSlot::TypeCode => 0,
-                SegmentIndexSlot::SubtypeCode => 1,
-                SegmentIndexSlot::Value => 2,
-            };
-            let pointer_word = row.checked_mul(3)?.checked_add(slot)?;
-            (words.get(pointer_word + 1) == Some(&0)).then_some(())?;
-            let body_object_index = *words.get(pointer_word + 2)?;
-            let body_alias_object_index = *words.get(pointer_word + 3)?;
-            let stream_role = *words.get(pointer_word + 4)?;
-            (body_object_index != 0 && body_alias_object_index != 0).then_some(())?;
-            Some(SegmentBodyBinding {
-                id: link.id.replacen(
-                    "nx:segment-stream-links:link#",
-                    "nx:segment-body-bindings:binding#",
-                    1,
-                ),
-                stream_link: link.id,
-                stream_ordinal: link.stream_ordinal,
-                stream_kind: link.stream_kind,
-                body_object_index,
-                body_alias_object_index,
-                stream_role,
-                source_offset: entry_offset + ((pointer_word + 2) * 4) as u64,
-            })
-        })
-        .collect()
+        })?;
+        let mut stream_link = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut stream_link,
+            link_len,
+            "nx segment body stream link identity",
+        )?;
+        write!(&mut stream_link, "{link_prefix}{ordinal}").map_err(|_| {
+            ctx.refuse_codec_limit(
+                "nx segment body stream link identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(link_len),
+            )
+        })?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bindings,
+            1,
+            "nx segment body bindings",
+        )?;
+        bindings.push(SegmentBodyBinding {
+            id,
+            stream_link,
+            stream_ordinal,
+            stream_kind: candidate.stream_kind,
+            body_object_index,
+            body_alias_object_index,
+            stream_role,
+            source_offset,
+        });
+    }
+    Ok(bindings)
 }
 
 #[cfg(test)]
 mod tests {
+    mod om_links;
+    fn segment_alias_lineage_refusal(
+        configure: impl FnOnce(&mut cadmpeg_core::decode::DecodePolicy),
+    ) -> cadmpeg_core::CodecError {
+        let bindings = [super::SegmentBodyBinding {
+            id: "binding#0".to_string(),
+            stream_link: "stream#0".to_string(),
+            stream_ordinal: 0,
+            stream_kind: crate::parasolid::StreamKind::Partition,
+            body_object_index: 10,
+            body_alias_object_index: 11,
+            stream_role: 19,
+            source_offset: 0,
+        }];
+        let route = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+            super::segment_body_lineage_statuses(ctx, &[], &[], &[], &[], &[], &[], &bindings, &[])
+        };
+        let admitted = crate::test_support::with_decode_context(|ctx| route(ctx))
+            .expect("admitted segment alias lineage")
+            .expect("complete segment alias lineage");
+        assert_eq!(admitted.len(), 1);
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        configure(&mut policy);
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty test root");
+        route(&ctx).expect_err("segment alias resource limit")
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_collection_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_collection_items = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+        );
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_retained_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_retained_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes)
+        );
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_scoped_limit() {
+        let error =
+            segment_alias_lineage_refusal(|policy| policy.limits.max_materialized_bytes = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes)
+        );
+    }
+
+    #[test]
+    fn segment_alias_lineage_refuses_work_limit() {
+        let error = segment_alias_lineage_refusal(|policy| policy.limits.max_work_units = 0);
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits)
+        );
+    }
+    macro_rules! terminal_feature_body_indices {
+        ($($argument:expr),* $(,)?) => {{
+            crate::test_support::with_decode_context(|ctx| {
+                super::terminal_feature_body_indices(ctx, $($argument),*)
+            }).expect("admitted terminal body lineage")
+        }};
+    }
+    macro_rules! segment_body_lineage_statuses {
+        ($($argument:expr),* $(,)?) => {{
+            crate::test_support::with_decode_context(|ctx| {
+                super::segment_body_lineage_statuses(ctx, $($argument),*)
+            }).expect("admitted segment lineage statuses")
+        }};
+    }
     use crate::test_support::test_om::segment_body_binding_payload;
     use crate::test_support::test_om::segment_body_binding_repeated_link_payload;
     use crate::test_support::test_om::segment_extended_wrapper_payload;
@@ -706,6 +1214,81 @@ mod tests {
     }
 
     #[test]
+    fn segment_index_rows_refuse_collection_limit_before_record_allocation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+        let container =
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+                .expect("valid segment-index container");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_index_rows(&ctx, &container)
+            .expect_err("two native rows exceed one collection item");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx segment index rows"
+        ));
+    }
+
+    #[test]
+    fn segment_index_rows_refuse_identity_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+        let container =
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+                .expect("valid segment-index container");
+        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let first_id = "nx:segment-index:row#0";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(row_slots + first_id.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_index_rows(&ctx, &container)
+            .expect_err("first identity exceeds the retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment index row identity"
+        ));
+    }
+
+    #[test]
+    fn segment_index_rows_refuse_source_entry_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]);
+        let container =
+            crate::test_support::with_decode_context(|ctx| crate::container::scan_bytes(ctx, file))
+                .expect("valid segment-index container");
+        let row_slots = 2 * std::mem::size_of::<super::SegmentIndexRow>();
+        let first_id = "nx:segment-index:row#0";
+        let source_entry = "/Root/UG_PART/UG_PART";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            u64::try_from(row_slots + first_id.len() + source_entry.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_index_rows(&ctx, &container)
+            .expect_err("source entry exceeds the retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment index source entry"
+        ));
+    }
+
+    #[test]
     fn decode_links_segment_index_word_to_validated_stream_wrapper() {
         let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
         let result = NxCodec
@@ -724,6 +1307,83 @@ mod tests {
         assert_eq!(links[0].stream_ordinal, 0);
         assert_eq!(links[0].stream_kind.label(), "deltas");
         assert_eq!(links[0].wrapper_byte_len, 8);
+    }
+
+    #[test]
+    fn segment_stream_links_refuse_matching_work_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid stream wrapper");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_stream_links(&ctx, &scan.container, &scan.streams)
+            .expect_err("stream matching needs work");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::WorkUnits
+                    && limit.operation == "nx segment stream matching"
+        ));
+    }
+
+    #[test]
+    fn segment_stream_links_refuse_collection_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid stream wrapper");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_stream_links(&ctx, &scan.container, &scan.streams)
+            .expect_err("one stream link exceeds zero collection items");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx segment stream links"
+        ));
+    }
+
+    #[test]
+    fn segment_stream_links_refuse_retained_identity_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_stream_payload())]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid stream wrapper");
+        let slot = std::mem::size_of::<super::SegmentStreamLink>();
+        let id = "nx:segment-stream-links:link#0";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = u64::try_from(slot + id.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_stream_links(&ctx, &scan.container, &scan.streams)
+            .expect_err("stream link identity exceeds the retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment stream link identity"
+        ));
     }
 
     #[test]
@@ -749,6 +1409,97 @@ mod tests {
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
         assert_eq!(bindings[0].source_offset, 108);
+    }
+
+    #[test]
+    fn segment_body_bindings_refuse_collection_limit_before_record_allocation() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid partition stream");
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_body_bindings(&ctx, &scan.container, &scan.streams)
+            .expect_err("one binding exceeds zero collection items");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == "nx segment body bindings"
+        ));
+    }
+
+    #[test]
+    fn segment_body_bindings_refuse_identity_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid partition stream");
+        let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+        let first_id = "nx:segment-body-bindings:binding#0";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            u64::try_from(binding_slot + first_id.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_body_bindings(&ctx, &scan.container, &scan.streams)
+            .expect_err("binding identity exceeds retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment body binding identity"
+        ));
+    }
+
+    #[test]
+    fn segment_body_bindings_refuse_stream_link_identity_retained_limit() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+        let file = prt_with_named_payloads(&[(
+            "/Root/UG_PART/UG_PART",
+            segment_body_binding_payload("partition"),
+        )]);
+        let scan_arena = DecodeArena::new();
+        let (scan_ctx, root) =
+            DecodeContext::from_root_bytes(&file, &scan_arena, &DecodePolicy::service())
+                .expect("test root");
+        let scan = crate::decode::scan(&scan_ctx, root).expect("valid partition stream");
+        let binding_slot = std::mem::size_of::<super::SegmentBodyBinding>();
+        let binding_id = "nx:segment-body-bindings:binding#0";
+        let stream_link = "nx:segment-stream-links:link#0";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes =
+            u64::try_from(binding_slot + binding_id.len() + stream_link.len() - 1).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
+        let error = super::segment_body_bindings(&ctx, &scan.container, &scan.streams)
+            .expect_err("stream-link identity exceeds retained limit by one byte");
+        assert!(matches!(
+            error,
+            cadmpeg_core::CodecError::ResourceLimit(limit)
+                if limit.dimension == ResourceDimension::RetainedBytes
+                    && limit.operation == "nx segment body stream link identity"
+        ));
     }
 
     #[test]
@@ -869,7 +1620,7 @@ mod tests {
             .expect("field declaration");
         let role = b"UGS::EXP_expression";
         let mut declaration = Vec::with_capacity(role.len() + 2);
-        declaration.push((role.len() + 1) as u8);
+        declaration.push(u8::try_from(role.len() + 1).expect("fixture value fits u8"));
         declaration.extend_from_slice(role);
         declaration.push(0xa1);
         section.splice(insertion..insertion, declaration);
@@ -906,7 +1657,7 @@ mod tests {
             .expect("field declaration");
         let audit = b"UGS::OM::SaveAuditTrail";
         let mut declaration = Vec::with_capacity(audit.len() + 2);
-        declaration.push((audit.len() + 1) as u8);
+        declaration.push(u8::try_from(audit.len() + 1).expect("fixture value fits u8"));
         declaration.extend_from_slice(audit);
         declaration.push(0xa1);
         section.splice(insertion..insertion, declaration);
@@ -957,7 +1708,7 @@ mod tests {
             operation_label: operation.to_string(),
             body: crate::om::reference_index::FeatureReferenceToken::from_wire(
                 body_object_index,
-                &[body_object_index as u8],
+                &[u8::try_from(body_object_index).expect("fixture value fits u8")],
             )
             .unwrap(),
             source_offset: 0,
@@ -975,7 +1726,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1012,13 +1763,13 @@ mod tests {
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(
                 target,
-                ordinal as u64,
+                cadmpeg_core::decode::u64_from_index(ordinal),
             ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
-            source_offset: ordinal as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
         };
         let booleans = [boolean(0, 20, vec![10]), boolean(1, 10, vec![20])];
         let bindings = [
@@ -1045,16 +1796,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
-                &labels,
-                &[],
-                &[],
-                &[],
-                &booleans,
-                &[],
-                &bindings,
-                &[],
-            ),
+            terminal_feature_body_indices!(&labels, &[], &[], &[], &booleans, &[], &bindings, &[],),
             Some([10, 11].into_iter().collect())
         );
     }
@@ -1090,13 +1832,13 @@ mod tests {
             kind: FeatureBooleanKind::Unite,
             target: crate::test_support::native_references::boolean_reference(
                 target,
-                ordinal as u64,
+                cadmpeg_core::decode::u64_from_index(ordinal),
             ),
             tools: tools
                 .into_iter()
                 .map(|value| crate::test_support::native_references::boolean_reference(value, 0))
                 .collect(),
-            source_offset: ordinal as u64,
+            source_offset: cadmpeg_core::decode::u64_from_index(ordinal),
         };
         let booleans = [boolean(0, 10, Vec::new()), boolean(1, 20, vec![10])];
         let bindings = [
@@ -1123,7 +1865,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1170,7 +1912,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1240,7 +1982,7 @@ mod tests {
         ];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1287,7 +2029,7 @@ mod tests {
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &[],
@@ -1342,7 +2084,7 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &data_block_uses,
@@ -1396,7 +2138,7 @@ mod tests {
             role: DataBlockRole::Column,
             section_offset: 0,
             byte_len: 0,
-            sha256: crate::native::hex::Sha256Hex::digest(&[]),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
             stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
@@ -1412,7 +2154,7 @@ mod tests {
             source_offset: 0,
         }];
 
-        let statuses = super::segment_body_lineage_statuses(
+        let statuses = segment_body_lineage_statuses!(
             &labels,
             &references,
             &[],
@@ -1462,7 +2204,7 @@ mod tests {
             role: DataBlockRole::Column,
             section_offset: 0,
             byte_len: 0,
-            sha256: crate::native::hex::Sha256Hex::digest(&[]),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
             stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
@@ -1481,7 +2223,7 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -1530,7 +2272,7 @@ mod tests {
             role: DataBlockRole::Column,
             section_offset: 0,
             byte_len: 0,
-            sha256: crate::native::hex::Sha256Hex::digest(&[]),
+            sha256: cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
             stable_identity: None,
             source_entry: String::new(),
             source_offset: 0,
@@ -1548,7 +2290,7 @@ mod tests {
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &[],
                 &[],
@@ -1599,7 +2341,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1650,7 +2392,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1703,7 +2445,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1765,7 +2507,7 @@ mod tests {
         }];
 
         assert_eq!(
-            super::terminal_feature_body_indices(
+            terminal_feature_body_indices!(
                 &labels,
                 &references,
                 &[],
@@ -1816,16 +2558,7 @@ mod tests {
             segment_body_bindings: vec!["binding#0".to_string()],
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(
-                &labels,
-                &[],
-                &[],
-                &[],
-                &[],
-                &operands,
-                &bindings,
-                &[],
-            ),
+            terminal_feature_body_indices!(&labels, &[], &[], &[], &[], &operands, &bindings, &[],),
             Some(std::collections::BTreeSet::new())
         );
     }
@@ -1867,16 +2600,7 @@ mod tests {
             segment_body_bindings: Vec::new(),
         }];
         assert_eq!(
-            super::terminal_feature_body_indices(
-                &labels,
-                &[],
-                &[],
-                &[],
-                &[],
-                &operands,
-                &bindings,
-                &[],
-            ),
+            terminal_feature_body_indices!(&labels, &[], &[], &[], &[], &operands, &bindings, &[],),
             Some([20, 30].into_iter().collect())
         );
     }

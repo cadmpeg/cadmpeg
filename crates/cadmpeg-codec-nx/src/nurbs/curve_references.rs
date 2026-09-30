@@ -24,6 +24,7 @@ impl CurveDescriptorReferences {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn values(self) -> Vec<u32> {
         match self {
             Self::Compact(references) => references.to_vec(),

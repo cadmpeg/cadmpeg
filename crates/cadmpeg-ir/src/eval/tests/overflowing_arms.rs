@@ -238,7 +238,14 @@ fn a_nurbs_pcurve_whose_point_or_basis_overflows_reports_the_point_it_reached() 
     let degree = 20;
     let knots = [vec![0.0; degree + 1], vec![1.0; degree + 1]].concat();
     let poles = (0..=degree)
-        .map(|index| Point2::new(crate::scalar::FiniteReal::from_index(index).get(), 0.0))
+        .map(|index| {
+            Point2::new(
+                crate::scalar::FiniteReal::from_index(index)
+                    .expect("test index is exactly representable")
+                    .get(),
+                0.0,
+            )
+        })
         .collect();
     let high_degree = PcurveGeometry::Nurbs {
         nurbs: PcurveNurbs::from_lanes(20, knots, poles, None, false)
@@ -637,7 +644,7 @@ fn tolerant_intersection_model(pcurve: PcurveGeometry) -> (CadIr, CurveId) {
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#intersection")
                     .expect("valid identity"),
@@ -708,6 +715,59 @@ fn surface_curve_surface_cycle_exhausts_the_shared_budget_depth() {
 }
 
 #[test]
+fn acyclic_replica_chain_beyond_sixty_four_frames_retains_its_point() {
+    let mut ir = CadIr::empty();
+    let mut source = CurveId::mint("test:model:curve#base").expect("valid identity");
+    ir.model.curves.push(Curve {
+        id: source.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            crate::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line fixture"),
+        )),
+        source_object: None,
+    });
+    for ordinal in 0..70 {
+        let replica =
+            CurveId::mint(format!("test:model:curve#replica-{ordinal}")).expect("valid identity");
+        ir.model.curves.push(Curve {
+            id: replica.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
+            source_object: None,
+        });
+        ir.model
+            .add_procedural_curve(
+                &replica,
+                ProceduralCurve::new(
+                    ProceduralCurveId::mint(format!("test:model:procedural#replica-{ordinal}"))
+                        .expect("valid identity"),
+                    ProceduralCurveDefinition::Replica {
+                        source,
+                        transform: Transform::identity(),
+                    },
+                ),
+            )
+            .expect("replica fixture");
+        source = replica;
+    }
+    let index = crate::index::ModelIndex::new(&ir);
+    let expected = Ok(Point3::new(0.25, 0.0, 0.0));
+    assert_eq!(
+        model_curve_point_by_id(&index, &source, 0.25).map(crate::features::FinitePoint3::get),
+        expected
+    );
+    let budget = WorkBudget::new(usize::MAX);
+    assert_eq!(
+        model_curve_point_by_id_with_budget(&index, &source, 0.25, &budget)
+            .map(crate::features::FinitePoint3::get),
+        expected
+    );
+    assert!(!budget.exhausted());
+}
+
+#[test]
 fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget() {
     let curve = CurveId::mint("test:model:curve#replica").expect("valid identity");
     let surface = SurfaceId::mint("test:model:surface#ruled").expect("valid identity");
@@ -725,7 +785,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_curve(
-            curve.clone(),
+            &curve,
             ProceduralCurve::new(
                 ProceduralCurveId::mint("test:model:procedural#replica").expect("valid identity"),
                 ProceduralCurveDefinition::Replica {
@@ -742,7 +802,7 @@ fn budgeted_ruled_surface_exhausts_when_its_directrix_cycle_has_no_local_budget(
     });
     ir.model
         .add_procedural_surface(
-            surface.clone(),
+            &surface,
             ProceduralSurface::new(
                 ProceduralSurfaceId::mint("test:model:procedural#ruled").expect("valid identity"),
                 ProceduralSurfaceDefinition::Ruled {

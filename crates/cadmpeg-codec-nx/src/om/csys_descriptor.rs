@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum-CSYS descriptor identities and bounded source positions.
 
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::CodecError;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub(crate) struct CsysIdentity(String);
+
+impl Serialize for CsysIdentity {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.0)
+    }
+}
 
 impl TryFrom<String> for CsysIdentity {
     type Error = &'static str;
@@ -17,8 +25,15 @@ impl TryFrom<String> for CsysIdentity {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static CSYS_IDENTITY_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<CsysIdentity> for String {
     fn from(value: CsysIdentity) -> Self {
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         value.0
     }
 }
@@ -41,7 +56,7 @@ pub(crate) struct CsysDescriptor {
 }
 
 impl CsysDescriptor {
-    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
+    fn identity_bounds(bytes: &[u8]) -> Option<(usize, usize)> {
         let mut candidate = None;
         let mut at = 0;
         while at < bytes.len() {
@@ -60,12 +75,37 @@ impl CsysDescriptor {
                 candidate = Some((start, at));
             }
         }
-        let (start, end) = candidate?;
+        candidate
+    }
+
+    pub(super) fn read(bytes: &[u8]) -> Option<Self> {
+        let (start, end) = Self::identity_bounds(bytes)?;
         Some(Self {
             prefix: bytes[..start].to_vec(),
             identity: CsysIdentity(bytes[start..end].iter().copied().map(char::from).collect()),
             suffix: bytes[end..].to_vec(),
         })
+    }
+
+    pub(super) fn read_charged(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+    ) -> Result<Option<Self>, CodecError> {
+        let Some((start, end)) = Self::identity_bounds(bytes) else {
+            return Ok(None);
+        };
+        let prefix = ctx.copy_retained(&bytes[..start], "NX datum CSYS descriptor prefix")?;
+        let identity_bytes =
+            ctx.copy_retained(&bytes[start..end], "NX datum CSYS descriptor identity")?;
+        let suffix = ctx.copy_retained(&bytes[end..], "NX datum CSYS descriptor suffix")?;
+        let Ok(identity) = String::from_utf8(identity_bytes) else {
+            return Ok(None);
+        };
+        Ok(Some(Self {
+            prefix,
+            identity: CsysIdentity(identity),
+            suffix,
+        }))
     }
 
     // This conversion consumes the input carrier at the typed construction boundary.
@@ -109,7 +149,9 @@ impl LocatedCsysDescriptor {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         source_offset
-            .checked_add(descriptor.prefix.len() as u64)
+            .checked_add(cadmpeg_core::decode::u64_from_index(
+                descriptor.prefix.len(),
+            ))
             .ok_or("source_offset overflows identity_source_offset")?;
         Ok(Self {
             descriptor,
@@ -123,7 +165,7 @@ impl LocatedCsysDescriptor {
         self.source_offset
     }
     pub(crate) fn identity_source_offset(&self) -> u64 {
-        self.source_offset + self.descriptor.prefix.len() as u64
+        self.source_offset + cadmpeg_core::decode::u64_from_index(self.descriptor.prefix.len())
     }
 }
 
@@ -149,13 +191,20 @@ impl TryFrom<u8> for CsysDescriptorSlot {
 }
 impl From<CsysDescriptorSlot> for u8 {
     fn from(value: CsysDescriptorSlot) -> Self {
-        value as Self
+        match value {
+            CsysDescriptorSlot::Five => 5,
+            CsysDescriptorSlot::Six => 6,
+            CsysDescriptorSlot::Seven => 7,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor};
+    use super::{
+        CsysDescriptor, CsysDescriptorSlot, CsysIdentity, LocatedCsysDescriptor,
+        CSYS_IDENTITY_INTO_WIRE_COUNT,
+    };
 
     #[test]
     fn identity_lengths_and_maximal_runs_are_checked_at_construction() {
@@ -189,5 +238,29 @@ mod tests {
                 (5..=7).contains(&slot)
             );
         }
+    }
+
+    #[test]
+    fn csys_identity_native_limit_refuses_before_owned_wire_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            identity: &'a CsysIdentity,
+        }
+        let identity = CsysIdentity::try_from("a".repeat(30)).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&identity).unwrap(),
+            serde_json::to_vec(&String::from(identity.clone())).unwrap()
+        );
+        let record = Record {
+            id: "nx:feature:csys-identity#0",
+            identity: &identity,
+        };
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| count.set(0));
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::json!({"id":"nx:feature:csys-identity#0", "identity": "a".repeat(30)}),
+        );
+        CSYS_IDENTITY_INTO_WIRE_COUNT.with(|count| assert_eq!(count.get(), 0));
     }
 }

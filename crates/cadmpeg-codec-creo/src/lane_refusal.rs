@@ -75,7 +75,7 @@ impl LaneRefusals {
         let admitted = ctx
             .format_retained(format_args!("{record}: {reason}"), "creo lane refusal text")
             .and_then(|record| {
-                ctx.try_reserve_items(&mut self.records, 1, "creo lane refusal records")?;
+                ctx.reserve_vec(&mut self.records, 1, "creo lane refusal records")?;
                 Ok(record)
             });
         match admitted {

@@ -3,15 +3,19 @@
 
 use std::io::Cursor;
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::draft::ModelDraft;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CurveId, EdgeId, VertexId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Edge;
 use cadmpeg_ir::CadIr;
 
 use crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file_with_first_edge;
-use crate::test_support::test_owned::explicit_void_solid_file;
+use crate::test_support::test_owned::{explicit_void_solid_file, owned_test_file, OwnedTestEntity};
 use crate::test_support::test_solids_and_structure::{
     explicit_non_manifold_open_shell_file, explicit_open_shell_file,
     explicit_tetrahedron_solid_file, explicit_tetrahedron_solid_file_with_options,
@@ -21,6 +25,393 @@ use crate::test_support::test_solids_and_structure::{
 use crate::IgesCodec;
 
 const EPS_EDGE_ENDPOINT_MATCH: f64 = 1.0e-9;
+
+#[test]
+fn brep_surface_endpoint_keeps_evaluator_resource_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = ctx
+        .charge_collection_items(2, "iges B-rep surface evaluation")
+        .unwrap_err();
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("expected collection limit refusal");
+    };
+    let result = super::surface_point_or_refusal(Err(EvaluationFailure::ResourceLimit(limit)));
+    assert!(matches!(
+        result,
+        Err(super::super::composite::CompositeCurveError::Budget(
+            CodecError::ResourceLimit(actual)
+        )) if actual == limit && actual.dimension == ResourceDimension::CollectionItems
+    ));
+}
+
+#[test]
+fn brep_counted_vectors_refuse_before_nested_allocation() {
+    for operation in [
+        "iges B-rep resolved pcurves",
+        "iges B-rep mapped pcurves",
+        "iges B-rep vertex-list points",
+        "iges B-rep edge-list edges",
+        "iges B-rep loop uses",
+        "iges B-rep use pcurves",
+        "iges B-rep shell face uses",
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 1;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let result = ctx.collection_vec::<u8>(2, operation);
+        assert!(matches!(
+            result,
+            Err(CodecError::ResourceLimit(limit))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.used == 0
+                    && limit.additional == 2
+                    && limit.operation == operation
+        ));
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let admitted = ctx
+        .collection_vec::<u8>(2, "iges B-rep use pcurves")
+        .unwrap();
+    assert!(admitted.capacity() >= 2);
+}
+
+fn two_loop_face_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00010000",
+            parameters: "196,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "POLE".into(),
+            status: "00010000",
+            parameters: "502,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP1".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP2".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE".into(),
+            status: "00010000",
+            parameters: "510,3,2,1,7,9;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SHELL".into(),
+            status: "00000000",
+            parameters: "514,1,11,1;".into(),
+        },
+    ])
+}
+
+#[test]
+fn brep_definition_nodes_and_nested_shells_refuse_before_allocation() {
+    for (bytes, operation) in [
+        (explicit_vertex_loop_file(), "iges B-rep vertex-list nodes"),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep edge-list nodes",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep loop nodes"),
+        (two_loop_face_file(), "iges B-rep face loop pointers"),
+        (explicit_vertex_loop_file(), "iges B-rep face nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep shell nodes"),
+        (explicit_vertex_loop_file(), "iges B-rep sheet shell uses"),
+        (explicit_vertex_loop_file(), "iges B-rep body definitions"),
+        (explicit_void_solid_file().0, "iges B-rep solid shell uses"),
+        (
+            explicit_void_solid_file().0,
+            "iges B-rep referenced closed shells",
+        ),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let result = IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            );
+            match result {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("decode succeeded before B-rep definition refusal at {operation}"),
+                Err(error) => panic!("unexpected B-rep definition result at {operation}: {error}"),
+            }
+        }
+        assert!(
+            found,
+            "B-rep definition refusal was not reached: {operation}"
+        );
+    }
+}
+
+#[test]
+fn brep_projected_pcurve_uses_refuse_before_both_vector_allocations() {
+    let uses = [(false, 7_u32)];
+    let resolved = || {
+        vec![(
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(
+                cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                )
+                .unwrap(),
+            ),
+            [0.0, 1.0],
+        )]
+    };
+    let stem = crate::ids::Stem::directory(9_u32);
+    for (cap, operation) in [
+        (0, "iges B-rep projected pcurve uses"),
+        (1, "iges B-rep pcurve slots"),
+    ] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = cap;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let mut candidate = ModelDraft::new();
+        let result =
+            super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx);
+        assert!(matches!(result,
+            Err(super::PcurveProjectionError::Resource(CodecError::ResourceLimit(limit)))
+                if limit.dimension == ResourceDimension::CollectionItems
+                    && limit.operation == operation
+                    && limit.additional == 1
+        ));
+        assert!(candidate.model().pcurves.is_empty());
+    }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut candidate = ModelDraft::new();
+    let projected =
+        super::project_pcurve_uses(&mut candidate, &uses, resolved(), None, &stem, &ctx).unwrap();
+    assert_eq!(projected.len(), 1);
+    assert_eq!(candidate.model().pcurves.len(), 1);
+}
+
+#[test]
+fn brep_topology_indexes_and_adjacency_refuse_before_growth() {
+    for (bytes, operation) in [
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep surface index nodes",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep region shell ids"),
+        (explicit_vertex_loop_file(), "iges B-rep shell face ids"),
+        (explicit_vertex_loop_file(), "iges B-rep loop vertex uses"),
+        (explicit_vertex_loop_file(), "iges B-rep topology points"),
+        (explicit_vertex_loop_file(), "iges B-rep topology vertices"),
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep topology vertex index",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep curve index nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep edge-use positions",
+        ),
+        (explicit_tetrahedron_solid_file(), "iges B-rep coedge ids"),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep coedge use nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep source edge index nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep source edge positions",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep topology edges",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep topology edge index",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep radial index nodes",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep radial coedge ids",
+        ),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep topology coedges",
+        ),
+        (explicit_tetrahedron_solid_file(), "loop ring members"),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep decoded topology sequences",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep topology loops"),
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep consumed loop nodes",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep topology faces"),
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep consumed face nodes",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep topology shells"),
+        (
+            explicit_vertex_loop_file(),
+            "iges B-rep consumed shell nodes",
+        ),
+        (explicit_vertex_loop_file(), "iges B-rep topology regions"),
+        (explicit_vertex_loop_file(), "iges B-rep body region ids"),
+        (explicit_vertex_loop_file(), "iges B-rep topology bodies"),
+        (two_loop_face_file(), "iges B-rep face inner loop ids"),
+        (
+            explicit_vertex_loop_file_with_outer_flag(false),
+            "iges B-rep face unspecified loop ids",
+        ),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_collection_items = cap;
+            let result = IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            );
+            match result {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("decode succeeded before B-rep topology refusal at {operation}"),
+                Err(error) => panic!("unexpected B-rep topology result at {operation}: {error}"),
+            }
+        }
+        assert!(found, "B-rep topology refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn brep_index_key_copies_refuse_retained_budget_before_allocation() {
+    for (bytes, operation) in [
+        (explicit_vertex_loop_file(), "iges B-rep surface index keys"),
+        (
+            explicit_tetrahedron_solid_file(),
+            "iges B-rep curve index keys",
+        ),
+    ] {
+        let mut cap = 0_u64;
+        let mut found = false;
+        for _ in 0..4096 {
+            let mut policy = DecodePolicy::service();
+            policy.limits.max_retained_bytes = cap;
+            let result = IgesCodec.decode(
+                &mut Cursor::new(&bytes),
+                &DecodeOptions {
+                    policy,
+                    ..DecodeOptions::default()
+                },
+            );
+            match result {
+                Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                    assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                    if limit.operation == operation {
+                        found = true;
+                        break;
+                    }
+                    cap = limit.used.checked_add(limit.additional).unwrap();
+                }
+                Ok(_) => panic!("decode succeeded before B-rep key refusal at {operation}"),
+                Err(error) => panic!("unexpected B-rep key result at {operation}: {error}"),
+            }
+        }
+        assert!(found, "B-rep key refusal was not reached: {operation}");
+    }
+}
+
+#[test]
+fn brep_topology_identity_copies_refuse_before_retaining_text() {
+    let bytes = explicit_vertex_loop_file();
+    let mut cap = 0_u64;
+    for _ in 0..4096 {
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_retained_bytes = cap;
+        match IgesCodec.decode(
+            &mut Cursor::new(&bytes),
+            &DecodeOptions {
+                policy,
+                ..DecodeOptions::default()
+            },
+        ) {
+            Err(cadmpeg_ir::codec::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+                assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
+                if limit.operation == "iges B-rep identity copy" {
+                    IgesCodec
+                        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                        .unwrap();
+                    return;
+                }
+                cap = limit.used.checked_add(limit.additional).unwrap();
+            }
+            other => panic!("expected B-rep identity refusal: {other:?}"),
+        }
+    }
+    panic!("B-rep identity copy was not reached");
+}
 
 #[test]
 fn source_edge_selection_matches_the_edge_occurrence_endpoints() {
@@ -160,7 +551,8 @@ fn decode_brackets_explicit_edge_vertex_agreement_at_the_global_resolution() {
             !decoded,
             "{end_x}"
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{:#?}", validation.findings);
     }
 }
@@ -206,7 +598,8 @@ fn decode_builds_a_vertex_only_pole_loop() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -295,7 +688,8 @@ fn decode_builds_a_solid_with_an_oriented_void_shell() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -425,7 +819,8 @@ fn decode_builds_a_connected_manifold_tetrahedron() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -501,7 +896,8 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
@@ -544,6 +940,7 @@ fn decode_preserves_a_three_use_non_manifold_radial_ring() {
         "{:#?}",
         result.report().losses
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

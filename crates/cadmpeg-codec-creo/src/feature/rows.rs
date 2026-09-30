@@ -396,7 +396,7 @@ pub(super) fn row_spans(
             && payload.get(after..after + 2).is_some()
             && row_root_schema_class(payload, offset, prefix_end).is_some()
         {
-            ctx.try_reserve_items(&mut starts, 1, "creo feature row starts")?;
+            ctx.reserve_vec(&mut starts, 1, "creo feature row starts")?;
             starts.push((offset, id));
         }
     }
@@ -430,7 +430,7 @@ pub(super) fn row_spans(
                 false
             };
         if first_for_id || has_new_schema_class {
-            ctx.try_reserve_items(&mut retained_starts, 1, "creo feature retained starts")?;
+            ctx.reserve_vec(&mut retained_starts, 1, "creo feature retained starts")?;
             retained_starts.push((start, id));
         }
     }
@@ -439,7 +439,7 @@ pub(super) fn row_spans(
         let end = retained_starts
             .get(index + 1)
             .map_or(payload.len(), |&(next, _)| next);
-        ctx.try_reserve_items(&mut spans, 1, "creo feature row spans")?;
+        ctx.reserve_vec(&mut spans, 1, "creo feature row spans")?;
         spans.push((start, end, id));
     }
     Ok(spans)
@@ -477,7 +477,7 @@ pub(crate) fn rows(
         let Some(body) = payload.get(body_start..end).filter(|body| body.len() >= 2) else {
             continue;
         };
-        ctx.try_reserve_items(&mut decoded, 1, "creo feature rows")?;
+        ctx.reserve_vec(&mut decoded, 1, "creo feature rows")?;
         decoded.push(FeatureRow {
             feature_id,
             root_schema_class: row_root_schema_class(payload, start, end),
@@ -540,7 +540,7 @@ pub(crate) fn round_replay_scalars(
             let Some(value) = FiniteReal::new(value) else {
                 continue;
             };
-            ctx.try_reserve_items(&mut result, 1, "creo round replay scalars")?;
+            ctx.reserve_vec(&mut result, 1, "creo round replay scalars")?;
             result.push(FeatureRoundReplayScalar {
                 feature_id: row.feature_id,
                 value,
@@ -613,7 +613,7 @@ pub(crate) fn choices(
                 } else {
                     (label_offset, None)
                 };
-                ctx.try_reserve_items(&mut hits, 1, "creo choice label hits")?;
+                ctx.reserve_vec(&mut hits, 1, "creo choice label hits")?;
                 hits.push((header_offset, label_offset, label, type_byte));
                 from = label_end + 1;
             }
@@ -643,7 +643,7 @@ pub(crate) fn choices(
             let label = ctx.copy_retained_text(label, "creo feature choice label")?;
             let payload =
                 ctx.copy_retained(&row.body[value..end], "creo feature choice payload")?;
-            ctx.try_reserve_items(&mut result, 1, "creo feature choices")?;
+            ctx.reserve_vec(&mut result, 1, "creo feature choices")?;
             result.push(FeatureChoice {
                 feature_id: row.feature_id,
                 label,
@@ -716,7 +716,7 @@ pub(super) fn field_value(
                     ctx.copy_retained(payload, "creo feature raw field")?,
                 ));
             }
-            ctx.try_reserve_items(&mut values, 1, "creo feature compact integer values")?;
+            ctx.reserve_vec(&mut values, 1, "creo feature compact integer values")?;
             values.push(value);
             cursor = next;
         }
@@ -760,7 +760,7 @@ pub(crate) fn choice_fields(
                 .iter()
                 .all(u8::is_ascii_graphic)
             {
-                ctx.try_reserve_items(&mut headers, 1, "creo choice field headers")?;
+                ctx.reserve_vec(&mut headers, 1, "creo choice field headers")?;
                 headers.push((offset, nul + 1));
             }
         }
@@ -776,7 +776,7 @@ pub(crate) fn choice_fields(
             let label = ctx.copy_retained_text(&choice.label, "creo choice field label")?;
             let name = ctx.copy_retained_text(name, "creo choice field name")?;
             let value = field_value(ctx, &choice.payload[value_start..end])?;
-            ctx.try_reserve_items(&mut fields, 1, "creo choice fields")?;
+            ctx.reserve_vec(&mut fields, 1, "creo choice fields")?;
             fields.push(FeatureChoiceField {
                 feature_id: choice.feature_id,
                 choice_label: label,
@@ -825,7 +825,7 @@ pub(crate) fn geometry_tables(
                     continue;
                 };
                 let (count, entity_class, decoded_kind) = decoded?;
-                ctx.try_reserve_items(&mut tables, 1, "creo feature geometry tables")?;
+                ctx.reserve_vec(&mut tables, 1, "creo feature geometry tables")?;
                 tables.push(FeatureGeometryTable {
                     feature_id: row.feature_id,
                     kind: decoded_kind,
@@ -856,7 +856,7 @@ pub(crate) fn geometry_tables(
                 continue;
             };
             let (count, entry_ids) = decoded?;
-            ctx.try_reserve_items(&mut tables, 1, "creo feature geometry tables")?;
+            ctx.reserve_vec(&mut tables, 1, "creo feature geometry tables")?;
             tables.push(FeatureGeometryTable {
                 feature_id: row.feature_id,
                 kind: FeatureGeometryTableKind::DatumIds(Some(entry_ids)),
@@ -897,8 +897,7 @@ fn positional_datum_geometry_table_at(
     let capacity = bounded_len(u64::from(count), 1, body.len().saturating_sub(cursor))?;
     let entry_class = entity_class.checked_add(1)?;
     let mut entry_ids = Vec::new();
-    if let Err(error) = ctx.try_reserve_items(&mut entry_ids, capacity, "creo positional datum ids")
-    {
+    if let Err(error) = ctx.reserve_vec(&mut entry_ids, capacity, "creo positional datum ids") {
         return Some(Err(error));
     }
     for index in 0..count {
@@ -971,7 +970,7 @@ fn geometry_table_at(
                 entries.clear();
                 break;
             }
-            if let Err(error) = ctx.try_reserve_items(&mut entries, 1, "creo named datum ids") {
+            if let Err(error) = ctx.reserve_vec(&mut entries, 1, "creo named datum ids") {
                 return Some(Err(error));
             }
             entries.push(entry);
@@ -1024,7 +1023,7 @@ pub(crate) fn affected_ids(
                     continue;
                 };
                 let mut ids = Vec::new();
-                ctx.try_reserve_items(&mut ids, capacity, "creo affected ids")?;
+                ctx.reserve_vec(&mut ids, capacity, "creo affected ids")?;
                 for _ in 0..count {
                     let (id, next) = psb::compact_int(&row.body, cursor);
                     if next == cursor {
@@ -1035,7 +1034,7 @@ pub(crate) fn affected_ids(
                     cursor = next;
                 }
                 if ids.len() == capacity {
-                    ctx.try_reserve_items(&mut result, 1, "creo affected-id records")?;
+                    ctx.reserve_vec(&mut result, 1, "creo affected-id records")?;
                     result.push(FeatureAffectedIds {
                         feature_id: row.feature_id,
                         kind,
@@ -1100,7 +1099,7 @@ fn replay_ids(
     // the unread bytes of the run.
     let capacity = bounded_len(u64::from(count), 1, run.len().saturating_sub(cursor))?;
     let mut ids = Vec::new();
-    if let Err(error) = ctx.try_reserve_items(&mut ids, capacity, "creo replay affected ids") {
+    if let Err(error) = ctx.reserve_vec(&mut ids, capacity, "creo replay affected ids") {
         return Some(Err(error));
     }
     for _ in 0..count {
@@ -1221,7 +1220,7 @@ fn explicit_replay_pair_before_suffix(
             Ok(decoded) => decoded,
             Err(error) => return Some(Err(error)),
         };
-        if let Err(error) = ctx.try_reserve_items(&mut arrays, 1, "creo explicit replay arrays") {
+        if let Err(error) = ctx.reserve_vec(&mut arrays, 1, "creo explicit replay arrays") {
             return Some(Err(error));
         }
         arrays.push((opener, ids, end));
@@ -1294,8 +1293,7 @@ fn unique_unanchored_replay_pair(
                 Ok(pair) => pair,
                 Err(error) => return Some(Err(error)),
             };
-            if let Err(error) = ctx.try_reserve_items(&mut candidates, 1, "creo replay candidates")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut candidates, 1, "creo replay candidates") {
                 return Some(Err(error));
             }
             candidates.push(pair);
@@ -1313,9 +1311,7 @@ fn unique_unanchored_replay_pair(
                 Err(error) => return Some(Err(error)),
             };
             if pair.consumed == suffix - start {
-                if let Err(error) =
-                    ctx.try_reserve_items(&mut candidates, 1, "creo replay candidates")
-                {
+                if let Err(error) = ctx.reserve_vec(&mut candidates, 1, "creo replay candidates") {
                     return Some(Err(error));
                 }
                 candidates.push((pair, start));
@@ -1390,7 +1386,7 @@ pub(crate) fn replay_affected_ids(
         };
         state[0] = Some(geometry_count);
         state[1] = Some(edge_count);
-        ctx.try_reserve_items(&mut result, 1, "creo replay affected-id records")?;
+        ctx.reserve_vec(&mut result, 1, "creo replay affected-id records")?;
         result.push(FeatureReplayAffectedIds {
             feature_id: row.feature_id,
             geometry_ids,
@@ -1552,7 +1548,7 @@ pub(crate) fn surface_merge_replay_affected_ids(
             continue;
         };
         *state = [Some(geometry_count), Some(edge_count), Some(quilt_count)];
-        ctx.try_reserve_items(&mut result, 1, "creo surface merge affected-id records")?;
+        ctx.reserve_vec(&mut result, 1, "creo surface merge affected-id records")?;
         result.push(record);
     }
     crate::sort::stable_sort_by_key(
@@ -1596,7 +1592,7 @@ pub(crate) fn loop_restore_directions(
                 if after == from {
                     continue;
                 }
-                ctx.try_reserve_items(&mut result, 1, "creo loop restore directions")?;
+                ctx.reserve_vec(&mut result, 1, "creo loop restore directions")?;
                 result.push(FeatureLoopRestoreDirection {
                     feature_id: row.feature_id,
                     lane,
@@ -1663,7 +1659,7 @@ pub(crate) fn loop_history_entries(
             continue;
         };
         let entries = decoded?;
-        ctx.try_reserve_items(&mut result, entries.len(), "creo loop history entries")?;
+        ctx.reserve_vec(&mut result, entries.len(), "creo loop history entries")?;
         result.extend((0..table.count).zip(entries).map(|(ordinal, entry)| {
             FeatureLoopHistoryEntry {
                 feature_id: row.feature_id,
@@ -1693,7 +1689,7 @@ fn loop_history_roster(
 ) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
     (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
     let mut entries = Vec::new();
-    if let Err(error) = ctx.try_reserve_items(&mut entries, count, "creo loop history roster") {
+    if let Err(error) = ctx.reserve_vec(&mut entries, count, "creo loop history roster") {
         return Some(Err(error));
     }
     for index in 0..count {
@@ -1826,7 +1822,7 @@ pub(crate) fn revolution_extents(
         {
             continue;
         }
-        ctx.try_reserve_items(&mut result, 1, "creo feature revolution extents")?;
+        ctx.reserve_vec(&mut result, 1, "creo feature revolution extents")?;
         result.push(FeatureRevolutionExtent {
             feature_id: row.feature_id,
             offset: row.body_offset + choice_start + 2,

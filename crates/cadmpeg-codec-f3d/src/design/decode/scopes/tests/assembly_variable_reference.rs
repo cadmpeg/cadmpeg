@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::test_support::assembly_operand_frame_fixture;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
@@ -59,12 +58,16 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         })
         .collect::<Vec<_>>();
     let mut bytes = assembly_operand_frame_fixture(scope_record_index);
-    let alignment = exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-    )
+    let alignment = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .expect("variable-reference assembly alignment");
     assert_eq!(alignment.angle(), 8.0);
     assert_eq!(alignment.offset(), [9.0, 10.0, 11.0]);
@@ -158,12 +161,16 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     bytes.extend_from_slice(&3_u32.to_le_bytes());
     bytes.extend_from_slice(b"396");
     bytes.extend_from_slice(&71_u32.to_le_bytes());
-    let paths = exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &scope,
-        &owners,
-    )
+    let paths = crate::design::test_support::with_test_decode_context(|ctx| {
+        exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &owners,
+        )
+        .unwrap()
+    })
     .and_then(|alignment| alignment.operand_paths())
     .expect("variable-reference compact operand paths");
     assert_eq!(
@@ -177,11 +184,15 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let mut wrong_generation = scope.clone();
     wrong_generation.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
-    assert!(exact_assembly_alignment(
-        &bytes,
-        &IndexedRecordOffsets::build(&bytes),
-        &wrong_generation,
-        &owners,
-    )
-    .is_none());
+    assert!(
+        crate::design::test_support::with_test_decode_context(|ctx| exact_assembly_alignment(
+            ctx,
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &wrong_generation,
+            &owners,
+        )
+        .unwrap())
+        .is_none()
+    );
 }

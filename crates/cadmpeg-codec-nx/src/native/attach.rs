@@ -4,53 +4,75 @@
 use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
-use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 
-use cadmpeg_core::decode::{alloc_filled, DecodeContext};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{
-    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition,
-    SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, AttributeId, BodyId, CurveId, EdgeId,
-    FeatureResultTopologyId, LoopId, SurfaceId, UnknownId,
+    AppearanceBindingId, AppearanceId, AttributeId, BodyId, FeatureResultTopologyId, UnknownId,
 };
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
 };
-use cadmpeg_ir::topology::{BodyKind, Coedge, Color, Face, Sense};
-use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
     features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{HoleForm, HoleKind, HolePlacement},
-        patterns::PatternKind,
         BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ConfigurationFeatureState,
-        ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
-        DesignConfiguration, DesignParameter, DistinctMembers, EdgeSelection, ExtrudeExtent,
-        ExtrudeSide, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureId,
-        FeatureOperation, FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole,
-        LinearTermination, ParameterId, ParameterValue, PathRef, PlanarProfileRef, ProfileRef,
-        RibConstruction, RibDraft, SurfaceExtension, ThickenSide, TreeChildren, TrimRegion,
-        UnresolvedFamily,
+        ConfigurationId, DesignConfiguration, DesignParameter, DistinctMembers, ExtrudeExtent,
+        ExtrudeSide, Feature, FeatureContent, FeatureDefinition, FeatureId, FeatureOperation,
+        FeatureResultTopology, FeatureSourceContent, FeatureTreeNodeRole, LinearTermination,
+        ParameterId, ParameterValue, PlanarProfileRef, ProfileRef, TreeChildren,
     },
-    scalar::{Angle, FiniteReal, Length, NonZeroLength, PositiveLength},
+    scalar::{Angle, FiniteReal, Length},
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
+pub(super) mod body_selection;
+pub(super) mod expressions;
+pub(super) mod feature_projection;
+
+use body_selection::{
+    atomic_disjoint_body_selections, boolean_participant_writer, boolean_target_output,
+    boolean_target_writer, feature_body_selection, feature_body_selection_with_offset_blocks,
+    feature_body_set_selection, local_body_selection, FeatureBodySelection,
+};
+
+use feature_projection::{
+    blend_feature_definition, blind_hole_axis_placements_for_operations,
+    blind_hole_body_projection, blind_hole_operations, block_placement,
+    body_writing_unresolved_feature_definition, brep_feature_definition,
+    counterbore_axis_placements_for_operations, counterbore_body_projection,
+    counterbore_operations, extend_hole_projection_map, feature_source_content,
+    hole_axis_placements_for_operations, hole_body_projection, hole_package_projection,
+    native_feature_parameters, new_body_boolean_op, non_boolean_feature_definition_with_parameters,
+    non_modeling_history_definition, offset_surface_feature_definition, primary_hole_outputs,
+    selection_indices_native, simple_hole_chamfers, simple_hole_native_properties,
+    simple_hole_operations, sphere_body_projection, thicken_feature_definition, HolePackageSources,
+    HoleProjection, NewBodyEvidence, NxBlendFamily,
+};
+
 const MIN_LINEAR_TOLERANCE: f64 = 1.0e-9;
 const MIN_ANGULAR_TOLERANCE: f64 = 1.0e-12;
+
+fn push_native_unknown(
+    ctx: &DecodeContext<'_>,
+    unknowns: &mut Vec<UnknownRecord>,
+    record: UnknownRecord,
+) -> Result<(), CodecError> {
+    ctx.charge_entities(1, "NX native unknown record")?;
+    ctx.reserve_retained_vec(unknowns, 1, "NX native unknown records")?;
+    unknowns.push(record);
+    Ok(())
+}
 
 /// Refuses a document tolerance finer than the hole recognisers resolve.
 ///
@@ -80,7 +102,7 @@ use crate::container::EntryContent;
 use crate::decode::ids::{extended_id, native_entity_key, IdScope};
 use crate::decode::Scan;
 use crate::native::history::{
-    active_feature_closure, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
+    active_feature_closure_for_decode, BodyWriterHistory, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS,
     NATIVE_PRIMARY_BODY_OBJECT_INDEX,
 };
 use crate::native::om::display_color::{
@@ -144,12 +166,16 @@ fn attach_container_payloads(
             .note(&id, &annotation_stream, offset)
             .tag(content.label());
         annotations.exactness(&id, Exactness::ByteExact);
-        unknowns.push(UnknownRecord::retained(
-            id,
-            offset,
-            ctx.copy_retained(bytes, "retain NX opaque container payload")?,
-            Vec::new(),
-        ));
+        push_native_unknown(
+            ctx,
+            unknowns,
+            UnknownRecord::retained(
+                id,
+                offset,
+                ctx.copy_retained(bytes, "retain NX opaque container payload")?,
+                Vec::new(),
+            ),
+        )?;
     }
     attach_jpeg_preview_assets(ctx, ir, scan, annotations, unknowns)?;
     Ok(())
@@ -162,7 +188,7 @@ fn attach_indexed_om_unknowns(
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let object_sections = scan.container.indexed_om_sections();
+    let object_sections = scan.container.indexed_om_sections(ctx)?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
         match &section.store {
@@ -172,17 +198,24 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
                     )
                     .id(&cadmpeg_ir::identity_component!("record"), record_index);
-                    let offset = entry_offset + record.offset as u64;
+                    let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
                     annotations
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_ENTITY_RECORD");
                     annotations.exactness(&id, Exactness::ByteExact);
-                    unknowns.push(UnknownRecord::retained(
-                        id,
-                        offset,
-                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
-                        Vec::new(),
-                    ));
+                    push_native_unknown(
+                        ctx,
+                        unknowns,
+                        UnknownRecord::retained(
+                            id,
+                            offset,
+                            ctx.copy_retained(
+                                record.bytes,
+                                "retain NX indexed object-model record",
+                            )?,
+                            Vec::new(),
+                        ),
+                    )?;
                 }
             }
             crate::om::IndexedStore::OffsetOnly {
@@ -195,17 +228,24 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_ir::identity_component!("om-section-").then(section_index),
                     )
                     .id(&cadmpeg_ir::identity_component!("block"), record_index);
-                    let offset = entry_offset + record.offset as u64;
+                    let offset = entry_offset + cadmpeg_core::decode::u64_from_index(record.offset);
                     annotations
                         .note(&id, &annotation_stream, offset)
                         .tag("OM_DATA_BLOCK");
                     annotations.exactness(&id, Exactness::ByteExact);
-                    unknowns.push(UnknownRecord::retained(
-                        id,
-                        offset,
-                        ctx.copy_retained(record.bytes, "retain NX indexed object-model record")?,
-                        Vec::new(),
-                    ));
+                    push_native_unknown(
+                        ctx,
+                        unknowns,
+                        UnknownRecord::retained(
+                            id,
+                            offset,
+                            ctx.copy_retained(
+                                record.bytes,
+                                "retain NX indexed object-model record",
+                            )?,
+                            Vec::new(),
+                        ),
+                    )?;
                 }
             }
         }
@@ -223,33 +263,41 @@ pub(super) fn attach(
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
-    let has_object_sections = !scan.container.indexed_om_sections().is_empty();
+    let has_object_sections = !scan.container.indexed_om_sections(ctx)?.is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    attach_rm_face_colors(ir, model, scan, annotations)?;
-    attach_rm_appearances(ir, model, scan, annotations)?;
-    let display_jt_tessellations = display_jt_tessellations(&DisplayJtTessellationInputs {
-        meshes: &model.display_jt.display_jt_polygon_meshes,
-        coordinates: &model.display_jt.display_jt_vertex_coordinates,
-        normals: &model.display_jt.display_jt_vertex_normals,
-        colors: &model.display_jt.display_jt_vertex_colors,
-        texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
-        vertex_flags: &model.display_jt.display_jt_vertex_flags,
-        vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
-        coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
-        shape_elements: model.display_jt.graph.shape_lod_elements(),
-        bindings: &model.display_jt.display_jt_shape_lod_bindings,
-        shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
-        base_nodes: &model.display_jt.display_jt_base_node_data,
-        group_nodes: &model.display_jt.display_jt_group_node_data,
-        instance_nodes: &model.display_jt.display_jt_instance_nodes,
-        transforms: &model.display_jt.display_jt_geometric_transform_attributes,
-        materials: &model.display_jt.display_jt_material_attributes,
-        compressed_elements: model.display_jt.graph.compressed_elements(),
-    })?;
+    attach_rm_face_colors(ctx, ir, model, scan, annotations)?;
+    attach_rm_appearances(ctx, ir, model, scan, annotations)?;
+    let display_jt_tessellations = display_jt_tessellations(
+        ctx,
+        &DisplayJtTessellationInputs {
+            meshes: &model.display_jt.display_jt_polygon_meshes,
+            coordinates: &model.display_jt.display_jt_vertex_coordinates,
+            normals: &model.display_jt.display_jt_vertex_normals,
+            colors: &model.display_jt.display_jt_vertex_colors,
+            texture_coordinates: &model.display_jt.display_jt_vertex_texture_coordinates,
+            vertex_flags: &model.display_jt.display_jt_vertex_flags,
+            vertex_headers: &model.display_jt.display_jt_vertex_records_headers,
+            coordinate_headers: &model.display_jt.display_jt_coordinate_array_headers,
+            shape_elements: model.display_jt.graph.shape_lod_elements(),
+            bindings: &model.display_jt.display_jt_shape_lod_bindings,
+            shape_nodes: &model.display_jt.display_jt_tri_strip_shape_nodes,
+            base_nodes: &model.display_jt.display_jt_base_node_data,
+            group_nodes: &model.display_jt.display_jt_group_node_data,
+            instance_nodes: &model.display_jt.display_jt_instance_nodes,
+            transforms: &model.display_jt.display_jt_geometric_transform_attributes,
+            materials: &model.display_jt.display_jt_material_attributes,
+            compressed_elements: model.display_jt.graph.compressed_elements(),
+        },
+    )?;
     for (tessellation, source_offset) in display_jt_tessellations {
+        ctx.reserve_retained_vec(
+            &mut ir.model.tessellations,
+            1,
+            "NX attached display tessellations",
+        )?;
         annotations
             .note(tessellation.id.as_str(), &annotation_stream, source_offset)
             .tag("DISPLAY_JT_TESSELLATION");
@@ -257,44 +305,38 @@ pub(super) fn attach(
         ir.model.tessellations.push(tessellation);
     }
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupA, model, annotations);
-    attach_material_texture_assets(ctx, ir, model, scan, annotations)?;
-    for attribute in &model.om.part_attributes {
-        annotations
-            .note(&attribute.id, &annotation_stream, attribute.source_offset)
-            .tag("Attribute");
-        annotations.exactness(&attribute.id, Exactness::ByteExact);
-        let id: AttributeId =
-            extended_id(attribute.id.as_str(), &cadmpeg_ir::identity_key!("neutral")).ok_or_else(
-                || CodecError::malformed(format_args!("NX part attribute id is not an identity")),
-            )?;
-        annotations
-            .note(id.as_str(), &annotation_stream, attribute.source_offset)
-            .tag("Attribute");
-        annotations
-            .derived(id.as_str(), "target")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations
-            .derived(id.as_str(), "name")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        annotations
-            .derived(id.as_str(), "values")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        ir.model.attributes.push(SourceAttribute {
-            id,
-            target: AttributeTarget::Document,
-            name: attribute.title.clone(),
-            values: vec![AttributeValue::String(attribute.value.clone())],
-        });
-    }
+    attach_material_texture_assets(
+        ctx,
+        ir,
+        &model.om.material_texture_assets,
+        scan,
+        annotations,
+    )?;
+    attach_part_attributes(
+        ctx,
+        ir,
+        model.om.part_attributes.iter().map(|attribute| {
+            (
+                attribute.id.as_str(),
+                attribute.title.as_str(),
+                attribute.value.as_str(),
+                attribute.source_offset,
+            )
+        }),
+        annotations,
+        &annotation_stream,
+    )?;
     let topology_attribute_index = ParasolidTopologyAttributeIndex::new(
+        ctx,
         ir,
         &model.parasolid.parasolid_topology_attribute_list_references,
         &model.parasolid.parasolid_topology_attribute_class_uses,
         &model.parasolid.parasolid_attribute_definitions,
         &model.parasolid.parasolid_attribute_field_uses,
         &model.parasolid.parasolid_attribute_field_names,
-    );
+    )?;
     attach_parasolid_topology_string_attributes(
+        ctx,
         ir,
         &ParasolidStringAttributeSources {
             string_uses: &model.parasolid.parasolid_entity_51_string_uses,
@@ -304,6 +346,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_parasolid_topology_numeric_attributes(
+        ctx,
         ir,
         &ParasolidNumericAttributeSources {
             numeric_uses: &model.parasolid.parasolid_entity_51_numeric_uses,
@@ -314,6 +357,7 @@ pub(super) fn attach(
         annotations,
     )?;
     attach_parasolid_topology_structured_attributes(
+        ctx,
         ir,
         &ParasolidStructuredAttributeSources {
             structured_uses: &model.parasolid.parasolid_entity_51_structured_uses,
@@ -327,96 +371,59 @@ pub(super) fn attach(
     )?;
     NATIVE_CATALOGUE.note_phase(NotePhase::GroupB, model, annotations);
     attach_indexed_om_unknowns(ctx, scan, annotations, unknowns)?;
-    if !model.om.configurations.is_empty() {
-        for (ordinal, configuration) in model.om.configurations.iter().enumerate() {
-            let id: ConfigurationId =
-                IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
-                    .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
-            let active_attribute_use = model
-                .om
-                .configuration_attribute_uses
-                .iter()
-                .find(|relation| relation.configuration == configuration.id);
-            let bodies = if active_attribute_use.is_some() {
-                Some(
-                    (ir.model
-                        .bodies
-                        .iter()
-                        .map(|body| body.id.clone())
-                        .collect::<Vec<_>>())
-                    .try_into()
-                    .map_err(|error: &str| CodecError::Malformed(error.to_owned()))?,
-                )
-            } else {
-                None
-            };
-            annotations
-                .note(id.as_str(), &annotation_stream, configuration.source_offset)
-                .tag("Arrangement");
-            annotations
-                .derived(id.as_str(), "ordinal")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            if active_attribute_use.is_some() {
-                annotations
-                    .derived(id.as_str(), "active")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-            }
-            annotations
-                .derived(id.as_str(), "source_index")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .derived(id.as_str(), "name")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .derived(id.as_str(), "native_ref")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            if bodies
-                .as_deref()
-                .is_some_and(|bodies: &[_]| !bodies.is_empty())
-            {
-                annotations
-                    .derived(id.as_str(), "bodies")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-            }
-            ir.model.configurations.push(DesignConfiguration {
-                id,
-                ordinal: ordinal as u32,
-                active: active_attribute_use.is_some(),
-                source_index: Some(ordinal as u32),
-                name: configuration.name.clone().into(),
-                material: None,
-                properties: active_attribute_use
-                    .map(|relation| {
-                        BTreeMap::from([(
-                            cadmpeg_core::nonblank_literal!("active_attribute_use"),
-                            relation.id.clone(),
-                        )])
-                    })
-                    .unwrap_or_default(),
-                parameter_overrides: BTreeMap::new(),
-                bodies,
-                parameter_values: BTreeMap::new(),
-                feature_states: BTreeMap::new(),
-                native_ref: Some(configuration.id.clone()),
-            });
-        }
-    }
-    attach_expression_parameters(
+    let configuration_lookup_work = model
+        .om
+        .configurations
+        .len()
+        .checked_mul(model.om.configuration_attribute_uses.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX configuration relation lookup",
+                0,
+                cadmpeg_core::decode::u64_from_index(model.om.configurations.len()),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(configuration_lookup_work),
+        "NX configuration relation lookup",
+    )?;
+    attach_configurations(
+        ctx,
+        ir,
+        model.om.configurations.iter().map(|configuration| {
+            (
+                configuration.id.as_str(),
+                configuration.name.as_str(),
+                configuration.source_offset,
+                model
+                    .om
+                    .configuration_attribute_uses
+                    .iter()
+                    .find(|relation| relation.configuration == configuration.id)
+                    .map(|relation| relation.id.as_str()),
+            )
+        }),
+        annotations,
+        &annotation_stream,
+    )?;
+    expressions::attach_expression_parameters(
+        ctx,
         ir,
         &model.om.expressions,
         &model.om.expression_declarations,
         &model.features.feature_parameter_uses,
         annotations,
     )?;
-    attach_active_configuration_parameter_values(ir, annotations)?;
+    attach_active_configuration_parameter_values(ctx, ir, annotations)?;
     attach_feature_operations(ctx, ir, model, annotations, losses)?;
-    attach_block_dimension_parameter_consumers(
+    expressions::attach_block_dimension_parameter_consumers(
+        ctx,
         ir,
         &model.features.feature_block_dimensions,
         annotations,
     )?;
-    attach_current_feature_states(ir, annotations)?;
-    attach_active_configuration_feature_states(ir, annotations)?;
+    attach_current_feature_states(ctx, ir, annotations)?;
+    attach_active_configuration_feature_states(ctx, ir, annotations)?;
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -427,29 +434,257 @@ pub(super) fn attach(
     Ok(())
 }
 
+fn attach_part_attributes<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    attributes: impl IntoIterator<Item = (&'a str, &'a str, &'a str, u64)>,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &StreamHandle,
+) -> Result<(), CodecError> {
+    for (attribute_id, attribute_title, attribute_value, source_offset) in attributes {
+        let id_bytes = attribute_id
+            .len()
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(":neutral".len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX part attribute identity",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(attribute_id.len()),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_bytes),
+            "NX part attribute identity",
+        )?;
+        annotations
+            .note(attribute_id, annotation_stream, source_offset)
+            .tag("Attribute");
+        annotations.exactness(attribute_id, Exactness::ByteExact);
+        let id: AttributeId = extended_id(attribute_id, &cadmpeg_ir::identity_key!("neutral"))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("NX part attribute id is not an identity"))
+            })?;
+        annotations
+            .note(id.as_str(), annotation_stream, source_offset)
+            .tag("Attribute");
+        annotations
+            .derived(id.as_str(), "target")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "values")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.charge_collection_items(1, "NX attached part attributes")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<SourceAttribute>()),
+            "NX attached part attributes",
+        )?;
+        ctx.charge_collection_items(1, "NX part attribute values")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<AttributeValue>()
+                    .checked_add(attribute_title.len())
+                    .and_then(|bytes| bytes.checked_add(attribute_value.len()))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "NX part attribute value",
+                            0,
+                            cadmpeg_core::decode::u64_from_index(attribute_value.len()),
+                        )
+                    })?,
+            ),
+            "NX part attribute values",
+        )?;
+        let mut values = Vec::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut values,
+            1,
+            "NX part attribute values",
+        )?;
+        values.push(AttributeValue::String(attribute_value.to_string()));
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.attributes,
+            1,
+            "NX attached part attributes",
+        )?;
+        ir.model.attributes.push(SourceAttribute {
+            id,
+            target: AttributeTarget::Document,
+            name: attribute_title.to_string(),
+            values,
+        });
+    }
+    Ok(())
+}
+
+fn attach_configurations<'a>(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    configurations: impl IntoIterator<Item = (&'a str, &'a str, u64, Option<&'a str>)>,
+    annotations: &mut AnnotationBuilder,
+    annotation_stream: &StreamHandle,
+) -> Result<(), CodecError> {
+    for (ordinal, (configuration_id, configuration_name, source_offset, active_attribute_use)) in
+        configurations.into_iter().enumerate()
+    {
+        let id: ConfigurationId = IdScope::native(cadmpeg_ir::identity_component!("arrangements"))
+            .id(&cadmpeg_ir::identity_component!("configuration"), ordinal);
+        let ordinal_u32 = u32::try_from(ordinal).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "NX configuration ordinal",
+                0,
+                cadmpeg_core::decode::u64_from_index(ordinal),
+            )
+        })?;
+        let bodies = if active_attribute_use.is_some() {
+            let mut selected = Vec::new();
+            ctx.reserve_retained_vec(
+                &mut selected,
+                ir.model.bodies.len(),
+                "NX active configuration bodies",
+            )?;
+            for body in &ir.model.bodies {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+                    "NX active configuration bodies",
+                )?;
+                selected.push(body.id.clone());
+            }
+            let unique_work = selected.len().checked_mul(selected.len()).ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX active configuration body uniqueness",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(selected.len()),
+                )
+            })?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(unique_work),
+                "NX active configuration body uniqueness",
+            )?;
+            Some(
+                DistinctMembers::try_from_unique_vec(selected)
+                    .map_err(|error| CodecError::Malformed(error.to_owned()))?,
+            )
+        } else {
+            None
+        };
+        annotations
+            .note(id.as_str(), annotation_stream, source_offset)
+            .tag("Arrangement");
+        annotations
+            .derived(id.as_str(), "ordinal")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        if active_attribute_use.is_some() {
+            annotations
+                .derived(id.as_str(), "active")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+        annotations
+            .derived(id.as_str(), "source_index")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "name")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations
+            .derived(id.as_str(), "native_ref")
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        if bodies
+            .as_deref()
+            .is_some_and(|bodies: &[_]| !bodies.is_empty())
+        {
+            annotations
+                .derived(id.as_str(), "bodies")
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+        ctx.charge_collection_items(1, "NX attached configurations")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<DesignConfiguration>()),
+            "NX attached configurations",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(configuration_name.len()),
+            "NX configuration name",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(configuration_id.len()),
+            "NX configuration native reference",
+        )?;
+        let mut properties = BTreeMap::new();
+        if let Some(relation) = active_attribute_use {
+            ctx.charge_collection_items(1, "NX active configuration property")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(String, String)>()
+                        .checked_add(relation.len())
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "NX active configuration property",
+                                0,
+                                cadmpeg_core::decode::u64_from_index(relation.len()),
+                            )
+                        })?,
+                ),
+                "NX active configuration property",
+            )?;
+            properties.insert(
+                cadmpeg_core::nonblank_literal!("active_attribute_use"),
+                relation.to_string(),
+            );
+        }
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.configurations,
+            1,
+            "NX attached configurations",
+        )?;
+        ir.model.configurations.push(DesignConfiguration {
+            id,
+            ordinal: ordinal_u32,
+            active: active_attribute_use.is_some(),
+            source_index: Some(ordinal_u32),
+            name: configuration_name.to_string().into(),
+            material: None,
+            properties,
+            parameter_overrides: BTreeMap::new(),
+            bodies,
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: Some(configuration_id.to_string()),
+        });
+    }
+    Ok(())
+}
+
 fn attach_rm_face_colors(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let face_indices = ir
-        .model
-        .faces
-        .iter()
-        .enumerate()
-        .map(|(index, face)| (face.id.as_str().to_owned(), index))
-        .collect::<BTreeMap<_, _>>();
-    let face_ids = face_indices.keys().cloned().collect::<BTreeSet<_>>();
+    let (face_ids, _face_ids_reservation) =
+        collect_rm_face_ids(ctx, ir.model.faces.iter().map(|face| face.id.as_str()))?;
     let bindings = resolve_rm_face_colors(
+        ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
+        &super::substrate::paired_delta_streams(ctx, scan)?,
     )?;
     for (face_id, color) in bindings {
-        let Some(index) = face_indices.get(&face_id).copied() else {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
+            "NX RM face color target lookup",
+        )?;
+        let Some(index) = ir
+            .model
+            .faces
+            .iter()
+            .rposition(|face| face.id.as_str() == face_id)
+        else {
             continue;
         };
         let face = &mut ir.model.faces[index];
@@ -461,6 +696,39 @@ fn attach_rm_face_colors(
         }
     }
     Ok(())
+}
+
+fn collect_rm_face_ids<'a, 'b>(
+    ctx: &'a DecodeContext<'_>,
+    faces: impl IntoIterator<Item = &'b str>,
+) -> Result<
+    (
+        BTreeSet<String>,
+        cadmpeg_core::decode::ScopedReservation<'a>,
+    ),
+    CodecError,
+> {
+    let mut ids = BTreeSet::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX RM face identity lookup")?;
+    for id in faces {
+        ctx.charge_work(1, "NX RM face identity lookup")?;
+        if ids.contains(id) {
+            continue;
+        }
+        let bytes = std::mem::size_of::<String>()
+            .checked_add(id.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX RM face identity lookup",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(id.len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX RM face identity lookup")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        ids.insert(id.to_owned());
+    }
+    Ok((ids, reservation))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -478,46 +746,64 @@ struct RmFaceColorBinding {
 }
 
 fn attach_rm_appearances(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let source_bindings = resolve_rm_source_color_bindings(&model.om.rm_display_color_assignments);
-    let face_ids = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| face.id.as_str().to_owned())
-        .collect::<BTreeSet<_>>();
+    let source_bindings =
+        resolve_rm_source_color_bindings(ctx, &model.om.rm_display_color_assignments)?;
+    let (face_ids, _face_ids_reservation) =
+        collect_rm_face_ids(ctx, ir.model.faces.iter().map(|face| face.id.as_str()))?;
     let face_bindings = resolve_rm_face_color_bindings(
+        ctx,
         &face_ids,
         &model.om.rm_display_color_assignments,
         &model.om.part_color_definitions,
         &model.parasolid.parasolid_deltas_records,
-        &super::substrate::paired_delta_streams(scan),
-    );
+        &super::substrate::paired_delta_streams(ctx, scan)?,
+    )?;
     if source_bindings.is_empty() && face_bindings.is_empty() {
         return Ok(());
     }
-    let definitions = model
-        .om
-        .part_color_definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect::<BTreeMap<_, _>>();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     let mut appearances = BTreeMap::<String, AppearanceId>::new();
+    let mut appearances_reservation = ctx.reserve_scoped(0, "NX RM appearance identity lookup")?;
     for binding in source_bindings {
-        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(model.om.part_color_definitions.len()),
+            "NX RM appearance definition lookup",
+        )?;
+        let Some(definition) = model
+            .om
+            .part_color_definitions
+            .iter()
+            .rev()
+            .find(|definition| definition.id == binding.color_definition)
+        else {
             continue;
         };
         let appearance_id = ensure_rm_color_appearance(
+            ctx,
             ir,
             annotations,
             &mut appearances,
+            &mut appearances_reservation,
             definition,
             &annotation_stream,
+        )?;
+        let binding_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(
+                binding.source_id.len().checked_add(128).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX RM source binding identity",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(binding.source_id.len()),
+                    )
+                })?,
+            ),
+            "NX RM source binding identity",
         )?;
         let binding_id: AppearanceBindingId =
             IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
@@ -528,6 +814,7 @@ fn attach_rm_appearances(
                     ))
                 })?,
             );
+        drop(binding_id_reservation);
         annotations
             .note(
                 binding_id.as_str(),
@@ -541,6 +828,27 @@ fn attach_rm_appearances(
         annotations
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
+            .checked_add(binding_id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(binding.source_id.len()))
+            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX RM source appearance binding",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(binding.source_id.len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX RM source appearance bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(binding_bytes),
+            "NX RM source appearance binding",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "NX RM source appearance bindings",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Source {
@@ -554,18 +862,32 @@ fn attach_rm_appearances(
         });
     }
     for binding in face_bindings {
-        let Some(definition) = definitions.get(binding.color_definition.as_str()) else {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(model.om.part_color_definitions.len()),
+            "NX RM appearance definition lookup",
+        )?;
+        let Some(definition) = model
+            .om
+            .part_color_definitions
+            .iter()
+            .rev()
+            .find(|definition| definition.id == binding.color_definition)
+        else {
             continue;
         };
-        let Some((face_id, existing_color)) = ir
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ir.model.faces.len()),
+            "NX RM appearance face lookup",
+        )?;
+        let Some(face) = ir
             .model
             .faces
             .iter()
             .find(|face| face.id.as_str() == binding.face_id)
-            .map(|face| (face.id.clone(), face.color))
         else {
             continue;
         };
+        let existing_color = face.color;
         let color = Color::new(
             definition.components[0].0.value(),
             definition.components[1].0.value(),
@@ -576,12 +898,31 @@ fn attach_rm_appearances(
         if existing_color.is_some_and(|existing| existing != color) {
             continue;
         }
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(face.id.as_str().len()),
+            "NX RM appearance face target",
+        )?;
+        let face_id = face.id.clone();
         let appearance_id = ensure_rm_color_appearance(
+            ctx,
             ir,
             annotations,
             &mut appearances,
+            &mut appearances_reservation,
             definition,
             &annotation_stream,
+        )?;
+        let binding_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(
+                binding.face_id.len().checked_add(128).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX RM face binding identity",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(binding.face_id.len()),
+                    )
+                })?,
+            ),
+            "NX RM face binding identity",
         )?;
         let binding_id: AppearanceBindingId =
             IdScope::native(cadmpeg_ir::identity_component!("appearance-binding")).id(
@@ -592,6 +933,7 @@ fn attach_rm_appearances(
                     ))
                 })?,
             );
+        drop(binding_id_reservation);
         annotations
             .note(
                 binding_id.as_str(),
@@ -605,6 +947,27 @@ fn attach_rm_appearances(
         annotations
             .derived(binding_id.as_str(), "appearance")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        let binding_bytes = std::mem::size_of::<AppearanceBinding>()
+            .checked_add(binding_id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(face_id.as_str().len()))
+            .and_then(|bytes| bytes.checked_add(appearance_id.as_str().len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX RM face appearance binding",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(face_id.as_str().len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX RM face appearance bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(binding_bytes),
+            "NX RM face appearance binding",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.appearance_bindings,
+            1,
+            "NX RM face appearance bindings",
+        )?;
         ir.model.appearance_bindings.push(AppearanceBinding {
             id: binding_id,
             target: AppearanceTarget::Face(face_id),
@@ -619,9 +982,11 @@ fn attach_rm_appearances(
 }
 
 fn ensure_rm_color_appearance(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     appearances: &mut BTreeMap<String, AppearanceId>,
+    appearances_reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     definition: &crate::native::om::PartColorDefinition,
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<AppearanceId, CodecError> {
@@ -632,9 +997,29 @@ fn ensure_rm_color_appearance(
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(appearances.len()),
+        "NX RM appearance reuse lookup",
+    )?;
     if let Some(id) = appearances.get(&definition.id) {
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id.as_str().len()),
+            "NX RM reused appearance identity",
+        )?;
         return Ok(id.clone());
     }
+    let identity_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(definition.id.len().checked_add(128).ok_or_else(
+            || {
+                ctx.refuse_codec_limit(
+                    "NX RM color appearance identity",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(definition.id.len()),
+                )
+            },
+        )?),
+        "NX RM color appearance identity",
+    )?;
     let id: AppearanceId = IdScope::native(cadmpeg_ir::identity_component!("appearance")).id(
         &cadmpeg_ir::identity_component!("rmfastload-color"),
         native_entity_key(&definition.id).ok_or_else(|| {
@@ -643,6 +1028,7 @@ fn ensure_rm_color_appearance(
             ))
         })?,
     );
+    drop(identity_reservation);
     annotations
         .note(id.as_str(), annotation_stream, definition.source_offset)
         .tag("RMFASTLOAD_COLOR_APPEARANCE");
@@ -655,6 +1041,30 @@ fn ensure_rm_color_appearance(
     annotations
         .derived(id.as_str(), "base_color")
         .map_err(cadmpeg_core::CodecError::malformed)?;
+    let appearance_bytes = std::mem::size_of::<Appearance>()
+        .checked_add(id.as_str().len())
+        .and_then(|bytes| bytes.checked_add(definition.name.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX RM color appearance",
+                0,
+                cadmpeg_core::decode::u64_from_index(definition.name.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX RM color appearances")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(appearance_bytes),
+        "NX RM color appearance",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id.as_str().len()),
+        "NX RM color appearance binding identity",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.appearances,
+        1,
+        "NX RM color appearances",
+    )?;
     ir.model.appearances.push(Appearance {
         id: id.clone(),
         name: Some(definition.name.clone()),
@@ -668,6 +1078,18 @@ fn ensure_rm_color_appearance(
         properties: BTreeMap::new(),
         textures: Vec::new(),
     });
+    let lookup_bytes = std::mem::size_of::<(String, AppearanceId)>()
+        .checked_add(definition.id.len())
+        .and_then(|bytes| bytes.checked_add(id.as_str().len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX RM appearance identity lookup",
+                0,
+                cadmpeg_core::decode::u64_from_index(definition.id.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX RM appearance identity lookup")?;
+    appearances_reservation.grow(cadmpeg_core::decode::u64_from_index(lookup_bytes))?;
     appearances.insert(definition.id.clone(), id.clone());
     Ok(id)
 }
@@ -705,114 +1127,32 @@ impl<'a> RmColorChoice<'a> {
 }
 
 fn resolve_rm_source_color_bindings(
+    ctx: &DecodeContext<'_>,
     assignments: &[RmDisplayColorAssignment],
-) -> Vec<RmSourceColorBinding> {
+) -> Result<Vec<RmSourceColorBinding>, CodecError> {
     let mut choices = BTreeMap::<&str, RmColorChoice<'_>>::new();
+    let mut choices_reservation = ctx.reserve_scoped(0, "NX RM source color choices")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(assignments.len()),
+        "NX RM source color assignments",
+    )?;
     for assignment in assignments {
         let Some(source_id) = assignment.target_object_id.as_deref() else {
             continue;
         };
+        if !choices.contains_key(source_id) {
+            ctx.charge_collection_items(1, "NX RM source color choices")?;
+            choices_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, RmColorChoice<'_>)>(),
+            ))?;
+        }
         choices
             .entry(source_id)
             .and_modify(|choice| choice.observe(assignment))
             .or_insert_with(|| RmColorChoice::new(assignment));
     }
-    choices
-        .into_iter()
-        .filter_map(|(source_id, choice)| {
-            let RmColorChoice::Unique {
-                definition,
-                source_offset,
-            } = choice
-            else {
-                return None;
-            };
-            Some(RmSourceColorBinding {
-                source_id: source_id.to_owned(),
-                color_definition: definition.to_owned(),
-                source_offset,
-            })
-        })
-        .collect()
-}
-
-fn resolve_rm_face_colors(
-    face_ids: &BTreeSet<String>,
-    assignments: &[RmDisplayColorAssignment],
-    definitions: &[super::om::PartColorDefinition],
-    records: &[super::parasolid::ParasolidDeltasRecord],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Result<Vec<(String, Color)>, CodecError> {
-    let definitions_by_id = definitions
-        .iter()
-        .map(|definition| (definition.id.as_str(), definition))
-        .collect::<BTreeMap<_, _>>();
-    resolve_rm_face_color_bindings(face_ids, assignments, definitions, records, delta_pairs)
-        .into_iter()
-        .filter_map(|binding| {
-            let definition = definitions_by_id.get(binding.color_definition.as_str())?;
-            Some((
-                binding.face_id,
-                Color::new(
-                    definition.components[0].0.value(),
-                    definition.components[1].0.value(),
-                    definition.components[2].0.value(),
-                    1.0,
-                )
-                .ok_or_else(|| {
-                    CodecError::Malformed("RM color components must be in [0, 1]".into())
-                }),
-            ))
-        })
-        .map(|(id, color)| color.map(|color| (id, color)))
-        .collect()
-}
-
-fn resolve_rm_face_color_bindings(
-    face_ids: &BTreeSet<String>,
-    assignments: &[RmDisplayColorAssignment],
-    definitions: &[super::om::PartColorDefinition],
-    records: &[super::parasolid::ParasolidDeltasRecord],
-    delta_pairs: &BTreeMap<usize, Vec<usize>>,
-) -> Vec<RmFaceColorBinding> {
-    let mut partitions_by_delta = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for (partition, deltas) in delta_pairs {
-        for delta in deltas {
-            partitions_by_delta
-                .entry(*delta as u32)
-                .or_default()
-                .insert(*partition as u32);
-        }
-    }
-
-    let mut choices = BTreeMap::<u32, RmColorChoice<'_>>::new();
-    for assignment in assignments {
-        let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
-            continue;
-        };
-        choices
-            .entry(row.first_index().atom.value())
-            .and_modify(|choice| choice.observe(assignment))
-            .or_insert_with(|| RmColorChoice::new(assignment));
-    }
-    let definition_ids = definitions
-        .iter()
-        .map(|definition| definition.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut face_records_by_node = BTreeMap::<u32, Vec<_>>::new();
-    for record in records {
-        let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
-        else {
-            continue;
-        };
-        face_records_by_node
-            .entry(*node_id)
-            .or_default()
-            .push(record);
-    }
-
     let mut bindings = Vec::new();
-    for (object_index, choice) in choices {
+    for (source_id, choice) in choices {
         let RmColorChoice::Unique {
             definition,
             source_offset,
@@ -820,35 +1160,243 @@ fn resolve_rm_face_color_bindings(
         else {
             continue;
         };
-        if !definition_ids.contains(definition) {
-            continue;
-        }
-        let candidates = face_records_by_node
-            .get(&object_index)
-            .into_iter()
-            .flatten()
-            .filter_map(|record| {
-                let partitions = partitions_by_delta.get(&record.stream_ordinal)?;
-                let mut partitions = partitions.iter();
-                let (Some(partition), None) = (partitions.next(), partitions.next()) else {
-                    return None;
-                };
-                let face_id = format!("nx:s{partition}:face#{}", record.xmt);
-                face_ids.contains(&face_id).then_some(face_id)
-            })
-            .collect::<BTreeSet<_>>();
-        let mut candidates = candidates.into_iter();
-        let (Some(face_id), None) = (candidates.next(), candidates.next()) else {
+        let bytes = std::mem::size_of::<RmSourceColorBinding>()
+            .checked_add(source_id.len())
+            .and_then(|bytes| bytes.checked_add(definition.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX RM source color binding",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(source_id.len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX RM source color bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX RM source color bindings",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bindings,
+            1,
+            "NX RM source color bindings",
+        )?;
+        bindings.push(RmSourceColorBinding {
+            source_id: source_id.to_owned(),
+            color_definition: definition.to_owned(),
+            source_offset,
+        });
+    }
+    Ok(bindings)
+}
+
+fn resolve_rm_face_colors(
+    ctx: &DecodeContext<'_>,
+    face_ids: &BTreeSet<String>,
+    assignments: &[RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Result<Vec<(String, Color)>, CodecError> {
+    let bindings = resolve_rm_face_color_bindings(
+        ctx,
+        face_ids,
+        assignments,
+        definitions,
+        records,
+        delta_pairs,
+    )?;
+    let mut colors = Vec::new();
+    for binding in bindings {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definitions.len()),
+            "NX RM face color definition lookup",
+        )?;
+        let Some(definition) = definitions
+            .iter()
+            .rev()
+            .find(|definition| definition.id.as_str() == binding.color_definition.as_str())
+        else {
             continue;
         };
+        let color = Color::new(
+            definition.components[0].0.value(),
+            definition.components[1].0.value(),
+            definition.components[2].0.value(),
+            1.0,
+        )
+        .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
+        ctx.reserve_retained_vec(&mut colors, 1, "NX resolved RM face colors")?;
+        colors.push((binding.face_id, color));
+    }
+    Ok(colors)
+}
+
+fn resolve_rm_face_color_bindings(
+    ctx: &DecodeContext<'_>,
+    face_ids: &BTreeSet<String>,
+    assignments: &[RmDisplayColorAssignment],
+    definitions: &[super::om::PartColorDefinition],
+    records: &[super::parasolid::ParasolidDeltasRecord],
+    delta_pairs: &BTreeMap<usize, Vec<usize>>,
+) -> Result<Vec<RmFaceColorBinding>, CodecError> {
+    let mut bindings = Vec::new();
+    for (position, assignment) in assignments.iter().enumerate() {
+        let RmDisplayColorAssignmentEncoding::Linked(row) = assignment.frame.encoding() else {
+            continue;
+        };
+        let object_index = row.first_index().atom.value();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(position),
+            "NX RM face color assignment identity",
+        )?;
+        if assignments[..position].iter().any(|earlier| {
+            matches!(
+                earlier.frame.encoding(),
+                RmDisplayColorAssignmentEncoding::Linked(previous)
+                    if previous.first_index().atom.value() == object_index
+            )
+        }) {
+            continue;
+        }
+        let mut choice = RmColorChoice::new(assignment);
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(assignments.len() - position - 1),
+            "NX RM face color assignments",
+        )?;
+        for later in assignments.iter().skip(position + 1) {
+            if matches!(
+                later.frame.encoding(),
+                RmDisplayColorAssignmentEncoding::Linked(next)
+                    if next.first_index().atom.value() == object_index
+            ) {
+                choice.observe(later);
+            }
+        }
+        let RmColorChoice::Unique {
+            definition,
+            source_offset,
+        } = choice
+        else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definitions.len()),
+            "NX RM face color definitions",
+        )?;
+        if !definitions
+            .iter()
+            .any(|candidate| candidate.id.as_str() == definition)
+        {
+            continue;
+        }
+
+        let mut candidate = None::<String>;
+        let mut ambiguous = false;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(records.len()),
+            "NX RM face color records",
+        )?;
+        for record in records {
+            let crate::deltas::record_family::RecordFamily::Face { node_id, .. } = &record.family
+            else {
+                continue;
+            };
+            if *node_id != object_index {
+                continue;
+            }
+            let mut partition = None;
+            let mut multiple_partitions = false;
+            for (raw_partition, deltas) in delta_pairs {
+                let work = deltas
+                    .len()
+                    .checked_add(1)
+                    .ok_or_else(|| ctx.refuse_codec_limit("NX RM face color delta links", 0, 1))?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(work),
+                    "NX RM face color delta links",
+                )?;
+                let Ok(partition_id) = u32::try_from(*raw_partition) else {
+                    continue;
+                };
+                if !deltas
+                    .iter()
+                    .any(|delta| u32::try_from(*delta).ok() == Some(record.stream_ordinal))
+                {
+                    continue;
+                }
+                match partition {
+                    None => partition = Some(partition_id),
+                    Some(existing) if existing == partition_id => {}
+                    Some(_) => {
+                        multiple_partitions = true;
+                        break;
+                    }
+                }
+            }
+            if multiple_partitions {
+                continue;
+            }
+            let Some(partition) = partition else {
+                continue;
+            };
+            let face_id = format!("nx:s{partition}:face#{}", record.xmt);
+            if !face_ids.contains(&face_id) {
+                continue;
+            }
+            match candidate.as_ref() {
+                None => candidate = Some(face_id),
+                Some(existing) if existing == &face_id => {}
+                Some(_) => {
+                    ambiguous = true;
+                    break;
+                }
+            }
+        }
+        if ambiguous {
+            continue;
+        }
+        let Some(face_id) = candidate else {
+            continue;
+        };
+        let bytes = std::mem::size_of::<RmFaceColorBinding>()
+            .checked_add(face_id.len())
+            .and_then(|bytes| bytes.checked_add(definition.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX RM face color binding",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(face_id.len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX RM face color bindings")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX RM face color bindings",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut bindings,
+            1,
+            "NX RM face color bindings",
+        )?;
         bindings.push(RmFaceColorBinding {
             face_id,
             color_definition: definition.to_owned(),
             source_offset,
         });
     }
+    let sort_work = bindings.len().checked_mul(bindings.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX RM face color binding order",
+            0,
+            cadmpeg_core::decode::u64_from_index(bindings.len()),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_work),
+        "NX RM face color binding order",
+    )?;
     bindings.sort_by(|left, right| left.face_id.cmp(&right.face_id));
-    bindings
+    Ok(bindings)
 }
 
 /// Transfer each independently validated JPEG preview with its exact bounded
@@ -890,12 +1438,16 @@ fn attach_jpeg_preview_assets(
                 .note(native_ref.as_str(), &stream, source_offset)
                 .tag("JPEG_PREVIEW_INVALID");
             annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
-            unknowns.push(UnknownRecord::retained(
-                native_ref,
-                source_offset,
-                ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
-                Vec::new(),
-            ));
+            push_native_unknown(
+                ctx,
+                unknowns,
+                UnknownRecord::retained(
+                    native_ref,
+                    source_offset,
+                    ctx.copy_retained(bytes, "retain NX invalid JPEG preview")?,
+                    Vec::new(),
+                ),
+            )?;
             continue;
         }
         let id: AssetId = extended_id(native_ref.as_str(), &cadmpeg_ir::identity_key!("asset"))
@@ -918,6 +1470,7 @@ fn attach_jpeg_preview_assets(
         annotations
             .derived(id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        ctx.reserve_retained_vec(&mut ir.model.assets, 1, "NX JPEG preview assets")?;
         ir.model.assets.push(
             Asset::try_new(
                 id,
@@ -945,12 +1498,13 @@ fn attach_jpeg_preview_assets(
 fn attach_material_texture_assets(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    model: &crate::native::model::NativeModel,
+    textures: &[crate::native::om::material_texture::MaterialTextureAsset],
     scan: &Scan,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    let mut sources = Vec::with_capacity(model.om.material_texture_assets.len());
-    for texture in &model.om.material_texture_assets {
+    let mut sources = Vec::new();
+    let mut source_reservation = ctx.reserve_scoped(0, "NX material texture source list")?;
+    for texture in textures {
         let Some(start) = usize::try_from(texture.source_offset).ok() else {
             return Ok(());
         };
@@ -963,14 +1517,56 @@ fn attach_material_texture_assets(
         let Some(bytes) = scan.container.data.get(start..end) else {
             return Ok(());
         };
-        if crate::native::hex::Sha256Hex::digest(bytes) != texture.sha256 {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "NX material texture hash",
+        )?;
+        if cadmpeg_ir::hash::digest::Sha256Digest::digest(bytes) != texture.sha256 {
             return Ok(());
         }
+        ctx.reserve_scoped_vec(
+            &mut source_reservation,
+            &mut sources,
+            1,
+            "NX material texture source list",
+        )?;
         sources.push((texture, bytes));
     }
 
-    let mut assets = Vec::with_capacity(sources.len());
+    let mut assets = Vec::new();
     for (texture, bytes) in sources {
+        let id_bytes = texture
+            .id
+            .len()
+            .checked_mul(2)
+            .and_then(|bytes| bytes.checked_add(":asset".len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX material asset identity",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(texture.id.len()),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(id_bytes),
+            "NX material asset identity",
+        )?;
+        let text_bytes = texture
+            .name()
+            .len()
+            .checked_add(texture.id.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX material asset text",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(texture.id.len()),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(text_bytes),
+            "NX material asset text",
+        )?;
+        ctx.reserve_retained_vec(&mut assets, 1, "NX material asset records")?;
         assets.push(
             Asset::try_new(
                 extended_id::<AssetId>(texture.id.as_str(), &cadmpeg_ir::identity_key!("asset"))
@@ -993,7 +1589,8 @@ fn attach_material_texture_assets(
         );
     }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    for (texture, asset) in model.om.material_texture_assets.iter().zip(&assets) {
+    drop(source_reservation);
+    for (texture, asset) in textures.iter().zip(&assets) {
         annotations
             .note(asset.id.as_str(), &stream, texture.source_offset)
             .tag("MATERIAL_TEXTURE_ASSET");
@@ -1008,11 +1605,18 @@ fn attach_material_texture_assets(
             .derived(asset.id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::malformed)?;
     }
+
+    ctx.reserve_retained_vec(
+        &mut ir.model.assets,
+        assets.len(),
+        "NX attached material assets",
+    )?;
     ir.model.assets.extend(assets);
     Ok(())
 }
 
 fn attach_active_configuration_parameter_values(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1027,53 +1631,144 @@ fn attach_active_configuration_parameter_values(
     {
         return Ok(());
     }
-    let parameters_by_id = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter))
-        .collect::<BTreeMap<_, _>>();
-    if parameters_by_id.len() != ir.model.parameters.len()
-        || ir.model.parameters.iter().any(|parameter| {
-            parameter.dependencies.iter().any(|dependency| {
-                parameters_by_id.get(dependency).is_none_or(|dependency| {
-                    dependency.owner != parameter.owner || dependency.ordinal >= parameter.ordinal
-                })
-            })
-        })
-    {
-        return Ok(());
+    for (index, parameter) in ir.model.parameters.iter().enumerate() {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(index),
+            "NX configuration parameter identity uniqueness",
+        )?;
+        if ir.model.parameters[..index]
+            .iter()
+            .any(|previous| previous.id == parameter.id)
+        {
+            return Ok(());
+        }
+    }
+    for parameter in &ir.model.parameters {
+        for dependency in &parameter.dependencies {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(ir.model.parameters.len()),
+                "NX configuration parameter dependencies",
+            )?;
+            let Some(preceding) = ir
+                .model
+                .parameters
+                .iter()
+                .find(|candidate| candidate.id == *dependency)
+            else {
+                return Ok(());
+            };
+            if preceding.owner != parameter.owner || preceding.ordinal >= parameter.ordinal {
+                return Ok(());
+            }
+        }
     }
     // A parameter with no evaluated value leaves the configuration untouched,
     // which is what the dependency guard above does for its own case.
-    let Some(values) = ir
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(ir.model.parameters.len()),
+        "NX configuration parameter values",
+    )?;
+    if ir
         .model
         .parameters
         .iter()
-        .map(|parameter| Some((parameter.id.clone(), parameter.value.clone()?)))
-        .collect::<Option<Vec<_>>>()
-    else {
+        .any(|parameter| parameter.value.is_none())
+    {
         return Ok(());
-    };
+    }
+    let mut values = BTreeMap::new();
+    for parameter in &ir.model.parameters {
+        let Some(value) = parameter.value.as_ref() else {
+            return Ok(());
+        };
+        ctx.charge_collection_items(1, "NX active configuration parameter values")?;
+        let value_text_bytes = match value {
+            ParameterValue::String(text) => text.len(),
+            _ => 0,
+        };
+        let bytes = std::mem::size_of::<(ParameterId, ParameterValue)>()
+            .checked_add(parameter.id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(value_text_bytes))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX active configuration parameter value",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(value_text_bytes),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX active configuration parameter values",
+        )?;
+        values.insert(parameter.id.clone(), value.clone());
+    }
     let configuration = &mut ir.model.configurations[configuration_index];
-    configuration.parameter_values = values.into_iter().collect();
+    configuration.parameter_values = values;
     annotations
         .derived(configuration.id.as_str(), "parameter_values")
         .map_err(cadmpeg_core::CodecError::malformed)?;
     Ok(())
 }
 
+fn charge_feature_definition_copy(
+    ctx: &DecodeContext<'_>,
+    definition: &FeatureDefinition,
+) -> Result<(), CodecError> {
+    struct ByteCount(usize);
+    impl std::io::Write for ByteCount {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_add(bytes.len())
+                .ok_or_else(|| std::io::Error::other("NX feature definition size overflow"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = ByteCount(0);
+    serde_json::to_writer(&mut count, definition).map_err(|error| {
+        CodecError::malformed(format_args!("NX feature definition size: {error}"))
+    })?;
+    let bytes = count
+        .0
+        .checked_mul(32)
+        .and_then(|bytes| bytes.checked_add(std::mem::size_of::<FeatureDefinition>()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX feature definition copy",
+                0,
+                cadmpeg_core::decode::u64_from_index(count.0),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count.0),
+        "NX feature definition copy",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX feature definition copy",
+    )
+}
+
 fn attach_current_feature_states(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let current_bodies = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.clone())
-        .collect::<Vec<_>>();
-    let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
+    let mut current_bodies = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX current body identities")?;
+    for body in &ir.model.bodies {
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut current_bodies,
+            1,
+            "NX current body identities",
+        )?;
+        current_bodies.push(body.id.clone());
+    }
+    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, &current_bodies)? else {
         return Ok(());
     };
     for index in active_features.into_values() {
@@ -1087,6 +1782,7 @@ fn attach_current_feature_states(
 }
 
 fn attach_active_configuration_feature_states(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -1097,7 +1793,6 @@ fn attach_active_configuration_feature_states(
     let Some(configuration_bodies) = ir.model.configurations[configuration_index]
         .bodies
         .as_deref()
-        .map(<[BodyId]>::to_vec)
     else {
         return Ok(());
     };
@@ -1107,25 +1802,67 @@ fn attach_active_configuration_feature_states(
     {
         return Ok(());
     }
-    let Ok(active_features) = active_feature_closure(ir, &configuration_bodies) else {
+    let Ok(active_features) = active_feature_closure_for_decode(ctx, ir, configuration_bodies)?
+    else {
         return Ok(());
     };
-    let states = active_features
-        .iter()
-        .map(|(id, &index)| {
-            let feature = &ir.model.features[index];
-            (
-                id.clone(),
-                ConfigurationFeatureState {
-                    evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                        outputs: feature.evaluation.outputs().iter().cloned().collect(),
-                    },
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
+    let mut states = BTreeMap::new();
+    for (id, &index) in &active_features {
+        let feature = &ir.model.features[index];
+        let mut outputs = Vec::new();
+        for output in feature.evaluation.outputs() {
+            ctx.charge_collection_items(1, "NX configuration feature outputs")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<BodyId>() + output.as_str().len(),
+                ),
+                "NX configuration feature output",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut outputs,
+                1,
+                "NX configuration feature outputs",
+            )?;
+            outputs.push(output.clone());
+        }
+        let mut dependencies = Vec::new();
+        for dependency in &feature.dependencies {
+            ctx.charge_collection_items(1, "NX configuration feature dependencies")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<FeatureId>() + dependency.as_str().len(),
+                ),
+                "NX configuration feature dependency",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut dependencies,
+                1,
+                "NX configuration feature dependencies",
+            )?;
+            dependencies.push(dependency.clone());
+        }
+        charge_feature_definition_copy(ctx, feature.evaluation.definition())?;
+        ctx.charge_collection_items(1, "NX configuration feature states")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(FeatureId, ConfigurationFeatureState)>() * 4
+                    + id.as_str().len(),
+            ),
+            "NX configuration feature state",
+        )?;
+        states.insert(
+            id.clone(),
+            ConfigurationFeatureState {
+                evaluation: cadmpeg_ir::features::ConfigurationEvaluation::Active {
+                    outputs: DistinctMembers::try_from_unique_vec(outputs)
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                 },
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+                dependencies: DistinctMembers::try_from_unique_vec(dependencies)
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
+                definition: feature.evaluation.definition().clone(),
+            },
+        );
+    }
     for index in active_features.into_values() {
         let feature = &mut ir.model.features[index];
         if feature.suppressed != Some(false) {
@@ -1144,68 +1881,192 @@ fn attach_active_configuration_feature_states(
 }
 
 fn unique_active_configuration_index(configurations: &[DesignConfiguration]) -> Option<usize> {
-    let active = configurations
+    let mut active = configurations
         .iter()
         .enumerate()
-        .filter_map(|(index, configuration)| configuration.active.then_some(index))
-        .collect::<Vec<_>>();
-    let [index] = active.as_slice() else {
-        return None;
-    };
-    Some(*index)
+        .filter_map(|(index, configuration)| configuration.active.then_some(index));
+    let index = active.next()?;
+    active.next().is_none().then_some(index)
 }
 
 /// Materialize the exact body set present when retained feature replay begins.
 fn attach_initial_segment_bodies(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     body_bindings: &[crate::native::segments::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
     stream: &cadmpeg_ir::annotations::StreamHandle,
-) -> Option<FeatureId> {
-    let bindings_by_body = ir
-        .model
-        .bodies
-        .iter()
-        .filter_map(|body| {
-            let bindings = body_bindings
-                .iter()
-                .filter(|binding| {
-                    body.id
-                        .as_str()
-                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
-                })
-                .map(|binding| binding.id.clone())
-                .collect::<Vec<_>>();
-            (!bindings.is_empty()).then_some((body.id.clone(), bindings))
+) -> Result<Option<FeatureId>, CodecError> {
+    let body_count = ir.model.bodies.len();
+    let scan_work = body_count.checked_mul(body_bindings.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX retained-history body binding scan",
+            0,
+            cadmpeg_core::decode::u64_from_index(body_count),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "NX retained-history body binding scan",
+    )?;
+    let has_binding = ir.model.bodies.iter().any(|body| {
+        body_bindings.iter().any(|binding| {
+            body.id
+                .as_str()
+                .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
         })
-        .collect::<BTreeMap<_, _>>();
-    if bindings_by_body.is_empty() {
-        return None;
+    });
+    if !has_binding {
+        return Ok(None);
     }
+
+    let sorting_work = body_count.checked_mul(body_count).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX retained-history body order",
+            0,
+            cadmpeg_core::decode::u64_from_index(body_count),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sorting_work),
+        "NX retained-history body order",
+    )?;
+    let (mut sorted_bodies, _sorting) =
+        ctx.temporary_vec(body_count, "NX retained-history body order")?;
+    sorted_bodies.extend(&ir.model.bodies);
+    sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
 
     let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).id(
         &cadmpeg_ir::identity_component!("feature"),
         cadmpeg_ir::identity_key!("initial-bodies"),
     );
-    let outputs = bindings_by_body.keys().cloned().collect::<Vec<_>>();
-    let source_properties = bindings_by_body
-        .values()
-        .flatten()
-        .enumerate()
-        .map(|(ordinal, binding)| {
-            (
-                cadmpeg_core::nonblank_literal!("segment_body_binding.{ordinal}"),
-                binding.clone(),
-            )
-        })
-        .collect();
+    let mut selection_bodies = Vec::new();
+    let mut feature_outputs = Vec::new();
+    let mut source_properties = BTreeMap::new();
+    let mut binding_ordinal = 0usize;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(scan_work),
+        "NX retained-history body binding scan",
+    )?;
+    for (position, body) in sorted_bodies.iter().enumerate() {
+        if sorted_bodies
+            .get(position + 1)
+            .is_some_and(|next| next.id == body.id)
+        {
+            continue;
+        }
+        let mut matched = false;
+        for binding in body_bindings {
+            if !body
+                .id
+                .as_str()
+                .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+            {
+                continue;
+            }
+            matched = true;
+            let mut digits = 1usize;
+            let mut value = binding_ordinal;
+            while value >= 10 {
+                value /= 10;
+                digits += 1;
+            }
+            let key_bytes = "segment_body_binding."
+                .len()
+                .checked_add(digits)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX retained-history binding property",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(binding_ordinal),
+                    )
+                })?;
+            let bytes = std::mem::size_of::<(String, String)>()
+                .checked_add(key_bytes)
+                .and_then(|bytes| bytes.checked_add(binding.id.len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX retained-history binding property",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(binding.id.len()),
+                    )
+                })?;
+            ctx.charge_collection_items(1, "NX retained-history binding properties")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "NX retained-history binding properties",
+            )?;
+            source_properties.insert(
+                cadmpeg_core::nonblank_literal!("segment_body_binding.{binding_ordinal}"),
+                binding.id.clone(),
+            );
+            binding_ordinal = binding_ordinal.checked_add(1).ok_or_else(|| {
+                ctx.refuse_codec_limit("NX retained-history binding ordinal", 0, 1)
+            })?;
+        }
+        if matched {
+            ctx.charge_collection_items(2, "NX retained-history output bodies")?;
+            let body_bytes = std::mem::size_of::<BodyId>()
+                .checked_add(body.id.as_str().len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX retained-history output body",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+                    )
+                })?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(body_bytes),
+                "NX retained-history output bodies",
+            )?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(body_bytes),
+                "NX retained-history output bodies",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut selection_bodies,
+                1,
+                "NX retained-history output bodies",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut feature_outputs,
+                1,
+                "NX retained-history output bodies",
+            )?;
+            selection_bodies.push(body.id.clone());
+            feature_outputs.push(body.id.clone());
+        }
+    }
+
     annotations
         .note(&id, stream, 0)
         .tag("FEATURE_HISTORY_INPUT");
-    annotations.derived(&id, "definition").ok()?;
+    if annotations.derived(&id, "definition").is_err() {
+        return Ok(None);
+    }
+    let uniqueness_work = feature_outputs
+        .len()
+        .checked_mul(feature_outputs.len())
+        .and_then(|work| work.checked_mul(2))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX retained-history output uniqueness",
+                0,
+                cadmpeg_core::decode::u64_from_index(feature_outputs.len()),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(uniqueness_work),
+        "NX retained-history output uniqueness",
+    )?;
+    ctx.reserve_retained_vec(
+        &mut ir.model.features,
+        1,
+        "NX retained-history input features",
+    )?;
     ir.model.features.push(Feature {
         id: id.clone(),
-        ordinal: ir.model.features.len() as u64,
+        ordinal: cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         name: Some("Retained history input".to_string()),
         suppressed: Some(false),
         dependencies: DistinctMembers::default(),
@@ -1213,19 +2074,19 @@ fn attach_initial_segment_bodies(
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
-
         evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                 bodies: BodySelection::Resolved {
-                    bodies: outputs.iter().cloned().collect(),
+                    bodies: DistinctMembers::try_from_unique_vec(selection_bodies)
+                        .map_err(CodecError::malformed)?,
                     native: "nx:segment-body-bindings".to_string(),
                 },
             }),
-            outputs.iter().cloned().collect(),
+            DistinctMembers::try_from_unique_vec(feature_outputs).map_err(CodecError::malformed)?,
         ),
         native_ref: None,
     });
-    Some(id)
+    Ok(Some(id))
 }
 
 fn attach_feature_operations(
@@ -1386,333 +2247,647 @@ fn attach_feature_operations(
         .feature_hole_package_construction_group_uses
         .as_slice();
     let admitted_body_references = native_primary_body_references(
+        ctx,
         body_references,
         body_data_block_uses,
         body_segment_uses,
         input_blocks,
         data_blocks,
-    );
+    )?;
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let initial_body_id = attach_initial_segment_bodies(ir, body_bindings, annotations, &stream);
-    let base_ordinal = ir.model.features.len() as u64;
-    let booleans = booleans
-        .iter()
-        .map(|operation| (operation.operation_label.as_str(), operation))
-        .collect::<BTreeMap<_, _>>();
-    let body_references_by_id = body_references
-        .iter()
-        .map(|reference| (reference.id.as_str(), reference))
-        .collect::<BTreeMap<_, _>>();
+    let initial_body_id =
+        attach_initial_segment_bodies(ctx, ir, body_bindings, annotations, &stream)?;
+    let base_ordinal = cadmpeg_core::decode::u64_from_index(ir.model.features.len());
+    let (booleans, _booleans_reservation) = ctx.collect_scoped_btree_map(
+        booleans
+            .iter()
+            .map(|operation| (operation.operation_label.as_str(), operation)),
+        "NX last-record index",
+    )?;
+    let (body_references_by_id, _body_references_by_id_reservation) = ctx
+        .collect_scoped_btree_map(
+            body_references
+                .iter()
+                .map(|reference| (reference.id.as_str(), reference)),
+            "NX last-record index",
+        )?;
+    let mut group_reservation = ctx.reserve_scoped(0, "NX feature operation group indexes")?;
     let mut body_segment_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodySegmentUse>>::new();
     for use_ in body_segment_uses {
-        body_segment_uses_by_reference
-            .entry(use_.feature_body_reference.as_str())
-            .or_default()
-            .push(use_);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_segment_uses_by_reference,
+            use_.feature_body_reference.as_str(),
+            || use_,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_data_block_uses_by_reference =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyDataBlockUse>>::new();
     for use_ in body_data_block_uses {
-        body_data_block_uses_by_reference
-            .entry(use_.feature_body_reference.as_str())
-            .or_default()
-            .push(use_);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_data_block_uses_by_reference,
+            use_.feature_body_reference.as_str(),
+            || use_,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let body_writer_references_by_operation =
-        crate::native::features::unique_feature_body_references(body_references);
+        crate::native::features::unique_feature_body_references(ctx, body_references)?;
     let mut offset_store_bodies_by_operation = BTreeMap::<&str, Vec<(u32, String)>>::new();
     for body_use in body_data_block_uses {
         let Some(reference) = body_references_by_id.get(body_use.feature_body_reference.as_str())
         else {
             continue;
         };
-        offset_store_bodies_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push((reference.body.value(), body_use.data_block.clone()));
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut offset_store_bodies_by_operation,
+            reference.operation_label.as_str(),
+            || (reference.body.value(), body_use.data_block.clone()),
+            body_use.data_block.len(),
+            "NX feature operation group index",
+        )?;
     }
     let body_references = admitted_body_references;
     let mut body_reference_occurrences_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBodyReference>>::new();
     for reference in body_reference_occurrences {
-        body_reference_occurrences_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_reference_occurrences_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_writer_history = BodyWriterHistory::default();
     if let Some(feature) = initial_body_id
         .as_ref()
         .and_then(|id| ir.model.features.iter().find(|feature| feature.id == *id))
     {
-        body_writer_history.record_writer(None, None, feature.evaluation.outputs(), &feature.id);
+        body_writer_history.record_writer(
+            ctx,
+            None,
+            None,
+            feature.evaluation.outputs(),
+            &feature.id,
+        )?;
     }
-    let body_alias_roots =
-        crate::native::segments::body_alias_roots(body_bindings).unwrap_or_default();
+    let body_alias_roots = crate::native::segments::body_alias_roots(ctx, body_bindings)?;
     let canonical_body =
         |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
     let mut input_blocks_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureInputBlock>>::new();
     for input in input_blocks {
-        input_blocks_by_operation
-            .entry(input.operation_label.as_str())
-            .or_default()
-            .push(input);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut input_blocks_by_operation,
+            input.operation_label.as_str(),
+            || input,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let input_column_row_uses_by_operation =
-        records_by_operation(input_column_row_uses, |use_| &use_.operation_label);
-    let input_column_targets_by_operation =
-        records_by_operation(input_column_targets, |target| &target.operation_label);
-    let input_block_identity_group_by_input = input_block_identity_groups
-        .iter()
-        .flat_map(|group| {
-            group
-                .members
+    let (input_column_row_uses_by_operation, _input_column_row_uses_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            input_column_row_uses
                 .iter()
-                .map(move |member| (member.input_block.as_str(), group.id.as_str()))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let datum_csys_constructions_by_operation = datum_csys_constructions
-        .iter()
-        .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
-    let datum_csys_payloads_by_operation =
-        records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
-    let datum_csys_payload_scalar_pairs_by_operation =
-        records_by_operation(datum_csys_payload_scalar_pairs, |pair| {
-            &pair.operation_label
-        });
-    let datum_csys_payload_fixed_pairs_by_operation =
-        records_by_operation(datum_csys_payload_fixed_pairs, |pair| &pair.operation_label);
-    let datum_csys_payload_scalars_by_operation =
-        records_by_operation(datum_csys_payload_scalars, |scalar| &scalar.operation_label);
-    let datum_csys_descriptors_by_operation =
-        records_by_operation(datum_csys_descriptors, |descriptor| {
-            &descriptor.operation_label
-        });
-    let datum_csys_column_row_uses_by_operation =
-        records_by_operation(datum_csys_column_row_uses, |use_| &use_.operation_label);
+                .map(|use_| (use_.operation_label.as_str(), use_)),
+            "NX operation record index",
+        )?;
+    let (input_column_targets_by_operation, _input_column_targets_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+        input_column_targets
+            .iter()
+            .map(|target| (target.operation_label.as_str(), target)),
+        "NX operation record index",
+    )?;
+    let (input_block_identity_group_by_input, _input_block_identity_group_by_input_reservation) =
+        ctx.collect_scoped_btree_map(
+            input_block_identity_groups.iter().flat_map(|group| {
+                group
+                    .members
+                    .iter()
+                    .map(move |member| (member.input_block.as_str(), group.id.as_str()))
+            }),
+            "NX last-record index",
+        )?;
+    let (datum_csys_constructions_by_operation, _datum_csys_constructions_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            datum_csys_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (datum_csys_payloads_by_operation, _datum_csys_payloads_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            datum_csys_payloads
+                .iter()
+                .map(|payload| (payload.operation_label.as_str(), payload)),
+            "NX operation record index",
+        )?;
+    let (
+        datum_csys_payload_scalar_pairs_by_operation,
+        _datum_csys_payload_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_scalar_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        datum_csys_payload_fixed_pairs_by_operation,
+        _datum_csys_payload_fixed_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_fixed_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        datum_csys_payload_scalars_by_operation,
+        _datum_csys_payload_scalars_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_payload_scalars
+            .iter()
+            .map(|scalar| (scalar.operation_label.as_str(), scalar)),
+        "NX operation record index",
+    )?;
+    let (datum_csys_descriptors_by_operation, _datum_csys_descriptors_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            datum_csys_descriptors
+                .iter()
+                .map(|descriptor| (descriptor.operation_label.as_str(), descriptor)),
+            "NX operation record index",
+        )?;
+    let (
+        datum_csys_column_row_uses_by_operation,
+        _datum_csys_column_row_uses_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_csys_column_row_uses
+            .iter()
+            .map(|use_| (use_.operation_label.as_str(), use_)),
+        "NX operation record index",
+    )?;
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
-        datum_csys_uses_by_input_operation
-            .entry(block_use.input_operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_csys_uses_by_input_operation,
+            block_use.input_operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let datum_plane_headers_by_operation = datum_plane_headers
-        .iter()
-        .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let datum_plane_payloads_by_operation = datum_plane_payloads
-        .iter()
-        .map(|payload| (payload.operation_label.as_str(), payload))
-        .collect::<BTreeMap<_, _>>();
-    let datum_plane_payload_scalar_pairs_by_operation =
-        records_by_operation(datum_plane_payload_scalar_pairs, |pair| {
-            &pair.operation_label
-        });
-    let datum_plane_descriptors_by_operation =
-        records_by_operation(datum_plane_descriptors, |descriptor| {
-            &descriptor.operation_label
-        });
+    let (datum_plane_headers_by_operation, _datum_plane_headers_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            datum_plane_headers
+                .iter()
+                .map(|header| (header.operation_label.as_str(), header)),
+            "NX last-record index",
+        )?;
+    let (datum_plane_payloads_by_operation, _datum_plane_payloads_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+        datum_plane_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX last-record index",
+    )?;
+    let (
+        datum_plane_payload_scalar_pairs_by_operation,
+        _datum_plane_payload_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        datum_plane_payload_scalar_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (datum_plane_descriptors_by_operation, _datum_plane_descriptors_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            datum_plane_descriptors
+                .iter()
+                .map(|descriptor| (descriptor.operation_label.as_str(), descriptor)),
+            "NX operation record index",
+        )?;
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneBlockUse>>::new();
     for block_use in datum_plane_block_uses {
-        datum_plane_uses_by_input_operation
-            .entry(block_use.input_operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_plane_uses_by_input_operation,
+            block_use.input_operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let chronological_labels =
-        crate::native::features::feature_operation_chronological_labels(labels);
-    let operation_positions = chronological_labels
-        .iter()
-        .enumerate()
-        .map(|(position, label)| (label.id.as_str(), position))
-        .collect::<BTreeMap<_, _>>();
-    let sketch_datum_csys_dependencies = sketch_datum_csys_dependencies
-        .iter()
-        .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency))
-        .collect::<BTreeMap<_, _>>();
+        crate::native::features::feature_operation_chronological_labels(ctx, labels)?;
+    let (operation_positions, _operation_positions_reservation) = ctx.collect_scoped_btree_map(
+        chronological_labels
+            .iter()
+            .enumerate()
+            .map(|(position, label)| (label.id.as_str(), position)),
+        "NX last-record index",
+    )?;
+    let (sketch_datum_csys_dependencies, _sketch_datum_csys_dependencies_reservation) = ctx
+        .collect_scoped_btree_map(
+            sketch_datum_csys_dependencies
+                .iter()
+                .map(|dependency| (dependency.datum_csys_operation_label.as_str(), dependency)),
+            "NX last-record index",
+        )?;
     let mut datum_identity_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureDatumPlaneCsysIdentityUse>>::new();
     for identity_use in datum_plane_csys_identity_uses {
-        datum_identity_uses_by_operation
-            .entry(identity_use.datum_plane_operation_label.as_str())
-            .or_default()
-            .push(identity_use);
-        datum_identity_uses_by_operation
-            .entry(identity_use.datum_csys_operation_label.as_str())
-            .or_default()
-            .push(identity_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_identity_uses_by_operation,
+            identity_use.datum_plane_operation_label.as_str(),
+            || identity_use,
+            0,
+            "NX feature operation group index",
+        )?;
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut datum_identity_uses_by_operation,
+            identity_use.datum_csys_operation_label.as_str(),
+            || identity_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchReference>>::new();
     for reference in sketch_references {
-        sketch_references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_references_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let projected_curve_references_by_operation =
-        records_by_operation(projected_curve_references, |reference| {
-            &reference.operation_label
-        });
-    let projected_curve_construction_payloads_by_operation =
-        records_by_operation(projected_curve_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let projected_curve_construction_strings_by_operation =
-        records_by_operation(projected_curve_construction_strings, |value| {
-            &value.operation_label
-        });
-    let fset_reference_graphs_by_operation =
-        records_by_operation(fset_reference_graphs, |graph| &graph.operation_label);
-    let fset_construction_payloads_by_operation =
-        records_by_operation(fset_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let delete_reference_fields_by_operation =
-        records_by_operation(delete_reference_fields, |field| &field.operation_label);
-    let delete_construction_payloads_by_operation =
-        records_by_operation(delete_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let pattern_references_by_operation =
-        records_by_operation(pattern_references, |reference| &reference.operation_label);
-    let pattern_counted_reference_lanes_by_operation =
-        records_by_operation(pattern_counted_reference_lanes, |lane| {
-            &lane.operation_label
-        });
-    let pattern_construction_payloads_by_operation =
-        records_by_operation(pattern_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let pattern_construction_strings_by_operation =
-        records_by_operation(pattern_construction_strings, |value| &value.operation_label);
-    let pattern_construction_fixed_lanes_by_operation =
-        records_by_operation(pattern_construction_fixed_lanes, |lane| {
-            &lane.operation_label
-        });
-    let pattern_transform_lanes_by_operation =
-        records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
-    let multi_instance_output_lanes_by_operation =
-        records_by_operation(multi_instance_output_lanes, |lane| &lane.operation_label);
-    let identical_instance_output_lanes_by_operation =
-        records_by_operation(identical_instance_output_lanes, |lane| {
-            &lane.operation_label
-        });
-    let point_construction_headers_by_operation = point_construction_headers
-        .iter()
-        .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let point_construction_scalar_lanes_by_operation = point_construction_scalar_lanes
-        .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
-    let draft_construction_references_by_operation =
-        records_by_operation(draft_construction_references, |reference| {
-            &reference.operation_label
-        });
-    let draft_construction_index_lanes_by_operation =
-        records_by_operation(draft_construction_index_lanes, |lane| &lane.operation_label);
-    let draft_construction_payloads_by_operation =
-        records_by_operation(draft_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let draft_construction_graph_payloads_by_operation =
-        records_by_operation(draft_construction_graph_payloads, |payload| {
-            &payload.operation_label
-        });
-    let draft_construction_fixed_lanes_by_operation =
-        records_by_operation(draft_construction_fixed_lanes, |lane| &lane.operation_label);
-    let draft_construction_binary32_lanes_by_operation =
-        records_by_operation(draft_construction_binary32_lanes, |lane| {
-            &lane.operation_label
-        });
-    let draft_construction_graph_strings_by_operation =
-        records_by_operation(draft_construction_graph_strings, |value| {
-            &value.operation_label
-        });
-    let draft_construction_identity_frames_by_operation =
-        records_by_operation(draft_construction_identity_frames, |frame| {
-            &frame.operation_label
-        });
-    let draft_construction_terminal_lanes_by_operation =
-        records_by_operation(draft_construction_terminal_lanes, |lane| {
-            &lane.operation_label
-        });
-    let surface_construction_references_by_operation =
-        records_by_operation(surface_construction_references, |reference| {
-            &reference.operation_label
-        });
-    let surface_construction_payloads_by_operation =
-        records_by_operation(surface_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let surface_construction_scalar_pairs_by_operation =
-        records_by_operation(surface_construction_scalar_pairs, |pair| {
-            &pair.operation_label
-        });
-    let surface_construction_strings_by_operation =
-        records_by_operation(surface_construction_strings, |value| &value.operation_label);
-    let surface_construction_branches_by_operation =
-        records_by_operation(surface_construction_branches, |branch| {
-            &branch.operation_label
-        });
+    let (
+        projected_curve_references_by_operation,
+        _projected_curve_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        projected_curve_construction_payloads_by_operation,
+        _projected_curve_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        projected_curve_construction_strings_by_operation,
+        _projected_curve_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        projected_curve_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (fset_reference_graphs_by_operation, _fset_reference_graphs_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            fset_reference_graphs
+                .iter()
+                .map(|graph| (graph.operation_label.as_str(), graph)),
+            "NX operation record index",
+        )?;
+    let (
+        fset_construction_payloads_by_operation,
+        _fset_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        fset_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (delete_reference_fields_by_operation, _delete_reference_fields_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            delete_reference_fields
+                .iter()
+                .map(|field| (field.operation_label.as_str(), field)),
+            "NX operation record index",
+        )?;
+    let (
+        delete_construction_payloads_by_operation,
+        _delete_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        delete_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (pattern_references_by_operation, _pattern_references_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            pattern_references
+                .iter()
+                .map(|reference| (reference.operation_label.as_str(), reference)),
+            "NX operation record index",
+        )?;
+    let (
+        pattern_counted_reference_lanes_by_operation,
+        _pattern_counted_reference_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_counted_reference_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_payloads_by_operation,
+        _pattern_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_strings_by_operation,
+        _pattern_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        pattern_construction_fixed_lanes_by_operation,
+        _pattern_construction_fixed_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        pattern_construction_fixed_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (pattern_transform_lanes_by_operation, _pattern_transform_lanes_by_operation_reservation) =
+        ctx.collect_scoped_btree_groups(
+            pattern_transform_lanes
+                .iter()
+                .map(|lane| (lane.operation_label.as_str(), lane)),
+            "NX operation record index",
+        )?;
+    let (
+        multi_instance_output_lanes_by_operation,
+        _multi_instance_output_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        multi_instance_output_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        identical_instance_output_lanes_by_operation,
+        _identical_instance_output_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        identical_instance_output_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        point_construction_headers_by_operation,
+        _point_construction_headers_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        point_construction_headers
+            .iter()
+            .map(|header| (header.operation_label.as_str(), header)),
+        "NX last-record index",
+    )?;
+    let (
+        point_construction_scalar_lanes_by_operation,
+        _point_construction_scalar_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        point_construction_scalar_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX last-record index",
+    )?;
+    let (
+        draft_construction_references_by_operation,
+        _draft_construction_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_index_lanes_by_operation,
+        _draft_construction_index_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_index_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_payloads_by_operation,
+        _draft_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_graph_payloads_by_operation,
+        _draft_construction_graph_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_graph_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_fixed_lanes_by_operation,
+        _draft_construction_fixed_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_fixed_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_binary32_lanes_by_operation,
+        _draft_construction_binary32_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_binary32_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_graph_strings_by_operation,
+        _draft_construction_graph_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_graph_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_identity_frames_by_operation,
+        _draft_construction_identity_frames_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_identity_frames
+            .iter()
+            .map(|frame| (frame.operation_label.as_str(), frame)),
+        "NX operation record index",
+    )?;
+    let (
+        draft_construction_terminal_lanes_by_operation,
+        _draft_construction_terminal_lanes_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        draft_construction_terminal_lanes
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_references_by_operation,
+        _surface_construction_references_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_references
+            .iter()
+            .map(|reference| (reference.operation_label.as_str(), reference)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_payloads_by_operation,
+        _surface_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_scalar_pairs_by_operation,
+        _surface_construction_scalar_pairs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_scalar_pairs
+            .iter()
+            .map(|pair| (pair.operation_label.as_str(), pair)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_strings_by_operation,
+        _surface_construction_strings_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_strings
+            .iter()
+            .map(|value| (value.operation_label.as_str(), value)),
+        "NX operation record index",
+    )?;
+    let (
+        surface_construction_branches_by_operation,
+        _surface_construction_branches_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        surface_construction_branches
+            .iter()
+            .map(|branch| (branch.operation_label.as_str(), branch)),
+        "NX operation record index",
+    )?;
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
-        sketch_named_point_uses_by_operation
-            .entry(block_use.operation_label.as_str())
-            .or_default()
-            .push(block_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_named_point_uses_by_operation,
+            block_use.operation_label.as_str(),
+            || block_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_preceding_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPrecedingNamedPointUse>>::new();
     for point_use in sketch_preceding_named_point_uses {
-        sketch_preceding_named_point_uses_by_operation
-            .entry(point_use.operation_label.as_str())
-            .or_default()
-            .push(point_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_preceding_named_point_uses_by_operation,
+            point_use.operation_label.as_str(),
+            || point_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointUse>>::new();
     for point_use in sketch_point_uses {
-        sketch_point_uses_by_operation
-            .entry(point_use.operation_label.as_str())
-            .or_default()
-            .push(point_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_point_uses_by_operation,
+            point_use.operation_label.as_str(),
+            || point_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPointGroup>>::new();
     for group in sketch_point_groups {
-        sketch_point_groups_by_operation
-            .entry(group.operation_label.as_str())
-            .or_default()
-            .push(group);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_point_groups_by_operation,
+            group.operation_label.as_str(),
+            || group,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut extrude_profile_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureExtrudeProfileReference>>::new();
     for reference in extrude_profile_references {
-        extrude_profile_references_by_operation
-            .entry(reference.operation_label.as_str())
-            .or_default()
-            .push(reference);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut extrude_profile_references_by_operation,
+            reference.operation_label.as_str(),
+            || reference,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let extrude_construction_profiles_by_operation = extrude_construction_profiles
-        .iter()
-        .map(|profile| (profile.operation_label.as_str(), profile))
-        .collect::<BTreeMap<_, _>>();
+    let (
+        extrude_construction_profiles_by_operation,
+        _extrude_construction_profiles_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        extrude_construction_profiles
+            .iter()
+            .map(|profile| (profile.operation_label.as_str(), profile)),
+        "NX last-record index",
+    )?;
     let mut operation_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
     for operand in operation_body_operands {
-        operation_body_operands_by_operation
-            .entry(operand.operation_label.as_str())
-            .or_default()
-            .push(operand);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_operands_by_operation,
+            operand.operation_label.as_str(),
+            || operand,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut segment_body_operands_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyOperand>>::new();
@@ -1720,114 +2895,192 @@ fn attach_feature_operations(
         .iter()
         .filter(|operand| !operand.segment_body_bindings.is_empty())
     {
-        segment_body_operands_by_operation
-            .entry(operand.operation_label.as_str())
-            .or_default()
-            .push(operand);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut segment_body_operands_by_operation,
+            operand.operation_label.as_str(),
+            || operand,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let sketch_construction_inputs_by_operation = sketch_construction_inputs
-        .iter()
-        .map(|inputs| (inputs.operation_label.as_str(), inputs))
-        .collect::<BTreeMap<_, _>>();
-    let sketch_records_by_operation =
-        records_by_operation(sketch_records, |record| &record.operation_label);
-    let sketch_construction_payloads_by_operation =
-        records_by_operation(sketch_construction_payloads, |payload| {
-            &payload.operation_label
-        });
+    let (
+        sketch_construction_inputs_by_operation,
+        _sketch_construction_inputs_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        sketch_construction_inputs
+            .iter()
+            .map(|inputs| (inputs.operation_label.as_str(), inputs)),
+        "NX last-record index",
+    )?;
+    let (sketch_records_by_operation, _sketch_records_by_operation_reservation) = ctx
+        .collect_scoped_btree_groups(
+            sketch_records
+                .iter()
+                .map(|record| (record.operation_label.as_str(), record)),
+            "NX operation record index",
+        )?;
+    let (
+        sketch_construction_payloads_by_operation,
+        _sketch_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        sketch_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeaturePayloadScalarPair>>::new();
     for pair in sketch_coordinate_pairs {
-        sketch_coordinate_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_coordinate_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_fixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadFixedPair>>::new();
     for pair in sketch_fixed_pairs {
-        sketch_fixed_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_fixed_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_mixed_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadMixedPair>>::new();
     for pair in sketch_mixed_pairs {
-        sketch_mixed_pairs_by_operation
-            .entry(pair.operation_label.as_str())
-            .or_default()
-            .push(pair);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_mixed_pairs_by_operation,
+            pair.operation_label.as_str(),
+            || pair,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_payload_scalar_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchPayloadScalarLane>>::new();
     for lane in sketch_payload_scalar_lanes {
-        sketch_payload_scalar_lanes_by_operation
-            .entry(lane.operation_label.as_str())
-            .or_default()
-            .push(lane);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_payload_scalar_lanes_by_operation,
+            lane.operation_label.as_str(),
+            || lane,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut sketch_fixed_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureSketchFixedPoint>>::new();
     for point in sketch_fixed_points {
-        sketch_fixed_points_by_operation
-            .entry(point.operation_label.as_str())
-            .or_default()
-            .push(point);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut sketch_fixed_points_by_operation,
+            point.operation_label.as_str(),
+            || point,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let block_constructions_by_operation = block_constructions
-        .iter()
-        .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
-    let block_construction_payloads_by_operation =
-        records_by_operation(block_construction_payloads, |payload| {
-            &payload.operation_label
-        });
-    let block_dimensions_by_operation = block_dimensions
-        .iter()
-        .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
-        .collect::<BTreeMap<_, _>>();
+    let (block_constructions_by_operation, _block_constructions_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            block_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (
+        block_construction_payloads_by_operation,
+        _block_construction_payloads_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        block_construction_payloads
+            .iter()
+            .map(|payload| (payload.operation_label.as_str(), payload)),
+        "NX operation record index",
+    )?;
+    let (block_dimensions_by_operation, _block_dimensions_by_operation_reservation) = ctx
+        .collect_scoped_btree_map(
+            block_dimensions
+                .iter()
+                .map(|dimensions| (dimensions.operation_label.as_str(), dimensions)),
+            "NX last-record index",
+        )?;
     let mut block_payload_points_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPoint>>::new();
     for point in block_payload_points {
-        block_payload_points_by_operation
-            .entry(point.operation_label.as_str())
-            .or_default()
-            .push(point);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut block_payload_points_by_operation,
+            point.operation_label.as_str(),
+            || point,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut block_payload_point_groups_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureBlockPayloadPointGroup>>::new();
     for group in block_payload_point_groups {
-        block_payload_point_groups_by_operation
-            .entry(group.operation_label.as_str())
-            .or_default()
-            .push(group);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut block_payload_point_groups_by_operation,
+            group.operation_label.as_str(),
+            || group,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let extrude_32_constructions_by_operation = extrude_32_constructions
-        .iter()
-        .map(|construction| (construction.operation_label.as_str(), construction))
-        .collect::<BTreeMap<_, _>>();
-    let extrude_payload_headers_by_operation = extrude_payload_headers
-        .iter()
-        .map(|header| (header.operation_label.as_str(), header))
-        .collect::<BTreeMap<_, _>>();
-    let operation_terminal_discriminators_by_operation = operation_terminal_discriminators
-        .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
-    let extrude_payload_32_branches_by_operation =
-        records_by_operation(extrude_payload_32_branches, |branch| {
-            &branch.operation_label
-        });
+    let (extrude_32_constructions_by_operation, _extrude_32_constructions_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            extrude_32_constructions
+                .iter()
+                .map(|construction| (construction.operation_label.as_str(), construction)),
+            "NX last-record index",
+        )?;
+    let (extrude_payload_headers_by_operation, _extrude_payload_headers_by_operation_reservation) =
+        ctx.collect_scoped_btree_map(
+            extrude_payload_headers
+                .iter()
+                .map(|header| (header.operation_label.as_str(), header)),
+            "NX last-record index",
+        )?;
+    let (
+        operation_terminal_discriminators_by_operation,
+        _operation_terminal_discriminators_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_map(
+        operation_terminal_discriminators
+            .iter()
+            .map(|lane| (lane.operation_label.as_str(), lane)),
+        "NX last-record index",
+    )?;
+    let (
+        extrude_payload_32_branches_by_operation,
+        _extrude_payload_32_branches_by_operation_reservation,
+    ) = ctx.collect_scoped_btree_groups(
+        extrude_payload_32_branches
+            .iter()
+            .map(|branch| (branch.operation_label.as_str(), branch)),
+        "NX operation record index",
+    )?;
     let mut operation_body_scalar_triples_by_operation = BTreeMap::<
         &str,
         Vec<&crate::native::features::body_scalar_triple::FeatureOperationBodyScalarTriple>,
     >::new();
     for triple in operation_body_scalar_triples {
-        operation_body_scalar_triples_by_operation
-            .entry(triple.operation_label.as_str())
-            .or_default()
-            .push(triple);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_scalar_triples_by_operation,
+            triple.operation_label.as_str(),
+            || triple,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
@@ -1835,179 +3088,270 @@ fn attach_feature_operations(
     let mut operation_body_members_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyMember>>::new();
     for member in operation_body_members {
-        operation_body_members_by_operation
-            .entry(member.operation_label.as_str())
-            .or_default()
-            .push(member);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_members_by_operation,
+            member.operation_label.as_str(),
+            || member,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut operation_body_11_continuations_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBody11Continuation>>::new();
     for continuation in operation_body_11_continuations {
-        operation_body_11_continuations_by_operation
-            .entry(continuation.operation_label.as_str())
-            .or_default()
-            .push(continuation);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_11_continuations_by_operation,
+            continuation.operation_label.as_str(),
+            || continuation,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut operation_body_reference_lanes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyReferenceLane>>::new();
     for lane in operation_body_reference_lanes {
-        operation_body_reference_lanes_by_operation
-            .entry(lane.operation_label.as_str())
-            .or_default()
-            .push(lane);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut operation_body_reference_lanes_by_operation,
+            lane.operation_label.as_str(),
+            || lane,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
-    let mut bodies_by_segment_binding = BTreeMap::<&str, Vec<BodyId>>::new();
-    for binding in body_bindings {
-        let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let mut stream_bodies = Vec::new();
-        for body in ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.id.as_str().starts_with(&prefix))
-        {
-            if !stream_bodies.contains(&body.id) {
-                stream_bodies.push(body.id.clone());
-            }
-        }
-        for identity in [binding.body_object_index, binding.body_alias_object_index] {
-            let bodies = bodies_by_object_index.entry(identity).or_default();
-            for body in &stream_bodies {
-                if !bodies.contains(body) {
-                    bodies.push(body.clone());
-                }
-            }
-        }
-        bodies_by_segment_binding.insert(binding.id.as_str(), stream_bodies);
-    }
-    let mut body_image_outputs_by_write = operation_body_image_outputs_by_write(
-        operation_body_image_segment_uses,
-        &bodies_by_segment_binding,
-    );
+    let SegmentBindingBodyIndexes {
+        by_object: bodies_by_object_index,
+        by_binding: bodies_by_segment_binding,
+        _reservation: _body_index_reservation,
+    } = segment_binding_body_indexes(ctx, ir, body_bindings)?;
+    let (mut body_image_outputs_by_write, mut body_output_reservation) =
+        operation_body_image_outputs_by_write(
+            ctx,
+            operation_body_image_segment_uses,
+            &bodies_by_segment_binding,
+        )?;
     let mut conflicting_body_output_writes = BTreeSet::new();
-    merge_operation_body_outputs(
-        &mut body_image_outputs_by_write,
-        &mut conflicting_body_output_writes,
+    let (identity_candidates, _identity_candidate_reservation) =
         operation_body_identity_outputs_by_write(
+            ctx,
             operation_body_identity_segment_uses,
             &bodies_by_segment_binding,
-        ),
-    );
+        )?;
     merge_operation_body_outputs(
+        ctx,
+        &mut body_output_reservation,
         &mut body_image_outputs_by_write,
         &mut conflicting_body_output_writes,
+        &identity_candidates,
+    )?;
+    let (partition_candidates, _partition_candidate_reservation) =
         operation_body_group_partition_outputs_by_write(
+            ctx,
             operation_body_writes,
             body_write_group_partition_uses,
             &ir.model.bodies,
-        ),
-    );
+        )?;
+    merge_operation_body_outputs(
+        ctx,
+        &mut body_output_reservation,
+        &mut body_image_outputs_by_write,
+        &mut conflicting_body_output_writes,
+        &partition_candidates,
+    )?;
     let explicit_hole_outputs = primary_hole_outputs(
+        ctx,
         simple_hole_templates,
         &body_references,
         body_bindings,
         &bodies_by_object_index,
-    );
+    )?;
     let simple_hole_operations = simple_hole_operations(
+        ctx,
         simple_hole_templates,
         simple_hole_construction_groups,
         &operation_positions,
-    )
+    )?
     .unwrap_or_default();
     let mut hole_outputs = explicit_hole_outputs;
     let mut simple_hole_diameters = BTreeMap::new();
     admit_hole_recognition_tolerances(ir)?;
-    if let Some(projection) = hole_body_projection(ir, &simple_hole_operations, &hole_outputs) {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
+    if let Some(projection) = hole_body_projection(ctx, ir, &simple_hole_operations, &hole_outputs)?
+    {
+        extend_hole_projection_map(
+            ctx,
+            &mut hole_outputs,
+            projection.outputs,
+            "NX simple hole output merge",
+        )?;
+        extend_hole_projection_map(
+            ctx,
+            &mut simple_hole_diameters,
+            projection.diameters,
+            "NX simple hole diameter merge",
+        )?;
     }
     let counterbore_operations =
-        counterbore_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+        counterbore_operations(ctx, simple_hole_templates, &operation_positions)?
+            .unwrap_or_default();
     let mut counterbore_dimensions = BTreeMap::new();
     if let Some(projection) =
-        counterbore_body_projection(Some(ctx), ir, &counterbore_operations, &hole_outputs)?
+        counterbore_body_projection(ctx, ir, &counterbore_operations, &hole_outputs)?
     {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
-        counterbore_dimensions.extend(projection.counterbores);
+        extend_hole_projection_map(
+            ctx,
+            &mut hole_outputs,
+            projection.outputs,
+            "NX counterbore output merge",
+        )?;
+        extend_hole_projection_map(
+            ctx,
+            &mut simple_hole_diameters,
+            projection.diameters,
+            "NX counterbore diameter merge",
+        )?;
+        extend_hole_projection_map(
+            ctx,
+            &mut counterbore_dimensions,
+            projection.counterbores,
+            "NX counterbore dimension merge",
+        )?;
     }
     let blind_hole_operations =
-        blind_hole_operations(simple_hole_templates, &operation_positions).unwrap_or_default();
+        blind_hole_operations(ctx, simple_hole_templates, &operation_positions)?
+            .unwrap_or_default();
     let mut blind_hole_depths = BTreeMap::new();
-    if let Some(projection) = blind_hole_body_projection(ir, &blind_hole_operations, &hole_outputs)
+    if let Some(projection) =
+        blind_hole_body_projection(ctx, ir, &blind_hole_operations, &hole_outputs)?
     {
-        hole_outputs.extend(projection.outputs);
-        simple_hole_diameters.extend(projection.diameters);
+        extend_hole_projection_map(
+            ctx,
+            &mut hole_outputs,
+            projection.outputs,
+            "NX blind hole output merge",
+        )?;
+        extend_hole_projection_map(
+            ctx,
+            &mut simple_hole_diameters,
+            projection.diameters,
+            "NX blind hole diameter merge",
+        )?;
         blind_hole_depths = projection.blind_depths;
     }
     let simple_hole_placements =
-        hole_axis_placements_for_operations(ir, &simple_hole_operations, &hole_outputs);
+        hole_axis_placements_for_operations(ctx, ir, &simple_hole_operations, &hole_outputs)?;
     let counterbore_hole_placements = counterbore_axis_placements_for_operations(
-        Some(ctx),
+        ctx,
         ir,
         &counterbore_operations,
         &hole_outputs,
     )?;
     let blind_hole_placements =
-        blind_hole_axis_placements_for_operations(ir, &blind_hole_operations, &hole_outputs);
-    let simple_hole_chamfers =
-        simple_hole_chamfers(Some(ctx), ir, simple_hole_templates, &hole_outputs)?;
+        blind_hole_axis_placements_for_operations(ctx, ir, &blind_hole_operations, &hole_outputs)?;
+    let simple_hole_chamfers = simple_hole_chamfers(ctx, ir, simple_hole_templates, &hole_outputs)?;
     let hole_packages = hole_package_projection(
+        ctx,
         ir,
         simple_hole_templates,
         simple_hole_construction_groups,
         hole_package_construction_group_uses,
-        &hole_outputs,
-        &simple_hole_diameters,
-        &simple_hole_chamfers,
-    );
-    let feature_ids_by_operation = labels
-        .iter()
-        .filter(|label| {
-            projects_neutral_feature(&label.value)
-                && !hole_packages.internal_operations.contains(&label.id)
-        })
-        .filter_map(|label| {
-            let key = label
-                .id
-                .strip_prefix("nx:feature-history:operation-label#")
-                .unwrap_or(label.id.as_str());
-            let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                .try_id(&cadmpeg_ir::identity_component!("feature"), key)?;
-            Some((label.id.as_str(), id))
-        })
-        .collect::<BTreeMap<_, _>>();
+        HolePackageSources {
+            outputs: &hole_outputs,
+            diameters: &simple_hole_diameters,
+            chamfers: &simple_hole_chamfers,
+        },
+    )?;
+    let mut feature_ids_by_operation = BTreeMap::new();
+    let mut feature_id_reservation = ctx.reserve_scoped(0, "NX operation feature identities")?;
+    for label in labels {
+        const PREFIX: &str = "nx:feature-history:feature#";
+        ctx.charge_work(1, "NX operation feature identity scan")?;
+        if !projects_neutral_feature(&label.value)
+            || hole_packages.internal_operations.contains(&label.id)
+        {
+            continue;
+        }
+        let key = label
+            .id
+            .strip_prefix("nx:feature-history:operation-label#")
+            .unwrap_or(label.id.as_str());
+        if key.is_empty() || key.contains('#') || key.chars().any(char::is_whitespace) {
+            continue;
+        }
+        let id_len = PREFIX.len().checked_add(key.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX operation feature identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(key.len()),
+            )
+        })?;
+        let mut id_text = String::new();
+        ctx.charge_work(1, "NX operation feature identity index")?;
+        if !feature_ids_by_operation.contains_key(label.id.as_str()) {
+            ctx.charge_collection_items(1, "NX operation feature identity index")?;
+            feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, FeatureId)>(),
+            ))?;
+        }
+        feature_id_reservation.grow(cadmpeg_core::decode::u64_from_index(id_len))?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut id_text,
+            id_len,
+            "NX operation feature identity",
+        )?;
+        id_text.push_str(PREFIX);
+        id_text.push_str(key);
+        let Ok(id) = FeatureId::mint(id_text) else {
+            continue;
+        };
+        feature_ids_by_operation.insert(label.id.as_str(), id);
+    }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
-        parameter_bindings_by_operation
-            .entry(binding.operation_label.as_str())
-            .or_default()
-            .push(binding);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut parameter_bindings_by_operation,
+            binding.operation_label.as_str(),
+            || binding,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut parameter_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
     for parameter_use in parameter_uses {
-        parameter_uses_by_operation
-            .entry(parameter_use.operation_label.as_str())
-            .or_default()
-            .push(parameter_use);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut parameter_uses_by_operation,
+            parameter_use.operation_label.as_str(),
+            || parameter_use,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let operation_labels_by_record = operation_records
-        .iter()
-        .map(|record| (record.id.as_str(), record.operation_label.as_str()))
-        .collect::<BTreeMap<_, _>>();
+    let (operation_labels_by_record, _operation_labels_by_record_reservation) = ctx
+        .collect_scoped_btree_map(
+            operation_records
+                .iter()
+                .map(|record| (record.id.as_str(), record.operation_label.as_str())),
+            "NX last-record index",
+        )?;
     let mut body_writes_by_operation =
         BTreeMap::<&str, Vec<&crate::native::features::FeatureOperationBodyWrite>>::new();
     for (write, operation_label) in operation_body_writes
         .iter()
         .filter_map(|write| write.operation_label.as_deref().map(|label| (write, label)))
     {
-        body_writes_by_operation
-            .entry(operation_label)
-            .or_default()
-            .push(write);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut body_writes_by_operation,
+            operation_label,
+            || write,
+            0,
+            "NX feature operation group index",
+        )?;
     }
     let mut body_identity_writers = BTreeMap::<u8, FeatureId>::new();
     let mut payload_strings_by_operation =
@@ -2017,17 +3361,39 @@ fn attach_feature_operations(
         else {
             continue;
         };
-        payload_strings_by_operation
-            .entry(operation)
-            .or_default()
-            .push(value);
+        ctx.push_scoped_btree_group(
+            &mut group_reservation,
+            &mut payload_strings_by_operation,
+            *operation,
+            || value,
+            0,
+            "NX feature operation group index",
+        )?;
     }
-    let parameter_owners = ir
-        .model
-        .parameters
-        .iter()
-        .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
-        .collect::<BTreeMap<_, _>>();
+    let mut parameter_owners = BTreeMap::new();
+    let mut parameter_owner_reservation = ctx.reserve_scoped(0, "NX parameter owner index")?;
+    for parameter in &ir.model.parameters {
+        ctx.charge_work(1, "NX parameter owner index")?;
+        let owner_len = parameter
+            .owner
+            .as_ref()
+            .map_or(0, |owner| owner.as_str().len());
+        let bytes = std::mem::size_of::<(ParameterId, Option<FeatureId>)>()
+            .checked_add(parameter.id.as_str().len())
+            .and_then(|bytes| bytes.checked_add(owner_len))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX parameter owner index",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(owner_len),
+                )
+            })?;
+        if !parameter_owners.contains_key(&parameter.id) {
+            ctx.charge_collection_items(1, "NX parameter owner index")?;
+        }
+        parameter_owner_reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+        parameter_owners.insert(parameter.id.clone(), parameter.owner.clone());
+    }
     let annotation_base_order = id_from_index(ir.model.semantic_annotations.len());
     for (annotation_ordinal, label) in labels
         .iter()
@@ -2036,28 +3402,58 @@ fn attach_feature_operations(
     {
         let payload_strings = payload_strings_by_operation
             .get(label.id.as_str())
-            .map_or([].as_slice(), Vec::as_slice)
-            .iter()
-            .map(|value| value.value.as_str())
-            .collect::<Vec<_>>();
+            .map_or([].as_slice(), Vec::as_slice);
         let order = annotation_base_order.and_then(|base| {
             id_from_index(annotation_ordinal).and_then(|ordinal| base.checked_add(ordinal))
         });
         let Some(order) = order else {
-            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(format!(
-                "NX TEXT label {} lies past the stated semantic-annotation order width, so it \
-                 states no order and is not projected.",
-                label.id
-            )));
+            const PREFIX: &str = "NX TEXT label ";
+            const SUFFIX: &str = " lies past the stated semantic-annotation order width, so it states no order and is not projected.";
+            let message_len = PREFIX
+                .len()
+                .checked_add(label.id.len())
+                .and_then(|bytes| bytes.checked_add(SUFFIX.len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX TEXT annotation order loss",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(label.id.len()),
+                    )
+                })?;
+            ctx.reserve_retained_vec(losses, 1, "NX TEXT annotation losses")?;
+            let mut message = String::new();
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut message,
+                message_len,
+                "allocate NX TEXT annotation order loss",
+            )?;
+            message.push_str(PREFIX);
+            message.push_str(&label.id);
+            message.push_str(SUFFIX);
+            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(message));
             continue;
         };
-        let Some(annotation) = text_semantic_annotation(&label.id, order, &payload_strings) else {
+        let [text, font_family] = payload_strings else {
+            continue;
+        };
+        let Some(annotation) = text_semantic_annotation(
+            ctx,
+            &label.id,
+            order,
+            &[text.value.as_str(), font_family.value.as_str()],
+        )?
+        else {
             continue;
         };
         annotations
             .note(annotation.id.as_str(), &stream, label.source_offset)
             .tag("TEXT_SEMANTIC_ANNOTATION");
         annotations.exactness(annotation.id.as_str(), Exactness::Derived);
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.semantic_annotations,
+            1,
+            "allocate NX semantic annotations",
+        )?;
         ir.model.semantic_annotations.push(annotation);
     }
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
@@ -2066,17 +3462,32 @@ fn attach_feature_operations(
         {
             continue;
         }
-        let Some(id) = feature_ids_by_operation.get(label.id.as_str()).cloned() else {
+        let Some(source_id) = feature_ids_by_operation.get(label.id.as_str()) else {
             continue;
         };
-        let boolean_offset_store_resolution = booleans.get(label.id.as_str()).map(|operation| {
-            crate::native::segments::boolean_offset_store_resolution(operation, data_blocks)
-        });
+        let _feature_id_reservation = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<FeatureId>() + source_id.as_str().len(),
+            ),
+            "NX current feature identity",
+        )?;
+        let id = source_id.clone();
+        let boolean_offset_store_resolution = booleans
+            .get(label.id.as_str())
+            .map(|operation| {
+                crate::native::segments::boolean_offset_store_resolution(
+                    ctx,
+                    operation,
+                    data_blocks,
+                )
+            })
+            .transpose()?;
         let boolean_definition = booleans
             .get(label.id.as_str())
             .zip(boolean_offset_store_resolution.as_ref())
             .map(|(operation, resolution)| {
                 boolean_feature_definition(
+                    ctx,
                     operation,
                     &body_alias_roots,
                     resolution,
@@ -2098,9 +3509,7 @@ fn attach_feature_operations(
         };
         for write in operation_body_writes {
             if let Some(writer) = body_identity_writers.get(&write.frame.body_identity()) {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
         }
         if let (
@@ -2127,9 +3536,7 @@ fn attach_feature_operations(
                     &body_alias_roots,
                     &body_writer_history,
                 ) {
-                    if !dependencies.contains(writer) {
-                        dependencies.push(writer.clone());
-                    }
+                    push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                 }
                 for body in &operation.tools {
                     if let Some(writer) = boolean_participant_writer(
@@ -2139,9 +3546,7 @@ fn attach_feature_operations(
                         &body_alias_roots,
                         &body_writer_history,
                     ) {
-                        if !dependencies.contains(writer) {
-                            dependencies.push(writer.clone());
-                        }
+                        push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
                     }
                 }
             }
@@ -2154,9 +3559,7 @@ fn attach_feature_operations(
             if let Some(writer) =
                 body_writer_history.native_writer(canonical_body(operand.operand.atom.value()))
             {
-                if !dependencies.contains(writer) {
-                    dependencies.push(writer.clone());
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
             }
         }
         for operand in operation_body_operands_by_operation
@@ -2170,9 +3573,7 @@ fn attach_feature_operations(
             let Some(writer) = body_writer_history.offset_store_writer(data_block) else {
                 continue;
             };
-            if !dependencies.contains(writer) {
-                dependencies.push(writer.clone());
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, writer)?;
         }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
@@ -2187,9 +3588,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         for block_use in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
@@ -2204,9 +3603,7 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         for identity_use in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -2226,112 +3623,144 @@ fn attach_feature_operations(
             ) else {
                 continue;
             };
-            if !dependencies.contains(&dependency) {
-                dependencies.push(dependency);
-            }
+            push_unique_feature_dependency(ctx, &mut dependencies, dependency)?;
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
-            if let Some(feature) = feature_ids_by_operation
-                .get(dependency.sketch_operation_label.as_str())
-                .cloned()
+            if let Some(feature) =
+                feature_ids_by_operation.get(dependency.sketch_operation_label.as_str())
             {
-                if !dependencies.contains(&feature) {
-                    dependencies.push(feature);
-                }
+                push_unique_feature_dependency(ctx, &mut dependencies, feature)?;
             }
         }
         let mut source_properties = BTreeMap::new();
         for write in retained_operation_body_writes {
             let ordinal = write.ordinal;
-            source_properties.insert(format!("body_write.{ordinal}"), write.id.clone());
-            source_properties.insert(
-                format!("body_write.{ordinal}.body_identity"),
-                write.frame.body_identity().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.group_node"),
-                write.frame.group_node().value().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.endpoint_tag"),
-                write.frame.endpoint_tag().code().to_string(),
-            );
-            source_properties.insert(
-                format!("body_write.{ordinal}.body_image_object_index"),
-                write.frame.body_image().value().to_string(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}"),
+                format_args!("{}", write.id),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}.body_identity"),
+                format_args!("{}", write.frame.body_identity()),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}.group_node"),
+                format_args!("{}", write.frame.group_node().value()),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}.endpoint_tag"),
+                format_args!("{}", write.frame.endpoint_tag().code()),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_write.{ordinal}.body_image_object_index"),
+                format_args!("{}", write.frame.body_image().value()),
+            )?;
             if let Some(use_) = operation_body_image_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_image_segment_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.segment_body_binding"),
-                    use_.segment_body_binding.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_image_segment_use"),
+                    format_args!("{}", use_.id),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.segment_body_binding"),
+                    format_args!("{}", use_.segment_body_binding),
+                )?;
             }
             if let Some(use_) = operation_body_identity_segment_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_identity_segment_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.body_identity_segment_binding"),
-                    use_.segment_body_binding.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_identity_segment_use"),
+                    format_args!("{}", use_.id),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.body_identity_segment_binding"),
+                    format_args!("{}", use_.segment_body_binding),
+                )?;
             }
             if let Some(use_) = operation_body_partition_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.partition_use"),
-                    use_.id.clone(),
-                );
-                source_properties.insert(
-                    format!("body_write.{ordinal}.partition_stream_ordinal"),
-                    use_.partition_stream_ordinal.to_string(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.partition_use"),
+                    format_args!("{}", use_.id),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.partition_stream_ordinal"),
+                    format_args!("{}", use_.partition_stream_ordinal),
+                )?;
                 for (group_ordinal, group) in use_.parasolid_group_records.iter().enumerate() {
-                    source_properties.insert(
-                        format!("body_write.{ordinal}.parasolid_group.{group_ordinal}"),
-                        group.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("body_write.{ordinal}.parasolid_group.{group_ordinal}"),
+                        format_args!("{group}"),
+                    )?;
                 }
                 for (member_ordinal, member) in use_.parasolid_group_members.iter().enumerate() {
-                    source_properties.insert(
-                        format!("body_write.{ordinal}.parasolid_group_member.{member_ordinal}"),
-                        member.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!(
+                            "body_write.{ordinal}.parasolid_group_member.{member_ordinal}"
+                        ),
+                        format_args!("{member}"),
+                    )?;
                 }
             }
             if let Some(use_) = body_write_group_partition_uses
                 .iter()
                 .find(|use_| use_.body_write == write.id)
             {
-                source_properties.insert(
-                    format!("body_write.{ordinal}.group_partition_use"),
-                    use_.id.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("body_write.{ordinal}.group_partition_use"),
+                    format_args!("{}", use_.id),
+                )?;
             }
         }
-        source_properties.extend(operation_source_properties(
+        operation_source_properties(
+            ctx,
+            &mut source_properties,
             &label.id,
             operation_records,
             operation_common_frames,
             operation_terminal_frames,
-        ));
+        )?;
         if let Some(stable_identity) = &label.stable_identity {
-            source_properties.insert(
-                "operation_stable_identity".to_string(),
-                stable_identity.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("operation_stable_identity"),
+                format_args!("{stable_identity}"),
+            )?;
         }
         for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
             .get(label.id.as_str())
@@ -2339,80 +3768,103 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_block_use.{use_ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_block_use.{use_ordinal}"),
+                format_args!("{}", block_use.id),
+            )?;
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
-            source_properties.insert(
-                "sketch_point_dependency_use".to_string(),
-                dependency.sketch_point_use.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_point_dependency_use"),
+                format_args!("{}", dependency.sketch_point_use),
+            )?;
             match &dependency.block_relation {
                 crate::native::features::FeatureSketchDatumCsysBlockRelation::Shared {
                     data_block,
                 } => {
-                    source_properties.insert(
-                        "sketch_point_dependency_shared_block".to_string(),
-                        data_block.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("sketch_point_dependency_shared_block"),
+                        format_args!("{data_block}"),
+                    )?;
                 }
                 crate::native::features::FeatureSketchDatumCsysBlockRelation::Consecutive {
                     point_data_block,
                     construction_data_block,
                 } => {
-                    source_properties.insert(
-                        "sketch_point_dependency_point_block".to_string(),
-                        point_data_block.clone(),
-                    );
-                    source_properties.insert(
-                        "sketch_point_dependency_construction_block".to_string(),
-                        construction_data_block.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("sketch_point_dependency_point_block"),
+                        format_args!("{point_data_block}"),
+                    )?;
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("sketch_point_dependency_construction_block"),
+                        format_args!("{construction_data_block}"),
+                    )?;
                 }
             }
-            source_properties.insert(
-                "sketch_datum_csys_dependency".to_string(),
-                dependency.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_datum_csys_dependency"),
+                format_args!("{}", dependency.id),
+            )?;
             for (alias_ordinal, alias) in dependency.scalar_aliases.iter().enumerate() {
-                source_properties.insert(
-                    format!("sketch_point_dependency_scalar.{alias_ordinal}"),
-                    alias.datum_csys_scalar.clone(),
-                );
-                source_properties.insert(
-                    format!("sketch_point_dependency_coordinate.{alias_ordinal}"),
-                    alias.sketch_coordinate_ordinal.to_string(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("sketch_point_dependency_scalar.{alias_ordinal}"),
+                    format_args!("{}", alias.datum_csys_scalar),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("sketch_point_dependency_coordinate.{alias_ordinal}"),
+                    format_args!("{}", alias.sketch_coordinate_ordinal),
+                )?;
             }
         }
         let deletes_body = label.value == "DELETE";
         let mut outputs = if deletes_body {
             Vec::new()
         } else {
-            body_references
-                .get(label.id.as_str())
-                .map_or_else(Vec::new, |body| {
-                    feature_body_outputs(*body, body_bindings, &bodies_by_object_index)
-                })
+            match body_references.get(label.id.as_str()) {
+                Some(body) => {
+                    feature_body_outputs(ctx, *body, body_bindings, &bodies_by_object_index)?
+                }
+                None => Vec::new(),
+            }
         };
         if !deletes_body && outputs.is_empty() && !operation_body_writes.is_empty() {
             outputs = complete_operation_body_image_outputs(
+                ctx,
                 operation_body_writes,
                 &body_image_outputs_by_write,
-            );
+            )?;
         }
         if outputs.is_empty() {
-            outputs = hole_outputs
+            if let Some(bodies) = hole_outputs
                 .get(label.id.as_str())
                 .or_else(|| hole_packages.outputs.get(label.id.as_str()))
-                .cloned()
-                .unwrap_or_default();
+            {
+                outputs = ctx.retained_vec(bodies.len(), "NX feature output bodies")?;
+                for body in bodies {
+                    outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
+                }
+            }
         }
         if outputs.is_empty() {
             if let Some(body) = boolean_target_output(boolean_definition.as_ref()) {
-                outputs.push(body);
+                outputs = ctx.retained_vec(1, "NX feature output bodies")?;
+                outputs.push(body.try_clone_for_decode(ctx, "NX feature output body")?);
             }
         }
         let native_primary_body = body_references
@@ -2426,31 +3878,50 @@ fn attach_feature_operations(
                 _ => None,
             });
         if let Some(body) = body_references.get(label.id.as_str()) {
-            source_properties.insert(
-                NATIVE_PRIMARY_BODY_OBJECT_INDEX.to_string(),
-                body.to_string(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("{NATIVE_PRIMARY_BODY_OBJECT_INDEX}"),
+                format_args!("{body}"),
+            )?;
         }
         if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
-            source_properties.insert("primary_body_reference".to_string(), reference.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("primary_body_reference"),
+                format_args!("{}", reference.id),
+            )?;
             if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
                 if let [use_] = uses.as_slice() {
-                    source_properties
-                        .insert("primary_body_segment_use".to_string(), use_.id.clone());
-                    source_properties.insert(
-                        "primary_body_segment_binding".to_string(),
-                        use_.segment_body_binding.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("primary_body_segment_use"),
+                        format_args!("{}", use_.id),
+                    )?;
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("primary_body_segment_binding"),
+                        format_args!("{}", use_.segment_body_binding),
+                    )?;
                 }
             }
             if let Some(uses) = body_data_block_uses_by_reference.get(reference.id.as_str()) {
                 if let [use_] = uses.as_slice() {
-                    source_properties
-                        .insert("primary_body_data_block_use".to_string(), use_.id.clone());
-                    source_properties.insert(
-                        "primary_body_data_block".to_string(),
-                        use_.data_block.clone(),
-                    );
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("primary_body_data_block_use"),
+                        format_args!("{}", use_.id),
+                    )?;
+                    insert_source_property(
+                        ctx,
+                        &mut source_properties,
+                        format_args!("primary_body_data_block"),
+                        format_args!("{}", use_.data_block),
+                    )?;
                 }
             }
         }
@@ -2460,17 +3931,26 @@ fn attach_feature_operations(
             .flatten()
             .filter_map(|reference| reference.ordinal.map(|ordinal| (reference, ordinal)))
         {
-            source_properties.insert(
-                format!("body_reference.{ordinal}"),
-                reference.body.value().to_string(),
-            );
-            source_properties.insert(
-                format!("body_reference_occurrence.{ordinal}"),
-                reference.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_reference.{ordinal}"),
+                format_args!("{}", reference.body.value()),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("body_reference_occurrence.{ordinal}"),
+                format_args!("{}", reference.id),
+            )?;
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
-            source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_construction_inputs"),
+                format_args!("{}", inputs.id),
+            )?;
         }
         for (ordinal, record) in sketch_records_by_operation
             .get(label.id.as_str())
@@ -2478,7 +3958,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_record.{ordinal}"), record.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_record.{ordinal}"),
+                format_args!("{}", record.id),
+            )?;
         }
         for (ordinal, payload) in sketch_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -2486,50 +3971,60 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_construction_payload.{ordinal}"),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_construction_payload.{ordinal}"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for pair in sketch_coordinate_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_coordinate_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_coordinate_pair.{}", pair.ordinal),
+                format_args!("{}", pair.id),
+            )?;
         }
         for pair in sketch_fixed_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_fixed_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_fixed_pair.{}", pair.ordinal),
+                format_args!("{}", pair.id),
+            )?;
         }
         for pair in sketch_mixed_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_mixed_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_mixed_pair.{}", pair.ordinal),
+                format_args!("{}", pair.id),
+            )?;
         }
         for lane in sketch_payload_scalar_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_scalar_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_scalar_lane.{}", lane.ordinal),
+                format_args!("{}", lane.id),
+            )?;
         }
         for (ordinal, point) in sketch_fixed_points_by_operation
             .get(label.id.as_str())
@@ -2537,10 +4032,20 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_fixed_point.{ordinal}"), point.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_fixed_point.{ordinal}"),
+                format_args!("{}", point.id),
+            )?;
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert("block_construction".to_string(), construction.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("block_construction"),
+                format_args!("{}", construction.id),
+            )?;
         }
         for (ordinal, payload) in block_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -2548,22 +4053,33 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("block_construction_payload.{ordinal}"),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("block_construction_payload.{ordinal}"),
+                format_args!("{}", payload.id),
+            )?;
         }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("block_dimensions"),
+                format_args!("{}", dimensions.id),
+            )?;
             for (dimension_ordinal, dimension) in dimensions.dimensions.iter().enumerate() {
-                source_properties.insert(
-                    format!("block_dimension_declaration.{dimension_ordinal}"),
-                    dimension.declaration.clone(),
-                );
-                source_properties.insert(
-                    format!("block_dimension_expression.{dimension_ordinal}"),
-                    dimension.expression.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("block_dimension_declaration.{dimension_ordinal}"),
+                    format_args!("{}", dimension.declaration),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("block_dimension_expression.{dimension_ordinal}"),
+                    format_args!("{}", dimension.expression),
+                )?;
             }
         }
         for (ordinal, point) in block_payload_points_by_operation
@@ -2572,7 +4088,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("block_payload_point.{ordinal}"), point.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("block_payload_point.{ordinal}"),
+                format_args!("{}", point.id),
+            )?;
         }
         for (ordinal, group) in block_payload_point_groups_by_operation
             .get(label.id.as_str())
@@ -2580,25 +4101,36 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("block_payload_point_group.{ordinal}"),
-                group.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("block_payload_point_group.{ordinal}"),
+                format_args!("{}", group.id),
+            )?;
         }
         if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "extrude_32_construction".to_string(),
-                construction.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_32_construction"),
+                format_args!("{}", construction.id),
+            )?;
         }
         if let Some(header) = extrude_payload_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("extrude_payload_header".to_string(), header.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_payload_header"),
+                format_args!("{}", header.id),
+            )?;
         }
         if let Some(lane) = operation_terminal_discriminators_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "operation_terminal_discriminator".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("operation_terminal_discriminator"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation
             .get(label.id.as_str())
@@ -2606,68 +4138,80 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("extrude_payload_32_branch.{ordinal}"),
-                branch.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_payload_32_branch.{ordinal}"),
+                format_args!("{}", branch.id),
+            )?;
         }
         for triple in operation_body_scalar_triples_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "operation_body_scalar_triple.{}",
                     triple.body_reference_ordinal
                 ),
-                triple.id.clone(),
-            );
+                format_args!("{}", triple.id),
+            )?;
         }
         for member in operation_body_members_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "operation_body_member.{}.{}",
                     member.body_reference_ordinal, member.ordinal
                 ),
-                member.id.clone(),
-            );
+                format_args!("{}", member.id),
+            )?;
         }
         for continuation in operation_body_11_continuations_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "operation_body_11_continuation.{}",
                     continuation.body_reference_ordinal
                 ),
-                continuation.id.clone(),
-            );
+                format_args!("{}", continuation.id),
+            )?;
         }
         for lane in operation_body_reference_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "operation_body_reference_lane.{}",
                     lane.body_reference_ordinal
                 ),
-                lane.id.clone(),
-            );
+                format_args!("{}", lane.id),
+            )?;
         }
         if let Some(construction) = datum_csys_constructions_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "datum_csys_construction".to_string(),
-                construction.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_construction"),
+                format_args!("{}", construction.id),
+            )?;
         }
         for (ordinal, use_) in datum_csys_column_row_uses_by_operation
             .get(label.id.as_str())
@@ -2675,10 +4219,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_column_row_use.{ordinal}"),
-                use_.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_column_row_use.{ordinal}"),
+                format_args!("{}", use_.id),
+            )?;
         }
         for (ordinal, payload) in datum_csys_payloads_by_operation
             .get(label.id.as_str())
@@ -2686,7 +4232,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("datum_csys_payload.{ordinal}"), payload.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_payload.{ordinal}"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for (ordinal, pair) in datum_csys_payload_scalar_pairs_by_operation
             .get(label.id.as_str())
@@ -2694,10 +4245,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_scalar_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_payload_scalar_pair.{ordinal}"),
+                format_args!("{}", pair.id),
+            )?;
         }
         for (ordinal, pair) in datum_csys_payload_fixed_pairs_by_operation
             .get(label.id.as_str())
@@ -2705,10 +4258,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_fixed_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_payload_fixed_pair.{ordinal}"),
+                format_args!("{}", pair.id),
+            )?;
         }
         for (ordinal, scalar) in datum_csys_payload_scalars_by_operation
             .get(label.id.as_str())
@@ -2716,10 +4271,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_payload_scalar.{ordinal}"),
-                scalar.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_payload_scalar.{ordinal}"),
+                format_args!("{}", scalar.id),
+            )?;
         }
         for (ordinal, descriptor) in datum_csys_descriptors_by_operation
             .get(label.id.as_str())
@@ -2727,16 +4284,28 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_csys_descriptor.{ordinal}"),
-                descriptor.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_csys_descriptor.{ordinal}"),
+                format_args!("{}", descriptor.id),
+            )?;
         }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("datum_plane_header".to_string(), header.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_plane_header"),
+                format_args!("{}", header.id),
+            )?;
         }
         if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
-            source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_plane_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for (ordinal, pair) in datum_plane_payload_scalar_pairs_by_operation
             .get(label.id.as_str())
@@ -2744,10 +4313,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_payload_scalar_pair.{ordinal}"),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_plane_payload_scalar_pair.{ordinal}"),
+                format_args!("{}", pair.id),
+            )?;
         }
         for (ordinal, descriptor) in datum_plane_descriptors_by_operation
             .get(label.id.as_str())
@@ -2755,10 +4326,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_descriptor.{ordinal}"),
-                descriptor.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_plane_descriptor.{ordinal}"),
+                format_args!("{}", descriptor.id),
+            )?;
         }
         for (ordinal, identity_use) in datum_identity_uses_by_operation
             .get(label.id.as_str())
@@ -2766,10 +4339,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_identity_use.{ordinal}"),
-                identity_use.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_identity_use.{ordinal}"),
+                format_args!("{}", identity_use.id),
+            )?;
         }
         for (use_ordinal, block_use) in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
@@ -2777,80 +4352,111 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("datum_plane_block_use.{use_ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("datum_plane_block_use.{use_ordinal}"),
+                format_args!("{}", block_use.id),
+            )?;
         }
-        source_properties.extend(simple_hole_native_properties(
+        simple_hole_native_properties(
+            ctx,
+            &mut source_properties,
             &label.id,
             simple_hole_templates,
             simple_hole_repeated_scalar_lanes,
             simple_hole_repeated_scalar_lane_block_references,
             simple_hole_construction_groups,
-        ));
+        )?;
         for lane in hole_package_construction_group_lanes
             .iter()
             .filter(|lane| lane.operation_label == label.id)
         {
-            source_properties.insert(
-                "hole_package_construction_group_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("hole_package_construction_group_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for group_use in hole_package_construction_group_uses {
             let group = simple_hole_construction_groups
                 .iter()
                 .find(|group| group.id == group_use.simple_hole_construction_group);
             if group_use.operation_label == label.id {
-                source_properties.insert(
-                    "hole_package_construction_group_use".to_string(),
-                    group_use.id.clone(),
-                );
-                source_properties.insert(
-                    "simple_hole_construction_group".to_string(),
-                    group_use.simple_hole_construction_group.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("hole_package_construction_group_use"),
+                    format_args!("{}", group_use.id),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("simple_hole_construction_group"),
+                    format_args!("{}", group_use.simple_hole_construction_group),
+                )?;
             } else if group.is_some_and(|group| {
                 group
                     .members
                     .iter()
                     .any(|member| member.operation_label == label.id)
             }) {
-                source_properties.insert(
-                    "hole_package_construction_group_use".to_string(),
-                    group_use.id.clone(),
-                );
-                source_properties.insert(
-                    "hole_package_operation".to_string(),
-                    group_use.operation_label.clone(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("hole_package_construction_group_use"),
+                    format_args!("{}", group_use.id),
+                )?;
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("hole_package_operation"),
+                    format_args!("{}", group_use.operation_label),
+                )?;
             }
         }
         for (slot, value) in label.objects.0.iter().enumerate() {
-            source_properties.insert(
-                format!("object_index.{slot}"),
-                value.map_or_else(|| "null".to_string(), |value| value.value().to_string()),
-            );
+            if let Some(value) = value {
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("object_index.{slot}"),
+                    format_args!("{}", value.value()),
+                )?;
+            } else {
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("object_index.{slot}"),
+                    format_args!("null"),
+                )?;
+            }
         }
         for input in input_blocks_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("input_block_record.{}", input.input_slot),
-                input.id.clone(),
-            );
-            source_properties.insert(
-                format!("input_block.{}", input.input_slot),
-                input.data_block.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("input_block_record.{}", input.input_slot),
+                format_args!("{}", input.id),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("input_block.{}", input.input_slot),
+                format_args!("{}", input.data_block),
+            )?;
             if let Some(group) = input_block_identity_group_by_input.get(input.id.as_str()) {
-                source_properties.insert(
-                    format!("input_block_identity_group.{}", input.input_slot),
-                    (*group).to_string(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("input_block_identity_group.{}", input.input_slot),
+                    format_args!("{}", (*group)),
+                )?;
             }
         }
         for (ordinal, use_) in input_column_row_uses_by_operation
@@ -2859,7 +4465,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("input_column_row_use.{ordinal}"), use_.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("input_column_row_use.{ordinal}"),
+                format_args!("{}", use_.id),
+            )?;
         }
         for (ordinal, target) in input_column_targets_by_operation
             .get(label.id.as_str())
@@ -2867,68 +4478,86 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("input_column_target.{ordinal}"), target.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("input_column_target.{ordinal}"),
+                format_args!("{}", target.id),
+            )?;
         }
         for reference in sketch_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("sketch_reference_record.{}", reference.position.ordinal()),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("sketch_reference.{}", reference.position.ordinal()),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_reference_record.{}", reference.position.ordinal()),
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_reference.{}", reference.position.ordinal()),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         for reference in projected_curve_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("projected_curve_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("projected_curve_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("projected_curve_reference_record.{}", reference.ordinal),
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("projected_curve_reference.{}", reference.ordinal),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         for payload in projected_curve_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "projected_curve_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("projected_curve_construction_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for value in projected_curve_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("projected_curve_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("projected_curve_construction_string.{}", value.ordinal),
+                format_args!("{}", value.id),
+            )?;
         }
         for graph in fset_reference_graphs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("fset_reference_graph".to_string(), graph.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("fset_reference_graph"),
+                format_args!("{}", graph.id),
+            )?;
         }
         for payload in fset_construction_payloads_by_operation
             .get(label.id.as_str())
@@ -2944,269 +4573,341 @@ fn attach_feature_operations(
                 crate::native::features::fset::FeatureFsetReferenceGroup::First => "first",
                 crate::native::features::fset::FeatureFsetReferenceGroup::Second => "second",
             };
-            source_properties.insert(
-                format!("fset_construction_payload.{group}"),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("fset_construction_payload.{group}"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for field in delete_reference_fields_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("delete_reference_field".to_string(), field.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("delete_reference_field"),
+                format_args!("{}", field.id),
+            )?;
         }
         for payload in delete_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "delete_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("delete_construction_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for reference in pattern_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("pattern_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_reference_record.{}", reference.ordinal),
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_reference.{}", reference.ordinal),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         for payload in pattern_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "pattern_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_construction_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for lane in pattern_counted_reference_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "pattern_counted_reference_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_counted_reference_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for value in pattern_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_construction_string.{}", value.ordinal),
+                format_args!("{}", value.id),
+            )?;
         }
         for lane in pattern_construction_fixed_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("pattern_construction_fixed_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("{}", lane.id),
+            )?;
         }
         for lane in pattern_transform_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("pattern_transform_lane".to_string(), lane.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("pattern_transform_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for lane in multi_instance_output_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("multi_instance_output_lane".to_string(), lane.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("multi_instance_output_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for lane in identical_instance_output_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "identical_instance_output_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("identical_instance_output_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         if let Some(header) = point_construction_headers_by_operation.get(label.id.as_str()) {
-            source_properties.insert("point_construction_header".to_string(), header.id.clone());
-            source_properties.insert(
-                "point_construction_reference".to_string(),
-                header
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| header.token.value().to_string()),
-            );
-            source_properties.insert(
-                "point_construction_mode".to_string(),
-                format!("{:02x}", u8::from(header.mode)),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("point_construction_header"),
+                format_args!("{}", header.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("point_construction_reference"),
+                header.data_block.as_deref(),
+                header.token.value(),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("point_construction_mode"),
+                format_args!("{:02x}", u8::from(header.mode)),
+            )?;
         }
         if let Some(lane) = point_construction_scalar_lanes_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "point_construction_scalar_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("point_construction_scalar_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for reference in draft_construction_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("draft_construction_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_reference_record.{}", reference.ordinal),
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_reference.{}", reference.ordinal),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         for lane in draft_construction_index_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("draft_construction_index_lane".to_string(), lane.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_index_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for payload in draft_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert("draft_construction_payload".to_string(), payload.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for payload in draft_construction_graph_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "draft_construction_graph_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_graph_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for lane in draft_construction_fixed_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_fixed_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_fixed_lane.{}", lane.ordinal),
+                format_args!("{}", lane.id),
+            )?;
         }
         for lane in draft_construction_binary32_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_binary32_lane.{}", lane.ordinal),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_binary32_lane.{}", lane.ordinal),
+                format_args!("{}", lane.id),
+            )?;
         }
         for value in draft_construction_graph_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_graph_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_graph_string.{}", value.ordinal),
+                format_args!("{}", value.id),
+            )?;
         }
         for frame in draft_construction_identity_frames_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("draft_construction_identity_frame.{}", frame.ordinal),
-                frame.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_identity_frame.{}", frame.ordinal),
+                format_args!("{}", frame.id),
+            )?;
         }
         for lane in draft_construction_terminal_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "draft_construction_terminal_lane".to_string(),
-                lane.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("draft_construction_terminal_lane"),
+                format_args!("{}", lane.id),
+            )?;
         }
         for reference in surface_construction_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "surface_construction_reference_record.{}",
                     reference.ordinal
                 ),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("surface_construction_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("surface_construction_reference.{}", reference.ordinal),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         for payload in surface_construction_payloads_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                "surface_construction_payload".to_string(),
-                payload.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("surface_construction_payload"),
+                format_args!("{}", payload.id),
+            )?;
         }
         for pair in surface_construction_scalar_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("surface_construction_scalar_pair.{}", pair.ordinal),
-                pair.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("surface_construction_scalar_pair.{}", pair.ordinal),
+                format_args!("{}", pair.id),
+            )?;
         }
         for value in surface_construction_strings_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("surface_construction_string.{}", value.ordinal),
-                value.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("surface_construction_string.{}", value.ordinal),
+                format_args!("{}", value.id),
+            )?;
         }
         for branch in surface_construction_branches_by_operation
             .get(label.id.as_str())
@@ -3216,24 +4917,26 @@ fn attach_feature_operations(
             for (ordinal, (token, data_block)) in
                 branch.references.members().as_slice().iter().enumerate()
             {
-                source_properties.insert(
-                    format!(
+                insert_source_property_reference(
+                    ctx,
+                    &mut source_properties,
+                    format_args!(
                         "surface_construction_branch.{}.member.{}",
                         branch.ordinal(),
                         ordinal
                     ),
-                    data_block
-                        .clone()
-                        .unwrap_or_else(|| token.value().to_string()),
-                );
+                    data_block.as_deref(),
+                    token.value(),
+                )?;
             }
             let (token, data_block) = branch.references.terminal();
-            source_properties.insert(
-                format!("surface_construction_branch.{}.terminal", branch.ordinal()),
-                data_block
-                    .clone()
-                    .unwrap_or_else(|| token.value().to_string()),
-            );
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("surface_construction_branch.{}.terminal", branch.ordinal()),
+                data_block.as_deref(),
+                token.value(),
+            )?;
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation
             .get(label.id.as_str())
@@ -3241,10 +4944,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_named_point_block_use.{ordinal}"),
-                block_use.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_named_point_block_use.{ordinal}"),
+                format_args!("{}", block_use.id),
+            )?;
         }
         for (ordinal, point_use) in sketch_preceding_named_point_uses_by_operation
             .get(label.id.as_str())
@@ -3252,10 +4957,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(
-                format!("sketch_preceding_named_point_use.{ordinal}"),
-                point_use.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_preceding_named_point_use.{ordinal}"),
+                format_args!("{}", point_use.id),
+            )?;
         }
         for (ordinal, point_use) in sketch_point_uses_by_operation
             .get(label.id.as_str())
@@ -3263,7 +4970,12 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_point_use.{ordinal}"), point_use.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_point_use.{ordinal}"),
+                format_args!("{}", point_use.id),
+            )?;
         }
         for (ordinal, group) in sketch_point_groups_by_operation
             .get(label.id.as_str())
@@ -3271,58 +4983,74 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("sketch_point_group.{ordinal}"), group.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("sketch_point_group.{ordinal}"),
+                format_args!("{}", group.id),
+            )?;
         }
         for reference in extrude_profile_references_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!("extrude_profile_reference_record.{}", reference.ordinal),
-                reference.id.clone(),
-            );
-            source_properties.insert(
-                format!("extrude_profile_reference.{}", reference.ordinal),
-                reference
-                    .data_block
-                    .clone()
-                    .unwrap_or_else(|| reference.token.value().to_string()),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_profile_reference_record.{}", reference.ordinal),
+                format_args!("{}", reference.id),
+            )?;
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_profile_reference.{}", reference.ordinal),
+                reference.data_block.as_deref(),
+                reference.token.value(),
+            )?;
         }
         if let Some(profile) = extrude_construction_profiles_by_operation.get(label.id.as_str()) {
-            source_properties.insert(
-                "extrude_construction_profile".to_string(),
-                profile.id.clone(),
-            );
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("extrude_construction_profile"),
+                format_args!("{}", profile.id),
+            )?;
         }
         for operand in operation_body_operands_by_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                operand.source_property_key(),
-                operand
-                    .operand_data_block
-                    .clone()
-                    .unwrap_or_else(|| operand.operand.atom.value().to_string()),
-            );
-            source_properties.insert(
-                format!(
+            insert_source_property_reference(
+                ctx,
+                &mut source_properties,
+                format_args!(
+                    "operation_body_operand.{}.{}",
+                    operand.body_reference_ordinal, operand.ordinal
+                ),
+                operand.operand_data_block.as_deref(),
+                operand.operand.atom.value(),
+            )?;
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "operation_body_operand_record.{}.{}",
                     operand.body_reference_ordinal, operand.ordinal
                 ),
-                operand.id.clone(),
-            );
+                format_args!("{}", operand.id),
+            )?;
             for (binding_ordinal, binding) in operand.segment_body_bindings.iter().enumerate() {
-                source_properties.insert(
-                    format!(
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!(
                         "operation_body_operand_segment_binding.{}.{}.{}",
                         operand.body_reference_ordinal, operand.ordinal, binding_ordinal
                     ),
-                    binding.clone(),
-                );
+                    format_args!("{binding}"),
+                )?;
             }
         }
         for binding in parameter_bindings_by_operation
@@ -3330,21 +5058,25 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            source_properties.insert(
-                format!(
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!(
                     "input_parameter_declaration.{}.{}",
                     binding.input_slot, binding.reference_ordinal
                 ),
-                binding.expression_declaration.clone(),
-            );
+                format_args!("{}", binding.expression_declaration),
+            )?;
             if let Some(expression) = &binding.expression {
-                source_properties.insert(
-                    format!(
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!(
                         "input_parameter_expression.{}.{}",
                         binding.input_slot, binding.reference_ordinal
                     ),
-                    expression.clone(),
-                );
+                    format_args!("{expression}"),
+                )?;
             }
         }
         for (ordinal, parameter_use) in parameter_uses_by_operation
@@ -3353,15 +5085,26 @@ fn attach_feature_operations(
             .flatten()
             .enumerate()
         {
-            source_properties.insert(format!("parameter_use.{ordinal}"), parameter_use.id.clone());
+            insert_source_property(
+                ctx,
+                &mut source_properties,
+                format_args!("parameter_use.{ordinal}"),
+                format_args!("{}", parameter_use.id),
+            )?;
         }
         let operation_payload_string_records = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let operation_payload_strings = operation_payload_string_records
-            .iter()
-            .map(|value| value.value.as_str())
-            .collect::<Vec<_>>();
+
+        let (mut operation_payload_strings, _payload_reservation) = ctx.temporary_vec(
+            operation_payload_string_records.len(),
+            "NX operation payload string references",
+        )?;
+        operation_payload_strings.extend(
+            operation_payload_string_records
+                .iter()
+                .map(|value| value.value.as_str()),
+        );
         let block_dimension_values =
             block_dimensions_by_operation
                 .get(label.id.as_str())
@@ -3371,28 +5114,32 @@ fn attach_feature_operations(
                         .each_ref()
                         .map(|dimension| dimension.value.get())
                 });
-        let block_projection = (label.value == "BLOCK")
-            .then(|| block_placement(ir, block_dimension_values?, &outputs))
-            .flatten();
+        let block_projection = if label.value == "BLOCK" {
+            match block_dimension_values {
+                Some(dimensions) => block_placement(ctx, ir, dimensions, &outputs)?,
+                None => None,
+            }
+        } else {
+            None
+        };
         if outputs.is_empty() {
             if let Some((body, _)) = &block_projection {
+                ctx.reserve_retained_vec(&mut outputs, 1, "NX block output bodies")?;
                 outputs.push(body.clone());
             }
         }
-        let sphere_projection = (label.value == "SPHERE")
-            .then(|| sphere_body_projection(ir, &outputs))
-            .flatten();
-        let inferred_sphere_outputs = outputs
-            .is_empty()
-            .then(|| {
-                sphere_projection
-                    .as_ref()
-                    .map(|(body, _, _)| vec![body.clone()])
-            })
-            .flatten();
-        let sphere_outputs = inferred_sphere_outputs
-            .as_deref()
-            .unwrap_or(outputs.as_slice());
+        let sphere_projection = if label.value == "SPHERE" {
+            sphere_body_projection(ctx, ir, &outputs)?
+        } else {
+            None
+        };
+        let sphere_outputs = if outputs.is_empty() {
+            sphere_projection
+                .as_ref()
+                .map_or([].as_slice(), |(body, _, _)| std::slice::from_ref(body))
+        } else {
+            outputs.as_slice()
+        };
         let body_reference_count = body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .map_or(0, Vec::len);
@@ -3432,9 +5179,10 @@ fn attach_feature_operations(
                     history: &body_writer_history,
                 })
             });
-        if sphere_op == BooleanOp::NewBody {
-            if let Some(inferred_outputs) = inferred_sphere_outputs {
-                outputs.extend(inferred_outputs);
+        if sphere_op == BooleanOp::NewBody && outputs.is_empty() {
+            if let Some((body, _, _)) = &sphere_projection {
+                ctx.reserve_retained_vec(&mut outputs, 1, "NX sphere output bodies")?;
+                outputs.push(body.clone());
             }
         }
         if block_op == BooleanOp::NewBody || sphere_op == BooleanOp::NewBody {
@@ -3459,12 +5207,13 @@ fn attach_feature_operations(
             }
         }
         body_writer_history.extend_primary_dependencies(
+            ctx,
             initial_body_id.as_ref(),
             native_primary_body,
             offset_store_primary_body,
             &outputs,
             &mut dependencies,
-        );
+        )?;
         let block_placement = block_projection.map(|(_, placement)| placement);
         let sphere_definition = sphere_projection.as_ref().and_then(|(_, center, radius)| {
             (sphere_op == BooleanOp::NewBody).then_some(FeatureDefinition::Operation(
@@ -3475,69 +5224,75 @@ fn attach_feature_operations(
                 },
             ))
         });
-        let sew_projection = (label.value == "SEW")
-            .then(|| {
-                sew_body_feature_definition(
-                    body_references.get(label.id.as_str()).copied(),
+        let sew_projection = if label.value == "SEW" {
+            sew_body_feature_definition(
+                ctx,
+                body_references.get(label.id.as_str()).copied(),
+                offset_store_bodies_by_operation
+                    .get(label.id.as_str())
+                    .map_or([].as_slice(), Vec::as_slice),
+                operation_body_operands_by_operation
+                    .get(label.id.as_str())
+                    .map_or([].as_slice(), Vec::as_slice),
+                &body_alias_roots,
+                &bodies_by_object_index,
+            )?
+        } else {
+            None
+        };
+        let trim_body_projection = if label.value == "TRIM BODY" {
+            if let Some(primary) = body_references.get(label.id.as_str()) {
+                Some(trim_body_feature_definition(
+                    ctx,
+                    *primary,
+                    operation_body_operands_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                    &body_alias_roots,
+                    &bodies_by_object_index,
+                )?)
+            } else {
+                offset_store_trim_body_feature_definition(
+                    ctx,
                     offset_store_bodies_by_operation
                         .get(label.id.as_str())
                         .map_or([].as_slice(), Vec::as_slice),
                     operation_body_operands_by_operation
                         .get(label.id.as_str())
                         .map_or([].as_slice(), Vec::as_slice),
-                    &body_alias_roots,
-                    &bodies_by_object_index,
-                )
-            })
-            .flatten();
-        let trim_body_projection = (label.value == "TRIM BODY")
-            .then(|| {
-                body_references
-                    .get(label.id.as_str())
-                    .map(|primary| {
-                        trim_body_feature_definition(
-                            *primary,
-                            operation_body_operands_by_operation
-                                .get(label.id.as_str())
-                                .map_or([].as_slice(), Vec::as_slice),
-                            &body_alias_roots,
-                            &bodies_by_object_index,
-                        )
-                    })
-                    .or_else(|| {
-                        offset_store_trim_body_feature_definition(
-                            offset_store_bodies_by_operation
-                                .get(label.id.as_str())
-                                .map_or([].as_slice(), Vec::as_slice),
-                            operation_body_operands_by_operation
-                                .get(label.id.as_str())
-                                .map_or([].as_slice(), Vec::as_slice),
-                        )
-                        .map(Ok)
-                    })
-            })
-            .flatten()
-            .transpose()?;
-        let offset_projection = (label.value == "OFFSET")
-            .then(|| offset_surface_feature_definition(ir, &outputs))
-            .flatten();
+                )?
+            }
+        } else {
+            None
+        };
+        let offset_projection = if label.value == "OFFSET" {
+            offset_surface_feature_definition(ctx, ir, &outputs)?
+        } else {
+            None
+        };
         if let Some((_, supports)) = &offset_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
-                source_properties.insert(
-                    format!("offset_support_surface.{support_ordinal}"),
-                    support.as_str().to_owned(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("offset_support_surface.{support_ordinal}"),
+                    format_args!("{}", support.as_str()),
+                )?;
             }
         }
-        let thicken_projection = (label.value == "THICKEN_SHEET")
-            .then(|| thicken_feature_definition(ir, &outputs))
-            .flatten();
+        let thicken_projection = if label.value == "THICKEN_SHEET" {
+            thicken_feature_definition(ctx, ir, &outputs)?
+        } else {
+            None
+        };
         if let Some((_, supports)) = &thicken_projection {
             for (support_ordinal, support) in supports.iter().enumerate() {
-                source_properties.insert(
-                    format!("thicken_support_surface.{support_ordinal}"),
-                    support.as_str().to_owned(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("thicken_support_surface.{support_ordinal}"),
+                    format_args!("{}", support.as_str()),
+                )?;
             }
         }
         let blend_family = match label.value.as_str() {
@@ -3545,110 +5300,144 @@ fn attach_feature_operations(
             "FACE_BLEND" => Some(NxBlendFamily::Face),
             _ => None,
         };
-        let blend_projection =
-            blend_family.and_then(|family| blend_feature_definition(ir, &outputs, family));
+        let blend_projection = if let Some(family) = blend_family {
+            blend_feature_definition(ctx, ir, &outputs, family)?
+        } else {
+            None
+        };
         if let Some((_, surfaces)) = &blend_projection {
             for (surface_ordinal, surface) in surfaces.iter().enumerate() {
-                source_properties.insert(
-                    format!("blend_result_surface.{surface_ordinal}"),
-                    surface.as_str().to_owned(),
-                );
+                insert_source_property(
+                    ctx,
+                    &mut source_properties,
+                    format_args!("blend_result_surface.{surface_ordinal}"),
+                    format_args!("{}", surface.as_str()),
+                )?;
             }
         }
-        let extrude_projection = (label.value == "EXTRUDE").then(|| {
-            let output_kinds = outputs
-                .iter()
-                .map(|output| {
-                    ir.model
-                        .bodies
-                        .iter()
-                        .find(|body| body.id == *output)
-                        .map(|body| body.kind)
-                })
-                .collect::<Option<Vec<_>>>()
-                .unwrap_or_default();
+        let extrude_projection = if label.value == "EXTRUDE" {
+            let mut output_kinds = Vec::new();
+            let mut output_kind_reservation =
+                ctx.reserve_scoped(0, "NX extrude output body kinds")?;
+            for output in &outputs {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
+                    "NX extrude output body lookup",
+                )?;
+                let Some(body) = ir.model.bodies.iter().find(|body| body.id == *output) else {
+                    output_kinds.clear();
+                    break;
+                };
+                ctx.reserve_scoped_vec(
+                    &mut output_kind_reservation,
+                    &mut output_kinds,
+                    1,
+                    "NX extrude output body kinds",
+                )?;
+                output_kinds.push(body.kind);
+            }
             let op = extrude_boolean_op(
                 &body_writer_history,
                 native_primary_body,
                 offset_store_primary_body,
                 &output_kinds,
             );
-            extrude_feature_definition(
-                extrude_construction_profiles_by_operation
-                    .get(label.id.as_str())
-                    .map(|profile| profile.id.as_str()),
-                extrude_32_constructions_by_operation
-                    .get(label.id.as_str())
-                    .map(|construction| construction.id.as_str()),
+            let construction_profile = extrude_construction_profiles_by_operation
+                .get(label.id.as_str())
+                .map(|profile| profile.id.as_str());
+            let structured_construction = extrude_32_constructions_by_operation
+                .get(label.id.as_str())
+                .map(|construction| construction.id.as_str());
+            if let (Some(profile), None) | (None, Some(profile)) =
+                (construction_profile, structured_construction)
+            {
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(profile.len()),
+                    "NX extrude construction profile",
+                )?;
+            }
+            Some(extrude_feature_definition(
+                construction_profile,
+                structured_construction,
                 op,
                 &output_kinds,
-            )
-        });
-        let delete_projection = deletes_body
-            .then(|| {
-                let field = body_references
-                    .get(label.id.as_str())
-                    .copied()
-                    .map(DeleteBodyField::Native)
-                    .or_else(|| {
-                        offset_store_bodies_by_operation
-                            .get(label.id.as_str())
-                            .and_then(|uses| match uses.as_slice() {
-                                [(object_index, data_block)] => {
-                                    Some(DeleteBodyField::OffsetStore {
-                                        object_index: *object_index,
-                                        data_block,
-                                    })
-                                }
-                                _ => None,
-                            })
-                    })?;
-                Some(delete_body_feature_definition(
-                    field,
-                    &body_alias_roots,
-                    &bodies_by_object_index,
-                ))
-            })
-            .flatten();
-        let extract_body_projection = (label.value == "EXTRACT_BODY").then(|| {
-            extract_body_feature_definition(
+            ))
+        } else {
+            None
+        };
+        let delete_projection = if deletes_body {
+            let field = body_references
+                .get(label.id.as_str())
+                .copied()
+                .map(DeleteBodyField::Native)
+                .or_else(|| {
+                    offset_store_bodies_by_operation
+                        .get(label.id.as_str())
+                        .and_then(|uses| match uses.as_slice() {
+                            [(object_index, data_block)] => Some(DeleteBodyField::OffsetStore {
+                                object_index: *object_index,
+                                data_block,
+                            }),
+                            _ => None,
+                        })
+                });
+            field
+                .map(|field| {
+                    delete_body_feature_definition(
+                        ctx,
+                        field,
+                        &body_alias_roots,
+                        &bodies_by_object_index,
+                    )
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let extract_body_projection = if label.value == "EXTRACT_BODY" {
+            Some(extract_body_feature_definition(
+                ctx,
                 body_references.get(label.id.as_str()).copied(),
                 offset_store_bodies_by_operation
                     .get(label.id.as_str())
                     .map_or([].as_slice(), Vec::as_slice),
                 &body_alias_roots,
                 &bodies_by_object_index,
-            )
-        });
+            )?)
+        } else {
+            None
+        };
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
-        let native_parameters = native_feature_parameters(operation_parameter_uses, expressions);
-        let sketch = (label.value == "SKETCH")
-            .then(|| {
-                attach_sketch_graph(
-                    ir,
-                    label,
-                    &SketchSources {
-                        point_uses: sketch_point_uses_by_operation
-                            .get(label.id.as_str())
-                            .map_or([].as_slice(), Vec::as_slice),
-                        point_groups: sketch_point_groups,
-                        points: sketch_points,
-                        payload_scalars: sketch_payload_scalars,
-                        fixed_points: sketch_fixed_points_by_operation
-                            .get(label.id.as_str())
-                            .map_or([].as_slice(), Vec::as_slice),
-                        coordinate_pairs: sketch_coordinate_pairs_by_operation
-                            .get(label.id.as_str())
-                            .map_or([].as_slice(), Vec::as_slice),
-                    },
-                    annotations,
-                    &stream,
-                )
-            })
-            .flatten();
-        let definition = if let Some(definition) = boolean_definition
+        let native_parameters =
+            native_feature_parameters(ctx, operation_parameter_uses, expressions)?;
+        let sketch = if label.value == "SKETCH" {
+            attach_sketch_graph(
+                ctx,
+                ir,
+                label,
+                &SketchSources {
+                    point_uses: sketch_point_uses_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                    point_groups: sketch_point_groups,
+                    points: sketch_points,
+                    payload_scalars: sketch_payload_scalars,
+                    fixed_points: sketch_fixed_points_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                    coordinate_pairs: sketch_coordinate_pairs_by_operation
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                },
+                annotations,
+                &stream,
+            )?
+        } else {
+            None
+        };
+        let primary_definition = boolean_definition
             .or(trim_body_projection)
             .or(delete_projection)
             .or(extract_body_projection)
@@ -3657,12 +5446,13 @@ fn attach_feature_operations(
             .or_else(|| blend_projection.map(|(definition, _)| definition))
             .or_else(|| thicken_projection.map(|(definition, _)| definition))
             .or_else(|| offset_projection.map(|(definition, _)| definition))
-            .or(sphere_definition)
-            .or_else(|| {
-                (label.value == "BREP")
-                    .then(|| brep_feature_definition(&outputs))
-                    .flatten()
-            }) {
+            .or(sphere_definition);
+        let brep_projection = if primary_definition.is_none() && label.value == "BREP" {
+            brep_feature_definition(ctx, &outputs)?
+        } else {
+            None
+        };
+        let definition = if let Some(definition) = primary_definition.or(brep_projection) {
             definition
         } else if let Some(sketch) = sketch {
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -3687,26 +5477,34 @@ fn attach_feature_operations(
             }) {
                 definition
             } else {
+                let mut placements = Vec::new();
+                for source in [
+                    simple_hole_placements
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), std::slice::from_ref),
+                    counterbore_hole_placements
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), std::slice::from_ref),
+                    blind_hole_placements
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), std::slice::from_ref),
+                    hole_packages
+                        .placements
+                        .get(label.id.as_str())
+                        .map_or([].as_slice(), Vec::as_slice),
+                ] {
+                    for placement in source {
+                        ctx.reserve_retained_vec(&mut placements, 1, "NX feature hole placements")?;
+                        placements.push(placement.clone());
+                    }
+                }
                 non_boolean_feature_definition_with_parameters(
                     &label.value,
                     &operation_payload_strings,
                     block_dimension_values,
                     block_placement,
                     HoleProjection {
-                        placements: simple_hole_placements
-                            .get(label.id.as_str())
-                            .cloned()
-                            .into_iter()
-                            .chain(counterbore_hole_placements.get(label.id.as_str()).cloned())
-                            .chain(blind_hole_placements.get(label.id.as_str()).cloned())
-                            .chain(
-                                hole_packages
-                                    .placements
-                                    .get(label.id.as_str())
-                                    .cloned()
-                                    .unwrap_or_default(),
-                            )
-                            .collect(),
+                        placements,
                         diameter: simple_hole_diameters
                             .get(label.id.as_str())
                             .or_else(|| hole_packages.diameters.get(label.id.as_str()))
@@ -3738,23 +5536,29 @@ fn attach_feature_operations(
             .note(&id, &stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
-        let source_content = feature_source_content(operation_payload_string_records);
-        let mut referenced_parameters = operation_parameter_uses
-            .iter()
-            .filter_map(|parameter_use| expression_parameter_id(&parameter_use.expression))
-            .collect::<Vec<_>>();
-        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
-            referenced_parameters.extend(
-                dimensions
-                    .dimensions
-                    .iter()
-                    .filter_map(|dimension| expression_parameter_id(&dimension.expression)),
-            );
+        let source_content = feature_source_content(ctx, operation_payload_string_records)?;
+        let mut referenced_parameters = Vec::new();
+        let mut parameter_reservation = ctx.reserve_scoped(0, "NX referenced parameters")?;
+        for parameter_use in operation_parameter_uses {
+            push_referenced_parameter(
+                ctx,
+                &mut parameter_reservation,
+                &mut referenced_parameters,
+                &parameter_use.expression,
+            )?;
         }
-        for owner in parameter_owner_dependencies(&parameter_owners, &referenced_parameters) {
-            if !dependencies.contains(&owner) {
-                dependencies.push(owner);
+        if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
+            for dimension in &dimensions.dimensions {
+                push_referenced_parameter(
+                    ctx,
+                    &mut parameter_reservation,
+                    &mut referenced_parameters,
+                    &dimension.expression,
+                )?;
             }
+        }
+        for owner in parameter_owner_dependencies(ctx, &parameter_owners, &referenced_parameters)? {
+            push_unique_feature_dependency(ctx, &mut dependencies, &owner)?;
         }
         if !source_content.is_empty() {
             annotations
@@ -3765,8 +5569,23 @@ fn attach_feature_operations(
         let offset_store_output = (!deletes_body)
             .then_some(offset_store_primary_body)
             .flatten();
-        body_writer_history.record_writer(native_output, offset_store_output, &outputs, &id);
+        body_writer_history.record_writer(
+            ctx,
+            native_output,
+            offset_store_output,
+            &outputs,
+            &id,
+        )?;
         for write in operation_body_writes {
+            if !body_identity_writers.contains_key(&write.frame.body_identity()) {
+                ctx.charge_collection_items(1, "NX body identity writers")?;
+            }
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(u8, FeatureId)>() + id.as_str().len(),
+                ),
+                "NX body identity writer",
+            )?;
             body_identity_writers.insert(write.frame.body_identity(), id.clone());
         }
         if let Some(operation) = (!deletes_body)
@@ -3783,15 +5602,60 @@ fn attach_feature_operations(
                     &definition,
                     canonical_body(operation.target.token.value()),
                 );
-                body_writer_history.record_writer(native_target, offset_store_target, &[], &id);
+                body_writer_history.record_writer(
+                    ctx,
+                    native_target,
+                    offset_store_target,
+                    &[],
+                    &id,
+                )?;
             }
         }
+        let dependency_check_work = dependencies
+            .len()
+            .checked_mul(dependencies.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX feature dependency validation",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(dependencies.len()),
+                )
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(dependency_check_work),
+            "NX feature dependency validation",
+        )?;
+        let feature_text_bytes = id
+            .as_str()
+            .len()
+            .checked_add(label.value.len())
+            .and_then(|bytes| bytes.checked_add(label.value.len()))
+            .and_then(|bytes| bytes.checked_add(label.id.len()))
+            .and_then(|bytes| bytes.checked_add(std::mem::size_of::<Feature>()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX feature record",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(label.id.len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX feature records")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(feature_text_bytes),
+            "NX feature record",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut ir.model.features,
+            1,
+            "allocate NX feature records",
+        )?;
         ir.model.features.push(Feature {
             id: id.clone(),
-            ordinal: base_ordinal + ordinal as u64,
+            ordinal: base_ordinal + cadmpeg_core::decode::u64_from_index(ordinal),
             name: Some(label.value.clone()),
             suppressed: None,
-            dependencies: (dependencies).into_iter().collect(),
+            dependencies: DistinctMembers::try_from_unique_vec(dependencies)
+                .map_err(CodecError::malformed)?,
             source_properties: cadmpeg_core::text::named_entries(&label.id, source_properties)?,
             source_tag: Some(label.value.clone()),
             source_text: None,
@@ -3809,70 +5673,82 @@ fn attach_feature_operations(
                 .strip_prefix("nx:feature-history:operation-label#")
                 .unwrap_or(label.id.as_str());
             for write in operation_body_writes {
+                const BODY_PREFIX: &str = "nx:feature-history:body-identity#";
                 let result_members = operation_body_write_result_group_members(
+                    ctx,
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
                     parasolid_group_members,
-                );
-                ir.model.feature_result_topologies.push(
-                    FeatureResultTopology::new(
-                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                            .try_id::<FeatureResultTopologyId>(
-                                &cadmpeg_ir::identity_component!("result-topology"),
-                                format!("{key}-{:010}", write.ordinal),
-                            )
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "NX operation label key is not identity key text"
-                                ))
-                            })?,
-                        id.clone(),
-                        vec![cadmpeg_core::nonblank_literal!(
-                            "nx:feature-history:body-identity#{:010}",
-                            write.frame.body_identity()
-                        )],
-                        result_members.faces,
-                        result_members.edges,
-                        result_members.vertices,
-                        Some(write.id.clone()),
-                    )
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                );
+                )?;
+                let body_len = BODY_PREFIX.len() + 10;
+                ctx.charge_collection_items(1, "NX feature result bodies")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + body_len,
+                    ),
+                    "NX feature result body",
+                )?;
+                let mut body_text = String::new();
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut body_text,
+                    body_len,
+                    "allocate NX feature result body identity",
+                )?;
+                std::fmt::Write::write_fmt(
+                    &mut body_text,
+                    format_args!("{BODY_PREFIX}{:010}", write.frame.body_identity()),
+                )
+                .map_err(|_| {
+                    CodecError::malformed("NX feature result body identity formatting failed")
+                })?;
+                let body = cadmpeg_core::text::NonBlankString::new(body_text).ok_or_else(|| {
+                    CodecError::malformed("NX feature result body identity is blank")
+                })?;
+                let mut bodies = Vec::new();
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                    &mut bodies,
+                    1,
+                    "allocate NX feature result bodies",
+                )?;
+                bodies.push(body);
+                let mut native_ref =
+                    ctx.retained_string(write.id.len(), "NX result topology native reference")?;
+                native_ref.push_str(&write.id);
+                append_feature_result_topology(
+                    ctx,
+                    ir,
+                    result_topology_id(ctx, key, Some(write.ordinal))?,
+                    &id,
+                    bodies,
+                    result_members,
+                    native_ref,
+                )?;
             }
         } else if !deletes_body {
             let result_body = native_result_body_identity(
+                ctx,
                 body_writer_references_by_operation
                     .get(label.id.as_str())
                     .copied(),
                 booleans.get(label.id.as_str()).copied(),
-            );
+            )?;
             if let Some((local_id, native_ref)) = result_body {
                 let key = label
                     .id
                     .strip_prefix("nx:feature-history:operation-label#")
                     .unwrap_or(label.id.as_str());
-                ir.model.feature_result_topologies.push(
-                    FeatureResultTopology::new(
-                        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                            .try_id::<FeatureResultTopologyId>(
-                                &cadmpeg_ir::identity_component!("result-topology"),
-                                key,
-                            )
-                            .ok_or_else(|| {
-                                CodecError::malformed(format_args!(
-                                    "NX operation label key is not identity key text"
-                                ))
-                            })?,
-                        id.clone(),
-                        vec![local_id],
-                        Vec::new(),
-                        Vec::new(),
-                        Vec::new(),
-                        Some(native_ref),
-                    )
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?,
-                );
+                let mut bodies = ctx.retained_vec(1, "NX feature result bodies")?;
+                bodies.push(local_id);
+                append_feature_result_topology(
+                    ctx,
+                    ir,
+                    result_topology_id(ctx, key, None)?,
+                    &id,
+                    bodies,
+                    FeatureResultGroupMembers::default(),
+                    native_ref,
+                )?;
             }
         }
     }
@@ -3881,15 +5757,52 @@ fn attach_feature_operations(
     // native evidence without becoming current-body state roots.
     if !body_references.is_empty() {
         if let Some(initial_body_id) = initial_body_id.as_ref() {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
+                "NX primary body closure feature lookup",
+            )?;
             if let Some(initial_feature) = ir
                 .model
                 .features
                 .iter_mut()
                 .find(|feature| feature.id == *initial_body_id)
             {
+                const WITNESS_VALUE: &str = "primary-body-relations";
+                let witness_bytes =
+                    std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+                        .checked_add(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len())
+                        .and_then(|bytes| bytes.checked_add(WITNESS_VALUE.len()))
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(
+                                "NX primary body closure witness",
+                                0,
+                                cadmpeg_core::decode::u64_from_index(WITNESS_VALUE.len()),
+                            )
+                        })?;
+                ctx.charge_collection_items(1, "NX primary body closure witness")?;
+                ctx.charge_retained(
+                    cadmpeg_core::decode::u64_from_index(witness_bytes),
+                    "NX primary body closure witness",
+                )?;
+                let mut key = String::new();
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut key,
+                    NATIVE_PRIMARY_BODY_CLOSURE_WITNESS.len(),
+                    "allocate NX primary body closure witness key",
+                )?;
+                key.push_str(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS);
+                let mut value = String::new();
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut value,
+                    WITNESS_VALUE.len(),
+                    "allocate NX primary body closure witness value",
+                )?;
+                value.push_str(WITNESS_VALUE);
                 initial_feature.source_properties.insert(
-                    cadmpeg_core::nonblank_const!(NATIVE_PRIMARY_BODY_CLOSURE_WITNESS),
-                    "primary-body-relations".to_string(),
+                    cadmpeg_core::text::NonBlankString::new(key).ok_or_else(|| {
+                        CodecError::malformed("NX primary body closure witness key is blank")
+                    })?,
+                    value,
                 );
                 annotations
                     .derived(initial_body_id, NATIVE_PRIMARY_BODY_CLOSURE_WITNESS)
@@ -3898,6 +5811,10 @@ fn attach_feature_operations(
         }
     }
     if let Some(initial_body_id) = initial_body_id {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
+            "NX initial body output lookup",
+        )?;
         let has_outputs = ir
             .model
             .features
@@ -3920,57 +5837,219 @@ struct FeatureResultGroupMembers {
     vertices: Vec<cadmpeg_core::text::NonBlankString>,
 }
 
+fn result_topology_id(
+    ctx: &DecodeContext<'_>,
+    key: &str,
+    ordinal: Option<u32>,
+) -> Result<FeatureResultTopologyId, CodecError> {
+    const PREFIX: &str = "nx:feature-history:result-topology#";
+    let suffix_len = if ordinal.is_some() { 11 } else { 0 };
+    let key_len = key.len().checked_add(suffix_len).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX result topology key",
+            0,
+            cadmpeg_core::decode::u64_from_index(key.len()),
+        )
+    })?;
+    let id_len = PREFIX.len().checked_add(key_len).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX result topology identity",
+            0,
+            cadmpeg_core::decode::u64_from_index(key_len),
+        )
+    })?;
+    let _key_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(key_len),
+        "NX result topology key",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(key_len),
+        "NX result topology key formatting",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "NX result topology identity",
+    )?;
+    let mut owned_key = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key_len,
+        "allocate NX result topology key",
+    )?;
+    owned_key.push_str(key);
+    if let Some(ordinal) = ordinal {
+        std::fmt::Write::write_fmt(&mut owned_key, format_args!("-{ordinal:010}"))
+            .map_err(|_| CodecError::malformed("NX result topology key formatting failed"))?;
+    }
+    IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+        .try_id::<FeatureResultTopologyId>(
+            &cadmpeg_ir::identity_component!("result-topology"),
+            owned_key,
+        )
+        .ok_or_else(|| CodecError::malformed("NX operation label key is not identity key text"))
+}
+
+fn append_feature_result_topology(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    result_id: FeatureResultTopologyId,
+    output_of: &FeatureId,
+    bodies: Vec<cadmpeg_core::text::NonBlankString>,
+    members: FeatureResultGroupMembers,
+    native_ref: String,
+) -> Result<(), CodecError> {
+    let member_count = bodies
+        .len()
+        .checked_add(members.faces.len())
+        .and_then(|count| count.checked_add(members.edges.len()))
+        .and_then(|count| count.checked_add(members.vertices.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX result topology members",
+                0,
+                cadmpeg_core::decode::u64_from_index(bodies.len()),
+            )
+        })?;
+    let member_storage = member_count
+        .checked_mul(std::mem::size_of::<cadmpeg_core::text::NonBlankString>())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX result topology member storage",
+                0,
+                cadmpeg_core::decode::u64_from_index(member_count),
+            )
+        })?;
+    let transient_storage = member_count
+        .checked_mul(
+            std::mem::size_of::<cadmpeg_ir::features::SelectionMember>()
+                + std::mem::size_of::<&cadmpeg_core::text::NonBlankString>() * 4,
+        )
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX result topology temporary members",
+                0,
+                cadmpeg_core::decode::u64_from_index(member_count),
+            )
+        })?;
+    let retained_bytes = std::mem::size_of::<FeatureResultTopology>()
+        .checked_add(member_storage)
+        .and_then(|bytes| bytes.checked_add(output_of.as_str().len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX result topology record",
+                0,
+                cadmpeg_core::decode::u64_from_index(member_storage),
+            )
+        })?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(
+            member_count
+                .checked_mul(2)
+                .and_then(|count| count.checked_add(1))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX result topology collection",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(member_count),
+                    )
+                })?,
+        ),
+        "NX result topology collection",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        "NX result topology record",
+    )?;
+    let _member_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(transient_storage),
+        "NX result topology temporary members",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(member_count),
+        "NX result topology member validation",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.feature_result_topologies,
+        1,
+        "allocate NX result topology records",
+    )?;
+    let result = FeatureResultTopology::new(
+        result_id,
+        output_of.clone(),
+        bodies,
+        members.faces,
+        members.edges,
+        members.vertices,
+        Some(native_ref),
+    )
+    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+    ir.model.feature_result_topologies.push(result);
+    Ok(())
+}
+
 fn operation_body_write_result_group_members(
+    ctx: &DecodeContext<'_>,
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
     members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> FeatureResultGroupMembers {
+) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
         .filter(|use_| use_.operation_body_write == body_write);
     let image_use = matching_image_uses.next();
     if matching_image_uses.next().is_some() {
-        return FeatureResultGroupMembers::default();
+        return Ok(FeatureResultGroupMembers::default());
     }
-    let image_members = image_use.map(|use_| {
-        feature_result_group_members(
-            use_.partition_stream_ordinal,
-            &use_.parasolid_group_members,
-            members,
-        )
-    });
+    let image_members = image_use
+        .map(|use_| {
+            feature_result_group_members(
+                ctx,
+                use_.partition_stream_ordinal,
+                &use_.parasolid_group_members,
+                members,
+            )
+        })
+        .transpose()?;
     let mut matching_group_uses = group_partition_uses
         .iter()
         .filter(|use_| use_.body_write == body_write);
     let group_use = matching_group_uses.next();
     if matching_group_uses.next().is_some() {
-        return FeatureResultGroupMembers::default();
+        return Ok(FeatureResultGroupMembers::default());
     }
-    let group_members = group_use.map(|use_| {
-        feature_result_group_members(
-            use_.partition_stream_ordinal,
-            &use_.parasolid_group_members,
-            members,
-        )
-    });
-    match (image_members, group_members) {
+    let group_members = group_use
+        .map(|use_| {
+            feature_result_group_members(
+                ctx,
+                use_.partition_stream_ordinal,
+                &use_.parasolid_group_members,
+                members,
+            )
+        })
+        .transpose()?;
+    Ok(match (image_members, group_members) {
         (Some(image), Some(group)) if image == group => image,
         (Some(_), Some(_)) => FeatureResultGroupMembers::default(),
         (Some(image), None) => image,
         (None, Some(group)) => group,
         (None, None) => FeatureResultGroupMembers::default(),
-    }
+    })
 }
 
 fn feature_result_group_members(
+    ctx: &DecodeContext<'_>,
     partition_stream_ordinal: u32,
     member_ids: &[String],
     members: &[crate::native::parasolid::ParasolidGroupMember],
-) -> FeatureResultGroupMembers {
+) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(members.len()),
+            "NX feature result group member lookup",
+        )?;
         let mut matches = members.iter().filter(|member| member.id == *member_id);
         let Some(member) = matches.next() else {
             continue;
@@ -3989,35 +6068,108 @@ fn feature_result_group_members(
         else {
             continue;
         };
-        match family {
-            GroupNodeFamily::Face => result.faces.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:face#{xmt}"
-            )),
-            GroupNodeFamily::Edge => result.edges.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:edge#{xmt}"
-            )),
-            GroupNodeFamily::Vertex => result.vertices.push(cadmpeg_core::nonblank_literal!(
-                "nx:s{partition_stream_ordinal}:vertex#{xmt}"
-            )),
-            _ => {}
-        }
+        let (kind, output) = match family {
+            GroupNodeFamily::Face => ("face", &mut result.faces),
+            GroupNodeFamily::Edge => ("edge", &mut result.edges),
+            GroupNodeFamily::Vertex => ("vertex", &mut result.vertices),
+            _ => continue,
+        };
+        let identity_len = 5 + 10 + 1 + kind.len() + 1 + 10;
+        ctx.charge_collection_items(1, "NX feature result group members")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<cadmpeg_core::text::NonBlankString>() + identity_len,
+            ),
+            "NX feature result group member identity",
+        )?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(identity_len),
+            "NX feature result group member identity formatting",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            output,
+            1,
+            "allocate NX feature result group members",
+        )?;
+        let mut text = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut text,
+            identity_len,
+            "allocate NX feature result group member identity",
+        )?;
+        std::fmt::Write::write_fmt(
+            &mut text,
+            format_args!("nx:s{partition_stream_ordinal}:{kind}#{xmt}"),
+        )
+        .map_err(|_| {
+            CodecError::InvalidInput("NX result member identity formatting failed".to_string())
+        })?;
+        let identity = cadmpeg_core::text::NonBlankString::new(text)
+            .ok_or_else(|| CodecError::malformed("NX result member identity is blank"))?;
+        output.push(identity);
     }
-    result
+    Ok(result)
 }
 
 /// Select the exact native writer identity for one intermediate body result.
 /// A primary-body writer is canonical when both native forms are present. The
 /// Boolean target is independently sufficient when the primary form is absent.
 fn native_result_body_identity(
+    ctx: &DecodeContext<'_>,
     primary: Option<&crate::native::features::FeatureBodyReference>,
     boolean: Option<&crate::native::features::FeatureBooleanOperation>,
-) -> Option<(cadmpeg_core::text::NonBlankString, String)> {
-    primary
-        .map(|writer| (writer.id.clone(), writer.id.clone()))
-        .or_else(|| {
-            boolean.map(|operation| (format!("{}:target", operation.id), operation.id.clone()))
-        })
-        .and_then(|(local, native)| Some((cadmpeg_core::text::NonBlankString::new(local)?, native)))
+) -> Result<Option<(cadmpeg_core::text::NonBlankString, String)>, CodecError> {
+    let (native, suffix) = if let Some(primary) = primary {
+        (primary.id.as_str(), "")
+    } else if let Some(boolean) = boolean {
+        (boolean.id.as_str(), ":target")
+    } else {
+        return Ok(None);
+    };
+    let local_len = native.len().checked_add(suffix.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX result body local identity",
+            0,
+            cadmpeg_core::decode::u64_from_index(native.len()),
+        )
+    })?;
+    let retained_bytes = std::mem::size_of::<(cadmpeg_core::text::NonBlankString, String)>()
+        .checked_add(local_len)
+        .and_then(|bytes| bytes.checked_add(native.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX result body identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(local_len),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(local_len),
+        "NX result body identity formatting",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        "NX result body identity",
+    )?;
+    let mut local = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut local,
+        local_len,
+        "allocate NX result body local identity",
+    )?;
+    local.push_str(native);
+    local.push_str(suffix);
+    let Some(local) = cadmpeg_core::text::NonBlankString::new(local) else {
+        return Ok(None);
+    };
+    let mut native_ref = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut native_ref,
+        native.len(),
+        "allocate NX result body native identity",
+    )?;
+    native_ref.push_str(native);
+    Ok(Some((local, native_ref)))
 }
 
 /// Return primary body fields that are proven to use the segment-object
@@ -4026,78 +6178,165 @@ fn native_result_body_identity(
 /// same field. Missing or ambiguous relations remain offset-store-local. An
 /// operation with zero or multiple body fields has no primary-body selection.
 fn native_primary_body_references<'a>(
+    ctx: &DecodeContext<'_>,
     references: &'a [crate::native::features::FeatureBodyReference],
     data_block_uses: &[crate::native::features::FeatureBodyDataBlockUse],
     segment_uses: &[crate::native::features::FeatureBodySegmentUse],
     inputs: &[crate::native::features::FeatureInputBlock],
     data_blocks: &[crate::native::om::DataBlock],
-) -> BTreeMap<&'a str, u32> {
-    let unique_references = crate::native::features::unique_feature_body_references(references);
-    let offset_store_references = data_block_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
+) -> Result<BTreeMap<&'a str, u32>, CodecError> {
+    let unique_references =
+        crate::native::features::unique_feature_body_references(ctx, references)?;
+    let mut offset_reservation = ctx.reserve_scoped(0, "NX primary offset-store references")?;
+    let mut offset_store_references = BTreeSet::new();
+    for use_ in data_block_uses {
+        ctx.charge_collection_items(1, "NX primary offset-store references")?;
+        offset_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        offset_store_references.insert(use_.feature_body_reference.as_str());
+    }
     let offset_store_operations =
-        crate::native::features::feature_input_store_operations(inputs, data_blocks);
-    let bridged_segment_references = segment_uses
-        .iter()
-        .map(|use_| use_.feature_body_reference.as_str())
-        .collect::<BTreeSet<_>>();
-    unique_references
-        .into_iter()
-        .filter(|(_, reference)| {
-            bridged_segment_references.contains(reference.id.as_str())
-                || (!offset_store_references.contains(reference.id.as_str())
-                    && !offset_store_operations.contains(reference.operation_label.as_str()))
-        })
-        .map(|(operation, reference)| (operation, reference.body.value()))
-        .collect()
+        crate::native::features::feature_input_store_operations(ctx, inputs, data_blocks)?;
+    let mut bridge_reservation = ctx.reserve_scoped(0, "NX primary bridged references")?;
+    let mut bridged_segment_references = BTreeSet::new();
+    for use_ in segment_uses {
+        ctx.charge_collection_items(1, "NX primary bridged references")?;
+        bridge_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<&str>() * 4,
+        ))?;
+        bridged_segment_references.insert(use_.feature_body_reference.as_str());
+    }
+    let mut output = BTreeMap::new();
+    for (operation, reference) in unique_references {
+        if !bridged_segment_references.contains(reference.id.as_str())
+            && (offset_store_references.contains(reference.id.as_str())
+                || offset_store_operations.contains(reference.operation_label.as_str()))
+        {
+            continue;
+        }
+        ctx.charge_collection_items(1, "NX primary body references")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(&str, u32)>() * 4),
+            "NX primary body references",
+        )?;
+        output.insert(operation, reference.body.value());
+    }
+    Ok(output)
 }
 
 fn attach_sketch_graph(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     label: &crate::native::features::FeatureOperationLabel,
     sources: &SketchSources<'_>,
     annotations: &mut AnnotationBuilder,
     stream: &cadmpeg_ir::annotations::StreamHandle,
-) -> Option<SketchId> {
-    let operation_groups = sources
+) -> Result<Option<SketchId>, CodecError> {
+    let mut reservation = ctx.reserve_scoped(0, "NX sketch projection")?;
+    let mut operation_groups = Vec::new();
+    for group in sources
         .point_groups
         .iter()
         .filter(|group| group.operation_label == label.id)
-        .collect::<Vec<_>>();
+    {
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut operation_groups,
+            1,
+            "NX sketch operation groups",
+        )?;
+        operation_groups.push(group);
+    }
     let operation_key = label
         .id
         .strip_prefix("nx:feature-history:operation-label#")
         .unwrap_or(label.id.as_str());
-    let sketch_id: SketchId = IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-        .try_id(&cadmpeg_ir::identity_component!("sketch"), operation_key)?;
-    let operation_fixed_points = sources
+    let sketch_id_bytes = operation_key
+        .len()
+        .checked_mul(3)
+        .and_then(|bytes| bytes.checked_add(40))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX sketch identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(operation_key.len()),
+            )
+        })?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(sketch_id_bytes),
+        "NX sketch identity",
+    )?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(operation_key.len()),
+        "NX sketch identity",
+    )?;
+    let mut owned_operation_key = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_operation_key,
+        operation_key.len(),
+        "allocate NX sketch identity",
+    )?;
+    owned_operation_key.push_str(operation_key);
+    let Some(sketch_id): Option<SketchId> =
+        IdScope::native(cadmpeg_ir::identity_component!("feature-history")).try_id(
+            &cadmpeg_ir::identity_component!("sketch"),
+            owned_operation_key,
+        )
+    else {
+        return Ok(None);
+    };
+    let mut operation_fixed_points = Vec::new();
+    for &point in sources
         .fixed_points
         .iter()
-        .copied()
         .filter(|point| point.operation_label == label.id)
-        .collect::<Vec<_>>();
+    {
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut operation_fixed_points,
+            1,
+            "NX sketch fixed-point inputs",
+        )?;
+        operation_fixed_points.push(point);
+    }
     if operation_groups.is_empty() {
-        let coordinate_pairs = sources
+        let mut coordinate_pairs = Vec::new();
+        for &pair in sources
             .coordinate_pairs
             .iter()
             .filter(|pair| pair.operation_label == label.id)
-            .copied()
-            .collect::<Vec<_>>();
-        if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
-            return None;
+        {
+            ctx.reserve_scoped_vec(
+                &mut reservation,
+                &mut coordinate_pairs,
+                1,
+                "NX sketch coordinate pair inputs",
+            )?;
+            coordinate_pairs.push(pair);
         }
-        let mut entities =
-            Vec::with_capacity(coordinate_pairs.len() + operation_fixed_points.len());
+        if coordinate_pairs.is_empty() && operation_fixed_points.is_empty() {
+            return Ok(None);
+        }
+        let mut entities = Vec::new();
         let mut pair_ids = BTreeSet::new();
         let mut pair_entity_keys = BTreeSet::new();
         let mut pair_ordinals = BTreeSet::new();
         for pair in coordinate_pairs {
-            if !pair_ids.insert(pair.id.as_str())
-                || !pair_ordinals.insert((pair.payload.id(), pair.ordinal))
-            {
-                return None;
+            if !ctx.insert_scoped_btree_set(
+                &mut reservation,
+                &mut pair_ids,
+                pair.id.as_str(),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )? || !ctx.insert_scoped_btree_set(
+                &mut reservation,
+                &mut pair_ordinals,
+                (pair.payload.id(), pair.ordinal),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )? {
+                return Ok(None);
             }
             let pair_key = pair
                 .id
@@ -4105,31 +6344,77 @@ fn attach_sketch_graph(
                 .map_or(pair.id.as_str(), |(_, key)| key);
             if pair_key.is_empty()
                 || pair_key.chars().any(char::is_whitespace)
-                || !pair_entity_keys.insert(pair_key)
+                || !ctx.insert_scoped_btree_set(
+                    &mut reservation,
+                    &mut pair_entity_keys,
+                    pair_key,
+                    "NX sketch key uniqueness",
+                    "NX sketch key index",
+                )?
             {
-                return None;
+                return Ok(None);
             }
-            entities.push((
+            let Some(entity_id) = sketch_entity_identity(ctx, "coordinate-pair-", pair_key)? else {
+                return Ok(None);
+            };
+            let copy_bytes = sketch_id
+                .as_str()
+                .len()
+                .checked_add(pair.id.len())
+                .and_then(|bytes| bytes.checked_add("nx-coordinate-pair".len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX coordinate-pair sketch entity",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(pair.id.len()),
+                    )
+                })?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(copy_bytes),
+                "NX coordinate-pair sketch entity",
+            )?;
+            let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-coordinate-pair")
+            else {
+                return Ok(None);
+            };
+            let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+                &pair.id,
+                "allocate NX sketch text",
+            )?;
+            push_sketch_entity(
+                ctx,
+                &mut reservation,
+                &mut entities,
                 pair.source_offset,
                 SketchEntity::new(
-                    IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                        .try_id::<SketchEntityId>(
-                        &cadmpeg_ir::identity_component!("sketch-entity"),
-                        format!("coordinate-pair-{pair_key}"),
-                    )?,
+                    entity_id,
                     sketch_id.clone(),
-                    SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(
-                        "nx-coordinate-pair",
-                    )?),
+                    SketchGeometry::native(native_kind),
                 )
-                .with_native_ref(Some(pair.id.clone())),
-            ));
+                .with_native_ref(Some(native_ref)),
+            )?;
         }
-        entities.extend(native_fixed_point_entities(
+        if !append_fixed_sketch_entities(
+            ctx,
+            &mut reservation,
+            &mut entities,
             label,
             &sketch_id,
             &operation_fixed_points,
-        )?);
+        )? {
+            return Ok(None);
+        }
+        let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX sketch entity order",
+                0,
+                cadmpeg_core::decode::u64_from_index(entities.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(sort_work),
+            "NX sketch entity order",
+        )?;
         entities.sort_by(|(first_offset, first), (second_offset, second)| {
             first_offset
                 .cmp(second_offset)
@@ -4158,115 +6443,102 @@ fn attach_sketch_graph(
             .note(sketch_id.as_str(), stream, label.source_offset)
             .tag("SKETCH");
         annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-        ir.model
-            .sketch_entities
-            .extend(entities.into_iter().map(|(_, entity)| entity));
-        ir.model.sketches.push(Sketch {
-            id: sketch_id.clone(),
-            name: Some(label.value.clone()),
-            configuration: None,
-            visible: None,
-            placement: SketchPlacement::Unresolved {},
-            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-            native_ref: Some(label.id.clone()),
-        });
-        return Some(sketch_id);
+        emit_sketch(ctx, ir, label, &sketch_id, entities)?;
+        return Ok(Some(sketch_id));
     }
     let mut groups_by_id =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointGroup>::new();
     for group in &operation_groups {
-        if groups_by_id.insert(group.id.as_str(), group).is_some() {
-            return None;
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut groups_by_id,
+            group.id.as_str(),
+            group,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
+            return Ok(None);
         }
     }
     let mut point_uses_by_group =
         BTreeMap::<&str, &crate::native::features::FeatureSketchPointUse>::new();
     for point_use in sources.point_uses {
         if point_use.operation_label != label.id
-            || point_uses_by_group
-                .insert(point_use.sketch_point_group.as_str(), point_use)
-                .is_some()
+            || !ctx.insert_scoped_btree_map_if_vacant(
+                &mut reservation,
+                &mut point_uses_by_group,
+                point_use.sketch_point_group.as_str(),
+                point_use,
+                "NX sketch record uniqueness",
+                "NX sketch record index",
+            )?
         {
-            return None;
+            return Ok(None);
         }
     }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(
+            groups_by_id
+                .len()
+                .checked_mul(point_uses_by_group.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX sketch point-use group check",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(groups_by_id.len()),
+                    )
+                })?,
+        ),
+        "NX sketch point-use group check",
+    )?;
     if point_uses_by_group
         .keys()
         .any(|group| !groups_by_id.contains_key(group))
     {
-        return None;
+        return Ok(None);
     }
     let mut points_by_id = BTreeMap::<&str, &crate::native::features::FeatureSketchPoint>::new();
     for point in sources.points {
-        if points_by_id.insert(point.id.as_str(), point).is_some() {
-            return None;
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut points_by_id,
+            point.id.as_str(),
+            point,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
+            return Ok(None);
         }
     }
     let mut scalars_by_id = BTreeMap::<&str, &crate::native::features::FeaturePayloadScalar>::new();
     for scalar in sources.payload_scalars {
-        if scalars_by_id.insert(scalar.id.as_str(), scalar).is_some() {
-            return None;
+        if !ctx.insert_scoped_btree_map_if_vacant(
+            &mut reservation,
+            &mut scalars_by_id,
+            scalar.id.as_str(),
+            scalar,
+            "NX sketch record uniqueness",
+            "NX sketch record index",
+        )? {
+            return Ok(None);
         }
     }
     let mut entities = Vec::new();
-    let mut represented_groups = BTreeSet::new();
     for group in operation_groups {
-        if !represented_groups.insert(group.id.as_str()) {
-            return None;
-        }
         let point_use = point_uses_by_group.get(group.id.as_str()).copied();
-        let source_offsets: Vec<_> = if let Some(point_use) = point_use {
-            point_use
-                .references
-                .iter()
-                .map(|reference| reference.source_offset)
-                .collect()
-        } else {
-            group
-                .points
-                .iter()
-                .map(|point_id| {
-                    let point = points_by_id.get(point_id.as_str()).copied()?;
-                    if point.operation_label != label.id
-                        || point.name != group.name
-                        || point
-                            .coordinates
-                            .iter()
-                            .zip(group.coordinates)
-                            .any(|(first, second)| first.to_bits() != second.to_bits())
-                    {
-                        return None;
-                    }
-                    let scalar_fields = point
-                        .scalar_fields
-                        .iter()
-                        .map(|scalar_id| scalars_by_id.get(scalar_id.as_str()).copied())
-                        .collect::<Option<Vec<_>>>()?;
-                    if scalar_fields.len() != 2
-                        || scalar_fields.iter().zip(group.coordinates).any(
-                            |(scalar, coordinate)| {
-                                scalar.operation_label != label.id
-                                    || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
-                            },
-                        )
-                    {
-                        return None;
-                    }
-                    Some(
-                        scalar_fields
-                            .into_iter()
-                            .map(|scalar| scalar.source_offset)
-                            .collect::<Vec<_>>(),
-                    )
-                })
-                .collect::<Option<Vec<_>>>()?
-                .into_iter()
-                .flatten()
-                .collect()
+        let Some(source_offset) = sketch_group_source_offset(
+            ctx,
+            label,
+            group,
+            point_use,
+            &points_by_id,
+            &scalars_by_id,
+        )?
+        else {
+            return Ok(None);
         };
-        let source_offset = source_offsets.iter().copied().min()?;
-        let native_ref =
-            point_use.map_or_else(|| group.id.clone(), |point_use| point_use.id.clone());
+        let native_ref_source =
+            point_use.map_or(group.id.as_str(), |point_use| point_use.id.as_str());
         let entity_key = point_use
             .map_or(group.id.as_str(), |point_use| point_use.id.as_str())
             .strip_prefix("nx:feature-history:sketch-point-use#")
@@ -4276,35 +6548,70 @@ fn attach_sketch_graph(
                     .strip_prefix("nx:feature-history:sketch-point-group#")
             })
             .unwrap_or(group.id.as_str());
-        entities.push((
+        let Some(entity_id) = sketch_entity_identity(ctx, "point-", entity_key)? else {
+            return Ok(None);
+        };
+        let copy_bytes = sketch_id
+            .as_str()
+            .len()
+            .checked_add(native_ref_source.len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX sketch point entity",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(native_ref_source.len()),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(copy_bytes),
+            "NX sketch point entity",
+        )?;
+        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+            native_ref_source,
+            "allocate NX sketch text",
+        )?;
+        let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(group.coordinates[0], group.coordinates[1]),
+        }) else {
+            return Ok(None);
+        };
+        push_sketch_entity(
+            ctx,
+            &mut reservation,
+            &mut entities,
             source_offset,
-            SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                    .try_id::<SketchEntityId>(
-                    &cadmpeg_ir::identity_component!("sketch-entity"),
-                    format!("point-{entity_key}"),
-                )?,
-                sketch_id.clone(),
-                SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                    position: Point2::new(group.coordinates[0], group.coordinates[1]),
-                })
-                .ok()?,
-            )
-            .with_native_ref(Some(native_ref)),
-        ));
+            SketchEntity::new(entity_id, sketch_id.clone(), geometry)
+                .with_native_ref(Some(native_ref)),
+        )?;
     }
-    entities.extend(native_fixed_point_entities(
+    if !append_fixed_sketch_entities(
+        ctx,
+        &mut reservation,
+        &mut entities,
         label,
         &sketch_id,
         &operation_fixed_points,
-    )?);
+    )? {
+        return Ok(None);
+    }
+    let sort_work = entities.len().checked_mul(entities.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX sketch entity order",
+            0,
+            cadmpeg_core::decode::u64_from_index(entities.len()),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(sort_work),
+        "NX sketch entity order",
+    )?;
     entities.sort_by(|(first_offset, first), (second_offset, second)| {
         first_offset
             .cmp(second_offset)
             .then_with(|| first.id().cmp(second.id()))
     });
     if entities.is_empty() {
-        return None;
+        return Ok(None);
     }
     for (source_offset, entity) in &entities {
         match entity.geometry.definition() {
@@ -4325,26 +6632,15 @@ fn attach_sketch_graph(
                     .tag(tag);
                 annotations.exactness(entity.id().as_str(), Exactness::ByteExact);
             }
-            _ => return None,
+            _ => return Ok(None),
         }
     }
     annotations
         .note(sketch_id.as_str(), stream, label.source_offset)
         .tag("SKETCH");
     annotations.exactness(sketch_id.as_str(), Exactness::Derived);
-    ir.model
-        .sketch_entities
-        .extend(entities.into_iter().map(|(_, entity)| entity));
-    ir.model.sketches.push(Sketch {
-        id: sketch_id.clone(),
-        name: Some(label.value.clone()),
-        configuration: None,
-        visible: None,
-        placement: SketchPlacement::Unresolved {},
-        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
-        native_ref: Some(label.id.clone()),
-    });
-    Some(sketch_id)
+    emit_sketch(ctx, ir, label, &sketch_id, entities)?;
+    Ok(Some(sketch_id))
 }
 
 struct SketchSources<'a> {
@@ -4356,17 +6652,201 @@ struct SketchSources<'a> {
     coordinate_pairs: &'a [&'a crate::native::features::FeaturePayloadScalarPair],
 }
 
+fn sketch_group_source_offset(
+    ctx: &DecodeContext<'_>,
+    label: &crate::native::features::FeatureOperationLabel,
+    group: &crate::native::features::FeatureSketchPointGroup,
+    point_use: Option<&crate::native::features::FeatureSketchPointUse>,
+    points_by_id: &BTreeMap<&str, &crate::native::features::FeatureSketchPoint>,
+    scalars_by_id: &BTreeMap<&str, &crate::native::features::FeaturePayloadScalar>,
+) -> Result<Option<u64>, CodecError> {
+    if let Some(point_use) = point_use {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(point_use.references.len()),
+            "NX sketch point-use offsets",
+        )?;
+        return Ok(point_use
+            .references
+            .iter()
+            .map(|reference| reference.source_offset)
+            .min());
+    }
+    let mut minimum = None::<u64>;
+    for point_id in &group.points {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(points_by_id.len()),
+            "NX sketch point lookup",
+        )?;
+        let Some(point) = points_by_id.get(point_id.as_str()).copied() else {
+            return Ok(None);
+        };
+        if point.operation_label != label.id
+            || point.name != group.name
+            || point
+                .coordinates
+                .iter()
+                .zip(group.coordinates)
+                .any(|(first, second)| first.to_bits() != second.to_bits())
+        {
+            return Ok(None);
+        }
+        let [first, second] = point.scalar_fields.as_slice() else {
+            return Ok(None);
+        };
+        for (scalar_id, coordinate) in [first, second].into_iter().zip(group.coordinates) {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(scalars_by_id.len()),
+                "NX sketch scalar lookup",
+            )?;
+            let Some(scalar) = scalars_by_id.get(scalar_id.as_str()).copied() else {
+                return Ok(None);
+            };
+            if scalar.operation_label != label.id
+                || scalar.scalar.value().get().to_bits() != coordinate.to_bits()
+            {
+                return Ok(None);
+            }
+            minimum = Some(minimum.map_or(scalar.source_offset, |current| {
+                current.min(scalar.source_offset)
+            }));
+        }
+    }
+    Ok(minimum)
+}
+
+fn sketch_entity_identity(
+    ctx: &DecodeContext<'_>,
+    prefix: &str,
+    key: &str,
+) -> Result<Option<SketchEntityId>, CodecError> {
+    let key_len = prefix.len().checked_add(key.len()).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX sketch entity identity",
+            0,
+            cadmpeg_core::decode::u64_from_index(key.len()),
+        )
+    })?;
+    let charged_len = key_len
+        .checked_mul(3)
+        .and_then(|bytes| bytes.checked_add(48))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX sketch entity identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(key_len),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(key_len),
+        "NX sketch entity identity",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(charged_len),
+        "NX sketch entity identity",
+    )?;
+    let mut text = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut text,
+        key_len,
+        "allocate NX sketch entity identity",
+    )?;
+    text.push_str(prefix);
+    text.push_str(key);
+    Ok(
+        IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
+            .try_id(&cadmpeg_ir::identity_component!("sketch-entity"), text),
+    )
+}
+
+fn push_sketch_entity(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entities: &mut Vec<(u64, SketchEntity)>,
+    source_offset: u64,
+    entity: SketchEntity,
+) -> Result<(), CodecError> {
+    ctx.reserve_scoped_vec(reservation, entities, 1, "NX sketch staged entities")?;
+    entities.push((source_offset, entity));
+    Ok(())
+}
+
+fn emit_sketch(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    label: &crate::native::features::FeatureOperationLabel,
+    sketch_id: &SketchId,
+    entities: Vec<(u64, SketchEntity)>,
+) -> Result<(), CodecError> {
+    ctx.reserve_retained_vec(
+        &mut ir.model.sketch_entities,
+        entities.len(),
+        "NX sketch output entities",
+    )?;
+    let sketch_bytes = std::mem::size_of::<Sketch>()
+        .checked_add(sketch_id.as_str().len())
+        .and_then(|bytes| bytes.checked_add(label.id.len()))
+        .and_then(|bytes| bytes.checked_add(label.value.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX sketch output",
+                0,
+                cadmpeg_core::decode::u64_from_index(label.value.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX sketch output")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(sketch_bytes),
+        "NX sketch output",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.sketches,
+        1,
+        "NX sketch output",
+    )?;
+    let name = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        &label.value,
+        "allocate NX sketch text",
+    )?;
+    let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+        &label.id,
+        "allocate NX sketch text",
+    )?;
+    ir.model
+        .sketch_entities
+        .extend(entities.into_iter().map(|(_, entity)| entity));
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: Some(name),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::Unresolved {},
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: Some(native_ref),
+    });
+    Ok(())
+}
+
 fn native_fixed_point_entities(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     label: &crate::native::features::FeatureOperationLabel,
     sketch_id: &SketchId,
     points: &[&crate::native::features::FeatureSketchFixedPoint],
-) -> Option<Vec<(u64, SketchEntity)>> {
+) -> Result<Option<Vec<(u64, SketchEntity)>>, CodecError> {
     let mut point_ids = BTreeSet::new();
     let mut entity_keys = BTreeSet::new();
-    let mut entities = Vec::with_capacity(points.len());
+    let mut entities = Vec::new();
     for point in points {
-        if point.operation_label != label.id || !point_ids.insert(point.id.as_str()) {
-            return None;
+        if point.operation_label != label.id
+            || !ctx.insert_scoped_btree_set(
+                reservation,
+                &mut point_ids,
+                point.id.as_str(),
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )?
+        {
+            return Ok(None);
         }
         let point_key = point
             .id
@@ -4374,85 +6854,418 @@ fn native_fixed_point_entities(
             .map_or(point.id.as_str(), |(_, key)| key);
         if point_key.is_empty()
             || point_key.chars().any(char::is_whitespace)
-            || !entity_keys.insert(point_key)
+            || !ctx.insert_scoped_btree_set(
+                reservation,
+                &mut entity_keys,
+                point_key,
+                "NX sketch key uniqueness",
+                "NX sketch key index",
+            )?
         {
-            return None;
+            return Ok(None);
         }
-        entities.push((
+        let Some(entity_id) = sketch_entity_identity(ctx, "fixed-point-", point_key)? else {
+            return Ok(None);
+        };
+        let copy_bytes = sketch_id
+            .as_str()
+            .len()
+            .checked_add(point.id.len())
+            .and_then(|bytes| bytes.checked_add("nx-fixed-point".len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX fixed-point sketch entity",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(point.id.len()),
+                )
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(copy_bytes),
+            "NX fixed-point sketch entity",
+        )?;
+        let Some(native_kind) = cadmpeg_core::text::NonBlankString::new("nx-fixed-point") else {
+            return Ok(None);
+        };
+        let native_ref = cadmpeg_core::decode::DecodeContext::copy_admitted_text(
+            &point.id,
+            "allocate NX sketch text",
+        )?;
+        push_sketch_entity(
+            ctx,
+            reservation,
+            &mut entities,
             point.source_offset,
             SketchEntity::new(
-                IdScope::native(cadmpeg_ir::identity_component!("feature-history"))
-                    .try_id::<SketchEntityId>(
-                    &cadmpeg_ir::identity_component!("sketch-entity"),
-                    format!("fixed-point-{point_key}"),
-                )?,
+                entity_id,
                 sketch_id.clone(),
-                SketchGeometry::native(cadmpeg_core::text::NonBlankString::new("nx-fixed-point")?),
+                SketchGeometry::native(native_kind),
             )
-            .with_native_ref(Some(point.id.clone())),
-        ));
+            .with_native_ref(Some(native_ref)),
+        )?;
     }
-    Some(entities)
+    Ok(Some(entities))
 }
 
-fn records_by_operation<'a, T>(
-    records: &'a [T],
-    operation_label: impl Fn(&'a T) -> &'a str,
-) -> BTreeMap<&'a str, Vec<&'a T>> {
-    let mut grouped = BTreeMap::new();
-    for record in records {
-        grouped
-            .entry(operation_label(record))
-            .or_insert_with(Vec::new)
-            .push(record);
+fn append_fixed_sketch_entities(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entities: &mut Vec<(u64, SketchEntity)>,
+    label: &crate::native::features::FeatureOperationLabel,
+    sketch_id: &SketchId,
+    fixed_points: &[&crate::native::features::FeatureSketchFixedPoint],
+) -> Result<bool, CodecError> {
+    let Some(fixed_entities) =
+        native_fixed_point_entities(ctx, reservation, label, sketch_id, fixed_points)?
+    else {
+        return Ok(false);
+    };
+
+    ctx.reserve_scoped_vec(
+        reservation,
+        entities,
+        fixed_entities.len(),
+        "NX sketch merged fixed points",
+    )?;
+    entities.extend(fixed_entities);
+    Ok(true)
+}
+
+struct SegmentBindingBodyIndexes<'a, 'ctx> {
+    by_object: BTreeMap<u32, Vec<BodyId>>,
+    by_binding: BTreeMap<&'a str, Vec<BodyId>>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
+}
+
+fn segment_binding_body_indexes<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    ir: &CadIr,
+    bindings: &'a [crate::native::segments::SegmentBodyBinding],
+) -> Result<SegmentBindingBodyIndexes<'a, 'ctx>, CodecError> {
+    let mut by_object = BTreeMap::<u32, Vec<BodyId>>::new();
+    let mut by_binding = BTreeMap::<&str, Vec<BodyId>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX segment binding body indexes")?;
+    for binding in bindings {
+        let (prefix, prefix_len) = stream_prefix(binding.stream_ordinal, false)?;
+        let mut stream_bodies = Vec::new();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ir.model.bodies.len()),
+            "NX segment body prefix scan",
+        )?;
+        for body in ir.model.bodies.iter().filter(|body| {
+            body.id
+                .as_str()
+                .as_bytes()
+                .starts_with(&prefix[..prefix_len])
+        }) {
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(stream_bodies.len()),
+                "NX segment body uniqueness",
+            )?;
+            if stream_bodies.contains(&body.id) {
+                continue;
+            }
+            let bytes = std::mem::size_of::<BodyId>()
+                .checked_add(body.id.as_str().len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX segment body identity",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(body.id.as_str().len()),
+                    )
+                })?;
+            ctx.charge_collection_items(1, "NX segment body identity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut stream_bodies,
+                1,
+                "NX segment body identity",
+            )?;
+            stream_bodies.push(body.id.clone());
+        }
+        for identity in [binding.body_object_index, binding.body_alias_object_index] {
+            for body in &stream_bodies {
+                let existing = by_object.get(&identity).map_or(0, Vec::len);
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(existing),
+                    "NX segment body alias uniqueness",
+                )?;
+                if by_object
+                    .get(&identity)
+                    .is_some_and(|bodies| bodies.contains(body))
+                {
+                    continue;
+                }
+                let body = body.try_clone_for_decode(ctx, "NX feature operation group body")?;
+                ctx.push_scoped_btree_group(
+                    &mut reservation,
+                    &mut by_object,
+                    identity,
+                    || body,
+                    0,
+                    "NX feature operation group index",
+                )?;
+            }
+        }
+        ctx.charge_work(1, "NX segment binding identity index")?;
+        if !by_binding.contains_key(binding.id.as_str()) {
+            ctx.charge_collection_items(1, "NX segment binding identity index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                &str,
+                Vec<BodyId>,
+            )>()))?;
+        }
+        by_binding.insert(binding.id.as_str(), stream_bodies);
     }
-    grouped
+    Ok(SegmentBindingBodyIndexes {
+        by_object,
+        by_binding,
+        _reservation: reservation,
+    })
+}
+
+fn stream_prefix(ordinal: u32, body_marker: bool) -> Result<([u8; 20], usize), CodecError> {
+    let mut decimal = [0u8; 10];
+    let mut digit_count = 0;
+    let mut ordinal = ordinal;
+    loop {
+        decimal[digit_count] = b'0'
+            + u8::try_from(ordinal % 10)
+                .map_err(|_| CodecError::malformed("NX stream ordinal decimal digit exceeds u8"))?;
+        digit_count += 1;
+        ordinal /= 10;
+        if ordinal == 0 {
+            break;
+        }
+    }
+    let mut prefix = [0u8; 20];
+    prefix[..4].copy_from_slice(b"nx:s");
+    for (index, digit) in decimal[..digit_count].iter().rev().enumerate() {
+        prefix[4 + index] = *digit;
+    }
+    let suffix = if body_marker {
+        b":body#".as_slice()
+    } else {
+        b":".as_slice()
+    };
+    let suffix_start = 4 + digit_count;
+    let prefix_len = suffix_start + suffix.len();
+    prefix[suffix_start..prefix_len].copy_from_slice(suffix);
+    Ok((prefix, prefix_len))
 }
 
 fn operation_source_properties(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
     operation_label: &str,
     records: &[crate::native::features::operation_record::FeatureOperationRecord],
     common_frames: &[crate::native::features::FeatureOperationCommonFrame],
     terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
-) -> BTreeMap<String, String> {
+) -> Result<(), CodecError> {
     let mut matching_records = records
         .iter()
         .filter(|record| record.operation_label == operation_label);
     let Some(record) = matching_records.next() else {
-        return BTreeMap::new();
+        return Ok(());
     };
     if matching_records.next().is_some() {
-        return BTreeMap::new();
+        return Ok(());
     }
 
-    let mut properties = BTreeMap::from([("operation_record".to_string(), record.id.clone())]);
-    let matching_common_frames = common_frames
+    insert_operation_source_property(ctx, properties, "operation_record", &record.id)?;
+    let contiguous_common_frames = common_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id)
-        .collect::<Vec<_>>();
-    if matching_common_frames
-        .iter()
         .enumerate()
-        .all(|(ordinal, frame)| frame.ordinal == ordinal as u32)
-    {
-        for frame in matching_common_frames {
-            properties.insert(
-                format!("operation_common_frame.{}", frame.ordinal),
-                frame.id.clone(),
-            );
+        .all(|(ordinal, frame)| {
+            u64::from(frame.ordinal) == cadmpeg_core::decode::u64_from_index(ordinal)
+        });
+    if contiguous_common_frames {
+        for frame in common_frames
+            .iter()
+            .filter(|frame| frame.operation_record == record.id)
+        {
+            const PREFIX: &str = "operation_common_frame.";
+            let key_len = PREFIX
+                .len()
+                .checked_add(10)
+                .ok_or_else(|| ctx.refuse_codec_limit("NX operation source property key", 0, 10))?;
+            let retained_bytes = std::mem::size_of::<(String, String)>()
+                .checked_add(key_len)
+                .and_then(|bytes| bytes.checked_add(frame.id.len()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX operation source property",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(frame.id.len()),
+                    )
+                })?;
+            ctx.charge_collection_items(1, "NX operation source properties")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(retained_bytes),
+                "NX operation source property",
+            )?;
+            let mut key = String::new();
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut key,
+                key_len,
+                "allocate NX operation source property key",
+            )?;
+            std::fmt::Write::write_fmt(&mut key, format_args!("{PREFIX}{}", frame.ordinal))
+                .map_err(|_| {
+                    CodecError::InvalidInput(
+                        "NX operation source property key formatting failed".to_string(),
+                    )
+                })?;
+            let mut value = String::new();
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                &mut value,
+                frame.id.len(),
+                "allocate NX operation source property value",
+            )?;
+            value.push_str(&frame.id);
+            properties.insert(key, value);
         }
     }
     let mut matching_frames = terminal_frames
         .iter()
         .filter(|frame| frame.operation_record == record.id);
     let Some(frame) = matching_frames.next() else {
-        return properties;
+        return Ok(());
     };
     if matching_frames.next().is_some() {
-        return properties;
+        return Ok(());
     }
-    properties.insert("operation_terminal_frame".to_string(), frame.id.clone());
-    properties
+    insert_operation_source_property(ctx, properties, "operation_terminal_frame", &frame.id)?;
+    Ok(())
+}
+
+fn insert_operation_source_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: &str,
+    value: &str,
+) -> Result<(), CodecError> {
+    let retained_bytes = std::mem::size_of::<(String, String)>()
+        .checked_add(key.len())
+        .and_then(|bytes| bytes.checked_add(value.len()))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX operation source property",
+                0,
+                cadmpeg_core::decode::u64_from_index(value.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX operation source properties")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        "NX operation source property",
+    )?;
+    let mut owned_key = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key.len(),
+        "allocate NX operation source property key",
+    )?;
+    owned_key.push_str(key);
+    let mut owned_value = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_value,
+        value.len(),
+        "allocate NX operation source property value",
+    )?;
+    owned_value.push_str(value);
+    properties.insert(owned_key, owned_value);
+    Ok(())
+}
+
+fn insert_source_property(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    value: std::fmt::Arguments<'_>,
+) -> Result<(), CodecError> {
+    struct Length(usize);
+
+    impl std::fmt::Write for Length {
+        fn write_str(&mut self, text: &str) -> std::fmt::Result {
+            self.0 = self.0.checked_add(text.len()).ok_or(std::fmt::Error)?;
+            Ok(())
+        }
+    }
+
+    let mut key_length = Length(0);
+    std::fmt::write(&mut key_length, key)
+        .map_err(|_| ctx.refuse_codec_limit("NX source property key length", 0, 1))?;
+    let mut value_length = Length(0);
+    std::fmt::write(&mut value_length, value)
+        .map_err(|_| ctx.refuse_codec_limit("NX source property value length", 0, 1))?;
+    let text_bytes = key_length.0.checked_add(value_length.0).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX source property text",
+            0,
+            cadmpeg_core::decode::u64_from_index(value_length.0),
+        )
+    })?;
+    let retained_bytes = std::mem::size_of::<(String, String)>()
+        .checked_add(text_bytes)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX source property",
+                0,
+                cadmpeg_core::decode::u64_from_index(text_bytes),
+            )
+        })?;
+    let work = text_bytes.checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX source property formatting",
+            0,
+            cadmpeg_core::decode::u64_from_index(text_bytes),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "NX source property formatting",
+    )?;
+    ctx.charge_collection_items(1, "NX source properties")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        "NX source property",
+    )?;
+    let mut owned_key = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_key,
+        key_length.0,
+        "allocate NX source property key",
+    )?;
+    std::fmt::write(&mut owned_key, key).map_err(|_| {
+        CodecError::InvalidInput("NX source property key formatting failed".to_string())
+    })?;
+    let mut owned_value = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned_value,
+        value_length.0,
+        "allocate NX source property value",
+    )?;
+    std::fmt::write(&mut owned_value, value).map_err(|_| {
+        CodecError::InvalidInput("NX source property value formatting failed".to_string())
+    })?;
+    properties.insert(owned_key, owned_value);
+    Ok(())
+}
+
+fn insert_source_property_reference(
+    ctx: &DecodeContext<'_>,
+    properties: &mut BTreeMap<String, String>,
+    key: std::fmt::Arguments<'_>,
+    data_block: Option<&str>,
+    fallback: impl std::fmt::Display,
+) -> Result<(), CodecError> {
+    match data_block {
+        Some(data_block) => {
+            insert_source_property(ctx, properties, key, format_args!("{data_block}"))
+        }
+        None => insert_source_property(ctx, properties, key, format_args!("{fallback}")),
+    }
 }
 
 struct ParasolidStringAttributeSources<'a> {
@@ -4461,25 +7274,42 @@ struct ParasolidStringAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_string_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStringAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let strings_by_id = sources
-        .strings
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StringUse>>::new();
-    for string_use in sources.string_uses {
-        uses_by_entity
-            .entry(string_use.entity_51_record.as_str())
-            .or_default()
-            .push(string_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid string attribute lookups")?;
+    let (strings_by_id, _strings_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .strings
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .string_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid string attribute ordering",
+                0,
+                cadmpeg_core::decode::u64_from_index(uses.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX Parasolid string attribute ordering",
+        )?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+            uses.as_slice(),
+        )))?;
         uses.sort_by_key(|string_use| string_use.position);
     }
     for context in &attribute_index.contexts {
@@ -4490,11 +7320,12 @@ fn attach_parasolid_topology_string_attributes(
                 continue;
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-string-attribute"),
                 string_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -4507,26 +7338,24 @@ fn attach_parasolid_topology_string_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_84_reference_{}",
-                string_use.position.reference_ordinal()
-            );
-            let name = attribute_index
-                .attribute_names
-                .field_name(reference, string_use.id.as_str());
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
-                values: vec![AttributeValue::String(string.value.as_str().to_owned())],
-            });
+            let field_name = attribute_index.attribute_names.field_name(
+                ctx,
+                reference,
+                string_use.id.as_str(),
+            )?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index
+                    .class_names
+                    .get(reference.id.as_str())
+                    .and_then(Option::as_ref)
+                    .copied(),
+                "84",
+                string_use.position.reference_ordinal(),
+            )?;
+            let values = single_string_attribute_values(ctx, string.value.as_str())?;
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -4556,188 +7385,404 @@ struct ParasolidAttributeNameIndex<'a> {
 
 impl<'a> ParasolidAttributeNameIndex<'a> {
     fn new(
+        ctx: &DecodeContext<'_>,
+        reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
         class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
         definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
         field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
         field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
-    ) -> Self {
+    ) -> Result<Self, CodecError> {
         let mut classes_by_entity = BTreeMap::new();
         for class_use in class_uses {
             insert_sole(
+                ctx,
+                reservation,
                 &mut classes_by_entity,
                 (
                     class_use.topology_attribute_reference.as_str(),
                     class_use.entity_51_record.as_str(),
                 ),
                 class_use,
-            );
+            )?;
         }
 
         let mut fields_by_value_use = BTreeMap::new();
         for field_use in field_uses {
             insert_sole(
+                ctx,
+                reservation,
                 &mut fields_by_value_use,
                 field_use.value_use.as_str(),
                 field_use,
-            );
+            )?;
         }
 
         let mut definitions_by_id = BTreeMap::new();
         for definition in definitions {
-            insert_sole(&mut definitions_by_id, definition.id.as_str(), definition);
+            insert_sole(
+                ctx,
+                reservation,
+                &mut definitions_by_id,
+                definition.id.as_str(),
+                definition,
+            )?;
         }
 
         let mut field_names_by_definition = BTreeMap::new();
         for names in field_names {
             insert_sole(
+                ctx,
+                reservation,
                 &mut field_names_by_definition,
                 names.attribute_definition.as_str(),
                 names,
-            );
+            )?;
         }
 
-        Self {
+        Ok(Self {
             classes_by_entity,
             fields_by_value_use,
             definitions_by_id,
             field_names_by_definition,
-        }
+        })
     }
 
     fn field_name(
         &self,
+        ctx: &DecodeContext<'_>,
         topology_reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
         value_use: &str,
-    ) -> Option<String> {
-        let field_use = self.fields_by_value_use.get(value_use)?.as_ref()?;
-        let class_use = self
+    ) -> Result<Option<String>, CodecError> {
+        let lookup_work = self
+            .fields_by_value_use
+            .len()
+            .checked_add(self.classes_by_entity.len())
+            .and_then(|count| count.checked_add(self.definitions_by_id.len()))
+            .and_then(|count| count.checked_add(self.field_names_by_definition.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX Parasolid attribute field name lookup",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(self.fields_by_value_use.len()),
+                )
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(lookup_work),
+            "NX Parasolid attribute field name lookup",
+        )?;
+        let Some(field_use) = self
+            .fields_by_value_use
+            .get(value_use)
+            .and_then(Option::as_ref)
+        else {
+            return Ok(None);
+        };
+        let Some(class_use) = self
             .classes_by_entity
             .get(&(
                 topology_reference.id.as_str(),
                 field_use.entity_51_record.as_str(),
-            ))?
-            .as_ref()?;
+            ))
+            .and_then(Option::as_ref)
+        else {
+            return Ok(None);
+        };
         if field_use.attribute_class_use != class_use.attribute_class_use
             || field_use.attribute_definition != class_use.attribute_definition
         {
-            return None;
+            return Ok(None);
         }
-        let definition = self
+        let Some(definition) = self
             .definitions_by_id
-            .get(class_use.attribute_definition.as_str())?
-            .as_ref()?;
+            .get(class_use.attribute_definition.as_str())
+            .and_then(Option::as_ref)
+        else {
+            return Ok(None);
+        };
+        let mut field_reservation = ctx.reserve_scoped(0, "NX Parasolid field name component")?;
         let field_name = match (definition.name.as_str(), field_use.position.field_ordinal()) {
-            ("SDL/TYSA_DENSITY", 0) => "density".to_string(),
-            ("SDL/TYSA_DENSITY", 1) => "units".to_string(),
+            ("SDL/TYSA_DENSITY", 0) => std::borrow::Cow::Borrowed("density"),
+            ("SDL/TYSA_DENSITY", 1) => std::borrow::Cow::Borrowed("units"),
             _ if self
                 .field_names_by_definition
                 .get(definition.id.as_str())
                 .and_then(Option::as_ref)
                 .is_some() =>
             {
-                self.field_names_by_definition
+                let Some(name) = self
+                    .field_names_by_definition
                     .get(definition.id.as_str())
-                    .and_then(Option::as_ref)?
-                    .fields
-                    .get(field_use.position.field_ordinal() as usize)?
-                    .name
-                    .clone()
+                    .and_then(Option::as_ref)
+                    .and_then(|names| {
+                        names.fields.get(cadmpeg_core::decode::index_from_u32(
+                            field_use.position.field_ordinal(),
+                        ))
+                    })
+                    .map(|field| field.name.as_str())
+                else {
+                    return Ok(None);
+                };
+                std::borrow::Cow::Borrowed(name)
             }
-            _ => format!(
-                "field_{}.parasolid_type_{}",
-                field_use.position.field_ordinal(),
-                field_use.value_kind.field_code().code()
-            ),
+            _ => {
+                const BOUND: usize = 64;
+                field_reservation.grow(cadmpeg_core::decode::u64_from_index(BOUND))?;
+                let mut name = String::new();
+                cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+                    &mut name,
+                    BOUND,
+                    "allocate NX Parasolid field name component",
+                )?;
+                std::fmt::Write::write_fmt(
+                    &mut name,
+                    format_args!(
+                        "field_{}.parasolid_type_{}",
+                        field_use.position.field_ordinal(),
+                        field_use.value_kind.field_code().code()
+                    ),
+                )
+                .map_err(|_| CodecError::malformed("NX Parasolid field name formatting failed"))?;
+                std::borrow::Cow::Owned(name)
+            }
         };
-        Some(format!("{}.{}", definition.name.as_str(), field_name))
+        let name_len = definition
+            .name
+            .as_str()
+            .len()
+            .checked_add(1)
+            .and_then(|bytes| bytes.checked_add(field_name.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX Parasolid attribute field name",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(field_name.len()),
+                )
+            })?;
+        let mut name = ctx.retained_string(name_len, "NX Parasolid attribute field name")?;
+        name.push_str(definition.name.as_str());
+        name.push('.');
+        name.push_str(&field_name);
+        Ok(Some(name))
     }
 }
 
+fn topology_attribute_name(
+    ctx: &DecodeContext<'_>,
+    field_name: Option<String>,
+    class_name: Option<&str>,
+    family: &str,
+    reference_ordinal: u32,
+) -> Result<String, CodecError> {
+    if let Some(name) = field_name {
+        return Ok(name);
+    }
+    let mut remaining = reference_ordinal;
+    let mut digits = 1_usize;
+    while remaining >= 10 {
+        remaining /= 10;
+        digits += 1;
+    }
+    let class_prefix_len = class_name
+        .map_or(Some(0), |name| name.len().checked_add(1))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid attribute class prefix",
+                0,
+                class_name.map_or(0, |name| cadmpeg_core::decode::u64_from_index(name.len())),
+            )
+        })?;
+    let name_len = "parasolid_type_"
+        .len()
+        .checked_add(family.len())
+        .and_then(|bytes| bytes.checked_add("_reference_".len()))
+        .and_then(|bytes| bytes.checked_add(digits))
+        .and_then(|bytes| bytes.checked_add(class_prefix_len))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid attribute fallback name",
+                0,
+                cadmpeg_core::decode::u64_from_index(family.len()),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(name_len),
+        "NX Parasolid attribute fallback name",
+    )?;
+    let mut name = ctx.retained_string(name_len, "NX Parasolid attribute fallback name")?;
+    if let Some(class_name) = class_name {
+        name.push_str(class_name);
+        name.push('.');
+    }
+    std::fmt::Write::write_fmt(
+        &mut name,
+        format_args!("parasolid_type_{family}_reference_{reference_ordinal}"),
+    )
+    .map_err(|_| CodecError::malformed("NX Parasolid attribute fallback name formatting failed"))?;
+    Ok(name)
+}
+
 /// Records `value` as the sole value for `key`, or `None` once the key repeats.
-fn insert_sole<'a, K: Ord, V>(values: &mut BTreeMap<K, Option<&'a V>>, key: K, value: &'a V) {
+fn insert_sole<'a, K: Ord, V>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    values: &mut BTreeMap<K, Option<&'a V>>,
+    key: K,
+    value: &'a V,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(values.len()),
+        "NX Parasolid attribute name lookup",
+    )?;
     match values.entry(key) {
         Entry::Vacant(entry) => {
+            ctx.charge_collection_items(1, "NX Parasolid attribute name index")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(K, Option<&V>)>() * 4,
+            ))?;
             entry.insert(Some(value));
         }
         Entry::Occupied(mut entry) => {
             entry.insert(None);
         }
     }
+    Ok(())
 }
 
 fn parasolid_topology_attribute_class_names<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
     definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
-) -> BTreeMap<&'a str, &'a str> {
-    let mut definitions_by_id = BTreeMap::<&str, BTreeSet<&str>>::new();
-    for definition in definitions {
-        definitions_by_id
-            .entry(definition.id.as_str())
-            .or_default()
-            .insert(definition.name.as_str());
-    }
-    let mut classes_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
+) -> Result<BTreeMap<&'a str, Option<&'a str>>, CodecError> {
+    let mut classes_by_reference = BTreeMap::<&str, Option<&str>>::new();
     for class_use in class_uses {
-        let Some(class_names) = definitions_by_id.get(class_use.attribute_definition.as_str())
-        else {
-            continue;
-        };
-        classes_by_reference
-            .entry(class_use.topology_attribute_reference.as_str())
-            .or_default()
-            .extend(class_names.iter().copied());
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(definitions.len()),
+            "NX Parasolid class name lookup",
+        )?;
+        for definition in definitions
+            .iter()
+            .filter(|definition| definition.id == class_use.attribute_definition)
+        {
+            let key = class_use.topology_attribute_reference.as_str();
+            let name = definition.name.as_str();
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(classes_by_reference.len()),
+                "NX Parasolid class name index",
+            )?;
+            match classes_by_reference.entry(key) {
+                Entry::Vacant(entry) => {
+                    ctx.charge_collection_items(1, "NX Parasolid class names")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<(&str, Option<&str>)>() * 4,
+                    ))?;
+                    entry.insert(Some(name));
+                }
+                Entry::Occupied(mut entry) => {
+                    if entry.get().is_some_and(|existing| existing != name) {
+                        entry.insert(None);
+                    }
+                }
+            }
+        }
     }
-    classes_by_reference
-        .into_iter()
-        .filter_map(|(reference, names)| {
-            let mut names = names.into_iter();
-            let name = names.next()?;
-            names.next().is_none().then_some((reference, name))
-        })
-        .collect()
+    Ok(classes_by_reference)
 }
 
-fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
-    ir.model
-        .shells
-        .iter()
-        .map(|shell| {
-            (
-                shell.id.as_str().to_owned(),
-                AttributeTarget::Shell(shell.id.clone()),
+fn parasolid_topology_attribute_targets(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    ir: &CadIr,
+) -> Result<BTreeMap<String, AttributeTarget>, CodecError> {
+    let mut targets = BTreeMap::new();
+    for shell in &ir.model.shells {
+        insert_parasolid_topology_target(
+            ctx,
+            reservation,
+            &mut targets,
+            shell.id.as_str(),
+            || AttributeTarget::Shell(shell.id.clone()),
+        )?;
+    }
+    for face in &ir.model.faces {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, face.id.as_str(), || {
+            AttributeTarget::Face(face.id.clone())
+        })?;
+    }
+    for loop_ in &ir.model.loops {
+        insert_parasolid_topology_target(
+            ctx,
+            reservation,
+            &mut targets,
+            loop_.id.as_str(),
+            || AttributeTarget::Loop(loop_.id.clone()),
+        )?;
+    }
+    for edge in &ir.model.edges {
+        insert_parasolid_topology_target(ctx, reservation, &mut targets, edge.id.as_str(), || {
+            AttributeTarget::Edge(edge.id.clone())
+        })?;
+    }
+    for coedge in &ir.model.coedges {
+        insert_parasolid_topology_target(
+            ctx,
+            reservation,
+            &mut targets,
+            coedge.id.as_str(),
+            || AttributeTarget::Coedge(coedge.id.clone()),
+        )?;
+    }
+    for vertex in &ir.model.vertices {
+        insert_parasolid_topology_target(
+            ctx,
+            reservation,
+            &mut targets,
+            vertex.id.as_str(),
+            || AttributeTarget::Vertex(vertex.id.clone()),
+        )?;
+    }
+    Ok(targets)
+}
+
+fn insert_parasolid_topology_target(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    targets: &mut BTreeMap<String, AttributeTarget>,
+    id: &str,
+    target: impl FnOnce() -> AttributeTarget,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(targets.len()),
+        "NX Parasolid topology target lookup",
+    )?;
+    let text_bytes = id.len().checked_mul(2).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX Parasolid topology target identity",
+            0,
+            cadmpeg_core::decode::u64_from_index(id.len()),
+        )
+    })?;
+    let bytes = std::mem::size_of::<(String, AttributeTarget)>()
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(text_bytes))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid topology target entry",
+                0,
+                cadmpeg_core::decode::u64_from_index(text_bytes),
             )
-        })
-        .chain(ir.model.faces.iter().map(|face| {
-            (
-                face.id.as_str().to_owned(),
-                AttributeTarget::Face(face.id.clone()),
-            )
-        }))
-        .chain(ir.model.loops.iter().map(|loop_| {
-            (
-                loop_.id.as_str().to_owned(),
-                AttributeTarget::Loop(loop_.id.clone()),
-            )
-        }))
-        .chain(ir.model.edges.iter().map(|edge| {
-            (
-                edge.id.as_str().to_owned(),
-                AttributeTarget::Edge(edge.id.clone()),
-            )
-        }))
-        .chain(ir.model.coedges.iter().map(|coedge| {
-            (
-                coedge.id.as_str().to_owned(),
-                AttributeTarget::Coedge(coedge.id.clone()),
-            )
-        }))
-        .chain(ir.model.vertices.iter().map(|vertex| {
-            (
-                vertex.id.as_str().to_owned(),
-                AttributeTarget::Vertex(vertex.id.clone()),
-            )
-        }))
-        .collect()
+        })?;
+    ctx.charge_collection_items(1, "NX Parasolid topology targets")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    let mut key = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut key,
+        id.len(),
+        "allocate NX Parasolid topology target key",
+    )?;
+    key.push_str(id);
+    targets.insert(key, target());
+    Ok(())
 }
 
 struct ParasolidTopologyAttributeContext<'a> {
@@ -4747,14 +7792,16 @@ struct ParasolidTopologyAttributeContext<'a> {
     target: AttributeTarget,
 }
 
-struct ParasolidTopologyAttributeIndex<'a> {
-    class_names: BTreeMap<&'a str, &'a str>,
+struct ParasolidTopologyAttributeIndex<'a, 'ctx> {
+    class_names: BTreeMap<&'a str, Option<&'a str>>,
     attribute_names: ParasolidAttributeNameIndex<'a>,
     contexts: Vec<ParasolidTopologyAttributeContext<'a>>,
+    _reservation: cadmpeg_core::decode::ScopedReservation<'ctx>,
 }
 
-impl<'a> ParasolidTopologyAttributeIndex<'a> {
+impl<'a, 'ctx> ParasolidTopologyAttributeIndex<'a, 'ctx> {
     fn new(
+        ctx: &'ctx DecodeContext<'_>,
         ir: &CadIr,
         topology_references:
             &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
@@ -4762,128 +7809,470 @@ impl<'a> ParasolidTopologyAttributeIndex<'a> {
         definitions: &'a [crate::native::parasolid::ParasolidAttributeDefinition],
         field_uses: &'a [crate::native::parasolid::ParasolidAttributeFieldUse],
         field_names: &'a [crate::native::parasolid::ParasolidAttributeFieldNames],
-    ) -> Self {
-        Self {
-            class_names: parasolid_topology_attribute_class_names(class_uses, definitions),
-            attribute_names: ParasolidAttributeNameIndex::new(
+    ) -> Result<Self, CodecError> {
+        let mut reservation = ctx.reserve_scoped(0, "NX Parasolid attribute indexes")?;
+        let attribute_names = ParasolidAttributeNameIndex::new(
+            ctx,
+            &mut reservation,
+            class_uses,
+            definitions,
+            field_uses,
+            field_names,
+        )?;
+        let class_names = parasolid_topology_attribute_class_names(
+            ctx,
+            &mut reservation,
+            class_uses,
+            definitions,
+        )?;
+        Ok(Self {
+            class_names,
+            attribute_names,
+            contexts: parasolid_topology_attribute_contexts(
+                ctx,
+                &mut reservation,
+                ir,
+                topology_references,
                 class_uses,
-                definitions,
-                field_uses,
-                field_names,
-            ),
-            contexts: parasolid_topology_attribute_contexts(ir, topology_references, class_uses),
-        }
+            )?,
+            _reservation: reservation,
+        })
     }
 }
 
 fn parasolid_topology_attribute_contexts<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     ir: &CadIr,
     topology_references: &'a [crate::native::parasolid::ParasolidTopologyAttributeListReference],
     class_uses: &'a [crate::native::parasolid::ParasolidTopologyAttributeClassUse],
-) -> Vec<ParasolidTopologyAttributeContext<'a>> {
+) -> Result<Vec<ParasolidTopologyAttributeContext<'a>>, CodecError> {
     let mut entities_by_reference = BTreeMap::<&str, BTreeSet<&str>>::new();
     for class_use in class_uses {
-        entities_by_reference
-            .entry(class_use.topology_attribute_reference.as_str())
-            .or_default()
-            .insert(class_use.entity_51_record.as_str());
+        let key = class_use.topology_attribute_reference.as_str();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entities_by_reference.len()),
+            "NX Parasolid attribute entity lookup",
+        )?;
+        if !entities_by_reference.contains_key(key) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute entity groups")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(&str, BTreeSet<&str>)>() * 4,
+            ))?;
+        }
+        let entities = entities_by_reference.entry(key).or_default();
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entities.len()),
+            "NX Parasolid attribute entity uniqueness",
+        )?;
+        if !entities.contains(class_use.entity_51_record.as_str()) {
+            ctx.charge_collection_items(1, "NX Parasolid attribute group entity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&str>() * 4,
+            ))?;
+            entities.insert(class_use.entity_51_record.as_str());
+        }
     }
     let mut references_by_target = BTreeMap::<String, Vec<_>>::new();
     for reference in topology_references {
         let kind = reference.topology_type.as_str();
-        references_by_target
-            .entry(format!(
+        let key_capacity = kind.len().checked_add(26).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid topology reference key",
+                0,
+                cadmpeg_core::decode::u64_from_index(kind.len()),
+            )
+        })?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(key_capacity))?;
+        let mut key = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut key,
+            key_capacity,
+            "allocate NX Parasolid topology reference key",
+        )?;
+        std::fmt::Write::write_fmt(
+            &mut key,
+            format_args!(
                 "nx:s{}:{kind}#{}",
                 reference.stream_ordinal, reference.topology_xmt
-            ))
-            .or_default()
-            .push(reference);
+            ),
+        )
+        .map_err(|_| {
+            CodecError::malformed("NX Parasolid topology reference key formatting failed")
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(references_by_target.len()),
+            "NX Parasolid topology reference lookup",
+        )?;
+        if !references_by_target.contains_key(&key) {
+            ctx.charge_collection_items(1, "NX Parasolid topology reference groups")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<(
+                    String,
+                    Vec<&crate::native::parasolid::ParasolidTopologyAttributeListReference>,
+                )>() * 4,
+            ))?;
+        }
+        ctx.charge_collection_items(1, "NX Parasolid topology reference")?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+            &crate::native::parasolid::ParasolidTopologyAttributeListReference,
+        >()))?;
+        let references = references_by_target.entry(key).or_default();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            references,
+            1,
+            "NX Parasolid topology reference",
+        )?;
+        references.push(reference);
     }
-    let emitted_targets = parasolid_topology_attribute_targets(ir);
-    references_by_target
-        .into_iter()
-        .flat_map(|(target_key, references)| {
-            let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
-                return Vec::new();
-            };
-            let Some(target) = emitted_targets.get(target_key.as_str()) else {
-                return Vec::new();
-            };
-            let mut entities = BTreeSet::new();
-            if let Some(entity) = reference.attribute_list_record.as_deref() {
-                entities.insert(entity);
+    let emitted_targets = parasolid_topology_attribute_targets(ctx, reservation, ir)?;
+    let mut contexts = Vec::new();
+    for (target_key, references) in references_by_target {
+        let Some(&reference) = references.first().filter(|_| references.len() == 1) else {
+            continue;
+        };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(emitted_targets.len()),
+            "NX Parasolid emitted target lookup",
+        )?;
+        let Some(target) = emitted_targets.get(target_key.as_str()) else {
+            continue;
+        };
+        let mut entities = BTreeSet::new();
+        if let Some(entity) = reference.attribute_list_record.as_deref() {
+            ctx.charge_collection_items(1, "NX Parasolid reference entity")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(
+                std::mem::size_of::<&str>() * 4,
+            ))?;
+            entities.insert(entity);
+        }
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(entities_by_reference.len()),
+            "NX Parasolid class entity lookup",
+        )?;
+        if let Some(class_entities) = entities_by_reference.get(reference.id.as_str()) {
+            for entity in class_entities {
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(entities.len()),
+                    "NX Parasolid reference entity uniqueness",
+                )?;
+                if !entities.contains(entity) {
+                    ctx.charge_collection_items(1, "NX Parasolid reference entity")?;
+                    reservation.grow(cadmpeg_core::decode::u64_from_index(
+                        std::mem::size_of::<&str>() * 4,
+                    ))?;
+                    entities.insert(entity);
+                }
             }
-            if let Some(class_entities) = entities_by_reference.get(reference.id.as_str()) {
-                entities.extend(class_entities.iter().copied());
-            }
-            let multiple_entities = entities.len() > 1;
-            entities
-                .into_iter()
-                .map(|entity| ParasolidTopologyAttributeContext {
-                    reference,
-                    entity,
-                    id_suffix: multiple_entities
-                        .then(|| entity_suffix_key(entity))
-                        .flatten(),
-                    target: target.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
+        }
+        let multiple_entities = entities.len() > 1;
+        for entity in entities {
+            let id_suffix = if multiple_entities {
+                entity_suffix_key(ctx, reservation, entity)?
+            } else {
+                None
+            };
+            let entry_bytes = std::mem::size_of::<ParasolidTopologyAttributeContext<'_>>()
+                .checked_add(target_key.len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX Parasolid attribute context",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(target_key.len()),
+                    )
+                })?;
+            ctx.charge_collection_items(1, "NX Parasolid attribute contexts")?;
+            reservation.grow(cadmpeg_core::decode::u64_from_index(entry_bytes))?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut contexts,
+                1,
+                "NX Parasolid attribute contexts",
+            )?;
+            contexts.push(ParasolidTopologyAttributeContext {
+                reference,
+                entity,
+                id_suffix,
+                target: target.clone(),
+            });
+        }
+    }
+    Ok(contexts)
 }
 
 fn topology_attribute_id(
+    ctx: &DecodeContext<'_>,
     reference: &crate::native::parasolid::ParasolidTopologyAttributeListReference,
     family: &cadmpeg_ir::ids::IdentityComponent,
     reference_ordinal: u32,
     entity_suffix: Option<&cadmpeg_ir::ids::IdentityKey>,
-) -> AttributeId {
+) -> Result<AttributeId, CodecError> {
+    let suffix_len = entity_suffix.map_or(0, |suffix| suffix.as_str().len());
+    let id_len = family
+        .as_str()
+        .len()
+        .checked_add(suffix_len)
+        .and_then(|bytes| bytes.checked_add(64))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid attribute identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(suffix_len),
+            )
+        })?;
+    let bytes = id_len.checked_mul(4).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX Parasolid attribute identity",
+            0,
+            cadmpeg_core::decode::u64_from_index(id_len),
+        )
+    })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "NX Parasolid attribute identity",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX Parasolid attribute identity",
+    )?;
     let mut key = cadmpeg_ir::ids::IdentityKey::from(reference.topology_type.code())
         .dash(reference.topology_xmt)
         .dash(reference_ordinal);
     if let Some(suffix) = entity_suffix {
         key = key.dash(suffix);
     }
-    IdScope::stream(reference.stream_ordinal).id(family, key)
+    Ok(IdScope::stream(reference.stream_ordinal).id(family, key))
+}
+
+fn single_string_attribute_values(
+    ctx: &DecodeContext<'_>,
+    text: &str,
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let bytes = std::mem::size_of::<AttributeValue>()
+        .checked_add(text.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid string attribute value",
+                0,
+                cadmpeg_core::decode::u64_from_index(text.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX Parasolid string attribute values")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX Parasolid string attribute value",
+    )?;
+    let mut owned = String::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+        &mut owned,
+        text.len(),
+        "allocate NX Parasolid string attribute value",
+    )?;
+    owned.push_str(text);
+    let mut values = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        1,
+        "NX Parasolid string attribute values",
+    )?;
+    values.push(AttributeValue::String(owned));
+    Ok(values)
+}
+
+fn mapped_attribute_values<T>(
+    ctx: &DecodeContext<'_>,
+    input: &[T],
+    map: impl Fn(&T) -> AttributeValue,
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let mut values = ctx.retained_vec(input.len(), "NX Parasolid numeric attribute values")?;
+    values.extend(input.iter().map(map));
+    Ok(values)
+}
+
+fn mapped_vector_attribute_values<T, const N: usize>(
+    ctx: &DecodeContext<'_>,
+    input: &[T],
+    map: impl Fn(&T) -> [FiniteReal; N],
+) -> Result<Vec<AttributeValue>, CodecError> {
+    let per_value = std::mem::size_of::<AttributeValue>()
+        .checked_add(
+            std::mem::size_of::<FiniteReal>()
+                .checked_mul(N)
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX Parasolid vector value",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(N),
+                    )
+                })?,
+        )
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid vector value",
+                0,
+                cadmpeg_core::decode::u64_from_index(N),
+            )
+        })?;
+    let bytes = input.len().checked_mul(per_value).ok_or_else(|| {
+        ctx.refuse_codec_limit(
+            "NX Parasolid vector values",
+            0,
+            cadmpeg_core::decode::u64_from_index(input.len()),
+        )
+    })?;
+    let items = input
+        .len()
+        .checked_mul(N.checked_add(1).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid vector value items",
+                0,
+                cadmpeg_core::decode::u64_from_index(N),
+            )
+        })?)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid vector value items",
+                0,
+                cadmpeg_core::decode::u64_from_index(input.len()),
+            )
+        })?;
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(items),
+        "NX Parasolid vector value items",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX Parasolid vector values",
+    )?;
+    let mut values = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut values,
+        input.len(),
+        "NX Parasolid vector values",
+    )?;
+    for item in input {
+        let mut components = Vec::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut components,
+            N,
+            "NX Parasolid vector components",
+        )?;
+        components.extend(map(item));
+        values.push(AttributeValue::Vector(components));
+    }
+    Ok(values)
+}
+
+fn push_topology_attribute(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    context: &ParasolidTopologyAttributeContext<'_>,
+    id: AttributeId,
+    name: String,
+    values: Vec<AttributeValue>,
+) -> Result<(), CodecError> {
+    let target_len = match &context.target {
+        AttributeTarget::Document => 0,
+        AttributeTarget::Body(id) => id.as_str().len(),
+        AttributeTarget::Face(id) => id.as_str().len(),
+        AttributeTarget::Shell(id) => id.as_str().len(),
+        AttributeTarget::Loop(id) => id.as_str().len(),
+        AttributeTarget::Coedge(id) => id.as_str().len(),
+        AttributeTarget::Edge(id) => id.as_str().len(),
+        AttributeTarget::Vertex(id) => id.as_str().len(),
+    };
+    let bytes = std::mem::size_of::<SourceAttribute>()
+        .checked_add(target_len)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid attribute output",
+                0,
+                cadmpeg_core::decode::u64_from_index(target_len),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX Parasolid attribute output")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX Parasolid attribute output",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut ir.model.attributes,
+        1,
+        "NX Parasolid attribute output",
+    )?;
+    ir.model.attributes.push(SourceAttribute {
+        id,
+        target: context.target.clone(),
+        name,
+        values,
+    });
+    Ok(())
 }
 
 /// The key half of an entity reference, which is what an id suffix names.
 ///
 /// The reference reaches this as stored record text, so it is admitted here;
 /// text that is not key text names no suffix.
-fn entity_suffix_key(entity: &str) -> Option<cadmpeg_ir::ids::IdentityKey> {
+fn entity_suffix_key(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    entity: &str,
+) -> Result<Option<cadmpeg_ir::ids::IdentityKey>, CodecError> {
     let suffix = entity.rsplit_once('#').map_or(entity, |(_, key)| key);
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(suffix.len()),
+        "NX Parasolid entity suffix key",
+    )?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(suffix.len()))?;
     let Ok(key) = cadmpeg_ir::ids::IdentityKey::try_new(suffix) else {
-        return None;
+        return Ok(None);
     };
-    Some(key)
+    Ok(Some(key))
 }
 
 fn attach_parasolid_topology_numeric_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let integers_by_id = sources
-        .integers
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let doubles_by_id = sources
-        .doubles
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51NumericUse>>::new();
-    for numeric_use in sources.numeric_uses {
-        uses_by_entity
-            .entry(numeric_use.entity_51_record.as_str())
-            .or_default()
-            .push(numeric_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid numeric attribute lookups")?;
+    let (integers_by_id, _integers_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .integers
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (doubles_by_id, _doubles_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .doubles
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .numeric_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid numeric attribute ordering",
+                0,
+                cadmpeg_core::decode::u64_from_index(uses.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX Parasolid numeric attribute ordering",
+        )?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+            uses.as_slice(),
+        )))?;
         uses.sort_by_key(|numeric_use| numeric_use.position);
     }
     for context in &attribute_index.contexts {
@@ -4896,12 +8285,9 @@ fn attach_parasolid_topology_numeric_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Integer(i64::from(*value)))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| {
+                            AttributeValue::Integer(i64::from(*value))
+                        })?,
                         record.inflated_offset,
                         "ENTITY_52_INTEGER_ATTRIBUTE",
                         "integer",
@@ -4912,12 +8298,9 @@ fn attach_parasolid_topology_numeric_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Float(*value))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| {
+                            AttributeValue::Float(*value)
+                        })?,
                         record.inflated_offset,
                         "ENTITY_53_DOUBLE_ATTRIBUTE",
                         "double",
@@ -4925,11 +8308,12 @@ fn attach_parasolid_topology_numeric_attributes(
                 }
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-numeric-attribute"),
                 numeric_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -4942,26 +8326,23 @@ fn attach_parasolid_topology_numeric_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_{lane}_reference_{}",
-                numeric_use.position.reference_ordinal()
-            );
-            let name = attribute_index
-                .attribute_names
-                .field_name(reference, numeric_use.id.as_str());
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
-                values,
-            });
+            let field_name = attribute_index.attribute_names.field_name(
+                ctx,
+                reference,
+                numeric_use.id.as_str(),
+            )?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index
+                    .class_names
+                    .get(reference.id.as_str())
+                    .and_then(Option::as_ref)
+                    .copied(),
+                lane,
+                numeric_use.position.reference_ordinal(),
+            )?;
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -4979,40 +8360,63 @@ struct ParasolidStructuredAttributeSources<'a> {
 }
 
 fn attach_parasolid_topology_structured_attributes(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     sources: &ParasolidStructuredAttributeSources<'_>,
-    attribute_index: &ParasolidTopologyAttributeIndex<'_>,
+    attribute_index: &ParasolidTopologyAttributeIndex<'_, '_>,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let vectors_by_id = sources
-        .vectors
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let axes_by_id = sources
-        .axes
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let tags_by_id = sources
-        .tags
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let unicode_by_id = sources
-        .unicode
-        .iter()
-        .map(|record| (record.id.as_str(), record))
-        .collect::<BTreeMap<_, _>>();
-    let mut uses_by_entity =
-        BTreeMap::<&str, Vec<&crate::native::parasolid::ParasolidEntity51StructuredUse>>::new();
-    for structured_use in sources.structured_uses {
-        uses_by_entity
-            .entry(structured_use.entity_51_record.as_str())
-            .or_default()
-            .push(structured_use);
-    }
+    let mut reservation = ctx.reserve_scoped(0, "NX Parasolid structured attribute lookups")?;
+    let (vectors_by_id, _vectors_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .vectors
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (axes_by_id, _axes_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .axes
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (tags_by_id, _tags_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .tags
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (unicode_by_id, _unicode_by_id_reservation) = ctx.collect_scoped_btree_map(
+        sources
+            .unicode
+            .iter()
+            .map(|record| (record.id.as_str(), record)),
+        "NX Parasolid attribute record index",
+    )?;
+    let (mut uses_by_entity, _uses_by_entity_reservation) = ctx.collect_scoped_btree_groups(
+        sources
+            .structured_uses
+            .iter()
+            .map(|value_use| (value_use.entity_51_record.as_str(), value_use)),
+        "NX Parasolid attribute use groups",
+    )?;
     for uses in uses_by_entity.values_mut() {
+        let work = uses.len().checked_mul(uses.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX Parasolid structured attribute ordering",
+                0,
+                cadmpeg_core::decode::u64_from_index(uses.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX Parasolid structured attribute ordering",
+        )?;
+        reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+            uses.as_slice(),
+        )))?;
         uses.sort_by_key(|structured_use| structured_use.position);
     }
     for context in &attribute_index.contexts {
@@ -5034,12 +8438,9 @@ fn attach_parasolid_topology_structured_attributes(
                         _ => continue,
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Vector(value.finite_components().into()))
-                            .collect(),
+                        mapped_vector_attribute_values(ctx, record.values.as_slice(), |value| {
+                            value.finite_components()
+                        })?,
                         record.inflated_offset,
                         "PARASOLID_VECTOR_ATTRIBUTE",
                         family,
@@ -5050,18 +8451,13 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|axis| {
-                                AttributeValue::Vector(
-                                    axis.iter()
-                                        .flat_map(|vector| vector.finite_components())
-                                        .collect(),
-                                )
-                            })
-                            .collect(),
+                        mapped_vector_attribute_values(ctx, record.values.as_slice(), |axis| {
+                            let first = axis[0].finite_components();
+                            let second = axis[1].finite_components();
+                            [
+                                first[0], first[1], first[2], second[0], second[1], second[2],
+                            ]
+                        })?,
                         record.inflated_offset,
                         "ENTITY_57_AXIS_ATTRIBUTE",
                         "87_axis",
@@ -5072,12 +8468,9 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        record
-                            .values
-                            .as_slice()
-                            .iter()
-                            .map(|value| AttributeValue::Integer(i64::from(*value)))
-                            .collect(),
+                        mapped_attribute_values(ctx, record.values.as_slice(), |value| {
+                            AttributeValue::Integer(i64::from(*value))
+                        })?,
                         record.inflated_offset,
                         "ENTITY_58_TAG_ATTRIBUTE",
                         "88_tag",
@@ -5089,7 +8482,7 @@ fn attach_parasolid_topology_structured_attributes(
                         continue;
                     };
                     (
-                        vec![AttributeValue::String(record.value.as_str().to_owned())],
+                        single_string_attribute_values(ctx, record.value.as_str())?,
                         record.inflated_offset,
                         "ENTITY_62_UNICODE_ATTRIBUTE",
                         "98_unicode",
@@ -5097,11 +8490,12 @@ fn attach_parasolid_topology_structured_attributes(
                 }
             };
             let id = topology_attribute_id(
+                ctx,
                 reference,
                 &cadmpeg_ir::identity_component!("topology-structured-attribute"),
                 structured_use.position.reference_ordinal(),
                 context.id_suffix.as_ref(),
-            );
+            )?;
             let source_stream = StreamHandle::new(
                 cadmpeg_ir::stream_name!("nx:s").with_suffix(reference.stream_ordinal),
             );
@@ -5114,26 +8508,23 @@ fn attach_parasolid_topology_structured_attributes(
             annotations
                 .derived(id.as_str(), "name")
                 .map_err(cadmpeg_core::CodecError::malformed)?;
-            let generic_name = format!(
-                "parasolid_type_{family}_reference_{}",
-                structured_use.position.reference_ordinal()
-            );
-            let name = attribute_index
-                .attribute_names
-                .field_name(reference, structured_use.id.as_str());
-            ir.model.attributes.push(SourceAttribute {
-                id,
-                target: context.target.clone(),
-                name: name
-                    .or_else(|| {
-                        attribute_index
-                            .class_names
-                            .get(reference.id.as_str())
-                            .map(|class_name| format!("{class_name}.{generic_name}"))
-                    })
-                    .unwrap_or(generic_name),
-                values,
-            });
+            let field_name = attribute_index.attribute_names.field_name(
+                ctx,
+                reference,
+                structured_use.id.as_str(),
+            )?;
+            let name = topology_attribute_name(
+                ctx,
+                field_name,
+                attribute_index
+                    .class_names
+                    .get(reference.id.as_str())
+                    .and_then(Option::as_ref)
+                    .copied(),
+                family,
+                structured_use.position.reference_ordinal(),
+            )?;
+            push_topology_attribute(ctx, ir, context, id, name, values)?;
         }
     }
     ir.model
@@ -5142,17 +8533,85 @@ fn attach_parasolid_topology_structured_attributes(
     Ok(())
 }
 
-fn preceding_operation_dependency(
+fn push_referenced_parameter(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
+    referenced: &mut Vec<ParameterId>,
+    expression: &str,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(expression.len()),
+        "NX referenced parameter identity",
+    )?;
+    let bytes = std::mem::size_of::<ParameterId>()
+        .checked_add(expression.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX referenced parameter",
+                0,
+                cadmpeg_core::decode::u64_from_index(expression.len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX referenced parameters")?;
+    reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+    let Some(id) = expressions::expression_parameter_id(expression) else {
+        return Ok(());
+    };
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        referenced,
+        1,
+        "NX referenced parameters",
+    )?;
+    referenced.push(id);
+    Ok(())
+}
+
+fn push_unique_feature_dependency(
+    ctx: &DecodeContext<'_>,
+    dependencies: &mut Vec<FeatureId>,
+    candidate: &FeatureId,
+) -> Result<(), CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(dependencies.len()),
+        "NX feature dependency uniqueness",
+    )?;
+    if dependencies.contains(candidate) {
+        return Ok(());
+    }
+    let bytes = std::mem::size_of::<FeatureId>()
+        .checked_add(candidate.as_str().len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX feature dependency",
+                0,
+                cadmpeg_core::decode::u64_from_index(candidate.as_str().len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX feature dependencies")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX feature dependency",
+    )?;
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        dependencies,
+        1,
+        "NX feature dependencies",
+    )?;
+    dependencies.push(candidate.clone());
+    Ok(())
+}
+
+fn preceding_operation_dependency<'a>(
     operation: &str,
     consumer_position: usize,
     operation_positions: &BTreeMap<&str, usize>,
-    feature_ids: &BTreeMap<&str, FeatureId>,
-) -> Option<FeatureId> {
+    feature_ids: &'a BTreeMap<&str, FeatureId>,
+) -> Option<&'a FeatureId> {
     let position = operation_positions.get(operation)?;
     if *position >= consumer_position {
         return None;
     }
-    feature_ids.get(operation).cloned()
+    feature_ids.get(operation)
 }
 
 fn projects_neutral_feature(label: &str) -> bool {
@@ -5160,47 +8619,150 @@ fn projects_neutral_feature(label: &str) -> bool {
 }
 
 fn text_semantic_annotation(
+    ctx: &DecodeContext<'_>,
     native_ref: &str,
     order: u32,
     payload_strings: &[&str],
-) -> Option<SemanticAnnotation> {
+) -> Result<Option<SemanticAnnotation>, CodecError> {
+    const FONT_KEY: &str = "font_family";
+    const ID_SUFFIX: &str = ":semantic-text";
     let [text, font_family] = payload_strings else {
-        return None;
+        return Ok(None);
     };
-    Some(SemanticAnnotation {
-        id: extended_id(native_ref, &cadmpeg_ir::identity_key!("semantic-text"))?,
-        object: native_ref.to_string(),
+    let id_len = native_ref
+        .len()
+        .checked_add(ID_SUFFIX.len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX TEXT annotation identity",
+                0,
+                cadmpeg_core::decode::u64_from_index(native_ref.len()),
+            )
+        })?;
+    let retained_bytes = std::mem::size_of::<SemanticAnnotation>()
+        .checked_add(std::mem::size_of::<String>())
+        .and_then(|bytes| {
+            bytes.checked_add(std::mem::size_of::<(
+                cadmpeg_core::text::NonBlankString,
+                String,
+            )>())
+        })
+        .and_then(|bytes| bytes.checked_add(id_len))
+        .and_then(|bytes| bytes.checked_add(native_ref.len().checked_mul(2)?))
+        .and_then(|bytes| bytes.checked_add(text.len()))
+        .and_then(|bytes| bytes.checked_add(font_family.len()))
+        .and_then(|bytes| bytes.checked_add(FONT_KEY.len()))
+        .and_then(|bytes| bytes.checked_add(4))
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX TEXT annotation",
+                0,
+                cadmpeg_core::decode::u64_from_index(id_len),
+            )
+        })?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(native_ref.len()),
+        "NX TEXT annotation identity",
+    )?;
+    ctx.charge_collection_items(3, "NX TEXT annotation record, text and parameter")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(retained_bytes),
+        "NX TEXT annotation",
+    )?;
+    let _identity_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(id_len),
+        "NX TEXT annotation identity assembly",
+    )?;
+    let Some(id) = extended_id(native_ref, &cadmpeg_ir::identity_key!("semantic-text")) else {
+        return Ok(None);
+    };
+    let copy = |source: &str| -> Result<String, CodecError> {
+        let mut owned = String::new();
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_string(
+            &mut owned,
+            source.len(),
+            "allocate NX TEXT annotation text",
+        )?;
+        owned.push_str(source);
+        Ok(owned)
+    };
+    let mut text_values = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut text_values,
+        1,
+        "allocate NX TEXT annotation text list",
+    )?;
+    text_values.push(copy(text)?);
+    let key = cadmpeg_core::text::NonBlankString::new(copy(FONT_KEY)?)
+        .ok_or_else(|| CodecError::malformed("NX TEXT annotation font key is blank"))?;
+    let mut parameters = BTreeMap::new();
+    parameters.insert(key, copy(font_family)?);
+    Ok(Some(SemanticAnnotation {
+        id,
+        object: copy(native_ref)?,
         kind: SemanticAnnotationKind::Text,
-        runtime_type: "TEXT".to_string(),
+        runtime_type: copy("TEXT")?,
         order,
-        text: vec![(*text).to_string()],
+        text: text_values,
         references: BTreeMap::new(),
         value: None,
         format: None,
         position: None,
-        parameters: BTreeMap::from([(
-            cadmpeg_core::nonblank_literal!("font_family"),
-            (*font_family).to_string(),
-        )]),
+        parameters,
         assets: Vec::new(),
-        native_ref: native_ref.to_string(),
-    })
+        native_ref: copy(native_ref)?,
+    }))
 }
 
 pub(super) fn parameter_owner_dependencies(
+    ctx: &DecodeContext<'_>,
     parameter_owners: &BTreeMap<ParameterId, Option<FeatureId>>,
     parameter_references: &[ParameterId],
-) -> Vec<FeatureId> {
+) -> Result<Vec<FeatureId>, CodecError> {
     let mut dependencies = Vec::new();
     for parameter_id in parameter_references {
+        let work = parameter_owners
+            .len()
+            .checked_add(dependencies.len())
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX parameter owner dependency scan",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(parameter_owners.len()),
+                )
+            })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX parameter owner dependency scan",
+        )?;
         let Some(owner) = parameter_owners.get(parameter_id).and_then(Option::as_ref) else {
             continue;
         };
         if !dependencies.contains(owner) {
+            let bytes = std::mem::size_of::<FeatureId>()
+                .checked_add(owner.as_str().len())
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "NX parameter owner dependency",
+                        0,
+                        cadmpeg_core::decode::u64_from_index(owner.as_str().len()),
+                    )
+                })?;
+            ctx.charge_collection_items(1, "NX parameter owner dependencies")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(bytes),
+                "NX parameter owner dependency",
+            )?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut dependencies,
+                1,
+                "NX parameter owner dependencies",
+            )?;
             dependencies.push(owner.clone());
         }
     }
-    dependencies
+    Ok(dependencies)
 }
 
 fn extrude_feature_definition(
@@ -5209,12 +8771,10 @@ fn extrude_feature_definition(
     op: BooleanOp,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
 ) -> FeatureDefinition {
-    let constructions = [construction_profile, structured_construction]
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    let profile = match constructions.as_slice() {
-        [construction] => ProfileRef::Planar(PlanarProfileRef::Native((*construction).to_string())),
+    let profile = match (construction_profile, structured_construction) {
+        (Some(construction), None) | (None, Some(construction)) => {
+            ProfileRef::Planar(PlanarProfileRef::Native(construction.to_string()))
+        }
         _ => ProfileRef::Planar(PlanarProfileRef::Unresolved("EXTRUDE".to_string())),
     };
     let solid = match output_kinds {
@@ -5277,3243 +8837,20 @@ fn extrude_boolean_op(
     }
 }
 
-fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    let mut faces = Vec::new();
-    for region_id in &body.regions {
-        let region = ir
-            .model
-            .regions
-            .iter()
-            .find(|region| region.id == *region_id && region.body == body.id)?;
-        for shell_id in &region.shells {
-            let shell = ir
-                .model
-                .shells
-                .iter()
-                .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-            for face_id in shell.faces() {
-                let face = ir
-                    .model
-                    .faces
-                    .iter()
-                    .find(|face| face.id == *face_id && face.shell == shell.id)?;
-                faces.push(face);
-            }
-        }
-    }
-    Some(faces)
-}
-
-fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
-    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
-    if body.kind != cadmpeg_ir::topology::BodyKind::Solid {
-        return None;
-    }
-    let [region_id] = body.regions.as_slice() else {
-        return None;
-    };
-    let region = ir
-        .model
-        .regions
-        .iter()
-        .find(|region| region.id == *region_id && region.body == body.id)?;
-    let [shell_id] = region.shells.as_slice() else {
-        return None;
-    };
-    let shell = ir
-        .model
-        .shells
-        .iter()
-        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
-    shell
-        .faces()
-        .iter()
-        .map(|face_id| {
-            ir.model
-                .faces
-                .iter()
-                .find(|face| face.id == *face_id && face.shell == shell.id)
-        })
-        .collect()
-}
-
-fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
-    Some(
-        body_faces(ir, body_id)?
-            .into_iter()
-            .map(|face| face.surface.clone())
-            .collect(),
-    )
-}
-
-/// Neutral operand family named by an NX rolling-ball blend operation.
-#[derive(Clone, Copy)]
-enum NxBlendFamily {
-    /// Edge-selected `BLEND` operation.
-    Edge,
-    /// Face-selected `FACE_BLEND` operation.
-    Face,
-}
-
-/// Project complete owned rolling-ball carriers into their named blend family.
-fn blend_feature_definition(
-    ir: &CadIr,
-    outputs: &[BodyId],
-    family: NxBlendFamily,
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let [body] = outputs else {
-        return None;
-    };
-    let body_surfaces = body_surface_ids(ir, body)?;
-    let mut surfaces = Vec::new();
-    let mut laws = Vec::new();
-    let mut support_pairs = Vec::new();
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
-        let ProceduralSurfaceDefinition::Blend(definition_payload) = procedural.definition() else {
-            continue;
-        };
-        let supports = definition_payload.supports();
-        let radius = definition_payload.radius();
-        let cross_section = definition_payload.cross_section();
-
-        if *cross_section != BlendCrossSection::Circular {
-            return None;
-        }
-        surfaces.push(owner.clone());
-        laws.push(radius);
-        support_pairs.push(supports);
-    }
-    if laws.is_empty() {
-        return None;
-    }
-    surfaces.sort();
-    let constant_radii = laws
-        .iter()
-        .map(|law| match law {
-            BlendRadiusLaw::Constant { signed_radius } if signed_radius.get() != 0.0 => {
-                Some(signed_radius.get().abs())
-            }
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>();
-    let radius = constant_radii
-        .as_ref()
-        .filter(|radii| {
-            radii
-                .iter()
-                .all(|radius| radius.to_bits() == radii[0].to_bits())
-        })
-        .map_or_else(
-            || {
-                if constant_radii.is_some() {
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                    }
-                } else if laws.iter().all(|law| {
-                    matches!(
-                        law,
-                        BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. }
-                    )
-                }) {
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable),
-                    }
-                } else {
-                    RadiusSpec::Unresolved { form: None }
-                }
-            },
-            |radii| match cadmpeg_ir::scalar::PositiveLength::new(radii[0]) {
-                Some(radius) => RadiusSpec::Constant { radius },
-                None => RadiusSpec::Unresolved {
-                    form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant),
-                },
-            },
-        );
-    let face_blend = matches!(family, NxBlendFamily::Face)
-        .then(|| {
-            support_pairs
-                .iter()
-                .map(|supports| {
-                    let [Some(first), Some(second)] = supports else {
-                        return None;
-                    };
-                    (first.surface != second.surface)
-                        .then_some([first.surface.clone(), second.surface.clone()])
-                })
-                .collect::<Option<Vec<_>>>()
-                .and_then(blend_support_bipartition)
-                .and_then(|(first, second)| {
-                    let (first_faces, _) = support_face_projection(
-                        ir,
-                        &first,
-                        format!("{body}:blend-first-support-surfaces"),
-                    );
-                    let (second_faces, _) = support_face_projection(
-                        ir,
-                        &second,
-                        format!("{body}:blend-second-support-surfaces"),
-                    );
-                    match (&first_faces, &second_faces) {
-                        (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
-                            Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-                                operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                                    first_faces,
-                                    second_faces,
-                                )
-                                .ok()?,
-
-                                radius: radius.clone(),
-                            }))
-                        }
-                        _ => None,
-                    }
-                })
-        })
-        .flatten();
-    let unresolved = match family {
-        NxBlendFamily::Edge => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: EdgeSelection::Unresolved,
-                    radius,
-                    tangency_weight: None,
-                },
-            ),
-        }),
-        NxBlendFamily::Face => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
-            .ok()?,
-
-            radius,
-        }),
-    };
-    Some((face_blend.unwrap_or(unresolved), surfaces))
-}
-
-/// Split an unordered rolling-ball support graph into two deterministic face
-/// sets. Face blending is symmetric, so each connected component starts with
-/// its lowest surface identity on the first side. The support graph must be
-/// complete bipartite: odd cycles and missing cross-pairs cannot be represented
-/// by one neutral face-blend operation.
-fn blend_support_bipartition(
-    pairs: Vec<[SurfaceId; 2]>,
-) -> Option<(Vec<SurfaceId>, Vec<SurfaceId>)> {
-    let mut adjacent = BTreeMap::<SurfaceId, BTreeSet<SurfaceId>>::new();
-    for [first, second] in pairs {
-        if first == second {
-            return None;
-        }
-        adjacent
-            .entry(first.clone())
-            .or_default()
-            .insert(second.clone());
-        adjacent.entry(second).or_default().insert(first);
-    }
-    let mut sides = BTreeMap::<SurfaceId, bool>::new();
-    for seed in adjacent.keys() {
-        if sides.contains_key(seed) {
-            continue;
-        }
-        sides.insert(seed.clone(), false);
-        let mut pending = vec![seed.clone()];
-        while let Some(surface) = pending.pop() {
-            let side = sides[&surface];
-            for neighbor in &adjacent[&surface] {
-                match sides.get(neighbor) {
-                    Some(neighbor_side) if *neighbor_side == side => return None,
-                    Some(_) => {}
-                    None => {
-                        sides.insert(neighbor.clone(), !side);
-                        pending.push(neighbor.clone());
-                    }
-                }
-            }
-        }
-    }
-    let (first, second): (Vec<_>, Vec<_>) = sides
-        .into_iter()
-        .partition(|(_, second_side)| !*second_side);
-    let first = first
-        .into_iter()
-        .map(|(surface, _)| surface)
-        .collect::<Vec<_>>();
-    let second = second
-        .into_iter()
-        .map(|(surface, _)| surface)
-        .collect::<Vec<_>>();
-    if first.iter().any(|surface| {
-        second
-            .iter()
-            .any(|other| !adjacent[surface].contains(other))
-    }) {
-        return None;
-    }
-    Some((first, second))
-}
-
-fn offset_surface_feature_definition(
-    ir: &CadIr,
-    outputs: &[BodyId],
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
-    let native = format!("{}:offset-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
-    let distance = senses
-        .as_deref()
-        .and_then(uniform_face_sense)
-        .map(|sense| match sense {
-            Sense::Forward => distance,
-            Sense::Reversed => distance.negated(),
-        });
-    Some((
-        FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces,
-            distance: distance.map(Length::from_assigned_real),
-        }),
-        supports,
-    ))
-}
-
-fn owned_offset_surface_data<'a>(
-    ir: &CadIr,
-    outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, FiniteReal, Vec<SurfaceId>)> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    let distance = carriers[0].1;
-    if carriers
-        .iter()
-        .any(|(_, candidate)| candidate.get().to_bits() != distance.get().to_bits())
-    {
-        return None;
-    }
-    let supports = carriers
-        .into_iter()
-        .map(|(support, _)| support)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
-    Some((body, distance, supports))
-}
-
-fn owned_offset_carriers<'a>(
-    ir: &CadIr,
-    outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, Vec<(SurfaceId, FiniteReal)>)> {
-    let [body] = outputs else {
-        return None;
-    };
-    let body_surfaces = body_surface_ids(ir, body)?;
-    let mut carriers = Vec::new();
-    for procedural in &ir.model.procedural_surfaces {
-        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
-            continue;
-        };
-        if !body_surfaces.contains(owner) {
-            continue;
-        }
-        let ProceduralSurfaceDefinition::Offset(definition_payload) = procedural.definition()
-        else {
-            continue;
-        };
-        let support = definition_payload.support();
-        let candidate = definition_payload.distance();
-        carriers.push((support.clone(), candidate));
-    }
-    (!carriers.is_empty()).then_some((body, carriers))
-}
-
-fn thicken_feature_definition(
-    ir: &CadIr,
-    outputs: &[BodyId],
-) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let (body, thickness, supports, direction) = owned_thicken_surface_data(ir, outputs)?;
-    let native = format!("{}:thicken-support-surfaces", body.as_str());
-    let (faces, senses) = support_face_projection(ir, &supports, native);
-    let side = match direction {
-        ThickenDirection::Both => Some(ThickenSide::Both),
-        ThickenDirection::Signed(distance) => senses
-            .as_deref()
-            .and_then(uniform_face_sense)
-            .map(|sense| thicken_side(distance, sense)),
-    };
-    Some((
-        FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces,
-            thickness: Some(thickness),
-            side,
-        }),
-        supports,
-    ))
-}
-
-enum ThickenDirection {
-    Signed(NonZeroLength),
-    Both,
-}
-
-fn owned_thicken_surface_data<'a>(
-    ir: &CadIr,
-    outputs: &'a [BodyId],
-) -> Option<(&'a BodyId, PositiveLength, Vec<SurfaceId>, ThickenDirection)> {
-    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
-    if ir
-        .model
-        .bodies
-        .iter()
-        .find(|candidate| candidate.id == *body)?
-        .kind
-        != BodyKind::Solid
-    {
-        return None;
-    }
-    let distance = carriers[0].1;
-    if carriers
-        .iter()
-        .all(|(_, candidate)| candidate.get().to_bits() == distance.get().to_bits())
-    {
-        if let Ok(distance) = NonZeroLength::try_from(Length::from_assigned_real(distance)) {
-            let supports = carriers
-                .into_iter()
-                .map(|(support, _)| support)
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .collect();
-            return Some((
-                body,
-                distance.abs(),
-                supports,
-                ThickenDirection::Signed(distance),
-            ));
-        }
-        return None;
-    }
-
-    let mut magnitude = None::<PositiveLength>;
-    let mut positive = BTreeSet::new();
-    let mut negative = BTreeSet::new();
-    for (support, distance) in carriers {
-        let distance = NonZeroLength::try_from(Length::from_assigned_real(distance)).ok()?;
-        let candidate = distance.abs();
-        if magnitude.is_some_and(|magnitude| magnitude.get().to_bits() != candidate.get().to_bits())
-        {
-            return None;
-        }
-        magnitude = Some(candidate);
-        if distance.get().is_sign_positive() {
-            positive.insert(support);
-        } else {
-            negative.insert(support);
-        }
-    }
-    if positive.is_empty() || positive != negative {
-        return None;
-    }
-    let thickness = PositiveLength::new(magnitude?.get() * 2.0)?;
-    Some((
-        body,
-        thickness,
-        positive.into_iter().collect(),
-        ThickenDirection::Both,
-    ))
-}
-
-fn support_face_projection(
-    ir: &CadIr,
-    supports: &[SurfaceId],
-    native: String,
-) -> (FaceSelection, Option<Vec<Sense>>) {
-    let faces = supports
-        .iter()
-        .map(|support| {
-            let matches = ir
-                .model
-                .faces
-                .iter()
-                .filter(|face| face.surface == *support)
-                .collect::<Vec<_>>();
-            let [face] = matches.as_slice() else {
-                return None;
-            };
-            Some((face.id.clone(), face.sense))
-        })
-        .collect::<Option<Vec<_>>>();
-    match faces {
-        Some(faces)
-            if faces
-                .iter()
-                .map(|(face, _)| face)
-                .collect::<BTreeSet<_>>()
-                .len()
-                == faces.len() =>
-        {
-            let (faces, senses): (Vec<_>, Vec<_>) = faces.into_iter().unzip();
-            (FaceSelection::Resolved { faces, native }, Some(senses))
-        }
-        _ => (FaceSelection::Native(native), None),
-    }
-}
-
-fn thicken_side(distance: NonZeroLength, sense: Sense) -> ThickenSide {
-    match (distance.get().is_sign_positive(), sense) {
-        (true, Sense::Forward) | (false, Sense::Reversed) => ThickenSide::Forward,
-        (true, Sense::Reversed) | (false, Sense::Forward) => ThickenSide::Reverse,
-    }
-}
-
-fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
-    let (first, rest) = senses.split_first()?;
-    rest.iter().all(|sense| sense == first).then_some(*first)
-}
-
-pub(super) fn feature_source_content(
-    payload_strings: &[&crate::native::features::FeaturePayloadString],
-) -> cadmpeg_ir::features::FeatureContent {
-    let mut content = payload_strings
-        .iter()
-        .map(|value| (value.source_offset, value.value.as_str().to_owned()))
-        .collect::<Vec<_>>();
-    content.sort_by_key(|(offset, _)| *offset);
-    cadmpeg_ir::features::FeatureContent::text(content.into_iter().map(|(_, content)| content))
-}
-
-fn simple_hole_native_properties(
-    operation_label: &str,
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    repeated_lanes: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLane],
-    block_references: &[crate::native::features::holes::FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
-    construction_groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
-) -> BTreeMap<String, String> {
-    let mut properties = BTreeMap::new();
-    if let Some(template) = templates
-        .iter()
-        .find(|template| template.operation_label == operation_label)
-    {
-        properties.insert("simple_hole_template".to_string(), template.id.clone());
-    }
-    if let Some(pair) = repeated_lanes
-        .iter()
-        .find(|pair| pair.operation_label == operation_label)
-    {
-        properties.insert(
-            "simple_hole_repeated_scalar_lane".to_string(),
-            pair.id.clone(),
-        );
-    }
-    if let Some(references) = block_references
-        .iter()
-        .find(|references| references.operation_label == operation_label)
-    {
-        properties.insert(
-            "simple_hole_repeated_scalar_lane_block_references".to_string(),
-            references.id.clone(),
-        );
-    }
-    if let Some(group) = construction_groups.iter().find(|group| {
-        group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .any(|label| label == operation_label)
-    }) {
-        properties.insert(
-            "simple_hole_construction_group".to_string(),
-            group.id.clone(),
-        );
-    }
-    properties
-}
-
-fn block_placement(
-    ir: &CadIr,
-    dimensions: [f64; 3],
-    outputs: &[BodyId],
-) -> Option<(BodyId, Transform)> {
-    struct PlaneBand {
-        normal: Vector3,
-        offsets: Vec<f64>,
-    }
-
-    #[derive(Clone, Copy)]
-    struct PlaneExtent {
-        normal: Vector3,
-        minimum: f64,
-        maximum: f64,
-    }
-
-    fn canonical_normal(
-        normal: cadmpeg_ir::units::UnitVector3,
-        angular_tolerance: f64,
-    ) -> Option<Vector3> {
-        let mut normal = *normal.to_unit_length_charted().as_raw();
-        let leading = [normal.x, normal.y, normal.z]
-            .into_iter()
-            .find(|component| component.abs() > angular_tolerance)?;
-        if leading < 0.0 {
-            normal = Vector3::new(-normal.x, -normal.y, -normal.z);
-        }
-        Some(normal)
-    }
-
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    if dimensions
-        .iter()
-        .any(|dimension| *dimension <= linear_tolerance)
-    {
-        return None;
-    }
-    let body = match outputs {
-        [body] => body,
-        [] => {
-            let candidates = ir
-                .model
-                .bodies
-                .iter()
-                .filter(|body| connected_solid_body_faces(ir, &body.id).is_some())
-                .map(|body| &body.id)
-                .collect::<Vec<_>>();
-            let [body] = candidates.as_slice() else {
-                return None;
-            };
-            *body
-        }
-        _ => return None,
-    };
-    let faces = connected_solid_body_faces(ir, body)?;
-    let surface_geometry = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut bands = Vec::<PlaneBand>::new();
-    for face in faces {
-        let geometry = surface_geometry.get(&face.surface).copied()?;
-        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) = geometry else {
-            continue;
-        };
-        let origin = plane_surface.origin().get();
-        let normal = canonical_normal(*plane_surface.frame().axis(), angular_tolerance)?;
-        let offset = normal.dot(Vector3::new(origin.x, origin.y, origin.z));
-        let existing = bands
-            .iter_mut()
-            .find(|band| (1.0 - band.normal.dot(normal)).abs() <= angular_tolerance);
-        if let Some(band) = existing {
-            band.offsets.push(offset);
-        } else {
-            bands.push(PlaneBand {
-                normal,
-                offsets: vec![offset],
-            });
-        }
-    }
-    if bands.len() != 3
-        || (0..3).any(|first| {
-            (first + 1..3).any(|second| {
-                bands[first].normal.dot(bands[second].normal).abs() > angular_tolerance
-            })
-        })
-    {
-        return None;
-    }
-    let mut bands = bands
-        .into_iter()
-        .map(|mut band| {
-            band.offsets.sort_by(f64::total_cmp);
-            let mut clusters = Vec::<[f64; 2]>::new();
-            for offset in band.offsets {
-                if !offset.is_finite() {
-                    return None;
-                }
-                match clusters.last_mut() {
-                    Some(cluster) if offset - cluster[0] <= linear_tolerance => {
-                        cluster[1] = offset;
-                    }
-                    _ => clusters.push([offset, offset]),
-                }
-            }
-            let [minimum, maximum] = clusters.as_slice() else {
-                return None;
-            };
-            (maximum[1] - minimum[0] > linear_tolerance).then_some(PlaneExtent {
-                normal: band.normal,
-                minimum: minimum[0],
-                maximum: maximum[1],
-            })
-        })
-        .collect::<Option<Vec<_>>>()?;
-    bands.sort_by(|left, right| {
-        right
-            .normal
-            .x
-            .total_cmp(&left.normal.x)
-            .then_with(|| right.normal.y.total_cmp(&left.normal.y))
-            .then_with(|| right.normal.z.total_cmp(&left.normal.z))
-    });
-    let permutations = [
-        [0usize, 1usize, 2usize],
-        [0, 2, 1],
-        [1, 0, 2],
-        [1, 2, 0],
-        [2, 0, 1],
-        [2, 1, 0],
-    ];
-    let matches = permutations
-        .into_iter()
-        .filter(|permutation| {
-            (0..3).all(|axis| {
-                let band = bands[permutation[axis]];
-                ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
-            })
-        })
-        .collect::<Vec<_>>();
-    let [permutation] = matches.as_slice() else {
-        return None;
-    };
-    let mut ordered = permutation.map(|index| bands[index]);
-    if ordered[0]
-        .normal
-        .cross(ordered[1].normal)
-        .dot(ordered[2].normal)
-        < 0.0
-    {
-        let third = &mut ordered[2];
-        third.normal = Vector3::new(-third.normal.x, -third.normal.y, -third.normal.z);
-        (third.minimum, third.maximum) = (-third.maximum, -third.minimum);
-    }
-    let origin = Point3::new(
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.x)
-            .sum(),
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.y)
-            .sum(),
-        ordered
-            .iter()
-            .map(|band| band.minimum * band.normal.z)
-            .sum(),
-    );
-    let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-    Some((
-        body.clone(),
-        Transform::affine([
-            [x_axis.x, y_axis.x, z_axis.x, origin.x],
-            [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z],
-        ])?,
-    ))
-}
-
-/// Return the complete primitive witness for an NX `SPHERE` operation.
-///
-/// A spherical surface inside a larger result is not enough: a Boolean or a
-/// later feature can leave the same carrier in the output. The primitive
-/// projection therefore accepts only one connected solid body with exactly
-/// one face whose surface is a finite positive-radius sphere. With no native
-/// output relation, the candidate must also be unique across the model.
-fn sphere_body_projection(
-    ir: &CadIr,
-    outputs: &[BodyId],
-) -> Option<(
-    BodyId,
-    cadmpeg_ir::features::FinitePoint3,
-    cadmpeg_ir::scalar::PositiveLength,
-)> {
-    let body = match outputs {
-        [body] => body.clone(),
-        [] => {
-            let candidates = ir
-                .model
-                .bodies
-                .iter()
-                .filter_map(|body| {
-                    let faces = connected_solid_body_faces(ir, &body.id)?;
-                    let [face] = faces.as_slice() else {
-                        return None;
-                    };
-                    let surface = ir.model.surfaces.iter().find(|surface| {
-                        surface.id == face.surface
-                            && matches!(
-                                surface.geometry.solved(),
-                                Some(SolvedSurfaceGeometry::Sphere(_))
-                            )
-                    })?;
-                    Some((body.id.clone(), surface.id.clone()))
-                })
-                .collect::<Vec<_>>();
-            let [(body, _)] = candidates.as_slice() else {
-                return None;
-            };
-            body.clone()
-        }
-        _ => return None,
-    };
-    let faces = connected_solid_body_faces(ir, &body)?;
-    let [face] = faces.as_slice() else {
-        return None;
-    };
-    let surface = ir
-        .model
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == face.surface)?;
-    let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) = surface.geometry.solved() else {
-        return None;
-    };
-    let center = sphere_surface.center();
-    let radius = cadmpeg_ir::scalar::PositiveLength::try_from(sphere_surface.radius()).ok()?;
-    Some((body, center, radius))
-}
-
-struct NewBodyEvidence<'a> {
-    has_complete_projection: bool,
-    has_complete_primitive_construction: bool,
-    outputs: &'a [BodyId],
-    body_reference_count: usize,
-    provisional_feature: Option<&'a FeatureId>,
-    native_primary_body: Option<u32>,
-    offset_store_primary_body: Option<&'a str>,
-    history: &'a BodyWriterHistory,
-}
-
-fn new_body_boolean_op(evidence: &NewBodyEvidence<'_>) -> BooleanOp {
-    // A unique offset-store body field proves the operation's local writer
-    // namespace, but the fallback body selected for placement is not that
-    // writer. Likewise, multiple body fields have no primary role until the
-    // operation-specific relation identifies one. Do not let a placement
-    // fallback turn either case into a neutral body Boolean.
-    if evidence.body_reference_count > 1
-        && evidence.native_primary_body.is_none()
-        && evidence.offset_store_primary_body.is_none()
-        && !evidence.has_complete_primitive_construction
-    {
-        return BooleanOp::Unresolved;
-    }
-    if evidence.has_complete_projection
-        && matches!(evidence.outputs, [_])
-        && !evidence.history.has_preceding_writer(
-            evidence.provisional_feature,
-            evidence.native_primary_body,
-            evidence.offset_store_primary_body,
-            evidence.outputs,
-        )
-    {
-        BooleanOp::NewBody
-    } else {
-        BooleanOp::Unresolved
-    }
-}
-
-fn body_writing_unresolved_feature_definition(
-    kind: &str,
-    source_properties: &BTreeMap<String, String>,
-) -> Option<FeatureDefinition> {
-    if !source_properties
-        .keys()
-        .any(|key| key.starts_with("body_write."))
-    {
-        return None;
-    }
-    match kind {
-        "BREP" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Brep,
-        })),
-        "CONE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Cone,
-        })),
-        "SPHERE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Sphere,
-        })),
-        "BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: EdgeSelection::Unresolved,
-                    radius: RadiusSpec::Unresolved { form: None },
-                    tangency_weight: None,
-                },
-            ),
-        })),
-        "FACE_BLEND" => Some(FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
-            .ok()?,
-
-            radius: RadiusSpec::Unresolved { form: None },
-        })),
-        "DELETE FACE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::DeleteFace,
-        })),
-        "MIRROR_FACE" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::MirrorFace,
-        })),
-        "SUBDIVISION_BODY" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::SubdivisionBody,
-        })),
-        "TOPOLOGY_OPTIMIZATION" => {
-            Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::TopologyOptimization,
-            }))
-        }
-        "THREADS" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Thread,
-        })),
-        "DETAILED_THREAD" => Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::DetailedThread,
-        })),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-fn non_boolean_feature_definition(
-    kind: &str,
-    payload_strings: &[&str],
-    block_dimensions: Option<[f64; 3]>,
-    block_placement: Option<Transform>,
-    hole_diameter: Option<Length>,
-) -> FeatureDefinition {
-    non_boolean_feature_definition_with_parameters(
-        kind,
-        payload_strings,
-        block_dimensions,
-        block_placement,
-        HoleProjection {
-            diameter: hole_diameter,
-            ..HoleProjection::default()
-        },
-        BTreeMap::new(),
-    )
-    .unwrap()
-}
-
-/// Project one operation as a history node only when its bounded record has
-/// no modeling relation or value lane.
-fn non_modeling_history_definition(
-    kind: &str,
-    object_indices: &[Option<u32>; 4],
-    outputs: &[BodyId],
-    body_reference_count: usize,
-    body_operand_count: usize,
-    payload_string_count: usize,
-    source_properties: &BTreeMap<String, String>,
-) -> Option<FeatureDefinition> {
-    let operation_identity_only = source_properties.keys().all(|key| {
-        matches!(
-            key.as_str(),
-            "operation_record" | "operation_terminal_frame"
-        ) || (key
-            .strip_prefix("object_index.")
-            .is_some_and(|slot| matches!(slot, "0" | "1" | "2" | "3")))
-    });
-    (kind == "EXTRACT_STRING"
-        && object_indices.iter().all(Option::is_none)
-        && outputs.is_empty()
-        && body_reference_count == 0
-        && body_operand_count == 0
-        && payload_string_count == 0
-        && source_properties.contains_key("operation_record")
-        && source_properties.contains_key("operation_terminal_frame")
-        && operation_identity_only)
-        .then_some(FeatureDefinition::Operation(FeatureOperation::TreeNode {
-            role: FeatureTreeNodeRole::History,
-            children: TreeChildren::default(),
-        }))
-}
-
-/// Permutation-invariant hole properties derived from one complete body partition.
-#[derive(Default)]
-struct HoleProjection {
-    placements: Vec<HolePlacement>,
-    diameter: Option<Length>,
-    extent: Option<LinearTermination>,
-    counterbore: Option<CounterboreDimensions>,
-    chamfer: Option<HoleKind>,
-    grouped_simple_through: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct CounterboreDimensions {
-    diameter: cadmpeg_ir::scalar::PositiveLength,
-    depth: cadmpeg_ir::scalar::PositiveLength,
-}
-
-fn non_boolean_feature_definition_with_parameters(
-    kind: &str,
-    payload_strings: &[&str],
-    block_dimensions: Option<[f64; 3]>,
-    block_placement: Option<Transform>,
-    hole: HoleProjection,
-    native_parameters: BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-) -> Result<FeatureDefinition, CodecError> {
-    let hole_template = unique_simple_hole_template(payload_strings);
-    if matches!(kind, "BLEND" | "FACE_BLEND") {
-        return Ok(FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: kind.into(),
-            parameters: native_parameters,
-        }));
-    }
-    if let ("BLOCK", Some([Some(length), Some(width), Some(height)])) = (
-        kind,
-        block_dimensions.map(|dimensions| dimensions.map(cadmpeg_ir::scalar::PositiveLength::new)),
-    ) {
-        return Ok(FeatureDefinition::Operation(FeatureOperation::Block {
-            dimensions: Some([length, width, height]),
-            placement: block_placement.and_then(cadmpeg_ir::features::FeatureRigidPlacement::new),
-            op: BooleanOp::Unresolved,
-        }));
-    }
-    if let Some(op) = match kind {
-        "UNITE" => Some(cadmpeg_ir::features::BooleanKind::Join),
-        "SUBTRACT" => Some(cadmpeg_ir::features::BooleanKind::Cut),
-        "INTERSECT" => Some(cadmpeg_ir::features::BooleanKind::Intersect),
-        _ => None,
-    } {
-        return Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-
-            op,
-            keep_tools: false,
-        }));
-    }
-    Ok(match kind {
-        "DATUM_PLANE" | "EXTRACT_DATUM_PLANE" => {
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::DatumPlane,
-            })
-        }
-        "DATUM_AXIS" | "EXTRACT_DATUM_AXIS" => {
-            FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                family: UnresolvedFamily::DatumAxis,
-            })
-        }
-        "BRIDGE_CURVE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::BridgeCurve,
-        }),
-        "POINT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumPoint,
-        }),
-        "DATUM_CSYS" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::DatumCoordinateSystem,
-        }),
-        "BLOCK" => FeatureDefinition::Operation(FeatureOperation::Block {
-            dimensions: None,
-            placement: None,
-            op: BooleanOp::Unresolved,
-        }),
-        "SKETCH" => FeatureDefinition::Operation(FeatureOperation::Sketch {
-            sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
-        }),
-        "EXTRACT_BODY" => FeatureDefinition::Operation(FeatureOperation::ExtractBody {
-            source: BodySelection::Unresolved,
-        }),
-        "MASTER SNAPSHOT BODY" => FeatureDefinition::Operation(FeatureOperation::BaseFeature {
-            bodies: BodySelection::Unresolved,
-        }),
-        "SKIN" | "THRU_CURVE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Loft,
-        }),
-        "THRU_CURVE_MESH" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::ThroughCurveMesh,
-        }),
-        "Studio Surface" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::FreeformSurface,
-        }),
-        "SWP104" => FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::unresolved(None),
-            path: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        }),
-        "DRAFT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Draft,
-        }),
-        "CPROJ" | "CPROJ_CMB" => FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
-            source: PathRef::Unresolved("nx:unresolved".into()),
-            target_faces: FaceSelection::Unresolved,
-            direction: CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
-            bidirectional: None,
-        }),
-        "TRIMMED_SH" => FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-            faces: FaceSelection::Unresolved,
-            tool: PathRef::Unresolved("nx:unresolved".into()),
-            keep: TrimRegion::Unresolved,
-        }),
-        "EXTRACT_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::ExtractFace,
-        }),
-        "COPY_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::CopyFace,
-        }),
-        "LINKED_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::LinkedFace,
-        }),
-        "FILL_HOLE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::FillHole,
-        }),
-        "MOVE_FACE" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::MoveFace,
-        }),
-        "MOVE_OBJECT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::MoveObject,
-        }),
-        "CYLINDER" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
-            family: UnresolvedFamily::Cylinder,
-        }),
-        "SYMBOLIC_THREAD" => symbolic_thread_feature_definition(),
-        "EXTEND_SHEET" => FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-            faces: FaceSelection::Unresolved,
-            distance: None,
-            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
-        }),
-        "SIMPLE HOLE" | "CBORE_HOLE" | "CSUNK_HOLE" => {
-            let measured_chamfer = hole.chamfer;
-            let (template_kind, template_exit_kind, template_extent) = hole_template.map_or(
-                (
-                    if matches!(kind, "CBORE_HOLE" | "CSUNK_HOLE") {
-                        HoleKind::Unresolved(None)
-                    } else {
-                        HoleKind::Simple
-                    },
-                    None,
-                    None,
-                ),
-                |(form, extent, start_treatment, end_treatment)| {
-                    let kind = match start_treatment {
-                        crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
-                            HoleKind::Unresolved(Some(HoleForm::Chamfer))
-                        }
-                        crate::native::features::holes::SimpleHoleEndTreatment::None => {
-                            match form {
-                                crate::native::features::holes::SimpleHoleForm::Simple => {
-                                    HoleKind::Simple
-                                }
-                                crate::native::features::holes::SimpleHoleForm::Counterbored => {
-                                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
-                                }
-                                crate::native::features::holes::SimpleHoleForm::Countersunk => {
-                                    HoleKind::Unresolved(Some(HoleForm::Countersink))
-                                }
-                            }
-                        }
-                    };
-                    let exit_kind = match end_treatment {
-                        crate::native::features::holes::SimpleHoleEndTreatment::Chamfer => {
-                            Some(HoleKind::Unresolved(Some(HoleForm::Chamfer)))
-                        }
-                        crate::native::features::holes::SimpleHoleEndTreatment::None => None,
-                    };
-                    let extent = match extent {
-                        crate::native::features::holes::SimpleHoleExtent::Through => {
-                            Some(cadmpeg_ir::features::LinearTermination::ThroughAll {})
-                        }
-                        crate::native::features::holes::SimpleHoleExtent::Blind => None,
-                    };
-                    (kind, exit_kind, extent)
-                },
-            );
-            let template_kind = match (
-                hole.counterbore,
-                matches!(
-                    &template_kind,
-                    HoleKind::Unresolved(Some(HoleForm::Counterbore))
-                        | HoleKind::PartialCounterbore(..)
-                ),
-            ) {
-                (Some(dimensions), true) => HoleKind::Counterbore {
-                    diameter: dimensions.diameter,
-                    depth: dimensions.depth,
-                },
-                _ => template_kind,
-            };
-            FeatureDefinition::Operation(FeatureOperation::Hole {
-                profile: None,
-                profile_filter: None,
-                face: None,
-                direction: None,
-                placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-                shape: cadmpeg_ir::features::holes::HoleShape::new(
-                    cadmpeg_ir::features::holes::HoleConstruction::Form {
-                        kind: match (measured_chamfer, hole_template) {
-                            (
-                                Some(chamfer),
-                                Some((
-                                    crate::native::features::holes::SimpleHoleForm::Simple,
-                                    crate::native::features::holes::SimpleHoleExtent::Through,
-                                    crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                                    crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                                )),
-                            ) => chamfer,
-                            _ => template_kind,
-                        },
-                        specification: None,
-                    },
-                    match (measured_chamfer, hole_template) {
-                        (
-                            Some(chamfer),
-                            Some((
-                                crate::native::features::holes::SimpleHoleForm::Simple,
-                                crate::native::features::holes::SimpleHoleExtent::Through,
-                                crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                                crate::native::features::holes::SimpleHoleEndTreatment::Chamfer,
-                            )),
-                        ) => Some(chamfer),
-                        _ => template_exit_kind,
-                    },
-                    hole.diameter.and_then(|diameter| {
-                        cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                    }),
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-
-                extent: hole.extent.or(template_extent),
-                bottom: None,
-                taper_angle: None,
-                allow_multi_profile_faces: None,
-            })
-        }
-        "HOLE PACKAGE" => FeatureDefinition::Operation(FeatureOperation::Hole {
-            profile: None,
-            profile_filter: None,
-            face: None,
-            direction: None,
-            placements: Some(hole.placements).filter(|placements| !placements.is_empty()),
-            shape: cadmpeg_ir::features::holes::HoleShape::new(
-                cadmpeg_ir::features::holes::HoleConstruction::Form {
-                    kind: if hole.grouped_simple_through {
-                        hole.chamfer.unwrap_or(HoleKind::Simple)
-                    } else {
-                        HoleKind::Unresolved(None)
-                    },
-                    specification: None,
-                },
-                hole.grouped_simple_through
-                    .then_some(hole.chamfer)
-                    .flatten(),
-                hole.diameter.and_then(|diameter| {
-                    cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()
-                }),
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-
-            extent: hole
-                .grouped_simple_through
-                .then_some(cadmpeg_ir::features::LinearTermination::ThroughAll {}),
-            bottom: None,
-            taper_angle: None,
-            allow_multi_profile_faces: None,
-        }),
-        "RIB" => FeatureDefinition::Operation(FeatureOperation::Rib {
-            construction: RibConstruction {
-                profile: None,
-                direction: None,
-                thickness: None,
-                side: None,
-                draft: RibDraft::Unresolved,
-            },
-            op: BooleanOp::Unresolved,
-        }),
-        "SHELL" => shell_feature_definition(),
-        "ENLARGE" => enlarge_feature_definition(),
-        "CHAMFER" => FeatureDefinition::Operation(FeatureOperation::Chamfer {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::ChamferGroup {
-                    edges: EdgeSelection::Unresolved,
-                    spec: ChamferSpec::Unresolved { form: None },
-                },
-            ),
-            flip_direction: false,
-        }),
-        "BLEND" => FeatureDefinition::Operation(FeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
-                cadmpeg_ir::features::edge_treatments::FilletGroup {
-                    edges: EdgeSelection::Unresolved,
-                    radius: RadiusSpec::Unresolved { form: None },
-                    tangency_weight: None,
-                },
-            ),
-        }),
-        "FACE_BLEND" => FeatureDefinition::Operation(FeatureOperation::FaceBlend {
-            operands: cadmpeg_ir::features::FaceBlendOperands::new(
-                FaceSelection::Unresolved,
-                FaceSelection::Unresolved,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-
-            radius: RadiusSpec::Unresolved { form: None },
-        }),
-        "SEW" => FeatureDefinition::Operation(FeatureOperation::SewBodies {
-            bodies: BodySelection::Unresolved
-                .try_into()
-                .map_err(CodecError::malformed)?,
-            gap_tolerance: None,
-        }),
-        "TRIM BODY" => FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-            operands: cadmpeg_ir::features::TrimBodyOperands::new(
-                BodySelection::Unresolved,
-                BodySelection::Unresolved,
-            )
-            .map_err(cadmpeg_core::CodecError::malformed)?,
-
-            keep: BodyTrimSide::Unresolved,
-        }),
-        "EXTRUDE" => extrude_feature_definition(None, None, BooleanOp::Unresolved, &[]),
-        "OFFSET" => FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Unresolved,
-            distance: None,
-        }),
-        "THICKEN_SHEET" => FeatureDefinition::Operation(FeatureOperation::Thicken {
-            faces: FaceSelection::Unresolved,
-            thickness: None,
-            side: None,
-        }),
-        "Pattern Feature"
-        | "Pattern Geometry"
-        | "Geometry Instance"
-        | "Multi Instance Output"
-        | "IDENTICAL INSTANCE OUTPUT"
-        | "Instance Feature" => FeatureDefinition::Operation(FeatureOperation::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::UNRESOLVED,
-        }),
-        "ASSOCIATIVE_INTERSECTION" | "Intersection Curve" => {
-            FeatureDefinition::Operation(FeatureOperation::SectionShape {
-                operands: cadmpeg_ir::features::SectionOperands::new(
-                    BodySelection::Unresolved,
-                    BodySelection::Unresolved,
-                )
-                .map_err(cadmpeg_core::CodecError::malformed)?,
-
-                approximate: None,
-            })
-        }
-        _ => FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: kind.into(),
-            parameters: native_parameters,
-        }),
-    })
-}
-
-/// Project a BREP operation as direct stored geometry when its result bodies
-/// are resolved. A BREP record carries boundary representation rather than a
-/// replayable parametric construction; without a closed result-body relation,
-/// retaining the native definition preserves the unresolved history edge.
-fn brep_feature_definition(outputs: &[BodyId]) -> Option<FeatureDefinition> {
-    (!outputs.is_empty() && outputs.iter().collect::<BTreeSet<_>>().len() == outputs.len())
-        .then_some(FeatureDefinition::Operation(
-            FeatureOperation::StoredGeometry {},
-        ))
-}
-
-/// Preserve a SHELL operation as a typed neutral family while its construction roles remain
-/// unresolved. The operation label identifies the family, but does not assign bodies, opening
-/// faces, thickness, side, offset mode, corner join, or intersection policy.
-fn shell_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::Operation(FeatureOperation::Shell {
-        bodies: None,
-        removed_faces: FaceSelection::Unresolved,
-        thickness: None,
-        outward: None,
-        mode: None,
-        join: None,
-        resolve_intersections: None,
-        allow_self_intersections: None,
-    })
-}
-
-/// Preserve an ENLARGE operation as a typed surface-extension family while its selected faces,
-/// extension law, and extent remain unresolved.
-fn enlarge_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
-        faces: FaceSelection::Unresolved,
-        distance: None,
-        method: SurfaceExtension::Unresolved,
-    })
-}
-
-/// Preserve a `SYMBOLIC_THREAD` operation as a cosmetic-thread family while its cylindrical face,
-/// nominal diameter, and axial extent remain unresolved.
-fn symbolic_thread_feature_definition() -> FeatureDefinition {
-    FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-        face: FaceSelection::Unresolved,
-        diameter: None,
-        extent: None,
-    })
-}
-
-fn native_feature_parameters(
-    uses: &[&crate::native::features::FeatureParameterUse],
-    expressions: &[crate::native::om::Expression],
-) -> BTreeMap<String, String> {
-    let by_id = expressions
-        .iter()
-        .map(|expression| (expression.id.as_str(), expression))
-        .collect::<BTreeMap<_, _>>();
-    let mut parameters = BTreeMap::new();
-    for parameter_use in uses {
-        let Some(expression) = by_id.get(parameter_use.expression.as_str()) else {
-            return BTreeMap::new();
-        };
-        if parameters
-            .insert(
-                expression.name.as_str().to_string(),
-                expression.expression.clone(),
-            )
-            .is_some()
-        {
-            return BTreeMap::new();
-        }
-    }
-    parameters
-}
-
-/// Resolve explicit hole outputs only from the proven segment-body namespace.
-/// Offset-store body fields remain absent so a complete unique-solid topology
-/// witness can apply the documented fallback.
-fn primary_hole_outputs(
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    body_references: &BTreeMap<&str, u32>,
-    body_bindings: &[crate::native::segments::SegmentBodyBinding],
-    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> BTreeMap<String, Vec<BodyId>> {
-    templates
-        .iter()
-        .filter_map(|template| {
-            let object_index = body_references.get(template.operation_label.as_str())?;
-            Some((
-                template.operation_label.clone(),
-                feature_body_outputs(*object_index, body_bindings, bodies_by_object_index),
-            ))
-        })
-        .collect()
-}
-
-fn simple_hole_operations(
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
-    operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut ordered_templates = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
-        })
-        .collect::<Vec<_>>();
-    let template_operations = ordered_templates
-        .iter()
-        .map(|template| template.operation_label.as_str())
-        .collect::<BTreeSet<_>>();
-    if template_operations.is_empty()
-        || ordered_templates
-            .iter()
-            .any(|template| template_counts.get(template.operation_label.as_str()) != Some(&1))
-    {
-        return None;
-    }
-    if ordered_templates
-        .iter()
-        .any(|template| !operation_positions.contains_key(template.operation_label.as_str()))
-    {
-        return None;
-    }
-    ordered_templates.sort_by(|first, second| {
-        operation_positions
-            .get(first.operation_label.as_str())
-            .cmp(&operation_positions.get(second.operation_label.as_str()))
-            .then_with(|| first.operation_label.cmp(&second.operation_label))
-    });
-    let matching_groups = groups
-        .iter()
-        .filter(|group| {
-            let group_operations = group
-                .members
-                .iter()
-                .map(|member| member.operation_label.as_str())
-                .collect::<BTreeSet<_>>();
-            group_operations == template_operations
-        })
-        .collect::<Vec<_>>();
-    Some(match matching_groups.as_slice() {
-        [] => ordered_templates
-            .iter()
-            .map(|template| template.operation_label.clone())
-            .collect::<Vec<_>>(),
-        [group] => {
-            if group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .any(|operation| !operation_positions.contains_key(operation.as_str()))
-                || group.members.windows(2).any(|pair| {
-                    operation_positions[pair[0].operation_label.as_str()]
-                        >= operation_positions[pair[1].operation_label.as_str()]
-                })
-            {
-                return None;
-            }
-            group
-                .members
-                .iter()
-                .map(|member| member.operation_label.clone())
-                .collect()
-        }
-        _ => return None,
-    })
-}
-
-/// Return simple blind-hole operations in feature-history order. A blind
-/// operation with competing typed templates is not assignable to one body
-/// witness and remains native-only.
-fn blind_hole_operations(
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut operations = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Blind
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<Vec<_>>();
-    if operations.is_empty()
-        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-        || operations
-            .iter()
-            .any(|operation| !operation_positions.contains_key(operation.as_str()))
-    {
-        return None;
-    }
-    operations.sort_by(|first, second| {
-        operation_positions
-            .get(first.as_str())
-            .cmp(&operation_positions.get(second.as_str()))
-            .then_with(|| first.cmp(second))
-    });
-    Some(operations)
-}
-
-/// Return counterbored through-hole operations in feature-history order.
-/// Counterbore construction groups are not inferred from the scalar lanes:
-/// each operation must have its own unambiguous body and topology witness.
-fn counterbore_operations(
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    operation_positions: &BTreeMap<&str, usize>,
-) -> Option<Vec<String>> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let mut operations = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Counterbored
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
-                && template.start_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<Vec<_>>();
-    if operations.is_empty()
-        || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-        || operations
-            .iter()
-            .any(|operation| !operation_positions.contains_key(operation.as_str()))
-    {
-        return None;
-    }
-    operations.sort_by(|first, second| {
-        operation_positions
-            .get(first.as_str())
-            .cmp(&operation_positions.get(second.as_str()))
-            .then_with(|| first.cmp(second))
-    });
-    Some(operations)
-}
-
-#[derive(Default)]
-struct HolePackageProjection {
-    internal_operations: BTreeSet<String>,
-    outputs: BTreeMap<String, Vec<BodyId>>,
-    diameters: BTreeMap<String, Length>,
-    chamfers: BTreeMap<String, HoleKind>,
-    placements: BTreeMap<String, Vec<HolePlacement>>,
-}
-
-fn hole_package_projection(
-    ir: &CadIr,
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    groups: &[crate::native::features::holes::FeatureSimpleHoleConstructionGroup],
-    uses: &[crate::native::features::holes::FeatureHolePackageConstructionGroupUse],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-    diameters: &BTreeMap<String, Length>,
-    chamfers: &BTreeMap<String, HoleKind>,
-) -> HolePackageProjection {
-    let mut projection = HolePackageProjection::default();
-    let package_counts = uses
-        .iter()
-        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
-            *counts.entry(use_.operation_label.as_str()).or_default() += 1;
-            counts
-        });
-    let group_counts = uses
-        .iter()
-        .fold(BTreeMap::<&str, usize>::new(), |mut counts, use_| {
-            *counts
-                .entry(use_.simple_hole_construction_group.as_str())
-                .or_default() += 1;
-            counts
-        });
-    for use_ in uses {
-        if package_counts.get(use_.operation_label.as_str()) != Some(&1)
-            || group_counts.get(use_.simple_hole_construction_group.as_str()) != Some(&1)
-        {
-            continue;
-        }
-        let Some(group) = groups
-            .iter()
-            .find(|group| group.id == use_.simple_hole_construction_group)
-        else {
-            continue;
-        };
-        if group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .any(|operation| projection.internal_operations.contains(operation))
-        {
-            continue;
-        }
-        let child_templates = group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .map(|operation| {
-                templates
-                    .iter()
-                    .filter(|template| template.operation_label == *operation)
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-        if child_templates.iter().any(|matches| {
-            !matches!(matches.as_slice(), [template]
-                if template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                    && template.extent == crate::native::features::holes::SimpleHoleExtent::Through)
-        }) {
-            continue;
-        }
-        let child_outputs = group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .filter_map(|operation| outputs.get(operation))
-            .collect::<Vec<_>>();
-        let Some([body]) = child_outputs.first().map(|bodies| bodies.as_slice()) else {
-            continue;
-        };
-        if child_outputs.len() != group.members.len()
-            || child_outputs
-                .iter()
-                .any(|candidate| candidate.as_slice() != [body.clone()])
-        {
-            continue;
-        }
-        let Some(diameter) = group
-            .members
-            .first()
-            .map(|member| &member.operation_label)
-            .and_then(|operation| diameters.get(operation))
-            .copied()
-        else {
-            continue;
-        };
-        if group
-            .members
-            .iter()
-            .map(|member| &member.operation_label)
-            .any(|operation| diameters.get(operation).copied() != Some(diameter))
-        {
-            continue;
-        }
-        let requests_chamfer = child_templates.iter().all(|matches| {
-            let template = matches[0];
-            template.start_treatment
-                == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-        });
-        let requests_no_treatment = child_templates.iter().all(|matches| {
-            let template = matches[0];
-            template.start_treatment == crate::native::features::holes::SimpleHoleEndTreatment::None
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::None
-        });
-        if !requests_chamfer && !requests_no_treatment {
-            continue;
-        }
-        let chamfer = if requests_chamfer {
-            let Some(chamfer) = group
-                .members
-                .first()
-                .map(|member| &member.operation_label)
-                .and_then(|operation| chamfers.get(operation))
-                .copied()
-            else {
-                continue;
-            };
-            if group
-                .members
-                .iter()
-                .map(|member| &member.operation_label)
-                .any(|operation| chamfers.get(operation).copied() != Some(chamfer))
-            {
-                continue;
-            }
-            Some(chamfer)
-        } else {
-            None
-        };
-        projection.internal_operations.extend(
-            group
-                .members
-                .iter()
-                .map(|member| member.operation_label.clone()),
-        );
-        projection
-            .outputs
-            .insert(use_.operation_label.clone(), vec![body.clone()]);
-        projection
-            .diameters
-            .insert(use_.operation_label.clone(), diameter);
-        if let Some(chamfer) = chamfer {
-            projection
-                .chamfers
-                .insert(use_.operation_label.clone(), chamfer);
-        }
-        let placements = hole_axis_placements_for_body(ir, body);
-        if placements.len() == group.members.len() {
-            projection
-                .placements
-                .insert(use_.operation_label.clone(), placements);
-        }
-    }
-    projection
-}
-
-struct HoleBodyProjection {
-    outputs: BTreeMap<String, Vec<BodyId>>,
-    diameters: BTreeMap<String, Length>,
-    blind_depths: BTreeMap<String, cadmpeg_ir::scalar::NonZeroLength>,
-    counterbores: BTreeMap<String, CounterboreDimensions>,
-}
-
-fn hole_body_projection(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<HoleBodyProjection> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return None;
-    }
-    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
-
-    let mut projected_outputs = BTreeMap::new();
-    let mut diameters = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let body_faces = connected_solid_body_faces(ir, &body)?;
-        let bores = through_bore_cylinders(ir, &body_faces)?;
-        let radii = bores
-            .into_iter()
-            .map(|(_, _, radius)| radius)
-            .collect::<Vec<_>>();
-        let radius = radii.first().copied()?;
-        if radii.len() != operations.len()
-            || radii
-                .iter()
-                .any(|candidate| candidate.to_bits() != radius.to_bits())
-        {
-            return None;
-        }
-        for operation in operations {
-            projected_outputs.insert(operation.clone(), vec![body.clone()]);
-            diameters.insert(operation, Length::new(radius * 2.0)?);
-        }
-    }
-    Some(HoleBodyProjection {
-        outputs: projected_outputs,
-        diameters,
-        blind_depths: BTreeMap::new(),
-        counterbores: BTreeMap::new(),
-    })
-}
-
-fn counterbore_body_projection(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<Option<HoleBodyProjection>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return Ok(None);
-    }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return Ok(None);
-    };
-    let mut projected_outputs = BTreeMap::new();
-    let mut diameters = BTreeMap::new();
-    let mut counterbores = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let [operation] = operations.as_slice() else {
-            // A counterbore pair has no serialized operation-to-pair relation
-            // once multiple operations share one result body. Do not assign
-            // geometry to history order.
-            return Ok(None);
-        };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(None);
-        };
-        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
-            return Ok(None);
-        };
-        let [witness] = witnesses.as_slice() else {
-            return Ok(None);
-        };
-        projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        let Some(diameter) = Length::new(witness.bore_radius * 2.0) else {
-            return Ok(None);
-        };
-        diameters.insert(operation.clone(), diameter);
-        let (Some(diameter), Some(depth)) = (
-            cadmpeg_ir::scalar::PositiveLength::new(witness.counterbore_radius * 2.0),
-            cadmpeg_ir::scalar::PositiveLength::new(witness.depth),
-        ) else {
-            return Ok(None);
-        };
-        counterbores.insert(operation.clone(), CounterboreDimensions { diameter, depth });
-    }
-    Ok(Some(HoleBodyProjection {
-        outputs: projected_outputs,
-        diameters,
-        blind_depths: BTreeMap::new(),
-        counterbores,
-    }))
-}
-
-fn blind_hole_body_projection(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<HoleBodyProjection> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return None;
-    }
-    let operations_by_body = hole_operations_by_body(ir, operations, outputs)?;
-    let mut projected_outputs = BTreeMap::new();
-    let mut diameters = BTreeMap::new();
-    let mut blind_depths = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let [operation] = operations.as_slice() else {
-            return None;
-        };
-        let body_faces = connected_solid_body_faces(ir, &body)?;
-        let witnesses = blind_bore_cylinders(ir, &body_faces)?;
-        let [witness] = witnesses.as_slice() else {
-            return None;
-        };
-        projected_outputs.insert(operation.clone(), vec![body.clone()]);
-        diameters.insert(operation.clone(), Length::new(witness.bore_radius * 2.0)?);
-        blind_depths.insert(
-            operation.clone(),
-            cadmpeg_ir::scalar::NonZeroLength::new(witness.depth)?,
-        );
-    }
-    Some(HoleBodyProjection {
-        outputs: projected_outputs,
-        diameters,
-        blind_depths,
-        counterbores: BTreeMap::new(),
-    })
-}
-
-/// Derive one complete unoriented placement when one operation owns exactly
-/// one through bore. The closest point to the model origin is invariant under
-/// axial shifts of the serialized cylinder origin. Canonical axis sign makes
-/// serialization deterministic but carries no drilling-direction semantics.
-fn hole_axis_placements_for_operations(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HolePlacement> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return BTreeMap::new();
-    }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
-    };
-
-    let mut placements = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let [operation] = operations.as_slice() else {
-            continue;
-        };
-        let mut body_placements = hole_axis_placements_for_body(ir, &body);
-        if body_placements.len() != 1 {
-            continue;
-        }
-        placements.insert(operation.clone(), body_placements.remove(0));
-    }
-    placements
-}
-
-fn counterbore_axis_placements_for_operations(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<BTreeMap<String, HolePlacement>, CodecError> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return Ok(BTreeMap::new());
-    }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return Ok(BTreeMap::new());
-    };
-    let mut placements = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let [operation] = operations.as_slice() else {
-            return Ok(BTreeMap::new());
-        };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(BTreeMap::new());
-        };
-        let Some(witnesses) = counterbore_cylinders(ctx, ir, &body_faces)? else {
-            return Ok(BTreeMap::new());
-        };
-        let [witness] = witnesses.as_slice() else {
-            return Ok(BTreeMap::new());
-        };
-        let (Some(point), Some(direction)) = (
-            cadmpeg_ir::features::FinitePoint3::new(witness.line_origin),
-            cadmpeg_ir::features::FeatureDirection3::new(witness.axis),
-        ) else {
-            return Ok(BTreeMap::new());
-        };
-        placements.insert(
-            operation.clone(),
-            HolePlacement::Axis {
-                origin: point,
-                axis: direction,
-            },
-        );
-    }
-    Ok(placements)
-}
-
-fn blind_hole_axis_placements_for_operations(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> BTreeMap<String, HolePlacement> {
-    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
-    {
-        return BTreeMap::new();
-    }
-    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
-        return BTreeMap::new();
-    };
-    let mut placements = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let [operation] = operations.as_slice() else {
-            return BTreeMap::new();
-        };
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return BTreeMap::new();
-        };
-        let Some(witnesses) = blind_bore_cylinders(ir, &body_faces) else {
-            return BTreeMap::new();
-        };
-        let [witness] = witnesses.as_slice() else {
-            return BTreeMap::new();
-        };
-        let (Some(point), Some(direction)) = (
-            cadmpeg_ir::features::FinitePoint3::new(witness.position),
-            cadmpeg_ir::features::FeatureDirection3::new(witness.direction),
-        ) else {
-            return BTreeMap::new();
-        };
-        placements.insert(
-            operation.clone(),
-            HolePlacement::Directed {
-                position: point,
-                direction,
-            },
-        );
-    }
-    placements
-}
-
-fn hole_axis_placements_for_body(ir: &CadIr, body: &BodyId) -> Vec<HolePlacement> {
-    let Some(body_faces) = connected_solid_body_faces(ir, body) else {
-        return Vec::new();
-    };
-    let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-        return Vec::new();
-    };
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut placements = Vec::new();
-    for (origin, axis, _) in bores {
-        let Some(mut axis) = FiniteVector3::new(axis).and_then(FiniteVector3::unit_nonzero) else {
-            return Vec::new();
-        };
-        let Some(leading) = [axis.x, axis.y, axis.z]
-            .into_iter()
-            .find(|component| component.abs() > angular_tolerance)
-        else {
-            return Vec::new();
-        };
-        if leading < 0.0 {
-            axis = Vector3::new(-axis.x, -axis.y, -axis.z);
-        }
-        let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
-        let origin = Point3::new(
-            origin.x - axial_offset * axis.x,
-            origin.y - axial_offset * axis.y,
-            origin.z - axial_offset * axis.z,
-        );
-        let (Some(origin), Some(axis)) = (
-            cadmpeg_ir::features::FinitePoint3::new(origin),
-            cadmpeg_ir::features::FeatureDirection3::new(axis),
-        ) else {
-            return Vec::new();
-        };
-        placements.push(HolePlacement::Axis { origin, axis });
-    }
-    placements.sort_by_key(hole_placement_key);
-    placements
-}
-
-fn hole_placement_key(placement: &HolePlacement) -> [u64; 6] {
-    let HolePlacement::Axis { origin, axis } = placement else {
-        return [0; 6];
-    };
-    [
-        origin.x.to_bits(),
-        origin.y.to_bits(),
-        origin.z.to_bits(),
-        axis.x.to_bits(),
-        axis.y.to_bits(),
-        axis.z.to_bits(),
-    ]
-}
-
-#[derive(Clone, Debug)]
-struct CylindricalFaceWitness {
-    line_origin: Point3,
-    axis: Vector3,
-    radius: f64,
-    stations: [f64; 2],
-    loop_ids: [LoopId; 2],
-}
-
-#[derive(Clone, Copy)]
-struct CounterboreCylinderWitness {
-    line_origin: Point3,
-    axis: Vector3,
-    bore_radius: f64,
-    counterbore_radius: f64,
-    depth: f64,
-}
-
-#[derive(Clone, Copy)]
-struct BlindBoreCylinderWitness {
-    position: Point3,
-    direction: Vector3,
-    bore_radius: f64,
-    depth: f64,
-}
-
-fn canonical_axis(axis: cadmpeg_ir::units::UnitVector3, angular_tolerance: f64) -> Option<Vector3> {
-    let mut axis = *axis.to_unit_length_charted().as_raw();
-    let leading = [axis.x, axis.y, axis.z]
-        .into_iter()
-        .find(|component| component.abs() > angular_tolerance)?;
-    if leading < 0.0 {
-        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
-    }
-    Some(axis)
-}
-
-fn circular_loop_geometry(
-    loop_id: &LoopId,
-    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
-    edges: &BTreeMap<&EdgeId, Option<&CurveId>>,
-    curves: &BTreeMap<&CurveId, &CurveGeometry>,
-    linear_tolerance: f64,
-    angular_tolerance: f64,
-) -> Option<(Point3, Vector3, f64)> {
-    let coedges = coedges_by_loop.get(loop_id)?;
-    if coedges.is_empty() {
-        return None;
-    }
-    let mut witness: Option<(Point3, Vector3, f64)> = None;
-    for coedge in coedges {
-        let curve_id = edges.get(&coedge.edge).copied().flatten()?;
-        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) =
-            curves.get(curve_id)?
-        else {
-            return None;
-        };
-        let center = circle_curve.center().get();
-        let axis = circle_curve.frame().axis();
-        let radius = circle_curve.radius().get();
-        let axis = canonical_axis(*axis, angular_tolerance)?;
-        if let Some((previous_center, previous_axis, previous_radius)) = witness {
-            if (radius - previous_radius).abs() > linear_tolerance
-                || (1.0 - axis.dot(previous_axis).abs()) > angular_tolerance
-                || Vector3::new(
-                    center.x - previous_center.x,
-                    center.y - previous_center.y,
-                    center.z - previous_center.z,
-                )
-                .norm()
-                    > linear_tolerance
-            {
-                return None;
-            }
-        }
-        witness = Some((center, axis, radius));
-    }
-    witness
-}
-
-fn loop_edge_ids(
-    loop_id: &LoopId,
-    coedges_by_loop: &BTreeMap<&LoopId, Vec<&Coedge>>,
-) -> Option<BTreeSet<EdgeId>> {
-    let coedges = coedges_by_loop.get(loop_id)?;
-    (!coedges.is_empty()).then(|| {
-        coedges
-            .iter()
-            .map(|coedge| coedge.edge.clone())
-            .collect::<BTreeSet<_>>()
-    })
-}
-
-fn cylindrical_face_witnesses(
-    ir: &CadIr,
-    body_faces: &[&Face],
-) -> Option<Vec<CylindricalFaceWitness>> {
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut witnesses = Vec::new();
-    for face in body_faces
-        .iter()
-        .copied()
-        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-    {
-        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface))) =
-            surfaces.get(&face.surface)
-        else {
-            continue;
-        };
-        let origin = cylinder_surface.origin().get();
-        let axis = cylinder_surface.frame().axis();
-        let radius = cylinder_surface.radius().get();
-        let axis = canonical_axis(*axis, angular_tolerance)?;
-        let axial_offset = Vector3::new(origin.x, origin.y, origin.z).dot(axis);
-        let line_origin = Point3::new(
-            origin.x - axial_offset * axis.x,
-            origin.y - axial_offset * axis.y,
-            origin.z - axial_offset * axis.z,
-        );
-        let face_loops = face.loops.to_vec();
-        let [first_loop, second_loop] = face_loops.as_slice() else {
-            return None;
-        };
-        let mut stations = Vec::with_capacity(2);
-        for loop_id in &face.loops {
-            let (center, circle_axis, circle_radius) = circular_loop_geometry(
-                loop_id,
-                &coedges_by_loop,
-                &edges,
-                &curves,
-                linear_tolerance,
-                angular_tolerance,
-            )?;
-            if (circle_radius - radius).abs() > linear_tolerance
-                || (1.0 - axis.dot(circle_axis).abs()) > angular_tolerance
-                || Vector3::new(
-                    center.x - origin.x,
-                    center.y - origin.y,
-                    center.z - origin.z,
-                )
-                .cross(axis)
-                .norm()
-                    > linear_tolerance
-            {
-                return None;
-            }
-            let station = Vector3::new(center.x, center.y, center.z).dot(axis);
-            if !station.is_finite() {
-                return None;
-            }
-            stations.push(station);
-        }
-        let [first, second] = stations.as_slice() else {
-            return None;
-        };
-        if (first - second).abs() <= linear_tolerance {
-            return None;
-        }
-        witnesses.push(CylindricalFaceWitness {
-            line_origin,
-            axis,
-            radius,
-            stations: [*first, *second],
-            loop_ids: [first_loop.clone(), second_loop.clone()],
-        });
-    }
-    Some(witnesses)
-}
-
-fn plane_annulus_witness(
-    ir: &CadIr,
-    body_faces: &[&Face],
-    small: &CylindricalFaceWitness,
-    small_station_ordinal: usize,
-    large: &CylindricalFaceWitness,
-    large_station_ordinal: usize,
-) -> bool {
-    let line_origin = small.line_origin;
-    let axis = small.axis;
-    let station = small.stations[small_station_ordinal];
-    let inner_radius = small.radius;
-    let outer_radius = large.radius;
-    let inner_loop = &small.loop_ids[small_station_ordinal];
-    let outer_loop = &large.loop_ids[large_station_ordinal];
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut matches = 0;
-    for face in body_faces {
-        if face.loops.len() != 2 {
-            continue;
-        }
-        let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
-            surfaces.get(&face.surface)
-        else {
-            continue;
-        };
-        let origin = plane_surface.origin().get();
-        let normal = plane_surface.frame().axis();
-        let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
-            continue;
-        };
-        if (1.0 - normal.dot(axis).abs()) > angular_tolerance
-            || (Vector3::new(
-                origin.x - line_origin.x,
-                origin.y - line_origin.y,
-                origin.z - line_origin.z,
-            )
-            .dot(axis)
-                - station)
-                .abs()
-                > linear_tolerance
-        {
-            continue;
-        }
-        let mut boundaries = Vec::with_capacity(2);
-        let mut valid = true;
-        for loop_id in &face.loops {
-            let Some((center, circle_axis, radius)) = circular_loop_geometry(
-                loop_id,
-                &coedges_by_loop,
-                &edges,
-                &curves,
-                linear_tolerance,
-                angular_tolerance,
-            ) else {
-                valid = false;
-                break;
-            };
-            if (1.0 - circle_axis.dot(normal).abs()) > angular_tolerance
-                || (Vector3::new(
-                    center.x - origin.x,
-                    center.y - origin.y,
-                    center.z - origin.z,
-                )
-                .dot(normal))
-                .abs()
-                    > linear_tolerance
-                || Vector3::new(
-                    center.x - line_origin.x,
-                    center.y - line_origin.y,
-                    center.z - line_origin.z,
-                )
-                .cross(axis)
-                .norm()
-                    > linear_tolerance
-                || (Vector3::new(center.x, center.y, center.z).dot(axis) - station).abs()
-                    > linear_tolerance
-            {
-                valid = false;
-                break;
-            }
-            boundaries.push((radius, loop_id.clone()));
-        }
-        if !valid {
-            continue;
-        }
-        boundaries.sort_by(|(first, _), (second, _)| first.total_cmp(second));
-        let [(inner, inner_boundary), (outer, outer_boundary)] = boundaries.as_slice() else {
-            continue;
-        };
-        if (inner - inner_radius).abs() <= linear_tolerance
-            && (outer - outer_radius).abs() <= linear_tolerance
-            && loop_edge_ids(inner_boundary, &coedges_by_loop)
-                == loop_edge_ids(inner_loop, &coedges_by_loop)
-            && loop_edge_ids(outer_boundary, &coedges_by_loop)
-                == loop_edge_ids(outer_loop, &coedges_by_loop)
-        {
-            matches += 1;
-        }
-    }
-    matches == 1
-}
-
-fn counterbore_cylinders(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    body_faces: &[&Face],
-) -> Result<Option<Vec<CounterboreCylinderWitness>>, CodecError> {
-    let Some(cylinders) = cylindrical_face_witnesses(ir, body_faces) else {
-        return Ok(None);
-    };
-    if cylinders.is_empty() || cylinders.len() % 2 != 0 {
-        return Ok(None);
-    }
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut candidates = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            Vec::<(usize, CounterboreCylinderWitness)>::new(),
-            "nx counterbore cylinder candidates",
-        )?,
-    };
-    for (first_index, first) in cylinders.iter().enumerate() {
-        for (second_index, second) in cylinders.iter().enumerate().skip(first_index + 1) {
-            let (small, large) = if first.radius < second.radius {
-                (first, second)
-            } else {
-                (second, first)
-            };
-            if large.radius - small.radius <= linear_tolerance
-                || (1.0 - small.axis.dot(large.axis).abs()) > angular_tolerance
-                || Vector3::new(
-                    large.line_origin.x - small.line_origin.x,
-                    large.line_origin.y - small.line_origin.y,
-                    large.line_origin.z - small.line_origin.z,
-                )
-                .cross(small.axis)
-                .norm()
-                    > linear_tolerance
-            {
-                continue;
-            }
-            let mut common = Vec::new();
-            for (small_ordinal, small_station) in small.stations.iter().enumerate() {
-                for (large_ordinal, large_station) in large.stations.iter().enumerate() {
-                    if (small_station - large_station).abs() <= linear_tolerance {
-                        common.push((small_ordinal, large_ordinal, *small_station));
-                    }
-                }
-            }
-            let [(small_shared, large_shared, shared_station)] = common.as_slice() else {
-                continue;
-            };
-            let small_other = small.stations[1 - small_shared];
-            let large_other = large.stations[1 - large_shared];
-            let depth = (large_other - shared_station).abs();
-            if depth <= linear_tolerance
-                || (small_other - shared_station).abs() <= linear_tolerance
-                || !plane_annulus_witness(
-                    ir,
-                    body_faces,
-                    small,
-                    *small_shared,
-                    large,
-                    *large_shared,
-                )
-            {
-                continue;
-            }
-            let witness = CounterboreCylinderWitness {
-                line_origin: small.line_origin,
-                axis: small.axis,
-                bore_radius: small.radius,
-                counterbore_radius: large.radius,
-                depth,
-            };
-            if let Some(ctx) = ctx {
-                ctx.charge_collection_items(2, "nx counterbore candidate pair")?;
-            }
-            candidates[first_index].push((second_index, witness));
-            candidates[second_index].push((first_index, witness));
-        }
-    }
-    if candidates.iter().any(|candidates| candidates.len() != 1) {
-        return Ok(None);
-    }
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(
-            (cylinders.len() / 2) as u64,
-            "nx counterbore cylinder witnesses",
-        )?;
-    }
-    let mut witnesses = Vec::with_capacity(cylinders.len() / 2);
-    let mut used = match ctx {
-        Some(ctx) => ctx.alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-        None => alloc_filled(
-            cylinders.len(),
-            false,
-            "nx counterbore cylinder assignments",
-        )?,
-    };
-    for first_index in 0..cylinders.len() {
-        if used[first_index] {
-            continue;
-        }
-        let (second_index, witness) = candidates[first_index][0];
-        if used[second_index]
-            || candidates[second_index][0].0 != first_index
-            || first_index == second_index
-        {
-            return Ok(None);
-        }
-        used[first_index] = true;
-        used[second_index] = true;
-        witnesses.push(witness);
-    }
-    Ok(Some(witnesses))
-}
-
-/// Identify one blind bore from its unique planar termination. The cylinder
-/// boundary and cap loop must share the exact edge identities; a radius or
-/// station match alone is not a topology relation.
-fn blind_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<BlindBoreCylinderWitness>> {
-    let cylinders = cylindrical_face_witnesses(ir, body_faces)?;
-    let [cylinder] = cylinders.as_slice() else {
-        return None;
-    };
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut cap_stations = Vec::new();
-    for (station_ordinal, station) in cylinder.stations.iter().enumerate() {
-        let cylinder_loop = &cylinder.loop_ids[station_ordinal];
-        let cylinder_edges = loop_edge_ids(cylinder_loop, &coedges_by_loop)?;
-        for face in body_faces {
-            let face_loops = face.loops.to_vec();
-            let [cap_loop] = face_loops.as_slice() else {
-                continue;
-            };
-            if loop_edge_ids(cap_loop, &coedges_by_loop) != Some(cylinder_edges.clone()) {
-                continue;
-            }
-            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
-                surfaces.get(&face.surface)
-            else {
-                continue;
-            };
-            let origin = plane_surface.origin().get();
-            let normal = plane_surface.frame().axis();
-            let Some(normal) = canonical_axis(*normal, angular_tolerance) else {
-                continue;
-            };
-            let Some((center, circle_axis, circle_radius)) = circular_loop_geometry(
-                cap_loop,
-                &coedges_by_loop,
-                &edges,
-                &curves,
-                linear_tolerance,
-                angular_tolerance,
-            ) else {
-                continue;
-            };
-            if (circle_radius - cylinder.radius).abs() > linear_tolerance
-                || (1.0 - circle_axis.dot(normal).abs()) > angular_tolerance
-                || (1.0 - normal.dot(cylinder.axis).abs()) > angular_tolerance
-                || Vector3::new(
-                    center.x - cylinder.line_origin.x,
-                    center.y - cylinder.line_origin.y,
-                    center.z - cylinder.line_origin.z,
-                )
-                .cross(cylinder.axis)
-                .norm()
-                    > linear_tolerance
-                || (Vector3::new(center.x, center.y, center.z).dot(cylinder.axis) - *station).abs()
-                    > linear_tolerance
-                || (Vector3::new(origin.x, origin.y, origin.z).dot(cylinder.axis) - *station).abs()
-                    > linear_tolerance
-            {
-                continue;
-            }
-            cap_stations.push((station_ordinal, *station));
-        }
-    }
-    let [(cap_ordinal, cap_station)] = cap_stations.as_slice() else {
-        return None;
-    };
-    let entry_ordinal = 1 - *cap_ordinal;
-    let entry_station = cylinder.stations[entry_ordinal];
-    let depth = (*cap_station - entry_station).abs();
-    if !depth.is_finite() || depth <= linear_tolerance {
-        return None;
-    }
-    let position = Point3::new(
-        cylinder.line_origin.x + entry_station * cylinder.axis.x,
-        cylinder.line_origin.y + entry_station * cylinder.axis.y,
-        cylinder.line_origin.z + entry_station * cylinder.axis.z,
-    );
-    let direction = if *cap_station > entry_station {
-        cylinder.axis
-    } else {
-        Vector3::new(-cylinder.axis.x, -cylinder.axis.y, -cylinder.axis.z)
-    };
-    Some(vec![BlindBoreCylinderWitness {
-        position,
-        direction,
-        bore_radius: cylinder.radius,
-        depth,
-    }])
-}
-
-/// Resolve hole operations to their explicit output bodies, or to the one
-/// connected solid when NX omits every operation-output relation. An output
-/// entry with no body is an explicit unresolved relation and blocks fallback.
-fn hole_operations_by_body(
-    ir: &CadIr,
-    operations: &[String],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Option<BTreeMap<BodyId, Vec<String>>> {
-    let related = operations
-        .iter()
-        .filter(|operation| outputs.contains_key(*operation))
-        .count();
-    if related != 0 && related != operations.len() {
-        return None;
-    }
-    if related == operations.len() {
-        let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
-        for operation in operations {
-            let [body] = outputs.get(operation)?.as_slice() else {
-                return None;
-            };
-            operations_by_body
-                .entry(body.clone())
-                .or_default()
-                .push(operation.clone());
-        }
-        return Some(operations_by_body);
-    }
-
-    let mut connected_solids = ir
-        .model
-        .bodies
-        .iter()
-        .filter(|body| connected_solid_body_faces(ir, &body.id).is_some());
-    let body = connected_solids.next()?;
-    if connected_solids.next().is_some() {
-        return None;
-    }
-    Some(BTreeMap::from([(body.id.clone(), operations.to_vec())]))
-}
-
-fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
-    Some(
-        cylindrical_face_witnesses(ir, body_faces)?
-            .into_iter()
-            .map(|witness| (witness.line_origin, witness.axis, witness.radius))
-            .collect(),
-    )
-}
-
-/// Derive identical entry and exit chamfer treatments only when every simple
-/// through-hole bore has exactly two coaxial conical faces and every cone is
-/// bounded by the bore circle and one equal larger circle.
-fn simple_hole_chamfers(
-    ctx: Option<&DecodeContext<'_>>,
-    ir: &CadIr,
-    templates: &[crate::native::features::holes::FeatureSimpleHoleTemplate],
-    outputs: &BTreeMap<String, Vec<BodyId>>,
-) -> Result<BTreeMap<String, HoleKind>, CodecError> {
-    let template_counts = templates
-        .iter()
-        .fold(BTreeMap::new(), |mut counts, template| {
-            *counts
-                .entry(template.operation_label.as_str())
-                .or_insert(0usize) += 1;
-            counts
-        });
-    let operations = templates
-        .iter()
-        .filter(|template| {
-            template.form == crate::native::features::holes::SimpleHoleForm::Simple
-                && template.extent == crate::native::features::holes::SimpleHoleExtent::Through
-                && template.start_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-                && template.end_treatment
-                    == crate::native::features::holes::SimpleHoleEndTreatment::Chamfer
-        })
-        .filter(|template| template_counts.get(template.operation_label.as_str()) == Some(&1))
-        .map(|template| template.operation_label.clone())
-        .collect::<BTreeSet<_>>();
-    if operations.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let operations = operations.into_iter().collect::<Vec<_>>();
-    let Some(operations_by_body) = hole_operations_by_body(ir, &operations, outputs) else {
-        return Ok(BTreeMap::new());
-    };
-
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (&edge.id, edge.curve()))
-        .collect::<BTreeMap<_, _>>();
-    let curves = ir
-        .model
-        .curves
-        .iter()
-        .map(|curve| (&curve.id, &curve.geometry))
-        .collect::<BTreeMap<_, _>>();
-    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
-    for coedge in &ir.model.coedges {
-        coedges_by_loop
-            .entry(&coedge.owner_loop)
-            .or_default()
-            .push(coedge);
-    }
-
-    let linear_tolerance = ir.tolerances.linear.get();
-    let angular_tolerance = ir.tolerances.angular.get();
-    let mut treatments = BTreeMap::new();
-    for (body, operations) in operations_by_body {
-        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
-            return Ok(BTreeMap::new());
-        };
-        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
-            return Ok(BTreeMap::new());
-        };
-        let [(_, _, bore_radius), ..] = bores.as_slice() else {
-            return Ok(BTreeMap::new());
-        };
-        if bores.len() != operations.len()
-            || bores
-                .iter()
-                .any(|(_, _, radius)| radius.to_bits() != bore_radius.to_bits())
-        {
-            return Ok(BTreeMap::new());
-        }
-        let mut cone_counts = match ctx {
-            Some(ctx) => {
-                ctx.alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?
-            }
-            None => alloc_filled(bores.len(), 0usize, "nx simple-hole chamfer cone counts")?,
-        };
-        let mut outer_radii = Vec::new();
-        let mut included_angles = Vec::new();
-        for face in body_faces
-            .into_iter()
-            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-        {
-            let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone_surface))) =
-                surfaces.get(&face.surface).copied()
-            else {
-                continue;
-            };
-            let origin = cone_surface.origin().get();
-            let axis = cone_surface.frame().axis().as_raw();
-            let half_angle = cone_surface.half_angle().get();
-            if half_angle <= 0.0 || half_angle >= std::f64::consts::FRAC_PI_2 {
-                return Ok(BTreeMap::new());
-            }
-            let matching_bores = bores
-                .iter()
-                .enumerate()
-                .filter_map(|(ordinal, (bore_origin, bore_axis, _))| {
-                    let dot = axis.dot(*bore_axis);
-                    if (1.0 - dot.abs()) > angular_tolerance {
-                        return None;
-                    }
-                    let delta = Vector3::new(
-                        origin.x - bore_origin.x,
-                        origin.y - bore_origin.y,
-                        origin.z - bore_origin.z,
-                    );
-                    let cross = delta.cross(*bore_axis);
-                    (cross.norm() <= linear_tolerance).then_some(ordinal)
-                })
-                .collect::<Vec<_>>();
-            let [bore_ordinal] = matching_bores.as_slice() else {
-                return Ok(BTreeMap::new());
-            };
-            cone_counts[*bore_ordinal] += 1;
-
-            let mut radii = face
-                .loops
-                .iter()
-                .flat_map(|loop_id| coedges_by_loop.get(loop_id).into_iter().flatten())
-                .filter_map(|coedge| edges.get(&coedge.edge).copied().flatten())
-                .filter_map(|curve_id| match curves.get(curve_id)? {
-                    CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle_curve)) => {
-                        Some(circle_curve.radius().get())
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-            radii.sort_by(f64::total_cmp);
-            let [inner, outer] = radii.as_slice() else {
-                return Ok(BTreeMap::new());
-            };
-            if inner.to_bits() != bore_radius.to_bits() || outer <= inner {
-                return Ok(BTreeMap::new());
-            }
-            outer_radii.push(*outer);
-            included_angles.push(half_angle * 2.0);
-        }
-        if cone_counts.iter().any(|count| *count != 2)
-            || outer_radii.len() != bores.len() * 2
-            || included_angles.len() != outer_radii.len()
-        {
-            return Ok(BTreeMap::new());
-        }
-        outer_radii.sort_by(f64::total_cmp);
-        included_angles.sort_by(f64::total_cmp);
-        let (Some(&widest), Some(&narrowest), Some(&largest), Some(&smallest)) = (
-            outer_radii.last(),
-            outer_radii.first(),
-            included_angles.last(),
-            included_angles.first(),
-        ) else {
-            return Ok(BTreeMap::new());
-        };
-        if widest - narrowest > linear_tolerance || largest - smallest > angular_tolerance {
-            return Ok(BTreeMap::new());
-        }
-        let (Some(diameter), Some(angle)) = (
-            cadmpeg_ir::scalar::PositiveLength::new(
-                2.0 * outer_radii.iter().sum::<f64>() / outer_radii.len() as f64,
-            ),
-            cadmpeg_ir::scalar::InteriorAngle::new(
-                included_angles.iter().sum::<f64>() / included_angles.len() as f64,
-            ),
-        ) else {
-            return Ok(BTreeMap::new());
-        };
-        let treatment = HoleKind::Chamfer { diameter, angle };
-        treatments.extend(
-            operations
-                .into_iter()
-                .map(|operation| (operation, treatment)),
-        );
-    }
-    Ok(treatments)
-}
-
-fn unique_simple_hole_template(
-    payload_strings: &[&str],
-) -> Option<(
-    crate::native::features::holes::SimpleHoleForm,
-    crate::native::features::holes::SimpleHoleExtent,
-    crate::native::features::holes::SimpleHoleEndTreatment,
-    crate::native::features::holes::SimpleHoleEndTreatment,
-)> {
-    let mut candidates = payload_strings
-        .iter()
-        .copied()
-        .filter(|value| value.starts_with("Hole_"));
-    let candidate = candidates.next()?;
-    if candidates.next().is_some() {
-        return None;
-    }
-    crate::native::features::holes::parse_simple_hole_template(candidate)
-}
-
-/// Identity namespace used to prove that two Boolean selections are disjoint.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum FeatureBodyIdentity {
-    Segment(u32),
-    OffsetStore(String),
-}
-
-fn offset_store_identity(data_block: &str) -> Option<&str> {
-    data_block
-        .strip_prefix("nx:om-data-blocks-")
-        .and_then(|data_block| data_block.split_once(":block#"))
-        .map(|(store, _)| store)
-}
-
-enum FeatureBodySelection {
-    Native(String),
-    Local {
-        bodies: Vec<String>,
-        native: String,
-        identity_keys: Vec<FeatureBodyIdentity>,
-    },
-    Resolved {
-        bodies: Vec<BodyId>,
-        native: String,
-        identity_keys: Vec<FeatureBodyIdentity>,
-    },
-}
-
-fn local_body_selection(bodies: Vec<String>, native: String) -> BodySelection {
-    BodySelection::local(bodies, native.clone()).unwrap_or(BodySelection::Native(native))
-}
-
-impl FeatureBodySelection {
-    fn into_selection(self) -> BodySelection {
-        match self {
-            Self::Native(native) => BodySelection::Native(native),
-            Self::Local { bodies, native, .. } => local_body_selection(bodies, native),
-            Self::Resolved { bodies, native, .. } => match bodies.try_into() {
-                Ok(bodies) => BodySelection::Resolved { bodies, native },
-                Err(_) => BodySelection::Native(native),
-            },
-        }
-    }
-
-    fn into_native(self) -> BodySelection {
-        let (Self::Native(native) | Self::Local { native, .. } | Self::Resolved { native, .. }) =
-            self;
-        BodySelection::Native(native)
-    }
-}
-
-/// Resolve a complete object-index selection only when every alias root owns one
-/// decoded body image. Retain the complete feature-input-local identities when
-/// current topology cannot represent a consumed historical body. An offset-store
-/// selection uses the exact data-block identities from its feature-history
-/// section. A complete operation-local offset-store map takes precedence over
-/// a segment alias with the same integer; mixed namespace coverage remains
-/// native.
-fn feature_body_selection(
-    object_indices: &[u32],
-    body_alias_roots: &BTreeMap<u32, u32>,
-    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-    native: String,
-) -> FeatureBodySelection {
-    feature_body_selection_with_offset_blocks(
-        object_indices,
-        body_alias_roots,
-        &BTreeMap::new(),
-        bodies_by_object_index,
-        native,
-    )
-}
-
-fn feature_body_selection_with_offset_blocks(
-    object_indices: &[u32],
-    body_alias_roots: &BTreeMap<u32, u32>,
-    offset_store_body_blocks: &BTreeMap<u32, String>,
-    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-    native: String,
-) -> FeatureBodySelection {
-    let mut roots = Vec::new();
-    let mut offset_blocks = Vec::new();
-    for index in object_indices {
-        match (
-            body_alias_roots.get(index),
-            offset_store_body_blocks.get(index),
-        ) {
-            (Some(_), Some(data_block)) => {
-                if !offset_blocks.contains(data_block) {
-                    offset_blocks.push(data_block.clone());
-                }
-            }
-            (Some(root), None) => {
-                if !roots.contains(root) {
-                    roots.push(*root);
-                }
-            }
-            (None, Some(data_block)) => {
-                if !offset_blocks.contains(data_block) {
-                    offset_blocks.push(data_block.clone());
-                }
-            }
-            (None, None) => {
-                return FeatureBodySelection::Native(native);
-            }
-        }
-    }
-    if !roots.is_empty() && !offset_blocks.is_empty() {
-        return FeatureBodySelection::Native(native);
-    }
-    let offset_store = offset_blocks
-        .first()
-        .and_then(|block| offset_store_identity(block));
-    if !offset_blocks.is_empty()
-        && (offset_store.is_none()
-            || offset_blocks
-                .iter()
-                .any(|block| offset_store_identity(block) != offset_store))
-    {
-        return FeatureBodySelection::Native(native);
-    }
-    if !offset_blocks.is_empty() {
-        return FeatureBodySelection::Local {
-            bodies: offset_blocks.clone(),
-            native,
-            identity_keys: offset_blocks
-                .into_iter()
-                .map(FeatureBodyIdentity::OffsetStore)
-                .collect(),
-        };
-    }
-    let resolved = roots
-        .iter()
-        .map(|root| {
-            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
-                return None;
-            };
-            Some(body.clone())
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(bodies) =
-        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
-    {
-        return FeatureBodySelection::Resolved {
-            bodies,
-            native,
-            identity_keys: roots
-                .into_iter()
-                .map(FeatureBodyIdentity::Segment)
-                .collect(),
-        };
-    }
-    FeatureBodySelection::Local {
-        bodies: roots
-            .iter()
-            .map(|root| format!("nx:om-body-object#{root}"))
-            .collect(),
-        native,
-        identity_keys: roots
-            .into_iter()
-            .map(FeatureBodyIdentity::Segment)
-            .collect(),
-    }
-}
-
-/// Resolve one complete body set when possible. Otherwise retain every exact
-/// input-local object identity. A body set needs no cross-role disjointness
-/// proof, so an identity outside the segment alias table remains its own root.
-fn feature_body_set_selection(
-    object_indices: &[u32],
-    body_alias_roots: &BTreeMap<u32, u32>,
-    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-    native: String,
-) -> BodySelection {
-    let mut roots = Vec::new();
-    for index in object_indices {
-        let root = body_alias_roots.get(index).copied().unwrap_or(*index);
-        if !roots.contains(&root) {
-            roots.push(root);
-        }
-    }
-    let resolved = roots
-        .iter()
-        .map(|root| {
-            let [body] = bodies_by_object_index.get(root)?.as_slice() else {
-                return None;
-            };
-            Some(body.clone())
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(bodies) =
-        resolved.filter(|bodies| bodies.iter().collect::<BTreeSet<_>>().len() == bodies.len())
-    {
-        if let Ok(bodies) = bodies.try_into() {
-            return BodySelection::Resolved { bodies, native };
-        }
-    }
-    local_body_selection(
-        roots
-            .iter()
-            .map(|root| format!("nx:om-body-object#{root}"))
-            .collect(),
-        native,
-    )
-}
-
-fn atomic_disjoint_body_selections(
-    left: FeatureBodySelection,
-    right: FeatureBodySelection,
-) -> (BodySelection, BodySelection) {
-    let complete = match (&left, &right) {
-        (
-            FeatureBodySelection::Local {
-                identity_keys: left,
-                ..
-            }
-            | FeatureBodySelection::Resolved {
-                identity_keys: left,
-                ..
-            },
-            FeatureBodySelection::Local {
-                identity_keys: right,
-                ..
-            }
-            | FeatureBodySelection::Resolved {
-                identity_keys: right,
-                ..
-            },
-        ) => {
-            let same_namespace =
-                left.first()
-                    .zip(right.first())
-                    .is_none_or(|(left, right)| match (left, right) {
-                        (FeatureBodyIdentity::Segment(_), FeatureBodyIdentity::Segment(_)) => true,
-                        (
-                            FeatureBodyIdentity::OffsetStore(left),
-                            FeatureBodyIdentity::OffsetStore(right),
-                        ) => offset_store_identity(left) == offset_store_identity(right),
-                        _ => false,
-                    });
-            same_namespace && !left.iter().any(|key| right.contains(key))
-        }
-        _ => false,
-    };
-    if complete {
-        (left.into_selection(), right.into_selection())
-    } else {
-        (left.into_native(), right.into_native())
-    }
-}
-
-/// Resolve one Boolean participant through the namespace selected by the
-/// complete Boolean definition. Native integer identity is used only when the
-/// definition did not establish one exact offset-store selection.
-fn boolean_participant_writer<'a>(
-    selection: &BodySelection,
-    object_index: u32,
-    offset_store_body_blocks: Option<&BTreeMap<u32, String>>,
-    body_alias_roots: &BTreeMap<u32, u32>,
-    history: &'a BodyWriterHistory,
-) -> Option<&'a FeatureId> {
-    let offset_store_selection = matches!(
-        selection,
-        BodySelection::Local { bodies, .. }
-            if !bodies.is_empty()
-                && bodies
-                    .iter()
-                    .all(|body| offset_store_identity(body).is_some())
-    );
-    if offset_store_selection {
-        return offset_store_body_blocks
-            .and_then(|blocks| blocks.get(&object_index))
-            .and_then(|data_block| history.offset_store_writer(data_block));
-    }
-    history.native_writer(
-        body_alias_roots
-            .get(&object_index)
-            .copied()
-            .unwrap_or(object_index),
-    )
-}
-
-/// Register a Boolean's target in the namespace established by its complete
-/// target selection. An offset-store target must not create a native writer
-/// for the same integer object index.
-fn boolean_target_writer(
-    definition: &FeatureDefinition,
-    native_body: u32,
-) -> (Option<u32>, Option<&str>) {
-    if let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = definition {
-        if let BodySelection::Local { bodies, .. } = operands.target() {
-            if let [body] = bodies.as_slice() {
-                if offset_store_identity(body).is_some() {
-                    return (None, Some(body.as_str()));
-                }
-            }
-        }
-    }
-    (Some(native_body), None)
-}
-
-fn boolean_target_output(definition: Option<&FeatureDefinition>) -> Option<BodyId> {
-    let Some(FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. })) = definition
-    else {
-        return None;
-    };
-    let BodySelection::Resolved { bodies, .. } = operands.target() else {
-        return None;
-    };
-    bodies.first().cloned()
-}
-
 pub(super) fn boolean_feature_definition(
+    ctx: &DecodeContext<'_>,
     operation: &crate::native::features::FeatureBooleanOperation,
     body_alias_roots: &BTreeMap<u32, u32>,
     offset_store_resolution: &BooleanOffsetStoreResolution,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
     let empty_offset_store_body_blocks = BTreeMap::new();
-    let native_target = format!("nx:om-object-index#{}", operation.target.token.value());
-    let native_tools = format!(
-        "nx:om-object-indices#{}",
-        operation
-            .tools
-            .iter()
-            .map(|token| token.token.value().to_string())
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let native_target = ctx.format_retained_with_work(
+        format_args!("nx:om-object-index#{}", operation.target.token.value()),
+        "NX feature projection text",
+    )?;
+    let native_tools =
+        selection_indices_native(ctx, operation.tools.iter().map(|token| token.token.value()))?;
     let offset_store_body_blocks = match offset_store_resolution {
         BooleanOffsetStoreResolution::Unresolved => None,
         BooleanOffsetStoreResolution::None => Some(&empty_offset_store_body_blocks),
@@ -8524,26 +8861,38 @@ pub(super) fn boolean_feature_definition(
             BodySelection::Native(native_target),
             BodySelection::Native(native_tools),
         ),
-        Some(offset_store_body_blocks) => atomic_disjoint_body_selections(
-            feature_body_selection_with_offset_blocks(
-                &[operation.target.token.value()],
-                body_alias_roots,
-                offset_store_body_blocks,
-                bodies_by_object_index,
-                native_target.clone(),
-            ),
-            feature_body_selection_with_offset_blocks(
-                &operation
-                    .tools
-                    .iter()
-                    .map(|token| token.token.value())
-                    .collect::<Vec<_>>(),
-                body_alias_roots,
-                offset_store_body_blocks,
-                bodies_by_object_index,
-                native_tools.clone(),
-            ),
-        ),
+        Some(offset_store_body_blocks) => {
+            let mut tool_indices = Vec::new();
+            let mut reservation = ctx.reserve_scoped(0, "NX Boolean tool indices")?;
+            for tool in &operation.tools {
+                ctx.reserve_scoped_vec(
+                    &mut reservation,
+                    &mut tool_indices,
+                    1,
+                    "NX Boolean tool indices",
+                )?;
+                tool_indices.push(tool.token.value());
+            }
+            atomic_disjoint_body_selections(
+                ctx,
+                feature_body_selection_with_offset_blocks(
+                    ctx,
+                    &[operation.target.token.value()],
+                    body_alias_roots,
+                    offset_store_body_blocks,
+                    bodies_by_object_index,
+                    native_target,
+                )?,
+                feature_body_selection_with_offset_blocks(
+                    ctx,
+                    &tool_indices,
+                    body_alias_roots,
+                    offset_store_body_blocks,
+                    bodies_by_object_index,
+                    native_tools,
+                )?,
+            )?
+        }
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::Combine {
         operands: cadmpeg_ir::features::CombineOperands::new(target, tools)
@@ -8577,232 +8926,368 @@ enum DeleteBodyField<'a> {
 /// carries a primary-body field. Other `DELETE` payloads target a different
 /// object family and remain native until that family is decoded.
 fn delete_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     field: DeleteBodyField<'_>,
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
+) -> Result<FeatureDefinition, CodecError> {
     let bodies = match field {
         DeleteBodyField::Native(body) => match feature_body_selection(
+            ctx,
             &[body],
             body_alias_roots,
             bodies_by_object_index,
-            format!("nx:om-object-index#{body}"),
-        ) {
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{body}"),
+                "NX feature projection text",
+            )?,
+        )? {
             FeatureBodySelection::Native(native) => {
-                local_body_selection(vec![format!("nx:om-body-object#{body}")], native)
+                let mut reservation = ctx.reserve_scoped(0, "NX DELETE local body")?;
+                let mut bodies = Vec::new();
+                ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE local body")?;
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("nx:om-body-object#{body}"),
+                    "NX body selection text",
+                )?);
+                local_body_selection(ctx, bodies, native)?
             }
-            selection => selection.into_selection(),
+            selection => selection.into_selection(ctx)?,
         },
         DeleteBodyField::OffsetStore {
             object_index,
             data_block,
-        } => local_body_selection(
-            vec![data_block.to_string()],
-            format!("nx:om-object-index#{object_index}"),
-        ),
+        } => {
+            let mut reservation = ctx.reserve_scoped(0, "NX DELETE offset body")?;
+            let mut bodies = Vec::new();
+            ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX DELETE offset body")?;
+            bodies.push(ctx.format_scoped_text_with_work(
+                &mut reservation,
+                format_args!("{data_block}"),
+                "NX body selection text",
+            )?);
+            local_body_selection(
+                ctx,
+                bodies,
+                ctx.format_retained_with_work(
+                    format_args!("nx:om-object-index#{object_index}"),
+                    "NX feature projection text",
+                )?,
+            )?
+        }
     };
-    FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+    Ok(FeatureDefinition::Operation(FeatureOperation::DeleteBody {
         // A typed DELETE primary-body field names one exact feature input. It
         // needs no cross-selection alias proof when it has no segment binding.
         bodies,
         mode: BodyRetentionMode::DeleteSelected,
-    })
+    }))
 }
 
 /// Project the exact source body of an `EXTRACT_BODY` operation.
 fn extract_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> FeatureDefinition {
-    let source = body_object_index.map_or_else(
-        || match offset_store_bodies {
-            [(object_index, data_block)] => local_body_selection(
-                vec![data_block.clone()],
-                format!("nx:om-object-index#{object_index}"),
-            ),
-            _ => BodySelection::Unresolved,
-        },
-        |body| {
-            feature_body_selection(
-                &[body],
-                body_alias_roots,
-                bodies_by_object_index,
-                format!("nx:om-object-index#{body}"),
-            )
-            .into_selection()
-        },
-    );
-    FeatureDefinition::Operation(FeatureOperation::ExtractBody { source })
+) -> Result<FeatureDefinition, CodecError> {
+    let source = if let Some(body) = body_object_index {
+        feature_body_selection(
+            ctx,
+            &[body],
+            body_alias_roots,
+            bodies_by_object_index,
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{body}"),
+                "NX feature projection text",
+            )?,
+        )?
+        .into_selection(ctx)?
+    } else if let [(object_index, data_block)] = offset_store_bodies {
+        let mut reservation = ctx.reserve_scoped(0, "NX EXTRACT local body")?;
+        let mut bodies = Vec::new();
+        ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX EXTRACT local body")?;
+        bodies.push(ctx.format_scoped_text_with_work(
+            &mut reservation,
+            format_args!("{data_block}"),
+            "NX body selection text",
+        )?);
+        local_body_selection(
+            ctx,
+            bodies,
+            ctx.format_retained_with_work(
+                format_args!("nx:om-object-index#{object_index}"),
+                "NX feature projection text",
+            )?,
+        )?
+    } else {
+        BodySelection::Unresolved
+    };
+    Ok(FeatureDefinition::Operation(
+        FeatureOperation::ExtractBody { source },
+    ))
 }
 
 /// Project exact feature-local input-store identities for a trim target and
 /// every complete, distinct tool operand. Retained-side semantics stay unresolved.
 fn offset_store_trim_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     let [(object_index, data_block)] = offset_store_bodies else {
-        return None;
+        return Ok(None);
     };
     let primary_store = data_block.rsplit_once(":block#").map(|(store, _)| store);
-    let tool_data_blocks = operands
-        .iter()
-        .map(|operand| operand.operand_data_block.clone())
-        .collect::<Option<Vec<_>>>();
-    let tools = match (operands.is_empty(), primary_store, tool_data_blocks) {
-        (true, _, _) | (_, None, _) | (_, _, None) => BodySelection::Unresolved,
-        (false, Some(primary_store), Some(tool_data_blocks)) => {
-            let mut operand_indices = BTreeSet::new();
-            let distinct_operand_indices = operands
+    let mut tool_data_blocks = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX trim offset tool blocks")?;
+    let mut complete = true;
+    for operand in operands {
+        let Some(block) = operand.operand_data_block.as_deref() else {
+            complete = false;
+            break;
+        };
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut tool_data_blocks,
+            1,
+            "NX trim offset tool blocks",
+        )?;
+        tool_data_blocks.push(block);
+    }
+    let tools = if operands.is_empty() || primary_store.is_none() || !complete {
+        BodySelection::Unresolved
+    } else {
+        let primary_store = primary_store
+            .ok_or_else(|| ctx.refuse_codec_limit("NX trim offset primary store", 0, 1))?;
+        let work = operands.len().checked_mul(operands.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX trim offset uniqueness",
+                0,
+                cadmpeg_core::decode::u64_from_index(operands.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX trim offset uniqueness",
+        )?;
+        let distinct_operand_indices = operands.iter().enumerate().all(|(index, operand)| {
+            !operands[..index]
                 .iter()
-                .all(|operand| operand_indices.insert(operand.operand.atom.value()));
-            let same_store = tool_data_blocks.iter().all(|tool_data_block| {
-                tool_data_block
-                    .rsplit_once(":block#")
-                    .is_some_and(|(store, _)| store == primary_store)
-            });
-            let distinct_tool_blocks =
-                tool_data_blocks.iter().collect::<BTreeSet<_>>().len() == tool_data_blocks.len();
-            let no_target_alias = tool_data_blocks
-                .iter()
-                .all(|tool_data_block| tool_data_block != data_block);
-            if operands.iter().all(|operand| {
-                operand.body_object_index == *object_index
-                    && operand.operand.atom.value() != *object_index
-            }) && distinct_operand_indices
-                && same_store
-                && distinct_tool_blocks
-                && no_target_alias
-            {
-                local_body_selection(
-                    tool_data_blocks,
-                    format!(
-                        "nx:om-object-indices#{}",
-                        operands
-                            .iter()
-                            .map(|operand| operand.operand.atom.value().to_string())
-                            .collect::<Vec<_>>()
-                            .join(",")
-                    ),
-                )
-            } else {
-                BodySelection::Unresolved
+                .any(|other| other.operand.atom.value() == operand.operand.atom.value())
+        });
+        let same_store = tool_data_blocks.iter().all(|block| {
+            block
+                .rsplit_once(":block#")
+                .is_some_and(|(store, _)| store == primary_store)
+        });
+        let distinct_tool_blocks = tool_data_blocks
+            .iter()
+            .enumerate()
+            .all(|(index, block)| !tool_data_blocks[..index].contains(block));
+        let no_target_alias = tool_data_blocks.iter().all(|block| *block != data_block);
+        if operands.iter().all(|operand| {
+            operand.body_object_index == *object_index
+                && operand.operand.atom.value() != *object_index
+        }) && distinct_operand_indices
+            && same_store
+            && distinct_tool_blocks
+            && no_target_alias
+        {
+            let mut bodies = Vec::new();
+            for block in tool_data_blocks {
+                ctx.reserve_scoped_vec(
+                    &mut reservation,
+                    &mut bodies,
+                    1,
+                    "NX trim local tool bodies",
+                )?;
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("{block}"),
+                    "NX body selection text",
+                )?);
             }
+            let native = selection_indices_native(
+                ctx,
+                operands.iter().map(|operand| operand.operand.atom.value()),
+            )?;
+            local_body_selection(ctx, bodies, native)?
+        } else {
+            BodySelection::Unresolved
         }
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
-        operands: cadmpeg_ir::features::TrimBodyOperands::new(
-            local_body_selection(
-                vec![data_block.clone()],
-                format!("nx:om-object-index#{object_index}"),
-            ),
-            tools,
-        )
-        .ok()?,
-
-        keep: BodyTrimSide::Unresolved,
-    }))
+    let mut target = Vec::new();
+    ctx.reserve_scoped_vec(
+        &mut reservation,
+        &mut target,
+        1,
+        "NX trim local target body",
+    )?;
+    target.push(ctx.format_scoped_text_with_work(
+        &mut reservation,
+        format_args!("{data_block}"),
+        "NX body selection text",
+    )?);
+    let target = local_body_selection(
+        ctx,
+        target,
+        ctx.format_retained_with_work(
+            format_args!("nx:om-object-index#{object_index}"),
+            "NX feature projection text",
+        )?,
+    )?;
+    let Ok(operands) = cadmpeg_ir::features::TrimBodyOperands::new(target, tools) else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::TrimBodies {
+            operands,
+            keep: BodyTrimSide::Unresolved,
+        },
+    )))
 }
 
 fn sew_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     primary_segment_body_object_index: Option<u32>,
     offset_store_bodies: &[(u32, String)],
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Option<FeatureDefinition> {
+) -> Result<Option<FeatureDefinition>, CodecError> {
     if operands.is_empty() {
-        return None;
+        return Ok(None);
     }
     let primary_offset_store_body = match offset_store_bodies {
         [(object_index, data_block)] => Some((*object_index, data_block.as_str())),
         _ => None,
     };
-    let primary_body_object_index = primary_segment_body_object_index
-        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))?;
-    let object_indices = std::iter::once(primary_body_object_index)
-        .chain(operands.iter().map(|operand| operand.operand.atom.value()))
-        .collect::<Vec<_>>();
-    let native = format!(
-        "nx:om-object-indices#{}",
-        object_indices
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let Some(primary_body_object_index) = primary_segment_body_object_index
+        .or_else(|| primary_offset_store_body.map(|(object_index, _)| object_index))
+    else {
+        return Ok(None);
+    };
+    let indices = std::iter::once(primary_body_object_index)
+        .chain(operands.iter().map(|operand| operand.operand.atom.value()));
+    let native = selection_indices_native(ctx, indices.clone())?;
+    let mut object_indices = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX sew body indices")?;
+    for index in indices {
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut object_indices,
+            1,
+            "NX sew body indices",
+        )?;
+        object_indices.push(index);
+    }
     let bodies = if primary_segment_body_object_index.is_some() {
         if operands
             .iter()
             .all(|operand| !operand.segment_body_bindings.is_empty())
         {
             feature_body_set_selection(
+                ctx,
                 &object_indices,
                 body_alias_roots,
                 bodies_by_object_index,
-                native.clone(),
-            )
+                native,
+            )?
         } else {
-            BodySelection::Native(native.clone())
+            BodySelection::Native(native)
         }
     } else if let Some((primary_object_index, primary_data_block)) = primary_offset_store_body {
         let primary_store = primary_data_block
             .rsplit_once(":block#")
             .map(|(store, _)| store);
-        let operand_data_blocks = operands
-            .iter()
-            .map(|operand| operand.operand_data_block.as_deref())
-            .collect::<Option<Vec<_>>>();
-        let offset_store_participants = operand_data_blocks.as_ref().filter(|blocks| {
-            operands
+        let mut blocks = Vec::new();
+        let mut complete = true;
+        for operand in operands {
+            let Some(block) = operand.operand_data_block.as_deref() else {
+                complete = false;
+                break;
+            };
+            ctx.reserve_scoped_vec(&mut reservation, &mut blocks, 1, "NX sew offset blocks")?;
+            blocks.push(block);
+        }
+        let work = blocks.len().checked_mul(blocks.len()).ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX sew offset blocks",
+                0,
+                cadmpeg_core::decode::u64_from_index(blocks.len()),
+            )
+        })?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(work),
+            "NX sew offset uniqueness",
+        )?;
+        let valid = complete
+            && operands
                 .iter()
                 .all(|operand| operand.body_object_index == primary_object_index)
-                && blocks.iter().all(|block| {
-                    block
-                        .rsplit_once(":block#")
-                        .is_some_and(|(store, _)| Some(store) == primary_store)
-                })
-                && blocks.iter().collect::<BTreeSet<_>>().len() == blocks.len()
-                && !blocks.contains(&primary_data_block)
-        });
-        if let Some(blocks) = offset_store_participants {
-            local_body_selection(
-                std::iter::once(primary_data_block.to_string())
-                    .chain(blocks.iter().map(|block| (*block).to_string()))
-                    .collect(),
-                native,
-            )
+            && blocks.iter().all(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_some_and(|(store, _)| Some(store) == primary_store)
+            })
+            && blocks
+                .iter()
+                .enumerate()
+                .all(|(index, block)| !blocks[..index].contains(block))
+            && !blocks.contains(&primary_data_block);
+        if valid {
+            let mut bodies = Vec::new();
+            for block in std::iter::once(primary_data_block).chain(blocks) {
+                ctx.reserve_scoped_vec(&mut reservation, &mut bodies, 1, "NX sew local bodies")?;
+                bodies.push(ctx.format_scoped_text_with_work(
+                    &mut reservation,
+                    format_args!("{block}"),
+                    "NX body selection text",
+                )?);
+            }
+            local_body_selection(ctx, bodies, native)?
         } else {
-            BodySelection::Native(native.clone())
+            BodySelection::Native(native)
         }
     } else {
         BodySelection::Native(native)
     };
-    Some(FeatureDefinition::Operation(FeatureOperation::SewBodies {
-        bodies: (bodies).try_into().ok()?,
-        gap_tolerance: None,
-    }))
+    let Ok(bodies) = bodies.try_into() else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::SewBodies {
+            bodies,
+            gap_tolerance: None,
+        },
+    )))
 }
 
 fn trim_body_feature_definition(
+    ctx: &DecodeContext<'_>,
     target_object_index: u32,
     operands: &[&crate::native::features::FeatureOperationBodyOperand],
     body_alias_roots: &BTreeMap<u32, u32>,
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Result<FeatureDefinition, CodecError> {
-    let native_target = format!("nx:om-object-index#{target_object_index}");
+    let native_target = ctx.format_retained_with_work(
+        format_args!("nx:om-object-index#{target_object_index}"),
+        "NX feature projection text",
+    )?;
     if operands.is_empty() {
         return Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
             operands: cadmpeg_ir::features::TrimBodyOperands::new(
                 feature_body_selection(
+                    ctx,
                     &[target_object_index],
                     body_alias_roots,
                     bodies_by_object_index,
                     native_target,
-                )
-                .into_selection(),
+                )?
+                .into_selection(ctx)?,
                 BodySelection::Unresolved,
             )
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -8810,18 +9295,21 @@ fn trim_body_feature_definition(
             keep: BodyTrimSide::Unresolved,
         }));
     }
-    let tool_object_indices = operands
-        .iter()
-        .map(|operand| operand.operand.atom.value())
-        .collect::<Vec<_>>();
-    let native_tools = format!(
-        "nx:om-object-indices#{}",
-        tool_object_indices
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",")
-    );
+    let native_tools = selection_indices_native(
+        ctx,
+        operands.iter().map(|operand| operand.operand.atom.value()),
+    )?;
+    let mut tool_object_indices = Vec::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX trim tool indices")?;
+    for operand in operands {
+        ctx.reserve_scoped_vec(
+            &mut reservation,
+            &mut tool_object_indices,
+            1,
+            "NX trim tool indices",
+        )?;
+        tool_object_indices.push(operand.operand.atom.value());
+    }
     if operands.iter().any(|operand| {
         operand.operand_data_block.is_some() || operand.segment_body_bindings.is_empty()
     }) {
@@ -8836,19 +9324,22 @@ fn trim_body_feature_definition(
         }));
     }
     let (targets, tools) = atomic_disjoint_body_selections(
+        ctx,
         feature_body_selection(
+            ctx,
             &[target_object_index],
             body_alias_roots,
             bodies_by_object_index,
             native_target,
-        ),
+        )?,
         feature_body_selection(
+            ctx,
             &tool_object_indices,
             body_alias_roots,
             bodies_by_object_index,
             native_tools,
-        ),
-    );
+        )?,
+    )?;
     Ok(FeatureDefinition::Operation(FeatureOperation::TrimBodies {
         operands: cadmpeg_ir::features::TrimBodyOperands::new(targets, tools)
             .map_err(cadmpeg_core::CodecError::malformed)?,
@@ -8858,29 +9349,65 @@ fn trim_body_feature_definition(
 }
 
 fn feature_body_outputs(
+    ctx: &DecodeContext<'_>,
     object_index: u32,
     segment_bindings: &[crate::native::segments::SegmentBodyBinding],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
-) -> Vec<BodyId> {
+) -> Result<Vec<BodyId>, CodecError> {
     if crate::native::segments::unique_segment_body_binding(object_index, segment_bindings)
         .is_none()
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let Some([body]) = bodies_by_object_index.get(&object_index).map(Vec::as_slice) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    vec![body.clone()]
+    let bytes = std::mem::size_of::<BodyId>()
+        .checked_add(body.as_str().len())
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "NX feature body output",
+                0,
+                cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+            )
+        })?;
+    ctx.charge_collection_items(1, "NX feature body output")?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(bytes),
+        "NX feature body output",
+    )?;
+    let mut outputs = Vec::new();
+    cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+        &mut outputs,
+        1,
+        "NX feature body output",
+    )?;
+    outputs.push(body.clone());
+    Ok(outputs)
 }
 
-fn operation_body_image_outputs_by_write<'a>(
+fn operation_body_image_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     uses: &'a [crate::native::features::FeatureOperationBodyImageSegmentUse],
     bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<
+    (
+        BTreeMap<&'a str, BodyId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut unique_uses = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body image output indexes")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body image unique-use index")?;
         match unique_uses.entry(use_.operation_body_write.as_str()) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body image unique-use index")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    &str,
+                    Option<&crate::native::features::FeatureOperationBodyImageSegmentUse>,
+                )>()))?;
                 entry.insert(Some(use_));
             }
             Entry::Occupied(mut entry) => {
@@ -8899,39 +9426,77 @@ fn operation_body_image_outputs_by_write<'a>(
         else {
             continue;
         };
-        outputs.insert(write, body.clone());
+        ctx.charge_work(1, "NX body image outputs")?;
+        let entry = (
+            write,
+            body.try_clone_for_decode(ctx, "NX body image outputs")?,
+        );
+        if !outputs.contains_key(&entry.0) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                &entry,
+            )))?;
+        }
+        ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX body image outputs")?;
     }
-    outputs
+    Ok((outputs, reservation))
 }
 
 fn merge_operation_body_outputs<'a>(
+    ctx: &DecodeContext<'_>,
+    reservation: &mut cadmpeg_core::decode::ScopedReservation<'_>,
     outputs: &mut BTreeMap<&'a str, BodyId>,
     conflicts: &mut BTreeSet<&'a str>,
-    candidates: impl IntoIterator<Item = (&'a str, BodyId)>,
-) {
-    for (write, body) in candidates {
+    candidates: &BTreeMap<&'a str, BodyId>,
+) -> Result<(), CodecError> {
+    for (&write, body) in candidates {
+        ctx.charge_work(1, "NX body output candidate merge")?;
         if conflicts.contains(write) {
             continue;
         }
         match outputs.entry(write) {
             Entry::Vacant(entry) => {
-                entry.insert(body);
+                ctx.charge_collection_items(1, "NX merged body output")?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>()
+                    .checked_add(body.as_str().len())
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "NX merged body output",
+                            0,
+                            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+                        )
+                    })?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
+                entry.insert(body.clone());
             }
-            Entry::Occupied(entry) if entry.get() == &body => {}
+            Entry::Occupied(entry) if entry.get() == body => {}
             Entry::Occupied(entry) => {
                 entry.remove();
+                ctx.charge_collection_items(1, "NX conflicting body output")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    &str,
+                >()))?;
                 conflicts.insert(write);
             }
         }
     }
+    Ok(())
 }
 
-fn operation_body_identity_outputs_by_write<'a>(
+fn operation_body_identity_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     uses: &'a [crate::native::features::FeatureOperationBodyIdentitySegmentUse],
     bodies_by_segment_binding: &BTreeMap<&str, Vec<BodyId>>,
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<
+    (
+        BTreeMap<&'a str, BodyId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut outputs = BTreeMap::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body identity output index")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body identity output lookup")?;
         let Some([body]) = bodies_by_segment_binding
             .get(use_.segment_body_binding.as_str())
             .map(Vec::as_slice)
@@ -8940,6 +9505,17 @@ fn operation_body_identity_outputs_by_write<'a>(
         };
         match outputs.entry(use_.operation_body_write.as_str()) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body identity output index")?;
+                let bytes = std::mem::size_of::<(&str, BodyId)>()
+                    .checked_add(body.as_str().len())
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "NX body identity output index",
+                            0,
+                            cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+                        )
+                    })?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(bytes))?;
                 entry.insert(body.clone());
             }
             Entry::Occupied(entry) if entry.get() == body => {}
@@ -8948,18 +9524,32 @@ fn operation_body_identity_outputs_by_write<'a>(
             }
         }
     }
-    outputs
+    Ok((outputs, reservation))
 }
 
-fn operation_body_group_partition_outputs_by_write<'a>(
+fn operation_body_group_partition_outputs_by_write<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
     writes: &'a [crate::native::features::FeatureOperationBodyWrite],
     uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
     bodies: &[cadmpeg_ir::topology::Body],
-) -> BTreeMap<&'a str, BodyId> {
+) -> Result<
+    (
+        BTreeMap<&'a str, BodyId>,
+        cadmpeg_core::decode::ScopedReservation<'ctx>,
+    ),
+    CodecError,
+> {
     let mut partitions_by_identity = BTreeMap::<u8, Option<u32>>::new();
+    let mut reservation = ctx.reserve_scoped(0, "NX body partition output indexes")?;
     for use_ in uses {
+        ctx.charge_work(1, "NX body partition identity index")?;
         match partitions_by_identity.entry(use_.body_identity) {
             Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "NX body partition identity index")?;
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<(
+                    u8,
+                    Option<u32>,
+                )>()))?;
                 entry.insert(Some(use_.partition_stream_ordinal));
             }
             Entry::Occupied(mut entry)
@@ -8972,45 +9562,106 @@ fn operation_body_group_partition_outputs_by_write<'a>(
             Entry::Occupied(_) => {}
         }
     }
-    let unique_bodies = partitions_by_identity
-        .into_iter()
-        .filter_map(|(identity, partition)| {
-            let partition = partition?;
-            let prefix = format!("nx:s{partition}:body#");
-            let mut matches = bodies
-                .iter()
-                .filter(|body| body.id.as_str().starts_with(&prefix));
-            let body = matches.next()?;
-            matches.next().is_none().then_some(())?;
-            Some((identity, body.id.clone()))
-        })
-        .collect::<BTreeMap<_, _>>();
-    writes
-        .iter()
-        .filter_map(|write| {
-            unique_bodies
-                .get(&write.frame.body_identity())
-                .cloned()
-                .map(|body| (write.id.as_str(), body))
-        })
-        .collect()
+    let mut unique_bodies = BTreeMap::new();
+    for (identity, partition) in partitions_by_identity {
+        let Some(partition) = partition else {
+            continue;
+        };
+        let (prefix, prefix_len) = stream_prefix(partition, true)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(bodies.len()),
+            "NX body partition prefix scan",
+        )?;
+        let mut matches = bodies.iter().filter(|body| {
+            body.id
+                .as_str()
+                .as_bytes()
+                .starts_with(&prefix[..prefix_len])
+        });
+        let Some(body) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_some() {
+            continue;
+        }
+        ctx.charge_work(1, "NX unique partition body")?;
+        let entry = (
+            identity,
+            body.id
+                .try_clone_for_decode(ctx, "NX unique partition body")?,
+        );
+        if !unique_bodies.contains_key(&entry.0) {
+            reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                &entry,
+            )))?;
+        }
+        ctx.insert_btree_map(
+            &mut unique_bodies,
+            entry.0,
+            entry.1,
+            "NX unique partition body",
+        )?;
+    }
+    let mut outputs = BTreeMap::new();
+    for write in writes {
+        ctx.charge_work(1, "NX partition body write lookup")?;
+        if let Some(body) = unique_bodies.get(&write.frame.body_identity()) {
+            ctx.charge_work(1, "NX partition body output")?;
+            let entry = (
+                write.id.as_str(),
+                body.try_clone_for_decode(ctx, "NX partition body output")?,
+            );
+            if !outputs.contains_key(&entry.0) {
+                reservation.grow(cadmpeg_core::decode::u64_from_index(std::mem::size_of_val(
+                    &entry,
+                )))?;
+            }
+            ctx.insert_btree_map(&mut outputs, entry.0, entry.1, "NX partition body output")?;
+        }
+    }
+    Ok((outputs, reservation))
 }
 
 fn complete_operation_body_image_outputs(
+    ctx: &DecodeContext<'_>,
     writes: &[&crate::native::features::FeatureOperationBodyWrite],
     outputs_by_write: &BTreeMap<&str, BodyId>,
-) -> Vec<BodyId> {
-    let mut outputs = Vec::with_capacity(writes.len());
+) -> Result<Vec<BodyId>, CodecError> {
+    let mut outputs = Vec::new();
     for write in writes {
+        ctx.charge_work(1, "NX complete body image output lookup")?;
         let Some(body) = outputs_by_write.get(write.id.as_str()) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(outputs.len()),
+            "NX complete body image output uniqueness",
+        )?;
         if outputs.contains(body) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
+        let bytes = std::mem::size_of::<BodyId>()
+            .checked_add(body.as_str().len())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit(
+                    "NX complete body image output",
+                    0,
+                    cadmpeg_core::decode::u64_from_index(body.as_str().len()),
+                )
+            })?;
+        ctx.charge_collection_items(1, "NX complete body image output")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(bytes),
+            "NX complete body image output",
+        )?;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut outputs,
+            1,
+            "NX complete body image output",
+        )?;
         outputs.push(body.clone());
     }
-    outputs
+    Ok(outputs)
 }
 
 fn body_writes_match_boolean_target(
@@ -9031,381 +9682,6 @@ fn body_writes_match_boolean_target(
             .tools
             .iter()
             .any(|token| token.token.value() == write.frame.body_image().value())
-}
-
-pub(super) fn attach_expression_parameters(
-    ir: &mut CadIr,
-    expressions: &[crate::native::om::Expression],
-    declarations: &[crate::native::om::ExpressionDeclaration],
-    parameter_uses: &[crate::native::features::FeatureParameterUse],
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), CodecError> {
-    let declarations = declarations
-        .iter()
-        .map(|declaration| (declaration.id.as_str(), declaration))
-        .collect::<BTreeMap<_, _>>();
-    let mut tables = BTreeMap::<String, Vec<&crate::native::om::Expression>>::new();
-    for expression in expressions {
-        let table = expression.source_table.as_str();
-        tables
-            .entry(table.to_string())
-            .or_default()
-            .push(expression);
-    }
-    let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let mut uses_by_expression =
-        BTreeMap::<&str, Vec<&crate::native::features::FeatureParameterUse>>::new();
-    for parameter_use in parameter_uses {
-        uses_by_expression
-            .entry(parameter_use.expression.as_str())
-            .or_default()
-            .push(parameter_use);
-    }
-    for uses in uses_by_expression.values_mut() {
-        uses.sort_by(|first, second| {
-            first
-                .bindings
-                .first()
-                .map(|binding| binding.source_offset)
-                .cmp(&second.bindings.first().map(|binding| binding.source_offset))
-                .then_with(|| first.id.cmp(&second.id))
-        });
-    }
-    let mut tables = tables.into_iter().collect::<Vec<_>>();
-    for (_, expressions) in &mut tables {
-        expressions.sort_by(|first, second| {
-            first
-                .source_offset
-                .cmp(&second.source_offset)
-                .then_with(|| first.id.cmp(&second.id))
-        });
-    }
-    tables.sort_by(|(first_table, first), (second_table, second)| {
-        first
-            .first()
-            .map(|expression| expression.source_offset)
-            .cmp(&second.first().map(|expression| expression.source_offset))
-            .then_with(|| first_table.cmp(second_table))
-    });
-    let tables = tables
-        .into_iter()
-        .map(|(table, mut expressions)| {
-            let dependency_ordered_expressions = order_expression_dependencies(&mut expressions);
-            (table, expressions, dependency_ordered_expressions)
-        })
-        .collect::<Vec<_>>();
-    let base_ordinal = ir.model.features.len() as u64;
-    for (table_ordinal, (table, expressions, dependency_ordered_expressions)) in
-        tables.into_iter().enumerate()
-    {
-        let feature_id: FeatureId = match table.split_once(":expression-table#") {
-            None => IdScope::of(&table)
-                .map(|scope| {
-                    scope.id(
-                        &cadmpeg_ir::identity_component!("feature"),
-                        cadmpeg_ir::identity_key!("equations"),
-                    )
-                })
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX expression table id is not an NX identity"
-                    ))
-                })?,
-            Some((scope, key)) => {
-                let key = cadmpeg_ir::ids::IdentityKey::try_new(key).map_err(|error| {
-                    cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX expression table key is not identity key text: {error}"
-                    ))
-                })?;
-                IdScope::of(scope)
-                    .map(|scope| {
-                        scope.id(
-                            &cadmpeg_ir::identity_component!("feature"),
-                            cadmpeg_ir::identity_key!("equations-").then(key),
-                        )
-                    })
-                    .ok_or_else(|| {
-                        cadmpeg_core::CodecError::malformed(format_args!(
-                            "NX expression table id is not an NX identity"
-                        ))
-                    })?
-            }
-        };
-        let first_offset = expressions
-            .iter()
-            .map(|expression| expression.source_offset)
-            .min()
-            .unwrap_or(0);
-        annotations
-            .note(&feature_id, &stream, first_offset)
-            .tag("hostglobalvariables");
-        annotations.exactness(&feature_id, Exactness::Derived);
-        let source_content = expressions
-            .iter()
-            .filter_map(|expression| {
-                expression_parameter_id(&expression.id).map(FeatureSourceContent::Parameter)
-            })
-            .collect::<Vec<_>>();
-        let source_content = cadmpeg_ir::features::FeatureContent::try_from(source_content)
-            .map_err(|message| CodecError::Malformed(message.into()))?;
-        if !source_content.is_empty() {
-            annotations
-                .derived(&feature_id, "source_content")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-        }
-        ir.model.features.push(Feature {
-            id: feature_id.clone(),
-            ordinal: base_ordinal + table_ordinal as u64,
-            name: Some("NX expressions".to_string()),
-            suppressed: Some(false),
-            dependencies: DistinctMembers::default(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some("hostglobalvariables".to_string()),
-            source_text: None,
-            source_content,
-
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::TreeNode {
-                    role: FeatureTreeNodeRole::Equations,
-                    children: TreeChildren::default(),
-                }),
-            ),
-            native_ref: None,
-        });
-        let mut parameter_ids =
-            BTreeMap::<(&str, crate::native::om::ExpressionUnit), Vec<ParameterId>>::new();
-        for expression in &expressions {
-            let Some(id) = expression_parameter_id(&expression.id) else {
-                continue;
-            };
-            parameter_ids
-                .entry((expression.name.as_str(), expression.unit.clone()))
-                .or_default()
-                .push(id);
-        }
-        for (ordinal, expression) in expressions.into_iter().enumerate() {
-            let Some(id) = expression_parameter_id(&expression.id) else {
-                continue;
-            };
-            annotations
-                .note(id.as_str(), &stream, expression.source_offset)
-                .tag("Number");
-            annotations
-                .derived(id.as_str(), "owner")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .derived(id.as_str(), "ordinal")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .derived(id.as_str(), "value")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            annotations
-                .derived(id.as_str(), "native_ref")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
-                let mut seen_dependencies = BTreeSet::new();
-                crate::native::om::expression_parameter_names(&expression.expression)
-                    .into_iter()
-                    .filter_map(|name| {
-                        let candidates = parameter_ids.get(&(name, expression.unit.clone()))?;
-                        (candidates.len() == 1).then(|| candidates[0].clone())
-                    })
-                    .filter(|dependency| seen_dependencies.insert(dependency.clone()))
-                    .collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            };
-            if !dependencies.is_empty() {
-                annotations
-                    .derived(id.as_str(), "dependencies")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-            }
-            let value = expression.value.and_then(|value| match &expression.unit {
-                crate::native::om::ExpressionUnit::Millimeter => {
-                    Some(ParameterValue::Length(Length::from_assigned_real(value)))
-                }
-                crate::native::om::ExpressionUnit::Inch => {
-                    crate::native::om::expression_length_in_millimeters(
-                        &expression.unit,
-                        value.get(),
-                    )
-                    .and_then(Length::new)
-                    .map(ParameterValue::Length)
-                }
-                crate::native::om::ExpressionUnit::Degree => {
-                    Some(ParameterValue::Angle(Angle::new(value.get().to_radians())?))
-                }
-                crate::native::om::ExpressionUnit::Native(_) => None,
-            });
-            let mut properties = BTreeMap::new();
-            properties.insert("unit".to_string(), expression.unit.property_name());
-            annotations
-                .derived(id.as_str(), "properties")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-            if let Some(declaration) = expression
-                .declaration
-                .as_deref()
-                .and_then(|id| declarations.get(id))
-            {
-                properties.insert("declaration".to_string(), declaration.id.clone());
-                properties.insert(
-                    "declaration_object_id".to_string(),
-                    declaration.object_id.to_string(),
-                );
-                annotations
-                    .derived(id.as_str(), "properties")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-            }
-            for (consumer_ordinal, parameter_use) in uses_by_expression
-                .get(expression.id.as_str())
-                .into_iter()
-                .flatten()
-                .enumerate()
-            {
-                properties.insert(
-                    format!("consumer.{consumer_ordinal}"),
-                    parameter_use
-                        .operation_label
-                        .replacen("operation-label", "feature", 1),
-                );
-                properties.insert(
-                    format!("parameter_use.{consumer_ordinal}"),
-                    parameter_use.id.clone(),
-                );
-                annotations
-                    .derived(id.as_str(), "properties")
-                    .map_err(cadmpeg_core::CodecError::malformed)?;
-            }
-            ir.model.parameters.push(DesignParameter {
-                id,
-                owner: Some(feature_id.clone()),
-                ordinal: ordinal as u32,
-                name: expression.name.as_str().to_string(),
-                expression: expression.expression.clone(),
-                display: None,
-                value,
-                dependencies: dependencies.into_iter().collect(),
-                properties: cadmpeg_core::text::named_entries(&expression.id, properties)?,
-                pmi: None,
-                native_ref: Some(expression.id.clone()),
-            });
-        }
-    }
-    Ok(())
-}
-
-fn order_expression_dependencies(
-    expressions: &mut Vec<&crate::native::om::Expression>,
-) -> BTreeSet<String> {
-    let mut indices_by_name =
-        BTreeMap::<(&str, crate::native::om::ExpressionUnit), Vec<usize>>::new();
-    for (index, expression) in expressions.iter().enumerate() {
-        indices_by_name
-            .entry((expression.name.as_str(), expression.unit.clone()))
-            .or_default()
-            .push(index);
-    }
-    let dependencies = expressions
-        .iter()
-        .map(|expression| {
-            crate::native::om::expression_parameter_names(&expression.expression)
-                .into_iter()
-                .filter_map(|name| {
-                    let [index] = indices_by_name
-                        .get(&(name, expression.unit.clone()))?
-                        .as_slice()
-                    else {
-                        return None;
-                    };
-                    Some(*index)
-                })
-                .collect::<BTreeSet<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut emitted = BTreeSet::new();
-    let mut order = Vec::with_capacity(expressions.len());
-    while let Some(index) = (0..expressions.len()).find(|index| {
-        !emitted.contains(index)
-            && dependencies[*index]
-                .iter()
-                .all(|dependency| emitted.contains(dependency))
-    }) {
-        emitted.insert(index);
-        order.push(expressions[index]);
-    }
-    let dependency_ordered_expression_ids = order
-        .iter()
-        .map(|expression| expression.id.clone())
-        .collect();
-    order.extend(
-        expressions
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !emitted.contains(index))
-            .map(|(_, expression)| *expression),
-    );
-    *expressions = order;
-    dependency_ordered_expression_ids
-}
-
-fn attach_block_dimension_parameter_consumers(
-    ir: &mut CadIr,
-    dimensions: &[crate::native::features::FeatureBlockDimensions],
-    annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let mut parameters = ir
-        .model
-        .parameters
-        .iter_mut()
-        .map(|parameter| (parameter.id.clone(), parameter))
-        .collect::<BTreeMap<_, _>>();
-    for dimension_set in dimensions {
-        let consumer = dimension_set
-            .operation_label
-            .replacen("operation-label", "feature", 1);
-        for (ordinal, dimension) in dimension_set.dimensions.iter().enumerate() {
-            let Some(parameter_id) = expression_parameter_id(&dimension.expression) else {
-                continue;
-            };
-            let Some(parameter) = parameters.get_mut(&parameter_id) else {
-                continue;
-            };
-            parameter.properties.insert(
-                cadmpeg_core::nonblank_literal!("block_dimension.{ordinal}"),
-                dimension_set.id.clone(),
-            );
-            if !parameter
-                .properties
-                .values()
-                .any(|value| value == &consumer)
-            {
-                // One more candidate than the map holds entries, so one of
-                // them is free; the `else` states that rather than asserting it.
-                let Some(consumer_ordinal) = (0..=parameter.properties.len()).find(|candidate| {
-                    !parameter
-                        .properties
-                        .contains_key(format!("consumer.{candidate}").as_str())
-                }) else {
-                    return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                        "NX parameter properties hold no free consumer ordinal"
-                    )));
-                };
-                parameter.properties.insert(
-                    cadmpeg_core::nonblank_literal!("consumer.{consumer_ordinal}"),
-                    consumer.clone(),
-                );
-            }
-            annotations
-                .derived(parameter.id.as_str(), "properties")
-                .map_err(cadmpeg_core::CodecError::malformed)?;
-        }
-    }
-    Ok(())
-}
-
-fn expression_parameter_id(expression_id: &str) -> Option<ParameterId> {
-    let (section, key) = expression_id.split_once(":expression#")?;
-    IdScope::of(section)?.try_id(&cadmpeg_ir::identity_component!("parameter"), key)
 }
 
 #[cfg(test)]

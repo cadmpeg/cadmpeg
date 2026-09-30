@@ -275,6 +275,90 @@ pub(super) fn edge_node_wires(
         .collect()
 }
 
+fn identity_index_charged<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    identities: &'a [CatiaConsolidatedVertexIdentity],
+) -> Result<HashMap<IdentityKey, &'a str>, cadmpeg_core::CodecError> {
+    let mut index = HashMap::new();
+    for identity in identities {
+        let key = if let Some(record) = identity.endpoint_record {
+            IdentityKey::EndpointRecord(record)
+        } else {
+            IdentityKey::Unresolved(
+                identity.source_index,
+                identity
+                    .allocation_owner
+                    .as_deref()
+                    .map(|owner| {
+                        ctx.copy_retained_text(owner, "catia_native_edge_wire_index_owner")
+                    })
+                    .transpose()?,
+                identity.identity,
+            )
+        };
+        ctx.insert_hash_map(
+            &mut index,
+            key,
+            identity.id.as_str(),
+            "catia_native_edge_wire_index",
+        )?;
+    }
+    Ok(index)
+}
+
+fn joined_vertex_charged<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    node: &CatiaConsolidatedEdgeNode,
+    endpoint: usize,
+    index: &HashMap<IdentityKey, &'a str>,
+) -> Result<&'a str, cadmpeg_core::CodecError> {
+    if node.endpoint_records.is_none() && node.uses.is_none() {
+        return Ok("");
+    }
+    let key = if let Some(records) = node.endpoint_records {
+        IdentityKey::EndpointRecord(records[endpoint])
+    } else {
+        IdentityKey::Unresolved(
+            node.source_index,
+            node.allocation
+                .as_ref()
+                .map(|(owner, _)| {
+                    ctx.copy_retained_text(owner, "catia_native_edge_wire_lookup_owner")
+                })
+                .transpose()?,
+            node.vertex_refs[endpoint],
+        )
+    };
+    Ok(index.get(&key).copied().unwrap_or(""))
+}
+
+pub(super) fn edge_node_wires_charged(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    nodes: Vec<CatiaConsolidatedEdgeNode>,
+    identities: &[CatiaConsolidatedVertexIdentity],
+) -> Result<Vec<CatiaConsolidatedEdgeNodeWire>, cadmpeg_core::CodecError> {
+    let index = identity_index_charged(ctx, identities)?;
+    let mut wires = Vec::new();
+    for node in nodes {
+        let vertices = [
+            ctx.copy_retained_text(
+                joined_vertex_charged(ctx, &node, 0, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
+            ctx.copy_retained_text(
+                joined_vertex_charged(ctx, &node, 1, &index)?,
+                "catia_native_edge_wire_vertex_id",
+            )?,
+        ];
+        ctx.push_vec(
+            &mut wires,
+            CatiaConsolidatedEdgeNodeWire::from_node(node, vertices),
+            "catia_native_edge_wires",
+        )?;
+    }
+    Ok(wires)
+}
+
 pub(super) fn load_edge_nodes(
     wires: Vec<CatiaConsolidatedEdgeNodeWire>,
     identities: &[CatiaConsolidatedVertexIdentity],
@@ -304,8 +388,9 @@ impl super::CatiaNative {
 }
 
 pub(super) fn consolidated_vertex_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     nodes: &[CatiaConsolidatedEdgeNode],
-) -> Vec<CatiaConsolidatedVertexIdentity> {
+) -> Result<Vec<CatiaConsolidatedVertexIdentity>, cadmpeg_core::CodecError> {
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_indices = HashMap::<IdentityKey, usize>::new();
     for node in nodes {
@@ -314,30 +399,80 @@ pub(super) fn consolidated_vertex_identities(
         }
         for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let endpoint_record = node.endpoint_records.map(|records| records[endpoint]);
-            let key = node_identity_key(node, endpoint);
-            let index = *identity_indices.entry(key).or_insert_with(|| {
-                let index = identities.len();
-                identities.push(CatiaConsolidatedVertexIdentity {
-                    id: format!("catia:consolidated:vertex-identity#{index}"),
-                    identity,
-                    source_index: node.source_index,
-                    endpoint_record,
-                    reference_values: vec![identity],
-                    allocation_owner: node.allocation.as_ref().map(|(owner, _)| owner.clone()),
-                    incident_edge_nodes: Vec::new(),
-                });
+            let key = node.endpoint_records.map_or_else(
+                || {
+                    node.allocation
+                        .as_ref()
+                        .map(|(owner, _)| {
+                            ctx.copy_retained_text(owner, "catia_native_vertex_identity_lookup_key")
+                        })
+                        .transpose()
+                        .map(|owner| IdentityKey::Unresolved(node.source_index, owner, identity))
+                },
+                |records| Ok(IdentityKey::EndpointRecord(records[endpoint])),
+            )?;
+            let index = if let Some(&index) = identity_indices.get(&key) {
                 index
-            });
+            } else {
+                let index = identities.len();
+                let id = ctx.format_retained(
+                    format_args!("catia:consolidated:vertex-identity#{index:00}"),
+                    "catia_native_vertex_identity_id",
+                )?;
+                let mut reference_values = Vec::new();
+                ctx.push_vec(
+                    &mut reference_values,
+                    identity,
+                    "catia_native_vertex_identity_references",
+                )?;
+                let allocation_owner = node
+                    .allocation
+                    .as_ref()
+                    .map(|(owner, _)| {
+                        ctx.copy_retained_text(owner, "catia_native_vertex_identity_owner")
+                    })
+                    .transpose()?;
+                ctx.push_vec(
+                    &mut identities,
+                    CatiaConsolidatedVertexIdentity {
+                        id,
+                        identity,
+                        source_index: node.source_index,
+                        endpoint_record,
+                        reference_values,
+                        allocation_owner,
+                        incident_edge_nodes: Vec::new(),
+                    },
+                    "catia_native_vertex_identities",
+                )?;
+                ctx.insert_hash_map(
+                    &mut identity_indices,
+                    key,
+                    index,
+                    "catia_native_vertex_identity_index",
+                )?;
+                index
+            };
             let vertex = &mut identities[index];
             if !vertex.reference_values.contains(&identity) {
-                vertex.reference_values.push(identity);
+                ctx.push_vec(
+                    &mut vertex.reference_values,
+                    identity,
+                    "catia_native_vertex_identity_references",
+                )?;
             }
             if vertex.incident_edge_nodes.last() != Some(&node.id) {
-                vertex.incident_edge_nodes.push(node.id.clone());
+                let edge_id =
+                    ctx.copy_retained_text(&node.id, "catia_native_vertex_incident_edge_id")?;
+                ctx.push_vec(
+                    &mut vertex.incident_edge_nodes,
+                    edge_id,
+                    "catia_native_vertex_incident_edges",
+                )?;
             }
         }
     }
-    identities
+    Ok(identities)
 }
 
 #[cfg(test)]
@@ -345,6 +480,56 @@ mod tests {
     use crate::native::CatiaNative;
     use crate::test_support::test_a5_bound::a5_native_edge_run_stream;
     use cadmpeg_test_support::refusal::{refusal, states_the_key};
+
+    #[test]
+    fn native_edge_wire_projection_refuses_before_identity_index_growth() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        let service = crate::test_support::with_service_context(|ctx| {
+            super::edge_node_wires_charged(
+                ctx,
+                native.consolidated_edge_nodes.clone(),
+                &native.consolidated_vertex_identities,
+            )
+        })
+        .expect("service edge-wire budget");
+        let original = super::edge_node_wires(
+            native.consolidated_edge_nodes.clone(),
+            &native.consolidated_vertex_identities,
+        );
+        assert_eq!(
+            serde_json::to_value(service).expect("serialize charged edge wires"),
+            serde_json::to_value(original).expect("serialize original edge wires"),
+        );
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::edge_node_wires_charged(
+                ctx,
+                native.consolidated_edge_nodes.clone(),
+                &native.consolidated_vertex_identities,
+            )
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_edge_wire_index")
+        );
+    }
+
+    #[test]
+    fn native_vertex_identities_refuse_before_nested_growth() {
+        let native = CatiaNative::decode(&a5_native_edge_run_stream(6, 139, 142));
+        assert!(!native.consolidated_edge_nodes.is_empty());
+        let service = crate::test_support::with_service_context(|ctx| {
+            super::consolidated_vertex_identities(ctx, &native.consolidated_edge_nodes)
+        })
+        .expect("service vertex identity budget");
+        assert_eq!(service, native.consolidated_vertex_identities);
+        let limited = crate::test_support::with_collection_limit(0, |ctx| {
+            super::consolidated_vertex_identities(ctx, &native.consolidated_edge_nodes)
+        });
+        assert!(
+            matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.operation == "catia_native_vertex_identity_references")
+        );
+    }
 
     #[test]
     fn vertex_wire_join_preserves_ids_and_rejects_conflicting_ids() {

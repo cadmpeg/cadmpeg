@@ -46,9 +46,24 @@ impl TopologyContext {
     }
 }
 
+impl From<TopologyContext> for u8 {
+    fn from(context: TopologyContext) -> Self {
+        match context {
+            TopologyContext::C0 => 0,
+            TopologyContext::C1 => 1,
+            TopologyContext::C2 => 2,
+            TopologyContext::C3 => 3,
+            TopologyContext::C4 => 4,
+            TopologyContext::C5 => 5,
+            TopologyContext::C6 => 6,
+            TopologyContext::C7 => 7,
+        }
+    }
+}
+
 /// Semantic lane carried by one compressed topology packet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "String")]
 pub(super) enum TopologyPacketRole {
     FaceDegrees(TopologyContext),
     VertexValences,
@@ -62,15 +77,26 @@ pub(super) enum TopologyPacketRole {
     SplitFacePositions,
 }
 
+impl Serialize for TopologyPacketRole {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    static ROLE_INTO_STRING_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 impl fmt::Display for TopologyPacketRole {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::FaceDegrees(context) => write!(formatter, "face_degrees_{}", *context as u8),
+            Self::FaceDegrees(context) => write!(formatter, "face_degrees_{}", u8::from(*context)),
             Self::VertexValences => formatter.write_str("vertex_valences"),
             Self::VertexGroups => formatter.write_str("vertex_groups"),
             Self::VertexFlags => formatter.write_str("vertex_flags"),
             Self::FaceAttributeMasks(context) => {
-                write!(formatter, "face_attribute_masks_{}", *context as u8)
+                write!(formatter, "face_attribute_masks_{}", u8::from(*context))
             }
             Self::FaceAttributeMasks7Next30 => {
                 formatter.write_str("face_attribute_masks_7_next_30")
@@ -87,8 +113,10 @@ impl fmt::Display for TopologyPacketRole {
     }
 }
 
+#[cfg(test)]
 impl From<TopologyPacketRole> for String {
     fn from(role: TopologyPacketRole) -> Self {
+        ROLE_INTO_STRING_COUNT.with(|count| count.set(count.get() + 1));
         role.to_string()
     }
 }
@@ -133,7 +161,7 @@ impl TryFrom<String> for TopologyPacketRole {
 
 #[cfg(test)]
 mod tests {
-    use super::TopologyPacketRole;
+    use super::{TopologyPacketRole, ROLE_INTO_STRING_COUNT};
 
     #[test]
     fn packet_role_wire_preserves_indexed_and_fixed_labels() {
@@ -155,6 +183,34 @@ mod tests {
             let json = format!("\"{label}\"");
             let role: TopologyPacketRole = serde_json::from_str(&json).unwrap();
             assert_eq!(serde_json::to_string(&role).unwrap(), json);
+            assert_eq!(
+                serde_json::to_vec(&role).unwrap(),
+                serde_json::to_vec(&String::from(role)).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn packet_role_retained_limit_refuses_before_string_conversion() {
+        #[derive(serde::Serialize)]
+        struct Record<'a> {
+            id: &'static str,
+            role: &'a TopologyPacketRole,
+        }
+
+        for label in ["vertex_flags", "high_degree_face_attribute_masks_12"] {
+            let role: TopologyPacketRole =
+                serde_json::from_value(serde_json::json!(label)).unwrap();
+            let record = Record {
+                id: "nx:jt:packet-role#1",
+                role: &role,
+            };
+            ROLE_INTO_STRING_COUNT.with(|count| count.set(0));
+            cadmpeg_test_support::native_serialization::assert_native_limit(
+                &record,
+                serde_json::json!({"id": record.id, "role": label}),
+            );
+            ROLE_INTO_STRING_COUNT.with(|count| assert_eq!(count.get(), 0));
         }
     }
 

@@ -112,8 +112,9 @@ fn push_rejected_extrusion(
     body_id: BodyId,
     reason: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let reason = ctx.format_retained(reason, "creo extrusion rejection reason")?;
-    ctx.try_reserve_items(
+    let reason =
+        ctx.format_retained(format_args!("{reason}"), "creo extrusion rejection reason")?;
+    ctx.reserve_vec(
         &mut diagnostics.rejected_extrusion_bodies,
         1,
         "creo extrusion rejection diagnostics",
@@ -140,7 +141,7 @@ fn cap_coedge_ids_admitted(
         } else {
             position
         };
-        ctx.try_reserve_items(&mut ids, 1, operation)?;
+        ctx.reserve_vec(&mut ids, 1, operation)?;
         ids.push(generated_extrusion_identity(
             ctx,
             format_args!("{feature_id}:coedge:{profile_index}:{index}:{side}"),
@@ -156,7 +157,7 @@ fn copy_ring_coedges(
     identity_operation: &'static str,
 ) -> Result<Vec<CoedgeId>, cadmpeg_core::CodecError> {
     let mut copied = Vec::new();
-    ctx.try_reserve_items(&mut copied, ids.len(), collection_operation)?;
+    ctx.reserve_vec(&mut copied, ids.len(), collection_operation)?;
     for id in ids {
         copied.push(crate::identity::copy_checked_id(
             ctx,
@@ -362,12 +363,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
         let top_face = extrusion_id!(FaceId, "face:top");
         let mut shell_faces = Vec::new();
         for face in [&bottom_face, &top_face] {
-            ctx.try_reserve_items(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
+            ctx.reserve_vec(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
             shell_faces.push(copy_id!(face));
         }
         for (profile_index, profile) in profiles.iter().enumerate() {
             for index in 0..profile.entities().len() {
-                ctx.try_reserve_items(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
+                ctx.reserve_vec(&mut shell_faces, 1, "creo extrusion shell face IDs")?;
                 shell_faces.push(extrusion_id!(
                     FaceId,
                     "face:{}:side:{}",
@@ -474,7 +475,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             tolerance: None,
                         },
                     )?;
-                    ctx.try_reserve_items(arena, 1, "creo extrusion profile vertex IDs")?;
+                    ctx.reserve_vec(arena, 1, "creo extrusion profile vertex IDs")?;
                     arena.push(vertex_id);
                 }
             }
@@ -623,7 +624,7 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             tolerance: None,
                         },
                     )?;
-                    ctx.try_reserve_items(arena, 1, "creo extrusion profile edge IDs")?;
+                    ctx.reserve_vec(arena, 1, "creo extrusion profile edge IDs")?;
                     arena.push(edge_id);
                 }
                 let curve_id = extrusion_id!(CurveId, "curve:{}:{}:vertical", profile_index, index);
@@ -665,15 +666,15 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                         tolerance: None,
                     },
                 )?;
-                ctx.try_reserve_items(&mut vertical_edges, 1, "creo extrusion vertical edge IDs")?;
+                ctx.reserve_vec(&mut vertical_edges, 1, "creo extrusion vertical edge IDs")?;
                 vertical_edges.push(edge_id);
             }
 
             let bottom_loop = extrusion_id!(LoopId, "loop:{}:bottom", profile_index);
             let top_loop = extrusion_id!(LoopId, "loop:{}:top", profile_index);
-            ctx.try_reserve_items(&mut bottom_loops, 1, "creo extrusion bottom loop IDs")?;
+            ctx.reserve_vec(&mut bottom_loops, 1, "creo extrusion bottom loop IDs")?;
             bottom_loops.push(copy_id!(bottom_loop));
-            ctx.try_reserve_items(&mut top_loops, 1, "creo extrusion top loop IDs")?;
+            ctx.reserve_vec(&mut top_loops, 1, "creo extrusion top loop IDs")?;
             top_loops.push(copy_id!(top_loop));
             let bottom_coedges = cap_coedge_ids_admitted(
                 ctx,
@@ -694,12 +695,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                 "creo extrusion top cap coedge IDs",
             )?;
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ctx.try_reserve_items(&mut ir.model.loops, 1, "creo extrusion model loops")?;
+            ctx.reserve_vec(&mut ir.model.loops, 1, "creo extrusion model loops")?;
             ir.model.loops.push(IrLoop {
                 id: copy_id!(bottom_loop),
                 face: copy_id!(bottom_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                         ctx,
                         copy_ring_coedges(
                             ctx,
@@ -708,17 +709,17 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             "creo extrusion bottom ring coedge identities",
                         )?,
                         Vec::new(),
-                        "creo extrusion bottom loop validation nodes",
-                    )?,
+                    )?
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             ctx.charge_entities(1, "admit Creo model loops")?;
-            ctx.try_reserve_items(&mut ir.model.loops, 1, "creo extrusion model loops")?;
+            ctx.reserve_vec(&mut ir.model.loops, 1, "creo extrusion model loops")?;
             ir.model.loops.push(IrLoop {
                 id: copy_id!(top_loop),
                 face: copy_id!(top_face),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                    cadmpeg_ir::topology::LoopRing::new_admitted(
+                    cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                         ctx,
                         copy_ring_coedges(
                             ctx,
@@ -727,8 +728,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                             "creo extrusion top ring coedge identities",
                         )?,
                         Vec::new(),
-                        "creo extrusion top loop validation nodes",
-                    )?,
+                    )?
+                    .map_err(cadmpeg_core::CodecError::malformed)?,
                 ),
             });
             for ring_index in 0..count {
@@ -955,12 +956,12 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                     ),
                 ];
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ctx.try_reserve_items(&mut ir.model.loops, 1, "creo extrusion model loops")?;
+                ctx.reserve_vec(&mut ir.model.loops, 1, "creo extrusion model loops")?;
                 ir.model.loops.push(IrLoop {
                     id: copy_id!(loop_id),
                     face: copy_id!(face_id),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new_admitted(
+                        cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                             ctx,
                             copy_ring_coedges(
                                 ctx,
@@ -969,8 +970,8 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
                                 "creo extrusion side ring coedge identities",
                             )?,
                             Vec::new(),
-                            "creo extrusion side loop validation nodes",
-                        )?,
+                        )?
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
                 let edge_uses: [(EdgeId, Sense); 4] = [
@@ -1114,10 +1115,10 @@ pub(in super::super) fn transfer_resolved_extrusion_breps(
             },
         )?;
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ctx.try_reserve_items(&mut ir.model.shells, 1, "creo extrusion model shells")?;
+        ctx.reserve_vec(&mut ir.model.shells, 1, "creo extrusion model shells")?;
         ir.model.shells.push(shell);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ctx.try_reserve_items(&mut ir.model.regions, 1, "creo extrusion model regions")?;
+        ctx.reserve_vec(&mut ir.model.regions, 1, "creo extrusion model regions")?;
         ir.model.regions.push(Region {
             id: copy_id!(region_id),
             body: copy_id!(body_id),

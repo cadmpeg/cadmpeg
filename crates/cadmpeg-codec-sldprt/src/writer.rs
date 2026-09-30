@@ -60,7 +60,7 @@ pub(crate) fn write_semantic_with_records(
     // configuration source indices). SLDPRT_EXPORT_PRECONDITION_CHECKS records
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
-    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -73,7 +73,8 @@ pub(crate) fn write_semantic_with_records(
     sort_arenas(&mut normalized);
     assign_configuration_indices(&mut normalized.model.configurations)?;
     let source_scan = source_image(retained_records).map(crate::container::scan_bytes);
-    let retained_partition = retained_partition(&normalized, source_scan.as_ref())?;
+    let retained_partition =
+        retained_partition(&normalized, source_scan.as_ref(), native.as_ref())?;
     let feature_name_changes =
         crate::history::write::feature_name_changes(&normalized, native.as_ref());
     let feature_parameter_changes_authorized = !feature_name_changes.is_empty()
@@ -95,7 +96,7 @@ pub(crate) fn write_semantic_with_records(
         &mut native,
         annotations,
     )?;
-    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new());
+    let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {
         let detail = validation
             .findings
@@ -495,6 +496,7 @@ fn retained_cache_cells(
 fn retained_partition(
     ir: &CadIr,
     source_scan: Option<&crate::container::ContainerScan<'_>>,
+    native: Option<&SldprtNative>,
 ) -> Result<Option<(String, Vec<u8>)>, CodecError> {
     let Some(source) = ir.source.as_ref() else {
         return Ok(None);
@@ -512,13 +514,14 @@ fn retained_partition(
         return Ok(None);
     };
     let original_section = site.name();
-    let section = remapped_partition_section(ir, &original_section).unwrap_or(original_section);
+    let section = native
+        .and_then(|native| remapped_partition_section(ir, native, &original_section))
+        .unwrap_or(original_section);
     Ok(Some((section, site.section.payload().to_vec())))
 }
 
-fn remapped_partition_section(ir: &CadIr, section: &str) -> Option<String> {
+fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) -> Option<String> {
     let old_index = crate::container::configuration_index(section)?;
-    let native = SldprtNative::load(ir.native.namespace("sldprt")?).ok()?;
     let native_id = native
         .feature_histories
         .iter()
@@ -940,6 +943,12 @@ fn opaque_blocks(
     generated_partitions: &HashSet<String>,
     retain_native_brep: bool,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let native = ir
+        .native
+        .namespace("sldprt")
+        .map(SldprtNative::load)
+        .transpose()
+        .map_err(CodecError::from)?;
     let mut seen = HashSet::new();
     records
         .iter()
@@ -952,7 +961,9 @@ fn opaque_blocks(
                 return None;
             }
             if lower.ends_with("-partition")
-                && remapped_partition_section(ir, section)
+                && native
+                    .as_ref()
+                    .and_then(|native| remapped_partition_section(ir, native, section))
                     .is_some_and(|remapped| generated_partitions.contains(&remapped))
             {
                 return None;

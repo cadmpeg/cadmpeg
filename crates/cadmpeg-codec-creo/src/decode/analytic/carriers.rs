@@ -123,7 +123,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
                 if let Some(curve) =
                     exactly_one(ir.model.curves.iter().filter(|curve| curve.id == id))
                 {
-                    ctx.try_reserve_items(
+                    ctx.reserve_vec(
                         &mut boundary_curves,
                         1,
                         "creo topology-bound boundary curves",
@@ -135,7 +135,7 @@ pub(in crate::decode) fn transfer_topology_bound_planes(
         let mut curve_planes = Vec::new();
         for geometry in &boundary_curves {
             if let Some(plane) = analytic_curve_plane(ctx, geometry)? {
-                ctx.try_reserve_items(&mut curve_planes, 1, "creo topology-bound curve planes")?;
+                ctx.reserve_vec(&mut curve_planes, 1, "creo topology-bound curve planes")?;
                 curve_planes.push(plane);
             }
         }
@@ -249,7 +249,7 @@ fn topology_bound_face_points(
             .get(vertex_id)
             .is_some_and(|faces| faces.contains(&face_id))
         {
-            ctx.try_reserve_items(&mut points, 1, "creo topology-bound face points")?;
+            ctx.reserve_vec(&mut points, 1, "creo topology-bound face points")?;
             points.push(*point);
         }
     }
@@ -506,7 +506,7 @@ pub(in crate::decode) fn placed_carriers(
                 entry.insert(Vec::new())
             }
         };
-        ctx.try_reserve_items(surfaces, 1, "creo rowless carrier members")?;
+        ctx.reserve_vec(surfaces, 1, "creo rowless carrier members")?;
         surfaces.push(surface);
     }
     for (id, model_surfaces) in model_surfaces_by_id {
@@ -703,7 +703,7 @@ fn projected_loop_polygon(
         else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut polygon, 1, "creo projected loop polygon points")?;
+        ctx.reserve_vec(&mut polygon, 1, "creo projected loop polygon points")?;
         polygon.push(match dropped_axis {
             0 => [point[1], point[2]],
             1 => [point[0], point[2]],
@@ -807,7 +807,7 @@ fn valid_parameter_polygon(
     }
     let mut local = Vec::new();
     for point in polygon {
-        ctx.try_reserve_items(&mut local, 1, "creo normalized polygon points")?;
+        ctx.reserve_vec(&mut local, 1, "creo normalized polygon points")?;
         local.push(cadmpeg_ir::math::Point2::new(
             (point[0] - origin[0]) / scale,
             (point[1] - origin[1]) / scale,
@@ -869,7 +869,7 @@ pub(in crate::decode) fn ordered_planar_face_loops<'a>(
         else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut polygons, 1, "creo projected loop polygons")?;
+        ctx.reserve_vec(&mut polygons, 1, "creo projected loop polygons")?;
         polygons.push(polygon);
     }
     ordered_contained_face_loops(ctx, loops, &polygons)
@@ -911,7 +911,7 @@ pub(in crate::decode) fn ordered_face_loops<'a>(
     solved_vertices: &BTreeMap<u32, [f64; 3]>,
 ) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
     let mut ordered_input = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut ordered_input,
         loops.len(),
         "creo native face ordering loop references",

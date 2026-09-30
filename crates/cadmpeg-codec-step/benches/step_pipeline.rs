@@ -13,7 +13,7 @@ use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Point;
 
-const ENTITY_COUNT: usize = 100_000;
+const ENTITY_COUNT: u32 = 100_000;
 
 fn exchange(entity: &str) -> Vec<u8> {
     let mut source = String::with_capacity(4_000_000);
@@ -43,7 +43,7 @@ fn ir() -> CadIr {
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| {
         Point::new(
             PointId::mint(format!("test:bench:point#{index}")).expect("identity grammar"),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(index as f64, 2.0, 3.0))
+            cadmpeg_ir::features::FinitePoint3::new(Point3::new(f64::from(index), 2.0, 3.0))
                 .expect("a finite position is a point"),
             None,
         )
@@ -60,9 +60,13 @@ fn measure(name: &str, mut run: impl FnMut()) {
         iterations += 1;
     }
     let elapsed = start.elapsed();
+    let Some(iterations_f64) = cadmpeg_core::convert::f64_from_u64(iterations) else {
+        eprintln!("iteration count exceeds the exact f64 integer range");
+        return;
+    };
     println!(
         "{name}: {:.3} ms/iteration ({iterations} iterations)",
-        elapsed.as_secs_f64() * 1000.0 / iterations as f64
+        elapsed.as_secs_f64() * 1000.0 / iterations_f64
     );
 }
 

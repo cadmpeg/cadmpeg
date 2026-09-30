@@ -4,8 +4,6 @@
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
-use crate::record_issue::admit_issue_detail;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RseSchema(u32);
 
@@ -154,7 +152,10 @@ pub(crate) fn parse_database(
         Ok(database) => Ok(DatabaseHeader::Supported(database)),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
-            admit_issue_detail(ctx, &error, "retain RSe unframed database detail")?;
+            ctx.charge_formatted_retained(
+                format_args!("{error}"),
+                "retain RSe unframed database detail",
+            )?;
             Ok(DatabaseHeader::Unframed {
                 schema,
                 detail: error.to_string(),
@@ -200,8 +201,12 @@ pub(crate) fn parse_registry(
 ) -> Result<SegmentRegistry, CodecError> {
     let mut cursor = Cursor::new(bytes, "RSe segment registry");
     let count = cursor.count("segment count", 65_536)?;
-    ctx.charge_collection_items(count as u64, "admit Inventor segment registry entries")?;
-    let mut entries = Vec::with_capacity(count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor segment registry entries",
+    )?;
+    let mut entries =
+        DecodeContext::admitted_vec(count, "admit Inventor segment registry entries")?;
     for _ in 0..count {
         let display_name = cursor.utf16(ctx, "segment display name", 4_096)?;
         let segment_id = cursor.array("segment id")?;
@@ -215,10 +220,11 @@ pub(crate) fn parse_registry(
         let version = cursor.version("segment version")?;
         let trailing_value = cursor.u32("segment trailing value")?;
         ctx.charge_collection_items(
-            object_count as u64,
+            cadmpeg_core::decode::u64_from_index(object_count),
             "admit Inventor segment registry objects",
         )?;
-        let mut objects = Vec::with_capacity(object_count);
+        let mut objects =
+            DecodeContext::admitted_vec(object_count, "admit Inventor segment registry objects")?;
         let mut node_count = None;
         for _ in 0..object_count {
             let object = SegmentObject {
@@ -242,8 +248,12 @@ pub(crate) fn parse_registry(
                 "RSe segment node count exceeds 1000000".into(),
             ));
         }
-        ctx.charge_collection_items(node_count as u64, "admit Inventor segment registry nodes")?;
-        let mut nodes = Vec::with_capacity(node_count);
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(node_count),
+            "admit Inventor segment registry nodes",
+        )?;
+        let mut nodes =
+            DecodeContext::admitted_vec(node_count, "admit Inventor segment registry nodes")?;
         for _ in 0..node_count {
             nodes.push(SegmentNode {
                 index: cursor.u32("node index")?,
@@ -292,8 +302,11 @@ pub(crate) fn parse_revisions(
     // does not obey it fails structurally at the cursor.
     let version = cursor.u32("version")?;
     let count = cursor.count("revision count", 1_000_000)?;
-    ctx.charge_collection_items(count as u64, "admit Inventor revision entries")?;
-    let mut entries = Vec::with_capacity(count);
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "admit Inventor revision entries",
+    )?;
+    let mut entries = DecodeContext::admitted_vec(count, "admit Inventor revision entries")?;
     for _ in 0..count {
         let id = cursor.array("revision id")?;
         let flags = cursor.u32("revision flags")?;
@@ -401,8 +414,14 @@ impl<'a> Cursor<'a> {
         let utf8_bytes = crate::reader::utf16_utf8_len(self.source, count).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })?;
-        let _units = ctx.reserve_scoped(len as u64, "decode RSe table UTF-16 units")?;
-        ctx.charge_retained(utf8_bytes as u64, "retain RSe table UTF-16 field")?;
+        let _units = ctx.reserve_scoped(
+            cadmpeg_core::decode::u64_from_index(len),
+            "decode RSe table UTF-16 units",
+        )?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(utf8_bytes),
+            "retain RSe table UTF-16 field",
+        )?;
         self.source.utf16_le(count).ok_or_else(|| {
             CodecError::malformed(format_args!("{} {field} is not UTF-16", self.scope))
         })
@@ -414,8 +433,12 @@ impl<'a> Cursor<'a> {
         field: &'static str,
     ) -> Result<Vec<[u8; 16]>, CodecError> {
         let count = self.count(field, 1_000_000)?;
-        ctx.charge_collection_items(count as u64, "admit Inventor registry identifier list")?;
-        let mut ids = Vec::with_capacity(count);
+        ctx.charge_collection_items(
+            cadmpeg_core::decode::u64_from_index(count),
+            "admit Inventor registry identifier list",
+        )?;
+        let mut ids =
+            DecodeContext::admitted_vec(count, "admit Inventor registry identifier list")?;
         for _ in 0..count {
             ids.push(self.array(field)?);
         }
@@ -477,7 +500,8 @@ mod tests {
         let bytes = database_fixture();
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "synthetic database".len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("synthetic database".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("database fits input cap");
         assert!(matches!(
@@ -488,7 +512,8 @@ mod tests {
         ));
 
         policy.limits.max_retained_bytes = DecodePolicy::service().limits.max_retained_bytes;
-        policy.limits.max_materialized_bytes = ("synthetic database".len() * 2 - 1) as u64;
+        policy.limits.max_materialized_bytes =
+            cadmpeg_core::decode::u64_from_index("synthetic database".len() * 2 - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("database fits input cap");
         assert!(matches!(
@@ -511,7 +536,8 @@ mod tests {
         let bytes = registry_fixture(&[2]);
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len()) - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -521,7 +547,8 @@ mod tests {
                     && limit.operation == "retain RSe table UTF-16 field"
         ));
 
-        policy.limits.max_retained_bytes = "PmBRepSegment".len() as u64;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("PmBRepSegment".len());
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy)
             .expect("registry fits input cap");
         assert!(matches!(
@@ -529,7 +556,7 @@ mod tests {
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::RetainedBytes
                     && limit.operation == "retain RSe table UTF-16 field"
-                    && limit.used == "PmBRepSegment".len() as u64
+                    && limit.used == cadmpeg_core::decode::u64_from_index("PmBRepSegment".len())
         ));
 
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
@@ -750,7 +777,10 @@ mod tests {
         bytes.extend_from_slice(&[0x10; 16]);
         bytes.extend_from_slice(&[0x20; 16]);
         push_u32(&mut bytes, 3);
-        push_u32(&mut bytes, object_node_counts.len() as u32);
+        push_u32(
+            &mut bytes,
+            u32::try_from(object_node_counts.len()).expect("fixture value fits u32"),
+        );
         for value in 4..9 {
             push_u32(&mut bytes, value);
         }

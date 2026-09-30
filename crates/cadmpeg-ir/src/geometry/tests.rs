@@ -9,6 +9,8 @@ use crate::ids::UnknownId;
 use crate::test_support::make_first_face_surface_unknown;
 use crate::unknown::NativeUnknownRecord;
 
+mod decode_copy;
+
 #[test]
 fn admitted_nurbs_geometry_copy_refuses_each_nested_vector() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
@@ -25,21 +27,24 @@ fn admitted_nurbs_geometry_copy_refuses_each_nested_vector() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(curve.copy_admitted(&ctx, "curve copy"),
+        assert!(matches!(curve.try_clone_for_decode(&ctx, "curve copy"),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "curve copy"));
     }
     for limit in [0, 4, 8, 10, 12] {
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(surface.copy_admitted(&ctx, "surface copy"),
+        assert!(matches!(surface.try_clone_for_decode(&ctx, "surface copy"),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "surface copy"));
     }
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert_eq!(curve.copy_admitted(&ctx, "curve copy").unwrap(), curve);
     assert_eq!(
-        surface.copy_admitted(&ctx, "surface copy").unwrap(),
+        curve.try_clone_for_decode(&ctx, "curve copy").unwrap(),
+        curve
+    );
+    assert_eq!(
+        surface.try_clone_for_decode(&ctx, "surface copy").unwrap(),
         surface
     );
 }
@@ -74,22 +79,26 @@ fn admitted_sampled_geometry_copy_refuses_both_polygon_lanes_and_polyline_rows()
         let mut policy = DecodePolicy::service();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        assert!(matches!(polygon.copy_admitted(&ctx, "polygon copy"),
+        assert!(matches!(polygon.try_clone_for_decode(&ctx, "polygon copy"),
             Err(CodecError::ResourceLimit(resource)) if resource.operation == "polygon copy"));
     }
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(polyline.copy_admitted(&ctx, "polyline copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "polyline copy"));
+    assert!(
+        matches!(polyline.try_clone_for_decode(&ctx, "polyline copy"),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "polyline copy")
+    );
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        polygon.copy_admitted(&ctx, "polygon copy").unwrap(),
+        polygon.try_clone_for_decode(&ctx, "polygon copy").unwrap(),
         polygon
     );
     assert_eq!(
-        polyline.copy_admitted(&ctx, "polyline copy").unwrap(),
+        polyline
+            .try_clone_for_decode(&ctx, "polyline copy")
+            .unwrap(),
         polyline
     );
 }
@@ -112,7 +121,7 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(unknown.copy_admitted(&ctx, "unknown copy"),
+    assert!(matches!(unknown.try_clone_for_decode(&ctx, "unknown copy"),
         Err(CodecError::ResourceLimit(resource)) if resource.operation == "unknown copy"));
     let composite = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
         segments: CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
@@ -124,8 +133,10 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
         self_intersect: None,
     });
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(composite.copy_admitted(&ctx, "composite copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "composite copy"));
+    assert!(
+        matches!(composite.try_clone_for_decode(&ctx, "composite copy"),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "composite copy")
+    );
     let transformed = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
         PlacedCurve::try_new(
             Box::new(SolvedCurveGeometry::Nurbs(
@@ -138,20 +149,26 @@ fn admitted_inline_geometry_copy_refuses_node_and_record_text() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 6;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(transformed.copy_admitted(&ctx, "inline copy"),
-        Err(CodecError::ResourceLimit(resource)) if resource.operation == "inline copy"));
+    assert!(
+        matches!(transformed.try_clone_for_decode(&ctx, "inline copy"),
+        Err(CodecError::ResourceLimit(resource)) if resource.operation == "inline copy")
+    );
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert_eq!(
-        unknown.copy_admitted(&ctx, "unknown copy").unwrap(),
+        unknown.try_clone_for_decode(&ctx, "unknown copy").unwrap(),
         unknown
     );
     assert_eq!(
-        composite.copy_admitted(&ctx, "composite copy").unwrap(),
+        composite
+            .try_clone_for_decode(&ctx, "composite copy")
+            .unwrap(),
         composite
     );
     assert_eq!(
-        transformed.copy_admitted(&ctx, "inline copy").unwrap(),
+        transformed
+            .try_clone_for_decode(&ctx, "inline copy")
+            .unwrap(),
         transformed
     );
 }
@@ -605,7 +622,7 @@ fn ranged_spring_definition() -> crate::geometry::ProceduralCurveDefinition {
                     crate::geometry::SpringSupport::Ranges([[0.0, 1.0], [2.0, 3.0]]),
                     crate::geometry::SpringSupport::Ranges([[4.0, 5.0], [6.0, 7.0]]),
                 ],
-                first_pcurve: crate::geometry::SpringPcurve::Range([8.0, 9.0]),
+                first_pcurve: Box::new(crate::geometry::SpringPcurve::Range([8.0, 9.0])),
                 second_pcurve: None,
                 parameter_range: [-1.0, 2.0],
                 discontinuities: [Vec::new(), Vec::new(), Vec::new()],

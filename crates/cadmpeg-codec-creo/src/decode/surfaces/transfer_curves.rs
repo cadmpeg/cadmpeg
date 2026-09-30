@@ -52,7 +52,7 @@ pub(in super::super) fn analytic_curve_branches(
             None
         };
     Ok(std::iter::once((
-        geometry.copy_admitted(ctx, "creo analytic curve branch geometry")?,
+        geometry.try_clone_for_decode(ctx, "creo analytic curve branch geometry")?,
         tag,
     ))
     .chain(opposite)
@@ -263,7 +263,7 @@ fn append_boundary_fallback_losses(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     fallback_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         losses,
         fallback_losses.len(),
         "creo boundary fallback losses",
@@ -298,7 +298,7 @@ fn note_boundary_lane_records(
             ),
             "creo boundary loss message",
         )?;
-        ctx.try_reserve_items(losses, 1, "creo boundary loss notes")?;
+        ctx.reserve_vec(losses, 1, "creo boundary loss notes")?;
         losses.push(crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message));
     }
     Ok(())

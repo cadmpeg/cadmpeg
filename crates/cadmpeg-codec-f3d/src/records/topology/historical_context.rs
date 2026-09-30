@@ -70,14 +70,27 @@ pub(crate) struct DesignHistoricalFaceBoundaryContext {
 }
 
 /// Ordered topology and available geometry of one historical face loop.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DesignHistoricalFaceLoopWire",
-    into = "DesignHistoricalFaceLoopWire"
-)]
+#[derive(Debug, PartialEq, Deserialize)]
+#[serde(try_from = "DesignHistoricalFaceLoopWire")]
 pub(crate) struct DesignHistoricalFaceLoopContext {
     pub(crate) loop_slot: i64,
     pub(crate) boundary: DesignHistoricalLoopBoundary,
+}
+
+#[cfg(test)]
+thread_local! {
+    static HISTORICAL_FACE_LOOP_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+impl Clone for DesignHistoricalFaceLoopContext {
+    fn clone(&self) -> Self {
+        #[cfg(test)]
+        HISTORICAL_FACE_LOOP_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            loop_slot: self.loop_slot,
+            boundary: self.boundary.clone(),
+        }
+    }
 }
 
 /// Complete runs of the available loop member bindings.
@@ -151,6 +164,123 @@ struct DesignHistoricalFaceLoopWire {
     positions: Vec<cadmpeg_ir::math::Point3>,
 }
 
+#[derive(Clone, Copy)]
+enum LoopColumnKind {
+    Coedge,
+    Edge,
+    Vertex,
+    Point,
+    Position,
+}
+
+struct LoopColumn<'a> {
+    boundary: &'a DesignHistoricalLoopBoundary,
+    kind: LoopColumnKind,
+}
+
+impl LoopColumn<'_> {
+    fn is_empty(&self) -> bool {
+        match (self.kind, self.boundary) {
+            (LoopColumnKind::Coedge | LoopColumnKind::Edge, boundary) => {
+                boundary.coedges().next().is_none()
+            }
+            (
+                LoopColumnKind::Vertex | LoopColumnKind::Point | LoopColumnKind::Position,
+                DesignHistoricalLoopBoundary::Coedges(_),
+            )
+            | (
+                LoopColumnKind::Point | LoopColumnKind::Position,
+                DesignHistoricalLoopBoundary::Vertices(_),
+            )
+            | (LoopColumnKind::Position, DesignHistoricalLoopBoundary::Points(_)) => true,
+            (LoopColumnKind::Vertex, DesignHistoricalLoopBoundary::Vertices(rows)) => {
+                rows.is_empty()
+            }
+            (
+                LoopColumnKind::Vertex | LoopColumnKind::Point,
+                DesignHistoricalLoopBoundary::Points(rows),
+            ) => rows.is_empty(),
+            (
+                LoopColumnKind::Vertex | LoopColumnKind::Point | LoopColumnKind::Position,
+                DesignHistoricalLoopBoundary::Positions(rows),
+            ) => rows.is_empty(),
+        }
+    }
+}
+
+impl Serialize for LoopColumn<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match (self.kind, self.boundary) {
+            (LoopColumnKind::Coedge, boundary) => {
+                serializer.collect_seq(boundary.coedges().map(|row| row.coedge_slot))
+            }
+            (LoopColumnKind::Edge, boundary) => {
+                serializer.collect_seq(boundary.coedges().map(|row| row.edge_slot))
+            }
+            (
+                LoopColumnKind::Vertex | LoopColumnKind::Point | LoopColumnKind::Position,
+                DesignHistoricalLoopBoundary::Coedges(_),
+            )
+            | (
+                LoopColumnKind::Point | LoopColumnKind::Position,
+                DesignHistoricalLoopBoundary::Vertices(_),
+            )
+            | (LoopColumnKind::Position, DesignHistoricalLoopBoundary::Points(_)) => {
+                serializer.collect_seq(std::iter::empty::<i64>())
+            }
+            (LoopColumnKind::Vertex, DesignHistoricalLoopBoundary::Vertices(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.vertex_slot))
+            }
+            (LoopColumnKind::Vertex, DesignHistoricalLoopBoundary::Points(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.vertex.vertex_slot))
+            }
+            (LoopColumnKind::Point, DesignHistoricalLoopBoundary::Points(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.point_slot))
+            }
+            (LoopColumnKind::Vertex, DesignHistoricalLoopBoundary::Positions(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.point.vertex.vertex_slot))
+            }
+            (LoopColumnKind::Point, DesignHistoricalLoopBoundary::Positions(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.point.point_slot))
+            }
+            (LoopColumnKind::Position, DesignHistoricalLoopBoundary::Positions(rows)) => {
+                serializer.collect_seq(rows.iter().map(|row| row.position))
+            }
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DesignHistoricalFaceLoopWireRef<'a> {
+    loop_slot: i64,
+    coedge_slots: LoopColumn<'a>,
+    edge_slots: LoopColumn<'a>,
+    #[serde(skip_serializing_if = "LoopColumn::is_empty")]
+    vertex_slots: LoopColumn<'a>,
+    #[serde(skip_serializing_if = "LoopColumn::is_empty")]
+    point_slots: LoopColumn<'a>,
+    #[serde(skip_serializing_if = "LoopColumn::is_empty")]
+    positions: LoopColumn<'a>,
+}
+
+impl Serialize for DesignHistoricalFaceLoopContext {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let column = |kind| LoopColumn {
+            boundary: &self.boundary,
+            kind,
+        };
+        DesignHistoricalFaceLoopWireRef {
+            loop_slot: self.loop_slot,
+            coedge_slots: column(LoopColumnKind::Coedge),
+            edge_slots: column(LoopColumnKind::Edge),
+            vertex_slots: column(LoopColumnKind::Vertex),
+            point_slots: column(LoopColumnKind::Point),
+            positions: column(LoopColumnKind::Position),
+        }
+        .serialize(serializer)
+    }
+}
+
 impl TryFrom<DesignHistoricalFaceLoopWire> for DesignHistoricalFaceLoopContext {
     type Error = String;
 
@@ -213,6 +343,7 @@ impl TryFrom<DesignHistoricalFaceLoopWire> for DesignHistoricalFaceLoopContext {
     }
 }
 
+#[cfg(test)]
 impl From<DesignHistoricalFaceLoopContext> for DesignHistoricalFaceLoopWire {
     fn from(context: DesignHistoricalFaceLoopContext) -> Self {
         let mut wire = Self {

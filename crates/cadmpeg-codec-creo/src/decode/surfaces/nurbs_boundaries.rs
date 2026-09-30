@@ -49,7 +49,7 @@ fn report_cubic_generator_loss(
         ),
         "creo cubic generator loss message",
     )?;
-    ctx.try_reserve_items(losses, 1, "creo cubic generator loss notes")?;
+    ctx.reserve_vec(losses, 1, "creo cubic generator loss notes")?;
     losses.push(crate::loss::CreoLossCode::NurbsBoundaryCarrierUnresolved.note(message));
     Ok(())
 }
@@ -91,20 +91,20 @@ fn nurbs_surface_boundaries(
     {
         let count = if along_u { u_count } else { v_count };
         let mut control_indices = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut control_indices,
             count,
             "creo NURBS boundary control indices",
         )?;
         let mut control_points = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut control_points,
             count,
             "creo NURBS boundary control points",
         )?;
         let mut weights = if weighted {
             let mut weights = Vec::new();
-            ctx.try_reserve_items(&mut weights, count, "creo NURBS boundary weights")?;
+            ctx.reserve_vec(&mut weights, count, "creo NURBS boundary weights")?;
             Some(weights)
         } else {
             None
@@ -142,12 +142,10 @@ fn nurbs_surface_boundaries(
                 nurbs.u_periodic(),
             )
         };
-        let knots = ctx.try_collection(source_knots.len(), "creo NURBS boundary knots", || {
-            source_knots.try_clone()
-        })?;
+        let knots = source_knots.try_clone_for_decode(ctx, "creo NURBS boundary knots")?;
         let poles = if let Some(weights) = weights {
             let mut paired = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut paired,
                 control_points.len(),
                 "creo NURBS boundary paired poles",
@@ -478,7 +476,7 @@ fn generator_separates_control_nets(
             (angle - std::f64::consts::FRAC_PI_2).rem_euclid(std::f64::consts::TAU),
         ]
     }) {
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut boundary_angles,
             1,
             "creo generator separation boundary angles",
@@ -959,7 +957,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         let second = evaluated(1);
         let curve = &boundaries[0].curve;
         let mut knots = Vec::new();
-        if let Err(error) = ctx.try_reserve_items(
+        if let Err(error) = ctx.reserve_vec(
             &mut knots,
             curve.knots().len(),
             "creo cubic generator knots",
@@ -968,7 +966,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         }
         knots.extend_from_slice(curve.knots());
         let mut control_points = Vec::new();
-        if let Err(error) = ctx.try_reserve_items(
+        if let Err(error) = ctx.reserve_vec(
             &mut control_points,
             2,
             "creo cubic generator control points",
@@ -978,9 +976,7 @@ pub(in super::super) fn cubic_extrusion_plane_generator_curve(
         control_points.extend([first.0, second.0]);
         let weights = if matches!(nurbs.pole_grid(), NurbsPoleGrid::Rational { .. }) {
             let mut weights = Vec::new();
-            if let Err(error) =
-                ctx.try_reserve_items(&mut weights, 2, "creo cubic generator weights")
-            {
+            if let Err(error) = ctx.reserve_vec(&mut weights, 2, "creo cubic generator weights") {
                 return Some(Err(error));
             }
             weights.extend([first.1, second.1]);

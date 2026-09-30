@@ -6,6 +6,7 @@ use std::io::{self, Cursor, Read, Seek, SeekFrom};
 
 use crate::CodecError;
 
+use super::u64_from_index;
 use super::{
     refuse_local_limit, ByteRange, DecodeArena, DecodeContext, DecodePolicy, ExpandSpec,
     ResourceDimension, ResourceLimits, WorkBudget,
@@ -15,6 +16,38 @@ fn policy_with(mut edit: impl FnMut(&mut ResourceLimits)) -> DecodePolicy {
     let mut policy = DecodePolicy::default();
     edit(&mut policy.limits);
     policy
+}
+
+#[test]
+fn copy_retained_text_refuses_before_allocation_and_succeeds_under_service_profile() {
+    let arena = DecodeArena::new();
+    let policy = policy_with(|limits| limits.max_retained_bytes = 4);
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy).unwrap();
+    assert!(matches!(
+        ctx.copy_retained_text("hello", "retained text test"),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::RetainedBytes
+    ));
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &DecodePolicy::default()).unwrap();
+    assert_eq!(
+        ctx.copy_retained_text("hello", "retained text test")
+            .unwrap(),
+        "hello"
+    );
+}
+
+#[test]
+fn allocation_failed_constructor_sets_refusal_fields() {
+    let limit =
+        super::ResourceLimit::allocation_failed(ResourceDimension::Codec("test"), 12, 5, "test");
+    assert_eq!(limit.dimension, ResourceDimension::Codec("test"));
+    assert_eq!(limit.reason, super::ResourceFailure::AllocationFailed);
+    assert_eq!(limit.limit, 12);
+    assert_eq!(limit.used, 0);
+    assert_eq!(limit.additional, 5);
+    assert_eq!(limit.operation, "test");
 }
 
 #[test]
@@ -32,7 +65,7 @@ fn root_limit_is_enforced() {
 #[test]
 fn read_root_uses_sized_and_fallback_read_paths() {
     let bytes = vec![0_u8; 32];
-    let policy = policy_with(|limits| limits.max_input_bytes = bytes.len() as u64);
+    let policy = policy_with(|limits| limits.max_input_bytes = u64_from_index(bytes.len()));
 
     let arena = DecodeArena::new();
     let mut seekable = Cursor::new(bytes.clone());

@@ -90,7 +90,7 @@ pub(in crate::decode) fn simple_hole_geometry<'a>(
         return Ok(None);
     };
     let mut cylinder_rows = Vec::new();
-    ctx.try_reserve_items(&mut cylinder_rows, 2, "creo simple hole cylinder rows")?;
+    ctx.reserve_vec(&mut cylinder_rows, 2, "creo simple hole cylinder rows")?;
     cylinder_rows.extend([first_row, second_row]);
     Ok(Some(SimpleHoleGeometry {
         entry_surface_id: Some(entry_surface_id),
@@ -229,7 +229,7 @@ pub(in crate::decode) fn compact_simple_hole_geometry<'a>(
         return Ok(None);
     };
     let mut cylinder_rows = Vec::new();
-    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo compact hole cylinder rows")?;
+    ctx.reserve_vec(&mut cylinder_rows, 1, "creo compact hole cylinder rows")?;
     cylinder_rows.push(row);
     Ok(Some(SimpleHoleGeometry {
         entry_surface_id: None,
@@ -375,7 +375,7 @@ pub(in crate::decode) fn single_cap_circular_sweep_geometry<'a>(
         return Ok(None);
     };
     let mut cylinder_rows = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut cylinder_rows,
         1,
         "creo single-cap circular cylinder rows",
@@ -507,7 +507,7 @@ pub(in crate::decode) fn two_cap_circular_sweep_geometry<'a>(
         return Ok(None);
     };
     let mut cylinder_rows = Vec::new();
-    ctx.try_reserve_items(&mut cylinder_rows, 1, "creo two-cap circular cylinder rows")?;
+    ctx.reserve_vec(&mut cylinder_rows, 1, "creo two-cap circular cylinder rows")?;
     cylinder_rows.push(cylinder_row);
     Ok(Some(CircularSweepGeometry {
         cylinder_rows,

@@ -54,6 +54,188 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
+fn native_load_charges_non_sketch_arena_before_typed_copy() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let board = crate::history_records::AsmBulletinBoard {
+        id: "f3d:native:bulletin#1".into(),
+        parent: "f3d:native:state#1".into(),
+        byte_offset: 0,
+        owner_ref: 0,
+        number: 0,
+        changes: Vec::new(),
+    };
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "asm_bulletin_boards",
+            &[board],
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = crate::native::F3dNative::load_charged(&ctx, &namespace).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "load typed native record"
+    ));
+}
+
+#[test]
+fn native_owner_index_refuses_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::owner_indices(Some(&ctx), ["first", "second"].into_iter()).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "index F3D native owners"
+    ));
+}
+
+#[test]
+fn native_owner_index_refuses_retained_key_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::owner_indices(Some(&ctx), ["key"].into_iter()).unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "retain F3D native owner id"
+    ));
+}
+
+#[test]
+fn native_owner_groups_refuse_outer_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::group_by_owner(
+        Some(&ctx),
+        Vec::<(&str, &str)>::new(),
+        &std::collections::HashMap::new(),
+        2,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "group F3D native owners"
+    ));
+}
+
+#[test]
+fn native_owner_groups_refuse_child_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
+    let error = super::group_by_owner(
+        Some(&ctx),
+        vec![("first", "owner"), ("second", "owner")],
+        &owners,
+        1,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "attach F3D native owner child"
+    ));
+}
+
+#[test]
+fn native_missing_owner_text_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::group_by_owner(
+        Some(&ctx),
+        vec![("child", "missing")],
+        &std::collections::HashMap::new(),
+        0,
+        |record| record.0,
+        |record| record.1,
+    )
+    .unwrap_err();
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.operation == "report F3D native missing owner"
+    ));
+}
+
+#[test]
+fn null_locus_native_retained_limit_refuses_before_owned_wire_conversion() {
+    use crate::records::dimension_null_locus_wire::{Wire, OWNED_WIRE_CONVERSIONS};
+    use crate::records::dimensions::DesignDimensionLocusPair;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let pair: DesignDimensionLocusPair = serde_json::from_str(
+        r#"{"id":"f3d:test:dimension-locus-pair#0","companion_record_index":1,"governing_companion_record_index":2,"byte_offset":10,"class_tag":"274","record_index":3,"frame_length":80,"first_geometry_record_index":0,"first_geometry_reference_offset":35,"first_role":0,"first_role_offset":45,"second_geometry_record_index":41,"second_geometry_reference_offset":50,"second_role":1,"second_role_offset":60,"paired_class_tag":"273","paired_byte_offset":90}"#,
+    )
+    .unwrap();
+    let record_bytes = serde_json::to_vec(&Wire::from(&pair)).unwrap().len();
+    let native = super::F3dNative {
+        design_dimension_null_locus_pairs: vec![pair].try_into().unwrap(),
+        ..super::F3dNative::default()
+    };
+    let name = "design_dimension_null_locus_pairs";
+    let prefix_names = super::F3D_FAMILIES
+        .iter()
+        .take_while(|row| row.arena != name)
+        .map(|row| row.arena.len())
+        .sum::<usize>();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes =
+        u64::try_from(prefix_names + name.len() + record_bytes - 1).unwrap();
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    OWNED_WIRE_CONVERSIONS.with(|count| count.set(0));
+    let error = native.store(&limited, &mut namespace).unwrap_err();
+    assert_eq!(OWNED_WIRE_CONVERSIONS.with(std::cell::Cell::get), 0);
+    assert!(matches!(
+        cadmpeg_core::CodecError::from(error),
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == ResourceDimension::RetainedBytes
+                && limit.operation == "serialize native record"
+    ));
+    native
+        .store(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut namespace,
+        )
+        .unwrap();
+    assert_eq!(namespace.arenas()[name].len(), 1);
+}
+
+#[test]
 fn native_load_refuses_orphan_history_row_with_child_and_parent() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     crate::native::F3dNative::default()
@@ -178,8 +360,11 @@ fn diff_reports_design_material_assignment_changes() {
         .unwrap()[0];
     let mut assignment_fields = assignment.fields();
     assignment_fields.insert("entity_suffix".into(), serde_json::json!(123_456));
-    *assignment = cadmpeg_ir::NativeRecord::new(assignment.id().to_string(), assignment_fields)
-        .expect("valid native identity");
+    *assignment = cadmpeg_ir::NativeRecord::new(
+        cadmpeg_ir::ids::Identity::new(assignment.id()).expect("valid identity"),
+        assignment_fields,
+    )
+    .expect("valid native identity");
     let report = cadmpeg_ir::diff(decoded.ir(), &edited);
     let arena = report
         .per_arena
@@ -464,14 +649,17 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     else {
         panic!("embedded use curve must be NURBS")
     };
-    let mut pole_index = 0usize;
     nurbs
-        .edit_control_points(|point| {
-            if pole_index == 0 {
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 0 {
                 point.x += 1.0;
             }
-            pole_index += 1;
-            Ok(())
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                    "control_points contains a non-finite point".into(),
+                )
+            })
         })
         .unwrap();
     let expected = nurbs.clone();

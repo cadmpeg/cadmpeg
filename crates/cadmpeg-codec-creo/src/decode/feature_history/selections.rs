@@ -102,7 +102,7 @@ pub(in super::super) fn feature_edge_selection(
         )?;
         let edge = EdgeId::mint(text)
             .map_err(|_| CodecError::Malformed("constructed Creo edge ID is invalid".into()))?;
-        ctx.try_reserve_items(&mut edges, 1, "creo selected edge identities")?;
+        ctx.reserve_vec(&mut edges, 1, "creo selected edge identities")?;
         edges.push(edge);
         if seen.contains(id) {
             unique = false;
@@ -198,7 +198,7 @@ pub(in super::super) fn generated_curve_edge_refs(
         let Some(edge) = GeneratedEdgeRef::new(feature, local_id).ok() else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut generated, 1, "creo generated curve edge references")?;
+        ctx.reserve_vec(&mut generated, 1, "creo generated curve edge references")?;
         generated.push(edge);
     }
     Ok(Some(generated))
@@ -226,7 +226,7 @@ pub(in super::super) fn feature_result_edge_ids(
         if counts.get(&row.id) != Some(&1) {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut edge_ids, 1, "creo feature result edge IDs")?;
+        ctx.reserve_vec(&mut edge_ids, 1, "creo feature result edge IDs")?;
         edge_ids.push(row.id);
     }
     Ok((!edge_ids.is_empty()).then_some(edge_ids))

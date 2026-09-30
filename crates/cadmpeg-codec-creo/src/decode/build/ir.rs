@@ -19,7 +19,8 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{
-    ShadedVertex, Strip, Strips, Tessellation, TessellationLaneError, TessellationMesh,
+    ShadedVertex, Strip, Strips, Tessellation, TessellationId, TessellationLaneError,
+    TessellationMesh,
 };
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -493,7 +494,7 @@ fn admitted_display_strips<V>(
 ) -> Result<Option<Strips<V>>, CodecError> {
     let mut remaining = vertices.into_iter();
     let mut strips = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut strips,
         spans.len(),
         "creo display tessellation strip rows",
@@ -503,7 +504,7 @@ fn admitted_display_strips<V>(
             return Ok(None);
         };
         let mut run = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut run,
             count.min(remaining.len()),
             "creo display tessellation strip vertices",
@@ -536,14 +537,16 @@ fn transfer_display_tessellations(
         .principal_unit
         .and_then(crate::legacy::PrincipalUnitSystem::length_scale_mm);
     for strip in &scan.primitives.triangle_strips {
-        let id = ctx.format_retained(
-            format_args!("creo:solid_primdata:tessellation#{}", strip.offset),
+        let id: TessellationId = crate::identity::compose_checked(
+            ctx,
+            &cadmpeg_ir::identity_namespace!("creo", "solid_primdata", "tessellation"),
+            strip.offset,
             "creo display tessellation identity",
         )?;
         annotate(
             ctx,
             annotations,
-            &id,
+            id.as_str(),
             "SolidPrimdata",
             strip.offset as u64,
             "display_triangle_strip",
@@ -551,7 +554,7 @@ fn transfer_display_tessellations(
         )?;
         ctx.charge_entities(1, "admit Creo model tessellations")?;
         let mut positions = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut positions,
             strip.positions.len(),
             "creo display tessellation positions",
@@ -592,7 +595,7 @@ fn transfer_display_tessellations(
                 )?);
             }
             let mut rows = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut rows,
                 positions.len(),
                 "creo display tessellation shaded rows",
@@ -635,7 +638,7 @@ fn transfer_display_tessellations(
             Ok(tessellation) => tessellation,
             Err(error) => return Err(display_strip_error(ctx, strip.offset, error)?),
         };
-        ctx.try_reserve_items(&mut ir.model.tessellations, 1, "creo model tessellations")?;
+        ctx.reserve_vec(&mut ir.model.tessellations, 1, "creo model tessellations")?;
         ir.model.tessellations.push(tessellation);
     }
     Ok(())

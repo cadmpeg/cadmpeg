@@ -82,7 +82,7 @@ fn push_revolution_loss(
             "creo revolution rejection text",
         )?
     };
-    ctx.try_reserve_items(losses, 1, "creo revolution losses")?;
+    ctx.reserve_vec(losses, 1, "creo revolution losses")?;
     losses.push(crate::loss::CreoLossCode::BrepTransferIncomplete.note(message));
     Ok(())
 }
@@ -176,7 +176,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 complete = false;
                 break;
             };
-            ctx.try_reserve_items(&mut surfaces, 1, "creo revolution surface geometries")?;
+            ctx.reserve_vec(&mut surfaces, 1, "creo revolution surface geometries")?;
             surfaces.push(surface);
         }
         let surface_geometries = complete.then_some(surfaces);
@@ -237,7 +237,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     complete = false;
                     break;
                 };
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut segment_boundaries,
                     1,
                     "creo revolution segment boundaries",
@@ -247,7 +247,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             if !complete {
                 break;
             }
-            ctx.try_reserve_items(&mut boundary_rows, 1, "creo revolution boundary rows")?;
+            ctx.reserve_vec(&mut boundary_rows, 1, "creo revolution boundary rows")?;
             boundary_rows.push(segment_boundaries);
         }
         let boundaries = complete.then_some(boundary_rows);
@@ -283,7 +283,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 complete = false;
                 break;
             };
-            ctx.try_reserve_items(&mut face_senses, 1, "creo revolution face senses")?;
+            ctx.reserve_vec(&mut face_senses, 1, "creo revolution face senses")?;
             face_senses.push(sense);
         }
         let face_senses = complete.then_some(face_senses);
@@ -328,7 +328,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Curve {
-                    id: curve_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: curve_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     geometry: curve_geometry,
                     source_object: None,
                 },
@@ -341,7 +341,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Point::new(
-                    point_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    point_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     finite_position,
                     None,
                 ),
@@ -351,7 +351,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Vertex {
-                    id: vertex_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: vertex_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     point: point_id,
                     tolerance: None,
                 },
@@ -361,13 +361,13 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Edge {
-                    id: edge_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: edge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     carrier: cadmpeg_ir::topology::EdgeCarrier::new(
                         Some(curve_id),
                         Some([0.0, std::f64::consts::TAU]),
                     )
                     .map_err(cadmpeg_core::CodecError::malformed)?,
-                    start: vertex_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    start: vertex_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     end: vertex_id,
                     tolerance: None,
                 },
@@ -391,7 +391,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: surface_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     geometry: surface_geometry,
                     source_object: None,
                 },
@@ -408,7 +408,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 };
                 let Some(edge_id) = edges[vertex_index]
                     .as_ref()
-                    .map(|edge| edge.copy_admitted(ctx, "creo revolution identity copy"))
+                    .map(|edge| edge.try_clone_for_decode(ctx, "creo revolution identity copy"))
                     .transpose()?
                 else {
                     continue;
@@ -443,24 +443,25 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     pcurve_geometry,
                 )?;
                 let mut ring_coedges = Vec::new();
-                ctx.try_reserve_items(&mut ring_coedges, 1, "creo revolution ring coedges")?;
-                ring_coedges.push(coedge_id.copy_admitted(ctx, "creo revolution identity copy")?);
+                ctx.reserve_vec(&mut ring_coedges, 1, "creo revolution ring coedges")?;
+                ring_coedges
+                    .push(coedge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?);
                 ctx.charge_entities(1, "admit Creo model loops")?;
-                ctx.try_reserve_items(&mut ir.model.loops, 1, "creo model revolution loops")?;
+                ctx.reserve_vec(&mut ir.model.loops, 1, "creo model revolution loops")?;
                 ir.model.loops.push(IrLoop {
-                    id: loop_id.copy_admitted(ctx, "creo revolution identity copy")?,
-                    face: face_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: loop_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    face: face_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
-                        cadmpeg_ir::topology::LoopRing::new_admitted(
+                        cadmpeg_ir::topology::LoopRing::try_new_for_decode(
                             ctx,
                             ring_coedges,
                             Vec::new(),
-                            "creo revolution loop validation nodes",
-                        )?,
+                        )?
+                        .map_err(cadmpeg_core::CodecError::malformed)?,
                     ),
                 });
                 let mut pcurve_uses = Vec::new();
-                ctx.try_reserve_items(&mut pcurve_uses, 1, "creo revolution coedge pcurves")?;
+                ctx.reserve_vec(&mut pcurve_uses, 1, "creo revolution coedge pcurves")?;
                 pcurve_uses.push(PcurveUse {
                     pcurve,
                     isoparametric: None,
@@ -471,8 +472,9 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     ctx,
                     ir,
                     Coedge {
-                        id: coedge_id.copy_admitted(ctx, "creo revolution identity copy")?,
-                        owner_loop: loop_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                        id: coedge_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                        owner_loop: loop_id
+                            .try_clone_for_decode(ctx, "creo revolution identity copy")?,
                         edge: edge_id,
                         radial_next: revolution_identity::<CoedgeId>(
                             ctx,
@@ -484,7 +486,7 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                         use_curve: None,
                     },
                 )?;
-                ctx.try_reserve_items(&mut loops, 1, "creo revolution face loop IDs")?;
+                ctx.reserve_vec(&mut loops, 1, "creo revolution face loop IDs")?;
                 loops.push(loop_id);
             }
             ctx.charge_entities(1, "admit Creo model faces")?;
@@ -492,8 +494,8 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                 ctx,
                 ir,
                 Face {
-                    id: face_id.copy_admitted(ctx, "creo revolution identity copy")?,
-                    shell: shell_id.copy_admitted(ctx, "creo revolution identity copy")?,
+                    id: face_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+                    shell: shell_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
                     surface: surface_id,
                     sense: face_sense,
                     loops: cadmpeg_ir::topology::FaceLoops::unspecified(loops),
@@ -502,12 +504,12 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
                     tolerance: None,
                 },
             )?;
-            ctx.try_reserve_items(&mut faces, 1, "creo revolution shell face IDs")?;
+            ctx.reserve_vec(&mut faces, 1, "creo revolution shell face IDs")?;
             faces.push(face_id);
         }
         let Ok(shell) = Shell::new(
-            shell_id.copy_admitted(ctx, "creo revolution identity copy")?,
-            region_id.copy_admitted(ctx, "creo revolution identity copy")?,
+            shell_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+            region_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
             faces,
             Vec::new(),
             Vec::new(),
@@ -515,20 +517,20 @@ pub(in super::super) fn transfer_resolved_revolution_breps(
             continue;
         };
         ctx.charge_entities(1, "admit Creo model shells")?;
-        ctx.try_reserve_items(&mut ir.model.shells, 1, "creo model revolution shells")?;
+        ctx.reserve_vec(&mut ir.model.shells, 1, "creo model revolution shells")?;
         ir.model.shells.push(shell);
         let mut region_shells = Vec::new();
-        ctx.try_reserve_items(&mut region_shells, 1, "creo revolution region shell IDs")?;
+        ctx.reserve_vec(&mut region_shells, 1, "creo revolution region shell IDs")?;
         region_shells.push(shell_id);
         ctx.charge_entities(1, "admit Creo model regions")?;
-        ctx.try_reserve_items(&mut ir.model.regions, 1, "creo model revolution regions")?;
+        ctx.reserve_vec(&mut ir.model.regions, 1, "creo model revolution regions")?;
         ir.model.regions.push(Region {
-            id: region_id.copy_admitted(ctx, "creo revolution identity copy")?,
-            body: body_id.copy_admitted(ctx, "creo revolution identity copy")?,
+            id: region_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
+            body: body_id.try_clone_for_decode(ctx, "creo revolution identity copy")?,
             shells: region_shells,
         });
         let mut body_regions = Vec::new();
-        ctx.try_reserve_items(&mut body_regions, 1, "creo revolution body region IDs")?;
+        ctx.reserve_vec(&mut body_regions, 1, "creo revolution body region IDs")?;
         body_regions.push(region_id);
         ctx.charge_entities(1, "admit Creo model bodies")?;
         source_carriers.admit_body(

@@ -810,7 +810,7 @@ fn admitted_coordinate_variables(
         }
     }
     let mut variables = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut variables,
         unique.len(),
         "creo section ordered variables",
@@ -848,18 +848,14 @@ fn next_section_component(
     ctx.charge_collection_items(1, "creo section component seed")?;
     component.insert(seed);
     let mut pending = std::collections::VecDeque::new();
-    ctx.try_collection(1, "creo section pending seed", || pending.try_reserve(1))?;
-    pending.push_back(seed);
+    ctx.push_back(&mut pending, seed, "creo section pending seed")?;
     while let Some(variable) = pending.pop_front() {
         for &neighbor in &adjacency[variable] {
             if !component.contains(&neighbor) {
                 ctx.charge_collection_items(1, "creo section component neighbors")?;
                 component.insert(neighbor);
                 remaining.remove(&neighbor);
-                ctx.try_collection(1, "creo section pending neighbors", || {
-                    pending.try_reserve(1)
-                })?;
-                pending.push_back(neighbor);
+                ctx.push_back(&mut pending, neighbor, "creo section pending neighbors")?;
             }
         }
     }
@@ -929,7 +925,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         let mut members = Vec::new();
         for variable in equation.terms.keys() {
             if let Some(&index) = indices.get(variable) {
-                ctx.try_reserve_items(&mut members, 1, "creo section equation members")?;
+                ctx.reserve_vec(&mut members, 1, "creo section equation members")?;
                 members.push(index);
             }
         }
@@ -951,7 +947,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
             if component.contains(&indices[&(first, coordinate)])
                 && component.contains(&indices[&(second, coordinate)])
             {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut component_distances,
                     1,
                     "creo section component distances",
@@ -972,7 +968,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 .keys()
                 .any(|variable| component.contains(&indices[variable]))
             {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut component_equations,
                     1,
                     "creo section component equation rows",
@@ -992,7 +988,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
         for signs in 0..(1usize << component_distances.len()) {
             ctx.charge_work(1, "explore Creo section distance signs")?;
             let mut branched = Vec::new();
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut branched,
                 component_equations.len(),
                 "creo section branch equation rows",
@@ -1016,7 +1012,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                 } else {
                     -magnitude
                 };
-                ctx.try_reserve_items(&mut branched, 1, "creo section signed equation rows")?;
+                ctx.reserve_vec(&mut branched, 1, "creo section signed equation rows")?;
                 branched.push(SectionCoordinateEquation::point_difference_with_operation(
                     ctx,
                     first,
@@ -1089,7 +1085,7 @@ pub(in crate::decode) fn solve_unsigned_dimension_coordinates(
                         }
                     }
                 }
-                ctx.try_reserve_items(&mut solutions, 1, "creo section candidate solutions")?;
+                ctx.reserve_vec(&mut solutions, 1, "creo section candidate solutions")?;
                 solutions.push(candidate_values);
             }
         }
@@ -1300,7 +1296,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
         let mut members = Vec::new();
         for variable in equation.terms.keys() {
             if let Some(&index) = indices.get(variable) {
-                ctx.try_reserve_items(&mut members, 1, "creo section coordinate members")?;
+                ctx.reserve_vec(&mut members, 1, "creo section coordinate members")?;
                 members.push(index);
             }
         }
@@ -1321,7 +1317,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
     let mut remaining = section_remaining_variables(ctx, variables.len())?;
     while let Some(component) = next_section_component(ctx, &mut remaining, &adjacency)? {
         let mut columns = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut columns,
             component.len(),
             "creo section component columns",
@@ -1342,7 +1338,7 @@ pub(in crate::decode) fn solve_section_coordinate_equations(
             }
         }
         let mut matrix = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut matrix,
             component_equations.len(),
             "creo section matrix rows",
@@ -1482,7 +1478,7 @@ fn uniquely_solved_linear_variables(
     let mut free_columns = Vec::new();
     for column in 0..variable_count {
         if !pivot_rows.contains_key(&column) {
-            ctx.try_reserve_items(&mut free_columns, 1, "creo section free columns")?;
+            ctx.reserve_vec(&mut free_columns, 1, "creo section free columns")?;
             free_columns.push(column);
         }
     }
@@ -1492,7 +1488,7 @@ fn uniquely_solved_linear_variables(
             .iter()
             .all(|free| !matrix[row].coefficients.contains_key(free))
         {
-            ctx.try_reserve_items(&mut solution, 1, "creo section solved columns")?;
+            ctx.reserve_vec(&mut solution, 1, "creo section solved columns")?;
             solution.push((column, matrix[row].rhs));
         }
     }

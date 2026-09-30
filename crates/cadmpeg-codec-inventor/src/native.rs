@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Inventor-native structural records.
 
-pub(crate) mod digest;
 pub(crate) mod protein;
 pub(crate) mod ufrx;
 
@@ -18,18 +17,6 @@ use std::fmt::{Display, Formatter};
 use crate::pmdc::{PmDcPairedReferenceList, PmDcReference};
 use crate::presentation::RenderingStyleExtension;
 
-fn retained_copy(
-    ctx: &DecodeContext<'_>,
-    value: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    let len = u64::try_from(value.len()).map_err(|_| {
-        ctx.refuse_codec_limit("Inventor native string length", u64::MAX - 1, u64::MAX)
-    })?;
-    ctx.charge_retained(len, operation)?;
-    Ok(value.to_owned())
-}
-
 fn retained_digest(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -37,21 +24,10 @@ fn retained_digest(
 ) -> Result<String, CodecError> {
     ctx.charge_retained(64, operation)?;
     ctx.charge_work(
-        u64::try_from(bytes.len()).map_err(|_| {
-            ctx.refuse_codec_limit("Inventor native digest work", u64::MAX - 1, u64::MAX)
-        })?,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
         "hash Inventor native record bytes",
     )?;
     Ok(cadmpeg_ir::hash::sha256_hex(bytes))
-}
-
-fn retained_format(
-    ctx: &DecodeContext<'_>,
-    value: std::fmt::Arguments<'_>,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    crate::record_issue::admit_formatted(ctx, value, operation)?;
-    Ok(value.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -289,7 +265,7 @@ pub(crate) struct PropertyRecord {
     pub(crate) value_kind: PropertyValueKind,
     pub(crate) scalar_value: Option<String>,
     pub(crate) raw_len: u64,
-    pub(crate) raw_sha256: digest::Sha256Hex,
+    pub(crate) raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 struct DisplayField<'a, T: Display>(&'a T);
@@ -347,7 +323,7 @@ impl TryFrom<PropertyRecordWire> for PropertyRecord {
             name: wire.name,
             scalar_value: wire.scalar_value,
             raw_len: wire.raw_len,
-            raw_sha256: digest::Sha256Hex::try_from(wire.raw_sha256)
+            raw_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.raw_sha256)
                 .map_err(|error| format!("raw_sha256: {error}"))?,
         })
     }
@@ -398,23 +374,19 @@ impl AssemblyOccurrenceRecord {
     ) -> Result<Self, CodecError> {
         ctx.charge_collection_items(1, "collect Inventor native assembly occurrence")?;
         ctx.charge_entities(1, "admit Inventor native assembly occurrence")?;
-        let id = retained_format(
-            ctx,
+        let id = ctx.format_retained(
             format_args!(
                 "inventor:assembly:occurrence#{}-{}",
                 occurrence.segment_token, occurrence.record_ordinal
             ),
             "retain Inventor assembly occurrence id",
         )?;
-        let segment_token = retained_copy(
-            ctx,
+        let segment_token = ctx.copy_retained_text(
             &occurrence.segment_token,
             "retain Inventor assembly occurrence token",
         )?;
         ctx.charge_collection_items(
-            u64::try_from(occurrence.related_references.len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor related-reference count", u64::MAX - 1, u64::MAX)
-            })?,
+            cadmpeg_core::decode::u64_from_index(occurrence.related_references.len()),
             "copy Inventor assembly related references",
         )?;
         Ok(Self {
@@ -455,7 +427,7 @@ pub(crate) struct AssemblyPlacementRecord {
     graphics_index: u32,
     object_reference: u32,
     suffix_len: std::num::NonZeroU64,
-    suffix_sha256: digest::Sha256Hex,
+    suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -485,16 +457,14 @@ impl AssemblyPlacementRecordWire {
         placement: &crate::assembly::AssemblyPlacement<'_>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!(
                     "inventor:assembly:placement#{}-{}",
                     placement.segment_token, placement.record_ordinal
                 ),
                 "retain Inventor assembly placement id",
             )?,
-            segment_token: retained_copy(
-                ctx,
+            segment_token: ctx.copy_retained_text(
                 &placement.segment_token,
                 "retain Inventor assembly placement token",
             )?,
@@ -510,9 +480,7 @@ impl AssemblyPlacementRecordWire {
             occurrence_id: placement.occurrence_id,
             graphics_index: placement.graphics_index,
             object_reference: placement.object_reference,
-            suffix_len: u64::try_from(placement.suffix.window().len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor placement suffix length", u64::MAX - 1, u64::MAX)
-            })?,
+            suffix_len: cadmpeg_core::decode::u64_from_index(placement.suffix.window().len()),
             suffix_sha256: retained_digest(
                 ctx,
                 placement.suffix.window(),
@@ -542,7 +510,7 @@ impl TryFrom<AssemblyPlacementRecordWire> for AssemblyPlacementRecord {
             object_reference: wire.object_reference,
             suffix_len: std::num::NonZeroU64::new(wire.suffix_len)
                 .ok_or("suffix_len must not be zero")?,
-            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
@@ -562,7 +530,7 @@ pub(crate) struct PmAppDefaultStyleRecord {
     pub(crate) state: u8,
     pub(crate) terminal_reference: u32,
     pub(crate) suffix_len: u64,
-    pub(crate) suffix_sha256: digest::Sha256Hex,
+    pub(crate) suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -585,7 +553,7 @@ pub(crate) struct PmAppRenderingStyleRecord {
     long_name: String,
     extension: Option<RenderingStyleExtension>,
     suffix_len: u64,
-    suffix_sha256: digest::Sha256Hex,
+    suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest,
 }
 
 impl Serialize for PmAppRenderingStyleRecord {
@@ -720,7 +688,7 @@ impl TryFrom<PmAppRenderingStyleRecordWire> for PmAppRenderingStyleRecord {
             long_name: wire.long_name,
             extension,
             suffix_len: wire.suffix_len,
-            suffix_sha256: digest::Sha256Hex::try_from(wire.suffix_sha256)
+            suffix_sha256: cadmpeg_ir::hash::digest::Sha256Digest::try_from(wire.suffix_sha256)
                 .map_err(|error| format!("suffix_sha256: {error}"))?,
         })
     }
@@ -1216,30 +1184,27 @@ impl RseRecordRecord {
         frame: &crate::records::RseRecordFrame<'_>,
     ) -> Result<Self, CodecError> {
         Ok(Self {
-            id: retained_format(
-                ctx,
+            id: ctx.format_retained(
                 format_args!("inventor:rse:record#{token}-{}", frame.ordinal),
                 "retain Inventor RSe record id",
             )?,
-            token: retained_copy(ctx, token, "retain Inventor RSe record token")?,
+            token: ctx.copy_retained_text(token, "retain Inventor RSe record token")?,
             ordinal: frame.ordinal,
             selector: frame.selector,
-            type_index: frame.type_index(),
+            type_index: frame.type_index()?,
             type_id: {
                 ctx.charge_retained(32, "retain Inventor RSe record type GUID")?;
                 crate::pmdc::type_id_string(frame.type_id)
             },
             payload_offset: frame.payload_offset,
-            payload_len: u64::from(frame.payload_len()),
+            payload_len: u64::from(frame.payload_len()?),
             payload_sha256: retained_digest(
                 ctx,
                 frame.payload.window(),
                 "retain Inventor RSe payload digest",
             )?,
-            trailing_payload_len: frame.trailing_payload_len(),
-            trailer_len: u64::try_from(frame.trailer.window().len()).map_err(|_| {
-                ctx.refuse_codec_limit("Inventor record trailer length", u64::MAX - 1, u64::MAX)
-            })?,
+            trailing_payload_len: frame.trailing_payload_len()?,
+            trailer_len: cadmpeg_core::decode::u64_from_index(frame.trailer.window().len()),
             trailer_sha256: retained_digest(
                 ctx,
                 frame.trailer.window(),
@@ -1274,7 +1239,10 @@ struct RseRecordRecordWire {
 impl TryFrom<RseRecordRecordWire> for RseRecordRecord {
     type Error = String;
     fn try_from(wire: RseRecordRecordWire) -> Result<Self, Self::Error> {
-        if wire.type_index != wire.selector as u8 {
+        if wire.type_index
+            != u8::try_from(wire.selector & 0xff)
+                .map_err(|_| "selector low byte exceeds u8".to_string())?
+        {
             return Err("type_index disagrees with selector".into());
         }
         if wire.trailing_payload_len != 0
@@ -1573,8 +1541,7 @@ impl ActiveCarrierRecord {
         ctx: &DecodeContext<'_>,
         state: &crate::kernel::ActiveCarrierState<'_>,
     ) -> Result<Self, CodecError> {
-        let id = retained_copy(
-            ctx,
+        let id = ctx.copy_retained_text(
             "inventor:kernel:active-carrier#root",
             "retain Inventor active carrier id",
         )?;
@@ -1582,12 +1549,11 @@ impl ActiveCarrierRecord {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
             crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
                 id,
-                detail: retained_copy(ctx, detail, "retain Inventor active carrier issue")?,
+                detail: ctx.copy_retained_text(detail, "retain Inventor active carrier issue")?,
             },
             crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
                 id,
-                segment_token: retained_copy(
-                    ctx,
+                segment_token: ctx.copy_retained_text(
                     carrier.segment_token.as_str(),
                     "retain Inventor active carrier segment token",
                 )?,

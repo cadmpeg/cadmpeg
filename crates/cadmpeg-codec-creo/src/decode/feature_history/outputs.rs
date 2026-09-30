@@ -109,14 +109,14 @@ fn feature_output_bodies_with_history(
             };
             if !outputs.contains(&region.body) {
                 let body = copy_body_id(ctx, &region.body)?;
-                ctx.try_reserve_items(&mut outputs, 1, "creo feature output bodies")?;
+                ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
                 outputs.push(body);
             }
         }
     }
     for body in edge_outputs.into_iter().chain(generated_input_outputs) {
         if !outputs.contains(&body) {
-            ctx.try_reserve_items(&mut outputs, 1, "creo feature output bodies")?;
+            ctx.reserve_vec(&mut outputs, 1, "creo feature output bodies")?;
             outputs.push(body);
         }
     }
@@ -156,7 +156,7 @@ fn generated_input_output_bodies(
         };
         for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
-                ctx.try_reserve_items(&mut outputs, 1, "creo generated input output bodies")?;
+                ctx.reserve_vec(&mut outputs, 1, "creo generated input output bodies")?;
                 outputs.push(body);
             }
         }
@@ -183,7 +183,7 @@ fn generated_edge_output_bodies(
         };
         for body in feature_output_bodies_with_history(ctx, scan, ir, producer_id, visiting)? {
             if !outputs.contains(&body) {
-                ctx.try_reserve_items(&mut outputs, 1, "creo generated edge output bodies")?;
+                ctx.reserve_vec(&mut outputs, 1, "creo generated edge output bodies")?;
                 outputs.push(body);
             }
         }
@@ -256,7 +256,7 @@ fn bodies_containing_edges(
         };
         let body = copy_body_id(ctx, &region.body)?;
         if !bodies.contains(&body) {
-            ctx.try_reserve_items(&mut bodies, 1, "creo bodies containing selected edges")?;
+            ctx.reserve_vec(&mut bodies, 1, "creo bodies containing selected edges")?;
             bodies.push(body);
         }
     }
@@ -292,7 +292,7 @@ pub(in super::super) fn evaluated_sweep_output_bodies(
         {
             ctx.charge_retained(candidate.len() as u64, "creo evaluated sweep body IDs")?;
             let body = BodyId::mint(candidate).map_err(CodecError::malformed)?;
-            ctx.try_reserve_items(&mut outputs, 1, "creo evaluated sweep output bodies")?;
+            ctx.reserve_vec(&mut outputs, 1, "creo evaluated sweep output bodies")?;
             outputs.push(body);
         }
     }
@@ -451,9 +451,11 @@ fn insert_feature_parameter(
     base: impl std::fmt::Display,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let value = ctx.format_retained(value, "creo feature parameter value")?;
-    let (base, base_reservation) =
-        ctx.format_scoped(base, "creo feature parameter key candidate")?;
+    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
+    let (base, base_reservation) = ctx.format_scoped(
+        format_args!("{base}"),
+        "creo feature parameter key candidate",
+    )?;
     let (key, key_reservation) = if parameters.contains_key(&base) {
         let mut occurrence = 2usize;
         loop {
@@ -482,7 +484,7 @@ fn replace_feature_parameter(
     key: &'static str,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let value = ctx.format_retained(value, "creo feature parameter value")?;
+    let value = ctx.format_retained(format_args!("{value}"), "creo feature parameter value")?;
     if let Some(existing) = parameters.get_mut(key) {
         *existing = value;
     } else {
@@ -839,8 +841,11 @@ pub(in super::super) fn insert_feature_source_property(
     key: impl std::fmt::Display,
     value: impl std::fmt::Display,
 ) -> Result<(), CodecError> {
-    let key = ctx.format_retained(key, "creo feature source property key")?;
-    let value = ctx.format_retained(value, "creo feature source property value")?;
+    let key = ctx.format_retained(format_args!("{key}"), "creo feature source property key")?;
+    let value = ctx.format_retained(
+        format_args!("{value}"),
+        "creo feature source property value",
+    )?;
     if !properties.contains_key(&key) {
         ctx.charge_collection_items(1, "creo feature source property nodes")?;
     }

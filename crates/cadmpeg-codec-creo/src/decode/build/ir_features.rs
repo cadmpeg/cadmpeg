@@ -67,9 +67,9 @@ fn append_regeneration_edge(
     child: &IrFeatureId,
     parent: &IrFeatureId,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    ctx.try_reserve_items(edges, 1, "creo regeneration edges")?;
-    let child = child.copy_admitted(ctx, "creo regeneration child identity")?;
-    let parent = parent.copy_admitted(ctx, "creo regeneration parent identity")?;
+    ctx.reserve_vec(edges, 1, "creo regeneration edges")?;
+    let child = child.try_clone_for_decode(ctx, "creo regeneration child identity")?;
+    let parent = parent.try_clone_for_decode(ctx, "creo regeneration parent identity")?;
     edges.push((child, parent));
     Ok(())
 }
@@ -105,11 +105,11 @@ fn refresh_feature_outputs(
         else {
             continue;
         };
-        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
+        let outputs = cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(
             feature_output_bodies(ctx, scan, ir, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::malformed)?;
-        ctx.try_reserve_items(&mut output_updates, 1, "creo feature output update rows")?;
+        ctx.reserve_vec(&mut output_updates, 1, "creo feature output update rows")?;
         output_updates.push((index, outputs));
     }
     for (index, outputs) in output_updates {
@@ -145,7 +145,7 @@ fn ordered_row_feature_ids(
             row.feature_id,
             "creo feature row identity nodes",
         )? {
-            ctx.try_reserve_items(&mut ids, 1, "creo feature row IDs")?;
+            ctx.reserve_vec(&mut ids, 1, "creo feature row IDs")?;
             ids.push(row.feature_id);
         }
     }
@@ -291,9 +291,9 @@ pub(super) fn emit_model_features(
                 } else {
                     IrFeatureDefinition::Operation(IrFeatureOperation::StoredGeometry {})
                 },
-                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
-                    feature_output_bodies(ctx, scan, ir, feature_id)?,
-                )
+                cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(feature_output_bodies(
+                    ctx, scan, ir, feature_id,
+                )?)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: None,
@@ -496,21 +496,17 @@ pub(super) fn emit_model_features(
             let mut combined_outputs = Vec::new();
             for body in existing.evaluation.outputs() {
                 let copy = copy_body_id(ctx, body)?;
-                ctx.try_reserve_items(&mut combined_outputs, 1, "creo combined feature outputs")?;
+                ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                 combined_outputs.push(copy);
             }
             for output in outputs {
                 if !combined_outputs.contains(&output) {
-                    ctx.try_reserve_items(
-                        &mut combined_outputs,
-                        1,
-                        "creo combined feature outputs",
-                    )?;
+                    ctx.reserve_vec(&mut combined_outputs, 1, "creo combined feature outputs")?;
                     combined_outputs.push(output);
                 }
             }
             existing.evaluation.set_outputs(
-                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(combined_outputs)
+                cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(combined_outputs)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             );
             refresh_feature_outputs(ctx, scan, ir)?;
@@ -538,7 +534,7 @@ pub(super) fn emit_model_features(
             ordinal: (operation_ordinal_base + operation_index) as u64,
             name,
             suppressed: Some(false),
-            dependencies: DistinctMembers::try_from_reserved_vec(dependencies)
+            dependencies: DistinctMembers::try_from_unique_vec(dependencies)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             source_properties: cadmpeg_core::text::named_entries_checked(
                 ctx,
@@ -551,7 +547,7 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(outputs)
+                cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(outputs)
                     .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref,
@@ -668,7 +664,7 @@ pub(super) fn emit_model_features(
                 )?,
             }),
             suppressed: Some(false),
-            dependencies: DistinctMembers::try_from_reserved_vec(feature_dependencies(
+            dependencies: DistinctMembers::try_from_unique_vec(feature_dependencies(
                 ctx,
                 scan,
                 ir,
@@ -687,9 +683,9 @@ pub(super) fn emit_model_features(
 
             evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
                 definition,
-                cadmpeg_ir::features::DistinctMembers::try_from_reserved_vec(
-                    feature_output_bodies(ctx, scan, ir, feature_id)?,
-                )
+                cadmpeg_ir::features::DistinctMembers::try_from_unique_vec(feature_output_bodies(
+                    ctx, scan, ir, feature_id,
+                )?)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
             ),
             native_ref: owning_feature_definition_ref(ctx, scan, feature_id)?,

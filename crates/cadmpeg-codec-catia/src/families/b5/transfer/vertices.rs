@@ -20,12 +20,21 @@ use crate::math::distance;
 const EPS_VERTEX_RESIDUAL_INCREMENT: f64 = 1.0e-9;
 
 pub(super) fn transfer_vertex_tolerances(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     graph: &B5Graph,
     supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [FiniteReal; 2])>,
-) -> BTreeMap<usize, PositiveReal> {
-    let mut tolerances = graph.vertex_tolerances.clone();
+) -> Result<BTreeMap<usize, PositiveReal>, cadmpeg_core::CodecError> {
+    let mut tolerances = BTreeMap::new();
+    for (&vertex, &tolerance) in &graph.vertex_tolerances {
+        ctx.insert_btree_map(
+            &mut tolerances,
+            vertex,
+            tolerance,
+            "catia_b5_transfer_vertex_tolerances",
+        )?;
+    }
     for (&edge, supports) in supports {
         let Some(&vertices) = graph.vertices.edges().get(&edge) else {
             continue;
@@ -34,7 +43,7 @@ pub(super) fn transfer_vertex_tolerances(
             continue;
         };
         for support in supports {
-            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves) else {
+            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves)? else {
                 continue;
             };
             let forward = [
@@ -58,8 +67,10 @@ pub(super) fn transfer_vertex_tolerances(
                 else {
                     continue;
                 };
+                let index = vertex.combined_index(graph.vertices.raw_points().len());
+                ctx.admit_btree_entry(&tolerances, &index, "catia_b5_transfer_vertex_tolerances")?;
                 tolerances
-                    .entry(vertex.combined_index(graph.vertices.raw_points().len()))
+                    .entry(index)
                     .and_modify(|tolerance| {
                         if candidate > *tolerance {
                             *tolerance = candidate;
@@ -69,7 +80,7 @@ pub(super) fn transfer_vertex_tolerances(
             }
         }
     }
-    tolerances
+    Ok(tolerances)
 }
 
 /// Emit the points and vertices for every endpoint used by a transferred edge.
@@ -86,36 +97,50 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId::compose(
+        let point_id = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "point"),
             index,
-        );
+            PointId::mint,
+            "catia_b5_emitted_point_id",
+        )?;
         annotate(
+            admission.context(),
             annotations,
             &point_id,
             "object_stream_b5_03",
             "05_08_01_vertex",
             Exactness::ByteExact,
-        );
-        admission.charge()?;
-        ir.model
-            .points
-            .push(Point::new(point_id.clone(), *coordinates, None));
-        let vertex_id = VertexId::compose(
+        )?;
+        admission.reserve_entity(&mut ir.model.points, "catia_b5_emit_points")?;
+        ir.model.points.push(Point::new(
+            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
+            *coordinates,
+            None,
+        ));
+        let vertex_id = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,
-        );
+            VertexId::mint,
+            "catia_b5_emitted_vertex_id",
+        )?;
         annotate(
+            admission.context(),
             annotations,
             &vertex_id,
             "object_stream_b5_03",
             "05_08_01_vertex",
             Exactness::ByteExact,
-        );
-        annotations
-            .derived(&vertex_id, "point")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        )?;
+        crate::resource::derived_annotation(
+            admission.context(),
+            annotations,
+            vertex_id.as_str(),
+            "point",
+            "catia_b5_vertex_annotation",
+        )?;
+        admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
@@ -127,38 +152,50 @@ pub(super) fn emit_vertices(
         if !used_vertices.contains(&index) {
             continue;
         }
-        let point_id = PointId::compose(
+        let point_id = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "point"),
             index,
-        );
+            PointId::mint,
+            "catia_b5_emitted_point_id",
+        )?;
         annotate(
+            admission.context(),
             annotations,
             &point_id,
             "object_stream_b5_03",
             "5d_logical_vertex",
             Exactness::Derived,
-        );
-        admission.charge()?;
+        )?;
+        admission.reserve_entity(&mut ir.model.points, "catia_b5_emit_points")?;
         ir.model.points.push(Point::new(
-            point_id.clone(),
+            point_id.try_clone_for_decode(admission.context(), "catia_b5_point_record_id")?,
             vertex.point,
-            Some(cgm_source("vertex", vertex.object_id)),
+            Some(cgm_source(admission.context(), "vertex", vertex.object_id)?),
         ));
-        let vertex_id = VertexId::compose(
+        let vertex_id = crate::resource::compose_index_id(
+            admission.context(),
             &cadmpeg_ir::identity_namespace!("catia", "b5", "vertex"),
             index,
-        );
+            VertexId::mint,
+            "catia_b5_emitted_vertex_id",
+        )?;
         annotate(
+            admission.context(),
             annotations,
             &vertex_id,
             "object_stream_b5_03",
             "5d_logical_vertex",
             Exactness::ByteExact,
-        );
-        annotations
-            .derived(&vertex_id, "point")
-            .map_err(cadmpeg_core::CodecError::malformed)?;
-        admission.charge()?;
+        )?;
+        crate::resource::derived_annotation(
+            admission.context(),
+            annotations,
+            vertex_id.as_str(),
+            "point",
+            "catia_b5_vertex_annotation",
+        )?;
+        admission.reserve_entity(&mut ir.model.vertices, "catia_b5_emit_vertices")?;
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,

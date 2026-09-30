@@ -34,50 +34,127 @@ fn trim_chain_requires_exact_packet_count_and_boundary_landing() {
     bytes.extend_from_slice(&first);
     bytes.extend_from_slice(&second);
 
-    let records = parse_trim_chain(&bytes, bytes.len(), 2, 2).expect("exact chain");
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 2, 2)
+    })
+    .expect("service resource budget")
+    .expect("exact chain");
     assert_eq!(records[0].packet.handles(), [0, 1, 2]);
     assert_eq!(records[1].packet.handles(), [3, 4, 5]);
     assert_eq!(records[0].packet.independent_count(), 1);
     assert!(records[0].packet.strip_lengths().is_empty());
     assert!(records[0].packet.fan_lengths().is_empty());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            2,
+            3
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
 fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
     let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
-    assert!(bounded_oriented_trail_orders(&trails, 16).is_none());
-    assert_eq!(
-        bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
-        Some(vec![vec![0, 1], vec![1, 0]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert!(bounded_oriented_trail_orders(ctx, &trails, 16)
+            .expect("service budget")
+            .is_none());
+        assert_eq!(
+            bounded_oriented_trail_orders(ctx, &[vec![0], vec![1]], 2).expect("service budget"),
+            Some(vec![vec![0, 1], vec![1, 0]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
     let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
-    assert_eq!(
-        bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
-        Some(vec![vec![0, 1, 2]])
-    );
+    crate::test_support::with_service_context(|ctx| {
+        assert_eq!(
+            bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4).expect("service budget"),
+            Some(vec![vec![0, 1, 2]])
+        );
+    });
 }
 
 #[test]
 fn endpoint_cycle_ordering_stops_at_its_result_limit() {
     let candidates = vec![vec![[0, 0]]; 8];
-    assert!(bounded_endpoint_cycle_orders(&(0..8).collect::<Vec<_>>(), &candidates, 16).is_none());
+    crate::test_support::with_service_context(|ctx| {
+        assert!(
+            bounded_endpoint_cycle_orders(ctx, &(0..8).collect::<Vec<_>>(), &candidates, 16)
+                .expect("service budget")
+                .is_none()
+        );
+    });
+}
+
+#[test]
+fn endpoint_order_helpers_refuse_before_counted_storage() {
+    use cadmpeg_core::decode::ResourceDimension;
+    let trails = [vec![0], vec![1]];
+    let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+    let trail_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_oriented_trail_orders(ctx, &trails, 2)
+    };
+    let cycle_run = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
+        bounded_endpoint_cycle_orders(ctx, &[2, 0, 1], &candidates, 4)
+    };
+    assert_eq!(
+        crate::test_support::with_service_context(trail_run).expect("service budget"),
+        Some(vec![vec![0, 1], vec![1, 0]])
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(cycle_run).expect("service budget"),
+        Some(vec![vec![0, 1, 2]])
+    );
+    for (result, operation) in [
+        (
+            crate::test_support::with_collection_limit(0, trail_run),
+            "catia_oriented_trail_scratch",
+        ),
+        (
+            crate::test_support::with_collection_limit(0, cycle_run),
+            "catia_endpoint_cycle_missing_edges",
+        ),
+    ] {
+        assert!(matches!(
+            result,
+            Err(cadmpeg_core::CodecError::ResourceLimit(error))
+                if error.dimension == ResourceDimension::CollectionItems && error.operation == operation
+        ));
+    }
 }
 
 #[test]
 fn trim_record_layout_indexes_extent_without_materializing_triangles() {
     let bytes = triangle_packet([10, 11, 12]);
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("trim packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("trim packet layout");
     assert_eq!(layout.handle_offset, 8);
     assert_eq!(layout.handle_count, 3);
     assert_eq!(layout.end, bytes.len());
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
-    assert_eq!(record.packet.triangles(), [[10, 11, 12]]);
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("materialized trim packet");
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| record
+            .packet
+            .triangles(ctx)
+            .expect("service resource budget")
+            .to_vec()),
+        [[10, 11, 12]]
+    );
 }
 
 #[test]
@@ -88,10 +165,20 @@ fn trim_record_layout_uses_the_complete_handle_span_as_its_count_bound() {
     bytes.extend_from_slice(&handle_count.to_le_bytes());
     bytes.push(0xff);
     bytes.extend_from_slice(&strip_length.to_le_bytes());
-    bytes.extend(std::iter::repeat_n(0, handle_count as usize));
+    bytes.extend(std::iter::repeat_n(
+        0,
+        cadmpeg_core::decode::index_from_u32(handle_count),
+    ));
 
-    let layout = parse_trim_record_layout(&bytes, 0, 1).expect("complete handle span");
-    assert_eq!(layout.handle_count, handle_count as usize);
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 1)
+    })
+    .expect("service resource budget")
+    .expect("complete handle span");
+    assert_eq!(
+        layout.handle_count,
+        cadmpeg_core::decode::index_from_u32(handle_count)
+    );
     assert_eq!(layout.end, bytes.len());
 }
 
@@ -103,16 +190,45 @@ fn trim_record_rejects_invalid_present_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
-    assert!(parse_trim_record(&bytes, 0, 2).is_none());
-    assert!(parse_trim_chain(&bytes, bytes.len(), 1, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .is_none()
+    );
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_chain(
+            ctx,
+            &bytes,
+            bytes.len(),
+            1,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 
     let mut non_finite = bytes[..8].to_vec();
     for value in [f32::NAN, 0.0, 1.0] {
         non_finite.extend_from_slice(&value.to_le_bytes());
     }
     non_finite.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
-    assert!(parse_trim_record_layout(&non_finite, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx,
+            &non_finite,
+            0,
+            2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -123,7 +239,10 @@ fn trim_record_accepts_binary32_round_trip_frame_vector() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    let record = parse_trim_record(&bytes, 0, 2).expect("binary32 unit vector");
+    let record =
+        crate::test_support::with_service_context(|ctx| parse_trim_record(ctx, &bytes, 0, 2))
+            .expect("service resource budget")
+            .expect("binary32 unit vector");
     assert!(record.frame_vector.is_some());
 }
 
@@ -135,7 +254,13 @@ fn trim_record_rejects_frame_vector_outside_binary32_round_trip_bound() {
     }
     bytes.extend_from_slice(&[0, 10, 0, 11, 0, 12]);
 
-    assert!(parse_trim_record_layout(&bytes, 0, 2).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| parse_trim_record_layout(
+            ctx, &bytes, 0, 2
+        ))
+        .expect("service resource budget")
+        .is_none()
+    );
 }
 
 #[test]
@@ -144,8 +269,11 @@ fn forced_trim_chain_has_no_recursive_depth_limit() {
     let packet = triangle_packet([0, 0, 0]);
     let bytes = packet.repeat(RECORD_COUNT);
 
-    let records =
-        parse_trim_chain(&bytes, bytes.len(), RECORD_COUNT, 2).expect("forced trim packet chain");
+    let records = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), RECORD_COUNT, 2)
+    })
+    .expect("service resource budget")
+    .expect("forced trim packet chain");
 
     assert_eq!(records.len(), RECORD_COUNT);
     assert!(records
@@ -161,10 +289,13 @@ fn trim_packet_retains_primitive_partition_lengths() {
     for handle in 0u16..10 {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("mixed primitive packet")
-        .try_into()
-        .expect("one packet");
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("mixed primitive packet")
+    .try_into()
+    .expect("one packet");
     assert_eq!(record.packet.independent_count(), 1);
     assert_eq!(record.packet.strip_lengths(), [3]);
     assert_eq!(record.packet.fan_lengths(), [4]);
@@ -182,10 +313,13 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         bytes.extend_from_slice(&handle.to_be_bytes());
     }
 
-    let [record] = parse_trim_chain(&bytes, bytes.len(), 1, 2)
-        .expect("width-matched primitive packet")
-        .try_into()
-        .expect("one packet");
+    let [record] = crate::test_support::with_service_context(|ctx| {
+        parse_trim_chain(ctx, &bytes, bytes.len(), 1, 2)
+    })
+    .expect("service resource budget")
+    .expect("width-matched primitive packet")
+    .try_into()
+    .expect("one packet");
     assert_eq!(record.packet.independent_count(), 1);
     assert_eq!(record.packet.strip_lengths(), [3]);
     assert!(record.packet.fan_lengths().is_empty());
@@ -194,7 +328,11 @@ fn trim_chain_accepts_width_matched_u16be_primitive_lengths() {
         Some(crate::test_support::test_b5::finite_vector([1.0, 0.0, 0.0]))
     );
 
-    let layout = parse_trim_record_layout(&bytes, 0, 2).expect("unique packet layout");
+    let layout = crate::test_support::with_service_context(|ctx| {
+        parse_trim_record_layout(ctx, &bytes, 0, 2)
+    })
+    .expect("service resource budget")
+    .expect("unique packet layout");
     assert_eq!(layout.end, bytes.len());
 }
 
@@ -211,7 +349,10 @@ fn standard_edge_row_arity_uses_widened_count_form() {
     }
     bytes.extend_from_slice(&[0x01, 0x06, 0]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("widened row arity");
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("widened row arity");
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].handles, vec![10, 11]);
     assert_eq!(rows[1].handles, vec![20, 21]);
@@ -228,7 +369,10 @@ fn two_handle_standard_rows_select_u8_complete_boundary_layout() {
     bytes.extend_from_slice(&EDGE_DELIMITER);
     bytes.extend_from_slice(&[0x01, 0x06, 0x00]);
 
-    let (rows, vertex_header) = parse_edge_tables_at(&bytes, 0).expect("u8 edge rows");
+    let (rows, vertex_header) =
+        crate::test_support::with_service_context(|ctx| parse_edge_tables_at(ctx, &bytes, 0))
+            .expect("service resource budget")
+            .expect("u8 edge rows");
     assert_eq!(rows[0].handles, [2, 0]);
     assert_eq!(rows[1].handles, [0, 1]);
     assert!(rows
@@ -582,11 +726,16 @@ fn standard_face_population_withholds_multiple_complete_fbb_groups() {
         .expect("service resource budget");
     assert_eq!(groups.len(), 2);
     assert!(groups.iter().all(|group| {
-        let layout = fbb_population_layouts(&bytes)
-            .into_iter()
-            .find(|layout| layout.face_run == *group)
-            .expect("matching population layout");
-        let spine = population_spine(&bytes, &layout).expect("complete population spine");
+        let layout =
+            crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+                .expect("service resource budget")
+                .into_iter()
+                .find(|layout| layout.face_run == *group)
+                .expect("matching population layout");
+        let spine =
+            crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, &layout))
+                .expect("service resource budget")
+                .expect("complete population spine");
         let topology = crate::test_support::with_service_context(|ctx| {
             crate::families::standard::fbb::parse_standard(ctx, spine)
         })
@@ -612,7 +761,9 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
     bytes.push(0);
     bytes.extend(crate::test_support::test_topology::fbb_only_quad_topology_stream());
 
-    let layouts = fbb_population_layouts(&bytes);
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     assert_eq!(layouts.len(), 2);
     assert!(layouts.iter().all(|layout| {
         layout.face_run.face_count() == 1 && layout.edge_count == 4 && layout.vertex_count == 4
@@ -622,13 +773,20 @@ fn fbb_population_layout_keeps_counts_before_endpoint_solving() {
 #[test]
 fn fbb_population_spine_retains_the_preceding_trim_chain() {
     let bytes = crate::test_support::test_topology::fbb_only_quad_topology_stream();
-    let layouts = fbb_population_layouts(&bytes);
+    let layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, &bytes))
+            .expect("service resource budget");
     let [layout] = layouts.as_slice() else {
         panic!("one source-closed FBB population");
     };
 
-    let spine = population_spine(&bytes, layout).expect("isolated FBB spine");
-    let isolated_layouts = fbb_population_layouts(spine);
+    let spine =
+        crate::test_support::with_service_context(|ctx| population_spine(ctx, &bytes, layout))
+            .expect("service resource budget")
+            .expect("isolated FBB spine");
+    let isolated_layouts =
+        crate::test_support::with_service_context(|ctx| fbb_population_layouts(ctx, spine))
+            .expect("service resource budget");
     let [isolated] = isolated_layouts.as_slice() else {
         panic!("isolated spine remains source-closed");
     };
@@ -699,7 +857,10 @@ fn allocation_program_replays_seed_tooth_and_transition() {
         trim(0x42, [50, 51, 40, 41]),
         trim(0x4a, [60, 61, 62, 63]),
     ];
-    let points = motif_port_points(&trims, 20).expect("complete motif allocation");
+    let points =
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 20))
+            .expect("service resource budget")
+            .expect("complete motif allocation");
     let order = [
         20, 21, 2, 3, 0, 1, 22, 23, 32, 33, 30, 31, 40, 41, 50, 51, 60, 61, 62, 63,
     ];
@@ -709,7 +870,31 @@ fn allocation_program_replays_seed_tooth_and_transition() {
 }
 
 #[test]
+fn motif_port_identity_map_refuses_before_counted_growth() {
+    let trims = [
+        trim(0x4a, [0, 1, 2, 3]),
+        trim(0x4a, [10, 11, 12, 13]),
+        trim(0x4a, [20, 21, 22, 23]),
+    ];
+    let points = crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 8))
+        .expect("service resource budget")
+        .expect("complete motif allocation");
+    assert_eq!(points.len(), 8);
+    let refusal =
+        crate::test_support::with_collection_limit(7, |ctx| motif_port_points(ctx, &trims, 8))
+            .expect_err("eighth motif identity exceeds the collection cap");
+    assert!(
+        matches!(refusal, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.operation == "catia_motif_port_points")
+    );
+}
+
+#[test]
 fn allocation_program_rejects_an_unconsumed_trim_packet() {
     let trims = [trim(0x4a, [0, 1, 2, 3]), trim(0x41, [4, 5, 6, 7])];
-    assert!(motif_port_points(&trims, 4).is_none());
+    assert!(
+        crate::test_support::with_service_context(|ctx| motif_port_points(ctx, &trims, 4))
+            .expect("service resource budget")
+            .is_none()
+    );
 }

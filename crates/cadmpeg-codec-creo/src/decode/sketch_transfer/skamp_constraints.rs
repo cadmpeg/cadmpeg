@@ -55,7 +55,7 @@ fn native_skamp_nonblank(
     value: impl std::fmt::Display,
     operation: &'static str,
 ) -> Result<cadmpeg_core::text::NonBlankString, cadmpeg_core::CodecError> {
-    let text = ctx.format_retained(value, operation)?;
+    let text = ctx.format_retained(format_args!("{value}"), operation)?;
     cadmpeg_core::text::NonBlankString::new(text)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("blank native SKAMP field"))
 }
@@ -148,7 +148,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         continue;
                     };
                     defer_resource(
-                        ctx.try_reserve_items(&mut entities, 1, "creo skamp native entities"),
+                        ctx.reserve_vec(&mut entities, 1, "creo skamp native entities"),
                         resource_error,
                     )?;
                     entities.push(id);
@@ -156,7 +156,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 let mut operands = Vec::new();
                 for item in &skamp.items {
                     defer_resource(
-                        ctx.try_reserve_items(&mut operands, 1, "creo skamp native operands"),
+                        ctx.reserve_vec(&mut operands, 1, "creo skamp native operands"),
                         resource_error,
                     )?;
                     operands.push(SketchNativeOperand {
@@ -188,7 +188,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                 }
                 if let Some(equation_id) = joined_equation_id {
                     defer_resource(
-                        ctx.try_reserve_items(&mut operands, 1, "creo skamp native operands"),
+                        ctx.reserve_vec(&mut operands, 1, "creo skamp native operands"),
                         resource_error,
                     )?;
                     operands.push(SketchNativeOperand {
@@ -227,7 +227,10 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                             resource_error,
                         )?,
                         defer_resource(
-                            ctx.format_retained(skamp.id, "creo skamp property value"),
+                            ctx.format_retained(
+                                format_args!("{}", skamp.id),
+                                "creo skamp property value",
+                            ),
                             resource_error,
                         )?,
                     );
@@ -388,7 +391,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     {
                         let mut loci = Vec::new();
                         defer_resource(
-                            ctx.try_reserve_items(&mut loci, 2, "creo skamp coincident loci"),
+                            ctx.reserve_vec(&mut loci, 2, "creo skamp coincident loci"),
                             &resource_error,
                         )?;
                         loci.push(section_skamp_incidence_locus(
@@ -415,7 +418,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         {
                             let mut loci = Vec::new();
                             defer_resource(
-                                ctx.try_reserve_items(&mut loci, 2, "creo skamp coincident loci"),
+                                ctx.reserve_vec(&mut loci, 2, "creo skamp coincident loci"),
                                 &resource_error,
                             )?;
                             loci.push(SketchLocus::Entity(first));
@@ -452,7 +455,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                                 if let Some(loci) = point_coincidence {
                                     let mut admitted_loci = Vec::new();
                                     defer_resource(
-                                        ctx.try_reserve_items(
+                                        ctx.reserve_vec(
                                             &mut admitted_loci,
                                             2,
                                             "creo skamp coincident loci",
@@ -695,7 +698,8 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                     {
                         let entity = admitted_entity(ctx, sketch, item.entity_id, &resource_error)?;
                         let first = SketchLocus::Start(defer_resource(
-                            entity.copy_admitted(ctx, "creo skamp arc endpoint identity copy"),
+                            entity
+                                .try_clone_for_decode(ctx, "creo skamp arc endpoint identity copy"),
                             &resource_error,
                         )?);
                         let second = SketchLocus::End(entity);
@@ -897,7 +901,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
                         )??
                     },
                     sketch: defer_resource(
-                        sketch.copy_admitted(ctx, "creo skamp constraint sketch identity"),
+                        sketch.try_clone_for_decode(ctx, "creo skamp constraint sketch identity"),
                         &resource_error,
                     )?,
                     definition: cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
@@ -925,7 +929,7 @@ pub(in super::super) fn section_skamp_constraints_for_geometry(
             return Err(error);
         }
         if let Some(candidate) = candidate {
-            ctx.try_reserve_items(&mut constraints, 1, "creo skamp constraints")?;
+            ctx.reserve_vec(&mut constraints, 1, "creo skamp constraints")?;
             constraints.push(candidate);
         }
     }
@@ -1803,7 +1807,8 @@ mod tests {
         };
         assert_eq!(native_kind, "creo:skamp:35");
         assert_eq!(entities, &vec![target.clone(), point.id().clone()]);
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -1869,7 +1874,8 @@ mod tests {
             entities,
             &vec![reference_line.id().clone(), point.id().clone()]
         );
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 
@@ -2001,7 +2007,8 @@ mod tests {
 
     /// The native kind of entity 42, after the document validates.
     fn native_kind_42(result: &cadmpeg_ir::codec::DecodeResult) -> &str {
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
         let entity = result
             .ir()
@@ -2055,7 +2062,8 @@ mod tests {
         };
         assert!(point.as_str().ends_with(":43"), "{point:?}");
         assert_eq!(entity, entity_42(&result));
-        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail");
         assert!(validation.is_ok(), "{validation:#?}");
     }
 }

@@ -212,7 +212,10 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
                 inline_typed.then_some(SKETCH_POINT_TYPE_GUID),
             );
             assert_eq!(
-                decode_sketch_point_companion(&payload, POINT, record_form.clone(), &types),
+                crate::design::test_support::with_test_decode_context(|ctx| {
+                    decode_sketch_point_companion(ctx, &payload, POINT, record_form.clone(), &types)
+                })
+                .expect("point companion admission"),
                 Some((
                     record_form
                         .clone()
@@ -225,4 +228,36 @@ fn point_companion_retains_both_prefixes_and_reference_encodings() {
             );
         }
     }
+}
+
+#[test]
+fn sketch_point_incident_curves_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let types = HashMap::from([
+        (POINT, (SKETCH_POINT_TYPE_GUID, 11, "Geometry")),
+        (71, (LINE, 2, "Geometry")),
+        (72, (ARC, 0, "Geometry")),
+    ]);
+    let mut payload = Vec::new();
+    push_header(&mut payload, "258", COMPANION);
+    payload.extend_from_slice(&[0; 10]);
+    payload.extend_from_slice(&2u32.to_le_bytes());
+    push_reference(&mut payload, 71, None);
+    push_reference(&mut payload, 72, None);
+    payload.push(0);
+    push_reference(&mut payload, POINT, None);
+    let record_form =
+        SketchPointRecordForm::version11(500, SketchPointClosure::Selector0State0, None, 0.0);
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = decode_sketch_point_companion(&ctx, &payload, POINT, record_form, &types)
+        .expect_err("collection limit must refuse incident curves");
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d sketch point incident curves")
+    );
 }

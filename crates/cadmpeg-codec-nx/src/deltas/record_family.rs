@@ -5,8 +5,10 @@ use super::attdef_state::AttdefSlots;
 use super::group::{GroupReferenceStatus, GroupSelector};
 use super::record_kind::RecordKind;
 use crate::framing::xmt_reference::NonNullXmt;
+use crate::iter_wire::IterWire;
 use crate::nurbs::curve_references::CurveDescriptorReferences;
 use crate::parasolid::entity_references::EntityReferences;
+use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "[f64; 3]", into = "[f64; 3]")]
@@ -233,10 +235,152 @@ pub(crate) enum RecordFamily {
     SupportUv,
 }
 
+/// Borrowed reference column for the native deltas-record wire.
+pub(crate) struct RecordFamilyReferences<'a>(pub(crate) &'a RecordFamily);
+
+impl Serialize for RecordFamilyReferences<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self.0 {
+            RecordFamily::Body { references, .. } => references.serialize(serializer),
+            RecordFamily::Shell { references, .. } => references.serialize(serializer),
+            RecordFamily::Face { references, .. } => references.serialize(serializer),
+            RecordFamily::Loop { references, .. } => references.serialize(serializer),
+            RecordFamily::Edge { references, .. } => references.serialize(serializer),
+            RecordFamily::Fin { references, .. } => references.serialize(serializer),
+            RecordFamily::Vertex { references, .. } => references.serialize(serializer),
+            RecordFamily::Region { references, .. } => references.serialize(serializer),
+            RecordFamily::Point { references, .. } => references.serialize(serializer),
+            RecordFamily::Line { references, .. } => references.serialize(serializer),
+            RecordFamily::Circle { references, .. } => references.serialize(serializer),
+            RecordFamily::Ellipse { references, .. } => references.serialize(serializer),
+            RecordFamily::Intersection { references, .. } => references.serialize(serializer),
+            RecordFamily::Plane { references, .. } => references.serialize(serializer),
+            RecordFamily::Cylinder { references, .. } => references.serialize(serializer),
+            RecordFamily::Cone { references, .. } => references.serialize(serializer),
+            RecordFamily::Sphere { references, .. } => references.serialize(serializer),
+            RecordFamily::Torus { references, .. } => references.serialize(serializer),
+            RecordFamily::BlendSurf { references, .. } => references.serialize(serializer),
+            RecordFamily::BlendBound { references, .. } => references.serialize(serializer),
+            RecordFamily::OffsetSurf { references, .. } => references.serialize(serializer),
+            RecordFamily::Type67 { references, .. } => references.serialize(serializer),
+            RecordFamily::Type70 {
+                references,
+                trailing_reference,
+                ..
+            } => IterWire(
+                references
+                    .iter()
+                    .copied()
+                    .chain([u32::from(*trailing_reference); 2]),
+            )
+            .serialize(serializer),
+            RecordFamily::AttdefList { slots } => {
+                IterWire(std::iter::once(1).chain(slots.references())).serialize(serializer)
+            }
+            RecordFamily::Entity51 {
+                leading_references,
+                trailing_references,
+            } => IterWire(
+                leading_references
+                    .iter()
+                    .copied()
+                    .chain(trailing_references.values().iter().copied()),
+            )
+            .serialize(serializer),
+            RecordFamily::Group { references, .. } => references.serialize(serializer),
+            RecordFamily::IntersectionData { references, .. } => references.serialize(serializer),
+            RecordFamily::Type91 { references, .. } => references.serialize(serializer),
+            RecordFamily::Type101 { references, .. } => references.serialize(serializer),
+            RecordFamily::BSurface { references, .. } => references.serialize(serializer),
+            RecordFamily::TrimmedCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::BCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::BCurveDescriptor { references } => match references {
+                CurveDescriptorReferences::Compact(values) => values.serialize(serializer),
+                CurveDescriptorReferences::Status(values) => {
+                    IterWire(values.iter().copied().map(u32::from)).serialize(serializer)
+                }
+            },
+            RecordFamily::SpCurve { references, .. } => references.serialize(serializer),
+            RecordFamily::Type141 { references } => references.serialize(serializer),
+            RecordFamily::Chart
+            | RecordFamily::TermUse
+            | RecordFamily::Type45
+            | RecordFamily::Entity52
+            | RecordFamily::Entity53
+            | RecordFamily::Entity54
+            | RecordFamily::Entity55
+            | RecordFamily::Entity56
+            | RecordFamily::Entity57
+            | RecordFamily::Entity58
+            | RecordFamily::Entity59
+            | RecordFamily::Entity62
+            | RecordFamily::BSurfaceData
+            | RecordFamily::BSurfaceDescriptor
+            | RecordFamily::Multiplicities
+            | RecordFamily::Knots
+            | RecordFamily::BCurveData
+            | RecordFamily::SupportUv => [0_u32; 0].serialize(serializer),
+        }
+    }
+}
+
 impl RecordFamily {
     /// Numeric Parasolid node type for this family.
     pub(crate) const fn kind(&self) -> u16 {
-        self.record_kind().code() as u16
+        match self.record_kind() {
+            RecordKind::Body => 12,
+            RecordKind::Shell => 13,
+            RecordKind::Face => 14,
+            RecordKind::Loop => 15,
+            RecordKind::Edge => 16,
+            RecordKind::Fin => 17,
+            RecordKind::Vertex => 18,
+            RecordKind::Region => 19,
+            RecordKind::Point => 29,
+            RecordKind::Line => 30,
+            RecordKind::Circle => 31,
+            RecordKind::Ellipse => 32,
+            RecordKind::Intersection => 38,
+            RecordKind::Chart => 40,
+            RecordKind::TermUse => 41,
+            RecordKind::Type45 => 45,
+            RecordKind::Plane => 50,
+            RecordKind::Cylinder => 51,
+            RecordKind::Cone => 52,
+            RecordKind::Sphere => 53,
+            RecordKind::Torus => 54,
+            RecordKind::BlendSurf => 56,
+            RecordKind::BlendBound => 59,
+            RecordKind::OffsetSurf => 60,
+            RecordKind::Type67 => 67,
+            RecordKind::Type70 => 70,
+            RecordKind::AttdefList => 74,
+            RecordKind::Entity51 => 81,
+            RecordKind::Entity52 => 82,
+            RecordKind::Entity53 => 83,
+            RecordKind::Entity54 => 84,
+            RecordKind::Entity55 => 85,
+            RecordKind::Entity56 => 86,
+            RecordKind::Entity57 => 87,
+            RecordKind::Entity58 => 88,
+            RecordKind::Entity59 => 89,
+            RecordKind::Entity62 => 98,
+            RecordKind::Group => 90,
+            RecordKind::Type91 => 91,
+            RecordKind::Type101 => 101,
+            RecordKind::BSurface => 124,
+            RecordKind::BSurfaceData => 125,
+            RecordKind::BSurfaceDescriptor => 126,
+            RecordKind::Multiplicities => 127,
+            RecordKind::Knots => 128,
+            RecordKind::TrimmedCurve => 133,
+            RecordKind::BCurve => 134,
+            RecordKind::BCurveData => 135,
+            RecordKind::BCurveDescriptor => 136,
+            RecordKind::SpCurve => 137,
+            RecordKind::Type141 => 141,
+            RecordKind::SupportUv => 204,
+        }
     }
 
     const fn record_kind(&self) -> RecordKind {
@@ -381,6 +525,7 @@ impl RecordFamily {
     }
 
     /// Ordered references retained by this record layout.
+    #[cfg(test)]
     pub(crate) fn references(&self) -> Vec<u32> {
         match self {
             Self::Body { references, .. } => references.clone(),

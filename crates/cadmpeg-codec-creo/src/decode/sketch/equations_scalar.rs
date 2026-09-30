@@ -363,7 +363,7 @@ pub(super) fn section_equation_auxiliary_constraints(
                 let Some(coordinate) = SectionAxis::from_variable(first.variable_type) else {
                     continue;
                 };
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut constraints.midpoints,
                     1,
                     "creo section equation midpoint constraints",
@@ -395,7 +395,7 @@ pub(super) fn section_equation_auxiliary_constraints(
                 {
                     continue;
                 }
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut constraints.point_bindings,
                     1,
                     "creo section equation point bindings",
@@ -902,7 +902,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             continue;
         };
         equation.rhs = rhs.get();
-        ctx.try_reserve_items(equations, 1, "creo auxiliary coordinate equations")?;
+        ctx.reserve_vec(equations, 1, "creo auxiliary coordinate equations")?;
         equations.push(equation);
     }
     for constraint in &constraints.point_bindings {
@@ -943,7 +943,7 @@ pub(super) fn append_section_equation_auxiliary_coordinate_constraints(
             .zip(values)
             .filter_map(|(coordinate, value)| Some((coordinate, value?)))
         {
-            ctx.try_reserve_items(equations, 1, "creo auxiliary coordinate equations")?;
+            ctx.reserve_vec(equations, 1, "creo auxiliary coordinate equations")?;
             equations.push(SectionCoordinateEquation::point_value(
                 ctx,
                 constraint.point,
@@ -1141,7 +1141,7 @@ pub(super) fn section_equation_scalar_equality_components(
             &equation.arguments,
             &variables.rows,
         ) {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut deferred_function_five,
                 1,
                 "creo section deferred scalar equations",
@@ -1234,10 +1234,7 @@ fn scalar_equality_components(
         ctx.charge_collection_items(1, "creo section scalar component nodes")?;
         component.insert(seed);
         let mut pending = std::collections::VecDeque::new();
-        ctx.try_collection(1, "creo section scalar pending nodes", || {
-            pending.try_reserve(1)
-        })?;
-        pending.push_back(seed);
+        ctx.push_back(&mut pending, seed, "creo section scalar pending nodes")?;
         while let Some(variable) = pending.pop_front() {
             for neighbor in adjacency
                 .get(&variable)
@@ -1249,14 +1246,11 @@ fn scalar_equality_components(
                     ctx.charge_collection_items(1, "creo section scalar component nodes")?;
                     component.insert(neighbor);
                     remaining.remove(&neighbor);
-                    ctx.try_collection(1, "creo section scalar pending nodes", || {
-                        pending.try_reserve(1)
-                    })?;
-                    pending.push_back(neighbor);
+                    ctx.push_back(&mut pending, neighbor, "creo section scalar pending nodes")?;
                 }
             }
         }
-        ctx.try_reserve_items(&mut components, 1, "creo section scalar components")?;
+        ctx.reserve_vec(&mut components, 1, "creo section scalar components")?;
         components.push(component);
     }
     Ok(components)
@@ -1280,7 +1274,7 @@ fn scalar_equality_values_for_components(
                     ctx.charge_collection_items(1, "creo section scalar sample nodes")?;
                 }
                 let samples = values.entry(variable).or_default();
-                ctx.try_reserve_items(samples, 1, "creo section scalar samples")?;
+                ctx.reserve_vec(samples, 1, "creo section scalar samples")?;
                 samples.push(value);
             }
             Some(_) if !invalid.contains(&variable) => {

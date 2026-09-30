@@ -557,6 +557,62 @@ fn assembly_path_wire_pairs_guid_locations() {
     }
 }
 
+fn borrowed_assembly_path(with_identity: bool) -> super::DesignAssemblyOperandPath {
+    let mut wire = serde_json::json!({
+        "link": {
+            "locator_reference_offset": 11, "locator_record_index": 10,
+            "locator_class_tag": "363", "locator_byte_offset": 100,
+            "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+            "wrapper_reference_offset": 122, "wrapper_class_tag": "388",
+            "wrapper_byte_offset": 200, "path_reference_offset": 211
+        },
+        "record_index": 30, "class_tag": "329", "byte_offset": 300,
+        "occurrence_guids": ["11111111-1111-4111-8111-111111111111"],
+        "occurrence_guid_offsets": [400]
+    });
+    if with_identity {
+        wire["identity_guids"] = serde_json::json!([
+            "11111111-1111-4111-8111-111111111111",
+            "22222222-2222-4222-8222-222222222222",
+            "33333333-3333-4333-8333-333333333333",
+            "44444444-4444-4444-8444-444444444444"
+        ]);
+        wire["identity_guid_offsets"] = serde_json::json!([500, 580, 660, 740]);
+    }
+    serde_json::from_value(wire).unwrap()
+}
+
+#[test]
+fn assembly_operand_path_borrowed_wire_matches_owned_wire_bytes() {
+    for path in [borrowed_assembly_path(false), borrowed_assembly_path(true)] {
+        let owned = super::DesignAssemblyOperandPathWire::from(path.clone());
+        assert_eq!(
+            serde_json::to_vec(&path).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn assembly_operand_path_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct PathRecord<'a> {
+        id: &'static str,
+        path: &'a super::DesignAssemblyOperandPath,
+    }
+    let path = borrowed_assembly_path(true);
+    let record = PathRecord {
+        id: "f3d:native:assembly-operand-path#0",
+        path: &path,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::ASSEMBLY_OPERAND_PATH_CLONE_COUNT.with(|count| count.set(0)),
+        || super::ASSEMBLY_OPERAND_PATH_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+
 #[test]
 fn component_insert_pairs_explicit_matrix_with_scope_and_carrier_locations() {
     let prefix = r#"{"relation_record_index":1,"carrier_record_index":2,"neutron_role":"role","neutron_role_offset":30,"transform":"#;
@@ -909,4 +965,124 @@ fn component_occurrence_derives_guid_and_transform_offsets_at_admission() {
         );
         assert!(Occurrence::try_new(draft(u64::MAX - last_offset + 1, placement)).is_err());
     }
+}
+
+fn axial_selector_for_serialization(version: bool) -> super::DesignAssemblyAxialSelectorIdentity {
+    let prefix = r#"{"axis_record_index":0,"axis_class_tag":"327","axis_byte_offset":0,"axis_paired_class_tag":"327","axis_paired_byte_offset":0,"selector_record_index":0,"selector_class_tag":"327","selector_byte_offset":0,"selector_paired_class_tag":"327","selector_paired_byte_offset":0,"nested_record_index":0,"nested_record_index_offset":0,"selector_asset_id":"00000004-1111-4111-8111-111111111111","selector_asset_id_offset":0,"selector_context_id":"00000005-1111-4111-8111-111111111111","selector_context_id_offset":0,"occurrence_reference":0,"occurrence_reference_offset":0,"external_object_reference":0,"external_object_reference_offset":0,"external_segment":0,"external_segment_offset":0,"external_asset_id":"00000006-1111-4111-8111-111111111111","external_asset_id_offset":0,"external_link_name":"identity","external_link_name_offset":0"#;
+    let suffix = r#","role_record_index":0,"role_class_tag":"327","role_byte_offset":0,"occurrence_role":"00000007-1111-4111-8111-111111111111","occurrence_role_offset":0}"#;
+    let version_fields = if version {
+        r#", "external_property_key":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","external_property_key_offset":100,"external_version_urn":"urn","external_version_urn_offset":110"#
+    } else {
+        ""
+    };
+    serde_json::from_str(&format!("{prefix}{version_fields}{suffix}")).unwrap()
+}
+
+#[test]
+fn assembly_axial_selector_borrowed_wire_matches_owned_wire_bytes() {
+    for selector in [
+        axial_selector_for_serialization(false),
+        axial_selector_for_serialization(true),
+    ] {
+        let owned = super::DesignAssemblyAxialSelectorIdentityWire::from(selector.clone());
+        assert_eq!(
+            serde_json::to_vec(&selector).unwrap(),
+            serde_json::to_vec(&owned).unwrap()
+        );
+    }
+}
+
+#[test]
+fn assembly_axial_selector_native_retained_limit_refuses_before_clone() {
+    #[derive(serde::Serialize)]
+    struct NestedRecord<'a> {
+        id: &'static str,
+        value: &'a super::DesignAssemblyAxialSelectorIdentity,
+    }
+    let selector = axial_selector_for_serialization(true);
+    let record = NestedRecord {
+        id: "f3d:native:assembly-axial-selector#0",
+        value: &selector,
+    };
+    crate::test_support::native_test::assert_borrowed_native_retained_limit(
+        &record,
+        "design_parameter_scopes",
+        || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(|count| count.set(0)),
+        || super::ASSEMBLY_AXIAL_SELECTOR_CLONE_COUNT.with(std::cell::Cell::get),
+    );
+}
+fn continuation_path(record_index: u32, byte_offset: u64) -> super::DesignAssemblyOperandPath {
+    serde_json::from_value(serde_json::json!({
+        "link": {
+            "locator_reference_offset": 11, "locator_record_index": 10,
+            "locator_class_tag": "390", "locator_byte_offset": 100,
+            "locator_scope_reference_offset": 111, "wrapper_record_index": 20,
+            "wrapper_reference_offset": 122, "wrapper_class_tag": "397",
+            "wrapper_byte_offset": 200, "path_reference_offset": 211
+        },
+        "record_index": record_index,
+        "class_tag": "330",
+        "byte_offset": byte_offset,
+        "occurrence_guids": ["11111111-1111-1111-1111-111111111111"],
+        "occurrence_guid_offsets": [byte_offset + 10],
+        "identity_guids": [
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+            "cccccccc-cccc-cccc-cccc-cccccccccccc",
+            "dddddddd-dddd-dddd-dddd-dddddddddddd"
+        ],
+        "identity_guid_offsets": [
+            byte_offset + 100,
+            byte_offset + 180,
+            byte_offset + 260,
+            byte_offset + 340
+        ]
+    }))
+    .unwrap()
+}
+
+#[test]
+fn assembly_path_append_occurrences_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d assembly path appended occurrences")
+    );
+}
+
+#[test]
+fn assembly_path_append_identities_refuse_collection_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 1;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap_err();
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(failure)
+        if failure.dimension == ResourceDimension::CollectionItems
+            && failure.operation == "f3d assembly path appended identities")
+    );
+
+    let arena = DecodeArena::new();
+    policy.limits.max_collection_items = 5;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let path = continuation_path(30, 300)
+        .try_append(continuation_path(31, 1000), &ctx)
+        .unwrap()
+        .unwrap();
+    assert_eq!(path.occurrence_guids().len(), 2);
+    assert_eq!(path.identity_guids().len(), 8);
 }

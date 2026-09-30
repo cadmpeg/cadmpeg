@@ -94,7 +94,7 @@ impl InterpolationGrid {
             return Ok(None);
         };
         let mut u_derivatives = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut u_derivatives,
             u_derivative_count,
             "creo legacy spline u derivatives",
@@ -108,7 +108,7 @@ impl InterpolationGrid {
             return Ok(None);
         };
         let mut v_derivatives = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut v_derivatives,
             v_derivative_count,
             "creo legacy spline v derivatives",

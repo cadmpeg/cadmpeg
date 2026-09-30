@@ -12,7 +12,7 @@ fn copy_with_policy(
 ) -> Result<SketchGeometry, CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).expect("empty root");
-    geometry.copy_admitted(&ctx, "sketch geometry copy")
+    geometry.try_clone_for_decode(&ctx, "sketch geometry copy")
 }
 
 #[test]

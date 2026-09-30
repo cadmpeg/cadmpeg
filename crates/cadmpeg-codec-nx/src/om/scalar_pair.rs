@@ -80,7 +80,7 @@ impl PairForm for SketchPairForm {
         self.discriminator()
     }
     fn second_delta(self) -> u64 {
-        8 + self.separator_width() as u64
+        8 + cadmpeg_core::decode::u64_from_index(self.separator_width())
     }
 }
 impl PairForm for DatumPairForm {
@@ -113,7 +113,7 @@ pub(crate) struct PairPosition<F> {
 impl<F: PairForm> PairPosition<F> {
     pub(crate) fn new(form: F, offset: u64) -> Option<Self> {
         offset
-            .checked_add(form.prefix().len() as u64)?
+            .checked_add(cadmpeg_core::decode::u64_from_index(form.prefix().len()))?
             .checked_add(form.second_delta())?;
         Some(Self { form, offset })
     }
@@ -144,7 +144,7 @@ impl<F: PairForm> PairPosition<F> {
         self.offset
     }
     pub(crate) fn value_offsets(self) -> [u64; 2] {
-        let first = self.offset + self.form.prefix().len() as u64;
+        let first = self.offset + cadmpeg_core::decode::u64_from_index(self.form.prefix().len());
         [first, first + self.form.second_delta()]
     }
 }

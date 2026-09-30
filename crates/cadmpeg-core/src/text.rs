@@ -22,7 +22,11 @@ impl NonWhitespaceChar {
     #[must_use]
     pub const fn from_ascii(byte: u8) -> Option<Self> {
         if byte.is_ascii() && !matches!(byte, b'\t'..=b'\r' | b' ') {
-            Some(Self(byte as char))
+            // endian-exception: reconstructed-scalar
+            match char::from_u32(u32::from_be_bytes([0, 0, 0, byte])) {
+                Some(character) => Some(Self(character)),
+                None => None,
+            }
         } else {
             None
         }
@@ -33,11 +37,11 @@ impl NonWhitespaceChar {
     /// Every hexadecimal digit is non-whitespace, and the mask makes the four
     /// bits total over `u8`, so this constructor refuses nothing.
     #[must_use]
-    pub const fn hex_digit(nibble: u8) -> Self {
+    pub fn hex_digit(nibble: u8) -> Self {
         const DIGITS: [char; 16] = [
             '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
         ];
-        Self(DIGITS[(nibble & 0x0f) as usize])
+        Self(DIGITS[usize::from(nibble & 0x0f)])
     }
 }
 
@@ -106,7 +110,7 @@ impl NonBlankString {
     }
 
     /// Copy a previously admitted non-blank value into decoder-retained storage.
-    pub fn copy_admitted(
+    pub fn try_clone_for_decode(
         &self,
         ctx: &crate::decode::DecodeContext<'_>,
         operation: &'static str,
@@ -276,17 +280,19 @@ pub fn named_entries_reporting_checked<V>(
                     slot.insert(value);
                 }
                 std::collections::btree_map::Entry::Occupied(slot) => {
-                    let record = ctx.format_retained(&record, "named entry refused record")?;
+                    let record = ctx
+                        .format_retained(format_args!("{record}"), "named entry refused record")?;
                     let key = NonBlankString(
                         ctx.copy_retained_text(slot.key().as_str(), "named entry refused key")?,
                     );
-                    ctx.try_reserve_items(&mut refused, 1, "named entry refusals")?;
+                    ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                     refused.push(NamedEntryError::Restated { record, key });
                 }
             },
             None => {
-                let record = ctx.format_retained(&record, "named entry refused record")?;
-                ctx.try_reserve_items(&mut refused, 1, "named entry refusals")?;
+                let record =
+                    ctx.format_retained(format_args!("{record}"), "named entry refused record")?;
+                ctx.reserve_vec(&mut refused, 1, "named entry refusals")?;
                 refused.push(NamedEntryError::Blank { record });
             }
         }
@@ -429,7 +435,7 @@ mod tests {
         policy.limits.max_retained_bytes = 2;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = value
-            .copy_admitted(&ctx, "nonblank copy")
+            .try_clone_for_decode(&ctx, "nonblank copy")
             .expect_err("three bytes exceed two");
         assert!(matches!(error, crate::CodecError::ResourceLimit(resource)
             if resource.dimension == ResourceDimension::RetainedBytes
@@ -438,7 +444,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &service).expect("empty root");
         assert_eq!(
             value
-                .copy_admitted(&ctx, "nonblank copy")
+                .try_clone_for_decode(&ctx, "nonblank copy")
                 .expect("service copy"),
             value
         );

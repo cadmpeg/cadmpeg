@@ -93,80 +93,70 @@ fn triangle_strip_geometry(
     let mut positions = None::<Vec<FiniteVector<3>>>;
     let mut normals = None::<Vec<FiniteVector<3>>>;
     for array in arrays {
-        let (candidate_positions, candidate_normals) =
-            match array.field {
-                PrimitiveArrayField::VertexPositions => {
-                    if array.values.len()
-                        != vertex_count
-                            .checked_mul(3)
-                            .ok_or(TriangleStripGeometryError::Missing)?
+        let (candidate_positions, candidate_normals) = match array.field {
+            PrimitiveArrayField::VertexPositions => {
+                if array.values.len()
+                    != vertex_count
+                        .checked_mul(3)
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
+                }
+                (
                     {
-                        continue;
-                    }
-                    (
-                        {
-                            let mut points = Vec::new();
-                            ctx.try_reserve_items(
-                                &mut points,
-                                vertex_count,
-                                "creo triangle strip positions",
-                            )
+                        let mut points = Vec::new();
+                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
                             .map_err(TriangleStripGeometryError::Resource)?;
-                            points.extend(
-                                array.values.chunks_exact(3).map(|point| {
-                                    FiniteVector::from([point[0], point[1], point[2]])
-                                }),
-                            );
-                            points
-                        },
-                        None,
-                    )
+                        points.extend(
+                            array
+                                .values
+                                .chunks_exact(3)
+                                .map(|point| FiniteVector::from([point[0], point[1], point[2]])),
+                        );
+                        points
+                    },
+                    None,
+                )
+            }
+            PrimitiveArrayField::VertexNormalsAndPositions => {
+                if array.values.len()
+                    != vertex_count
+                        .checked_mul(6)
+                        .ok_or(TriangleStripGeometryError::Missing)?
+                {
+                    continue;
                 }
-                PrimitiveArrayField::VertexNormalsAndPositions => {
-                    if array.values.len()
-                        != vertex_count
-                            .checked_mul(6)
-                            .ok_or(TriangleStripGeometryError::Missing)?
+                (
                     {
-                        continue;
-                    }
-                    (
-                        {
-                            let mut points = Vec::new();
-                            ctx.try_reserve_items(
-                                &mut points,
-                                vertex_count,
-                                "creo triangle strip positions",
-                            )
+                        let mut points = Vec::new();
+                        ctx.reserve_vec(&mut points, vertex_count, "creo triangle strip positions")
                             .map_err(TriangleStripGeometryError::Resource)?;
-                            points.extend(
-                                array.values.chunks_exact(6).map(|tuple| {
-                                    FiniteVector::from([tuple[3], tuple[4], tuple[5]])
-                                }),
-                            );
-                            points
-                        },
-                        Some({
-                            let mut normals = Vec::new();
-                            ctx.try_reserve_items(
-                                &mut normals,
-                                vertex_count,
-                                "creo triangle strip normals",
-                            )
+                        points.extend(
+                            array
+                                .values
+                                .chunks_exact(6)
+                                .map(|tuple| FiniteVector::from([tuple[3], tuple[4], tuple[5]])),
+                        );
+                        points
+                    },
+                    Some({
+                        let mut normals = Vec::new();
+                        ctx.reserve_vec(&mut normals, vertex_count, "creo triangle strip normals")
                             .map_err(TriangleStripGeometryError::Resource)?;
-                            normals.extend(
-                                array.values.chunks_exact(6).map(|tuple| {
-                                    FiniteVector::from([tuple[0], tuple[1], tuple[2]])
-                                }),
-                            );
-                            normals
-                        }),
-                    )
-                }
-                PrimitiveArrayField::P1 | PrimitiveArrayField::P2 | PrimitiveArrayField::Points => {
-                    continue
-                }
-            };
+                        normals.extend(
+                            array
+                                .values
+                                .chunks_exact(6)
+                                .map(|tuple| FiniteVector::from([tuple[0], tuple[1], tuple[2]])),
+                        );
+                        normals
+                    }),
+                )
+            }
+            PrimitiveArrayField::P1 | PrimitiveArrayField::P2 | PrimitiveArrayField::Points => {
+                continue
+            }
+        };
         if positions
             .as_ref()
             .is_some_and(|selected| *selected != candidate_positions)
@@ -221,7 +211,7 @@ pub(crate) fn triangle_strips(
         }
         let (count, mut cursor) = psb::compact_int(record, accum + 1);
         let mut cumulative = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut cumulative,
             index_from_u32(count),
             "creo triangle strip cumulative counts",
@@ -240,7 +230,7 @@ pub(crate) fn triangle_strips(
         };
         let mut previous = 0;
         let mut strip_lengths = Vec::new();
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut strip_lengths,
             cumulative.len(),
             "creo triangle strip lengths",
@@ -266,7 +256,7 @@ pub(crate) fn triangle_strips(
             }
             Err(TriangleStripGeometryError::Resource(error)) => return Err(error),
         };
-        ctx.try_reserve_items(&mut strips, 1, "creo triangle strip records")?;
+        ctx.reserve_vec(&mut strips, 1, "creo triangle strip records")?;
         strips.push(PrimitiveTriangleStrip {
             offset,
             positions: geometry.positions,
@@ -320,7 +310,7 @@ pub(crate) fn scalar_arrays(
                 continue;
             };
             let mut values = Vec::new();
-            ctx.try_reserve_items(&mut values, capacity, "creo primitive scalar values")?;
+            ctx.reserve_vec(&mut values, capacity, "creo primitive scalar values")?;
             let mut cursor = psb::Cursor::at(data, start);
             while values.len() < capacity {
                 if capacity - values.len() >= 3 && cursor.take_slice_if(&[0x00, 0x28, 0x00]) {
@@ -336,7 +326,7 @@ pub(crate) fn scalar_arrays(
                 values.push(value);
             }
             if values.len() == capacity {
-                ctx.try_reserve_items(&mut arrays, 1, "creo primitive scalar arrays")?;
+                ctx.reserve_vec(&mut arrays, 1, "creo primitive scalar arrays")?;
                 arrays.push(PrimitiveScalarArray {
                     field,
                     offset,

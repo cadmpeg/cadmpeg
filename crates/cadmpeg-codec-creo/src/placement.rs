@@ -213,7 +213,7 @@ fn generated_cylinder_section_transform(
         let Some(frame) = parameters.positional_cylinder_frame() else {
             continue;
         };
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut correspondences,
             1,
             "creo cylinder placement correspondences",
@@ -433,7 +433,7 @@ fn generated_planar_section_transform(
         if !magnitude.is_finite() || magnitude <= EPS_PLACEMENT_EXACT_GEOMETRY {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut sides, 1, "creo planar placement sides")?;
+        ctx.reserve_vec(&mut sides, 1, "creo planar placement sides")?;
         sides.push((
             local_normal,
             local_offset,
@@ -544,11 +544,7 @@ fn generated_planar_section_transform(
                             && vectors_close(existing.v_axis(), candidate.v_axis())
                             && vectors_close(existing.normal(), candidate.normal())
                     }) {
-                        ctx.try_reserve_items(
-                            &mut candidates,
-                            1,
-                            "creo planar placement candidates",
-                        )?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo planar placement candidates")?;
                         candidates.push(candidate);
                     }
                 }
@@ -1176,11 +1172,11 @@ pub(crate) fn resolve(
             .map(|transform| apply_section_orientation(transform, section));
         let mut reference_ids = Vec::new();
         if let Some(id) = section.reference_plane_datum_geometry_id {
-            ctx.try_reserve_items(&mut reference_ids, 1, "creo placement reference IDs")?;
+            ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")?;
             reference_ids.push(id);
         } else {
             for id in section.reference_planes.entity_ids() {
-                ctx.try_reserve_items(&mut reference_ids, 1, "creo placement reference IDs")?;
+                ctx.reserve_vec(&mut reference_ids, 1, "creo placement reference IDs")?;
                 reference_ids.push(id);
             }
         }
@@ -1229,7 +1225,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
-                        ctx.try_reserve_items(&mut candidates, 1, "creo placement candidates")?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1260,7 +1256,7 @@ pub(crate) fn resolve(
                             candidate.sketch == sketch && candidate.reference == reference
                         })
                     {
-                        ctx.try_reserve_items(&mut candidates, 1, "creo placement candidates")?;
+                        ctx.reserve_vec(&mut candidates, 1, "creo placement candidates")?;
                         candidates.push(SectionFrameCandidate {
                             reference_id,
                             sketch,
@@ -1272,10 +1268,10 @@ pub(crate) fn resolve(
         }
         if candidates.len() != 1 {
             if let Some(transform) = carrier_transform {
-                ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
+                ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             } else if let Some(transform) = definition_local_frame_transform(definition, section) {
-                ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
+                ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
                 result.push(transform);
             }
             continue;
@@ -1360,7 +1356,7 @@ pub(crate) fn resolve(
             section.offset,
         );
         if let Some(transform) = carrier_transform.or(direct_transform) {
-            ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
+            ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }
@@ -1379,7 +1375,7 @@ pub(crate) fn resolve(
                 }
             };
         if let Some(transform) = transform {
-            ctx.try_reserve_items(&mut result, 1, "creo placement transforms")?;
+            ctx.reserve_vec(&mut result, 1, "creo placement transforms")?;
             result.push(transform);
         }
     }

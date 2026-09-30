@@ -2413,13 +2413,10 @@ fn transform_sketch_block_geometry(
                 .into_iter()
                 .map(point)
                 .collect::<Option<Vec<_>>>()?;
-            let mut transformed = transformed.into_iter();
             curve
-                .edit_control_points(|point| {
-                    if let Some(next) = transformed.next() {
-                        *point = next;
-                    }
-                    Ok(())
+                .try_map_control_points(|index, current| match transformed.get(index) {
+                    Some(next) => cadmpeg_ir::units::FinitePoint2::new(*next).ok_or(()),
+                    None => Ok(current),
                 })
                 .ok()?;
             SketchGeometry::nurbs(curve)

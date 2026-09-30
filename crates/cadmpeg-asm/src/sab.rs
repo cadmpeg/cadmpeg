@@ -13,7 +13,7 @@
 
 use crate::kernel_header::RefWidth;
 use crate::stream_error::{StreamError, StreamFailure, StreamFormat};
-use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
+use cadmpeg_core::decode::{DecodeContext, View};
 use std::sync::Arc;
 
 pub(crate) fn int_le_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
@@ -398,7 +398,7 @@ pub(crate) fn lex(
             p + 8,
         ),
         0x07 => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Str(string(p + 1, len)?), p + 1 + len)
         }
         0x08 => {
@@ -420,11 +420,11 @@ pub(crate) fn lex(
             (Lexed::Value(Token::Ref(v)), p + ref_width.bytes())
         }
         0x0d => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::Ident(string(p + 1, len)?), p + 1 + len)
         }
         0x0e => {
-            let len = *bytes.get(p).ok_or_else(truncated)? as usize;
+            let len = usize::from(*bytes.get(p).ok_or_else(truncated)?);
             (Lexed::SubIdent(string(p + 1, len)?), p + 1 + len)
         }
         0x0f => (Lexed::Value(Token::SubtypeOpen), p),
@@ -475,7 +475,7 @@ pub fn frame(
     limit: usize,
     ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(Some(ctx), bytes, start, limit, ref_width, false)
+    frame_impl(ctx, bytes, start, limit, ref_width, false)
 }
 
 /// Frame a history-section slice whose final record ends at the enclosing
@@ -487,112 +487,11 @@ pub fn frame_history(
     limit: usize,
     ref_width: RefWidth,
 ) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(Some(ctx), bytes, start, limit, ref_width, true)
-}
-
-/// Frame source records for an encoder edit, outside a decode session.
-pub(crate) fn frame_for_edit(
-    bytes: &[u8],
-    start: usize,
-    limit: usize,
-    ref_width: RefWidth,
-) -> Result<Vec<Record>, StreamFailure> {
-    frame_impl(None, bytes, start, limit, ref_width, false)
-}
-
-fn charge_items(
-    ctx: Option<&DecodeContext<'_>>,
-    count: u64,
-    operation: &'static str,
-) -> Result<(), StreamFailure> {
-    if let Some(ctx) = ctx {
-        ctx.charge_collection_items(count, operation)?;
-    }
-    Ok(())
-}
-
-fn charge_retained(
-    ctx: Option<&DecodeContext<'_>>,
-    bytes: u64,
-    operation: &'static str,
-) -> Result<(), StreamFailure> {
-    if let Some(ctx) = ctx {
-        ctx.charge_retained(bytes, operation)?;
-    }
-    Ok(())
-}
-
-fn grow_scratch(
-    scratch: &mut Option<ScopedReservation<'_>>,
-    bytes: u64,
-) -> Result<(), StreamFailure> {
-    if let Some(scratch) = scratch {
-        scratch.grow(bytes)?;
-    }
-    Ok(())
-}
-
-fn refuse_size(ctx: Option<&DecodeContext<'_>>, operation: &'static str) -> StreamFailure {
-    match ctx {
-        Some(ctx) => StreamFailure::Resource(ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)),
-        None => StreamFailure::Parse(StreamError {
-            format: StreamFormat::Binary,
-            offset: 0,
-            reason: format!("{operation} exceeds the address space"),
-        }),
-    }
-}
-
-/// Admit a valid string payload before `lex` copies it. Invalid or truncated
-/// payloads stay with the lexer's byte-specific parse error.
-fn admit_lex_string(
-    ctx: Option<&DecodeContext<'_>>,
-    bytes: &[u8],
-    pos: usize,
-    ref_width: RefWidth,
-    name_done: bool,
-    scratch: &mut Option<ScopedReservation<'_>>,
-) -> Result<(), StreamFailure> {
-    let Some(tag) = bytes.get(pos).copied() else {
-        return Ok(());
-    };
-    let Some(prefix) = pos.checked_add(1) else {
-        return Ok(());
-    };
-    let (start, len) = match tag {
-        0x07 | 0x0d | 0x0e => (
-            prefix.checked_add(1),
-            bytes.get(prefix).copied().map(usize::from),
-        ),
-        0x08 => (
-            prefix.checked_add(2),
-            View::u16_le_at(bytes, prefix).map(usize::from),
-        ),
-        0x09 | 0x12 => (
-            prefix.checked_add(ref_width.bytes()),
-            int_le_at(bytes, prefix, ref_width).and_then(|value| usize::try_from(value).ok()),
-        ),
-        _ => return Ok(()),
-    };
-    let Some(payload) = start
-        .zip(len)
-        .and_then(|(start, len)| start.checked_add(len).and_then(|end| bytes.get(start..end)))
-    else {
-        return Ok(());
-    };
-    if std::str::from_utf8(payload).is_err() {
-        return Ok(());
-    }
-    if (tag == 0x0d || tag == 0x0e) && !name_done {
-        grow_scratch(scratch, payload.len() as u64)?;
-    } else {
-        charge_retained(ctx, payload.len() as u64, "retain SAB token string")?;
-    }
-    Ok(())
+    frame_impl(ctx, bytes, start, limit, ref_width, true)
 }
 
 fn frame_impl(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     start: usize,
     limit: usize,
@@ -624,10 +523,7 @@ fn frame_impl(
 
     while pos < limit {
         let rec_start = pos;
-        let mut scratch = match ctx {
-            Some(ctx) => Some(ctx.reserve_scoped(0, "frame SAB record")?),
-            None => None,
-        };
+        let mut scratch = ctx.reserve_scoped(0, "frame SAB record")?;
         let mut name_parts: Vec<String> = Vec::new();
         let mut tokens: Vec<Token> = Vec::new();
         let mut depth_guards = Vec::new();
@@ -645,10 +541,7 @@ fn frame_impl(
                 break;
             }
             let token_offset = pos;
-            admit_lex_string(ctx, bytes, pos, ref_width, name_done, &mut scratch)?;
-            if let Some(ctx) = ctx {
-                ctx.charge_work(1, "lex SAB token")?;
-            }
+            ctx.charge_work(1, "lex SAB token")?;
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
@@ -662,14 +555,24 @@ fn frame_impl(
                     .into());
                 }
                 Lexed::SubIdent(s) if !name_done => {
-                    charge_items(ctx, 1, "frame SAB name part")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
-                    name_parts.push(s.to_owned());
+                    ctx.reserve_scoped_vec(
+                        &mut scratch,
+                        &mut name_parts,
+                        1,
+                        "frame SAB name part",
+                    )?;
+                    let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
+                    name_parts.push(part);
                 }
                 Lexed::Ident(s) if !name_done => {
-                    charge_items(ctx, 1, "frame SAB name part")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<String>() as u64)?;
-                    name_parts.push(s.to_owned());
+                    ctx.reserve_scoped_vec(
+                        &mut scratch,
+                        &mut name_parts,
+                        1,
+                        "frame SAB name part",
+                    )?;
+                    let part = ctx.copy_scoped_text(s, &mut scratch, "frame SAB name part")?;
+                    name_parts.push(part);
                     name_done = true;
                     // The history partition opens with the delta_state record.
                     // Stop at its name; the active slice ends before its payload.
@@ -695,38 +598,35 @@ fn frame_impl(
                         embedded_history_edge = true;
                     }
                     payload_start = false;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
-                    tokens.push(Token::Ident(identifier.to_owned()));
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
+                    let owned = ctx.copy_retained_text(identifier, "retain SAB token string")?;
+                    tokens.push(Token::Ident(owned));
                 }
                 Lexed::SubIdent(identifier) => {
                     payload_start = false;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
-                    tokens.push(Token::SubIdent(identifier.to_owned()));
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
+                    let owned = ctx.copy_retained_text(identifier, "retain SAB token string")?;
+                    tokens.push(Token::SubIdent(owned));
                 }
                 Lexed::Str(value) => {
                     payload_start = false;
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
-                    tokens.push(Token::Str(value.to_owned()));
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
+                    let owned = ctx.copy_retained_text(value, "retain SAB token string")?;
+                    tokens.push(Token::Str(owned));
                 }
                 Lexed::Value(Token::SubtypeOpen) => {
                     payload_start = false;
-                    let guard = match ctx {
-                        Some(ctx) => Some(ctx.enter_nested("frame SAB subtype")?),
-                        None => None,
-                    };
-                    charge_items(ctx, 1, "frame SAB subtype guards")?;
-                    grow_scratch(
+                    let guard = ctx.enter_nested("frame SAB subtype")?;
+                    ctx.reserve_scoped_vec(
                         &mut scratch,
-                        std::mem::size_of::<Option<cadmpeg_core::decode::DepthGuard<'_>>>() as u64,
+                        &mut depth_guards,
+                        1,
+                        "frame SAB subtype guards",
                     )?;
                     depth_guards.push(guard);
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
                     tokens.push(Token::SubtypeOpen);
                 }
                 Lexed::Value(Token::SubtypeClose) => {
@@ -739,15 +639,13 @@ fn frame_impl(
                         }
                         .into());
                     }
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
                     payload_start = false;
                     name_done = true;
-                    charge_items(ctx, 1, "frame SAB token")?;
-                    grow_scratch(&mut scratch, std::mem::size_of::<Token>() as u64)?;
+                    ctx.reserve_scoped_vec(&mut scratch, &mut tokens, 1, "frame SAB token")?;
                     tokens.push(v);
                 }
             }
@@ -756,40 +654,28 @@ fn frame_impl(
         if is_delta {
             break;
         }
-        let separators = if name_parts.is_empty() {
-            0
-        } else {
-            name_parts.len() - 1
-        };
-        let name_bytes = name_parts
-            .iter()
-            .try_fold(0usize, |used, part| used.checked_add(part.len()))
-            .and_then(|length| length.checked_add(separators))
-            .ok_or_else(|| refuse_size(ctx, "SAB record name"))?;
-        charge_retained(
-            ctx,
-            if embedded_history_edge {
-                4
-            } else {
-                name_bytes as u64
-            },
-            "retain SAB record name",
-        )?;
         let name = if embedded_history_edge {
-            "edge".to_owned()
+            ctx.copy_retained_text("edge", "retain SAB record name")?
         } else {
-            name_parts.join("-")
+            ctx.join_retained(&name_parts, "-", "retain SAB record name")?
         };
 
         let token_bytes = tokens
             .len()
             .checked_mul(std::mem::size_of::<Token>())
-            .ok_or_else(|| refuse_size(ctx, "SAB token bytes"))?;
-        charge_retained(ctx, token_bytes as u64, "retain SAB tokens")?;
-        charge_items(ctx, 1, "frame SAB record")?;
-        if let Some(ctx) = ctx {
-            ctx.charge_entities(1, "admit SAB native record")?;
-        }
+            .ok_or_else(|| {
+                StreamFailure::Resource(ctx.refuse_codec_limit(
+                    "SAB token bytes",
+                    u64::MAX,
+                    u64::MAX,
+                ))
+            })?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(token_bytes),
+            "retain SAB tokens",
+        )?;
+        ctx.charge_entities(1, "admit SAB native record")?;
+        ctx.reserve_vec(&mut records, 1, "frame SAB record")?;
         records.push(Record {
             index,
             name,
@@ -814,6 +700,41 @@ mod tests {
     use crate::stream_error::{StreamError, StreamFailure};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
+
+    fn assert_framed_collection_limit(max_items: u64, operation: &str) {
+        let bytes = b"\x0d\x01x\x0f\x07\x01s\x10\x11";
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = max_items;
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        let error = frame_stream(&ctx, bytes, 0, bytes.len(), RefWidth::Eight)
+            .expect_err("collection refusal");
+        let StreamFailure::Resource(CodecError::ResourceLimit(limit)) = error else {
+            panic!("expected resource refusal: {error:?}")
+        };
+        assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
+        assert_eq!(limit.operation, operation);
+    }
+
+    #[test]
+    fn sab_name_parts_refuse_collection_limit() {
+        assert_framed_collection_limit(0, "frame SAB name part");
+    }
+
+    #[test]
+    fn sab_subtype_guards_refuse_collection_limit() {
+        assert_framed_collection_limit(1, "frame SAB subtype guards");
+    }
+
+    #[test]
+    fn sab_tokens_refuse_collection_limit() {
+        assert_framed_collection_limit(2, "frame SAB token");
+    }
+
+    #[test]
+    fn sab_records_refuse_collection_limit() {
+        assert_framed_collection_limit(5, "frame SAB record");
+    }
 
     #[test]
     fn sab_framing_refuses_token_name_record_and_scope_resources() {
@@ -1099,7 +1020,10 @@ mod tests {
             let mut bytes = vec![0x0d, 4];
             bytes.extend_from_slice(b"tspl");
             bytes.push(0x09);
-            bytes.extend_from_slice(&(text.len() as u64).to_le_bytes()[..ref_width.bytes()]);
+            bytes.extend_from_slice(
+                &(cadmpeg_core::decode::u64_from_index(text.len())).to_le_bytes()
+                    [..ref_width.bytes()],
+            );
             bytes.extend_from_slice(text.as_bytes());
             bytes.push(0x04);
             bytes.extend_from_slice(&7i64.to_le_bytes()[..ref_width.bytes()]);

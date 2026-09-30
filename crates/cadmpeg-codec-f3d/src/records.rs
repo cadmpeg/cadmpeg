@@ -18,6 +18,7 @@ pub(crate) mod mesh;
 pub(crate) mod parameters;
 pub(crate) mod recipes;
 pub(crate) mod references;
+pub(crate) mod serde_column;
 pub(crate) mod sketch_geometry;
 pub(crate) mod sketch_links;
 pub(crate) mod sketch_placement;

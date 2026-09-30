@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use crate::application::artifact_store::OptionalFileDestination;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_core::decode::alloc_filled;
 use clap::{Args, Subcommand, ValueEnum};
 
@@ -553,13 +553,14 @@ fn hex(args: &HexArgs) -> Result<()> {
         println!("(no bytes at 0x{:x})", args.offset);
         return Ok(());
     }
-    print!("{}", hexdump::render(args.offset, &bytes, args.width));
+    print!("{}", hexdump::render(args.offset, &bytes, args.width)?);
     Ok(())
 }
 
 fn read(args: &ReadArgs) -> Result<()> {
     let endian = args.endian;
-    let width = args.ty.width() as u64;
+    let width_usize = args.ty.width();
+    let width = cadmpeg_core::decode::u64_from_index(width_usize);
     let stride = args.stride.map_or(width, NonZeroU64::get);
     if args.count == 0 {
         return Ok(());
@@ -585,7 +586,7 @@ fn read(args: &ReadArgs) -> Result<()> {
         }
         file.seek(SeekFrom::Start(offset))?;
         let mut buffer = [0u8; ScalarType::MAX_WIDTH];
-        file.read_exact(&mut buffer[..width as usize])?;
+        file.read_exact(&mut buffer[..width_usize])?;
         let value = args.ty.window_of(&buffer).read(endian);
         println!(
             "0x{offset:08x}  {name:<6}  {:<24}  {}",
@@ -636,12 +637,18 @@ fn find(args: &FindArgs) -> Result<()> {
     for offset in &hits {
         println!("0x{offset:08x}  {offset}");
         if args.context > 0 {
-            let start = offset.saturating_sub(args.context);
             let len = args
                 .context
-                .saturating_mul(2)
-                .saturating_add(pattern.len() as u64);
-            print!("{}", window(&bytes, start, len));
+                .checked_mul(2)
+                .and_then(|len| {
+                    len.checked_add(cadmpeg_core::decode::u64_from_index(pattern.len()))
+                })
+                .ok_or_else(|| anyhow!("inspection context length exceeds u64"))?;
+            if let Some(start) = offset.checked_sub(args.context) {
+                print!("{}", window(&bytes, start, len)?);
+            } else {
+                print!("{}", window(&bytes, 0, len)?);
+            }
         }
     }
     if truncated {
@@ -673,7 +680,7 @@ fn structure(args: &StructArgs) -> Result<()> {
     }
     let file_path = args.file.path();
     let size = file_len(file_path)?;
-    let record_size = layout.size().get() as u64;
+    let record_size = cadmpeg_core::decode::u64_from_index(layout.size().get());
     let span = record_size
         .checked_mul(args.count)
         .and_then(|total| args.offset.checked_add(total))
@@ -692,10 +699,10 @@ fn structure(args: &StructArgs) -> Result<()> {
     // prints no field line. Zero is the identity of a maximum over lengths.
     let name_width = layout.names().map(str::len).fold(0, usize::max);
     for (index, record) in layout.split(&bytes).enumerate() {
-        let base = args.offset + index as u64 * record_size;
+        let base = args.offset + cadmpeg_core::decode::u64_from_index(index) * record_size;
         println!("record {index} @ 0x{base:08x} ({record_size} bytes)");
         for field in record.fields() {
-            let at = base + field.offset() as u64;
+            let at = base + cadmpeg_core::decode::u64_from_index(field.offset());
             let decimal = match field.value() {
                 layout::DecodedValue::Scalar { value, .. } => value.decimal(),
                 layout::DecodedValue::Bytes(_) => String::new(),
@@ -801,11 +808,17 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
         );
     }
     if args.context > 0 {
-        let window_start = first.saturating_sub(args.context / 2);
-        println!("\na @ 0x{window_start:x}:");
-        print!("{}", window(&a, window_start, args.context));
-        println!("b @ 0x{window_start:x}:");
-        print!("{}", window(&b, window_start, args.context));
+        if let Some(window_start) = first.checked_sub(args.context / 2) {
+            println!("\na @ 0x{window_start:x}:");
+            print!("{}", window(&a, window_start, args.context)?);
+            println!("b @ 0x{window_start:x}:");
+            print!("{}", window(&b, window_start, args.context)?);
+        } else {
+            println!("\na @ 0x0:");
+            print!("{}", window(&a, 0, args.context)?);
+            println!("b @ 0x0:");
+            print!("{}", window(&b, 0, args.context)?);
+        }
     }
     Ok(ExitCode::from(1))
 }
@@ -815,7 +828,7 @@ fn cmp_files(args: &CmpArgs) -> Result<ExitCode> {
 /// The window is the intersection of `start..start + len` with the buffer: a
 /// bound the buffer does not hold, including one the address space cannot
 /// name, selects the end of the buffer.
-fn window(bytes: &[u8], start: u64, len: u64) -> String {
+fn window(bytes: &[u8], start: u64, len: u64) -> Result<String> {
     let begin = match usize::try_from(start) {
         Ok(begin) if begin < bytes.len() => begin,
         _ => bytes.len(),
@@ -824,12 +837,15 @@ fn window(bytes: &[u8], start: u64, len: u64) -> String {
         Some(Ok(end)) if end < bytes.len() => end,
         _ => bytes.len(),
     };
-    hexdump::render_default_width(begin as u64, &bytes[begin..end])
+    hexdump::render_default_width(
+        cadmpeg_core::decode::u64_from_index(begin),
+        &bytes[begin..end],
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ExtractArgs;
+    use super::{find, ExtractArgs, FindArgs, FindEncoding, FindInput};
     use clap::{Args, FromArgMatches};
 
     #[test]
@@ -852,5 +868,22 @@ mod tests {
         let omitted = parse(vec!["extract", "input.zip", "entry"]);
         let explicit = parse(vec!["extract", "input.zip", "entry", "-o", "-", "--force"]);
         assert_eq!(omitted.output, explicit.output);
+    }
+
+    #[test]
+    fn find_refuses_an_unrepresentable_context_length() {
+        let file = tempfile::NamedTempFile::new().expect("create test input");
+        std::fs::write(file.path(), b"a").expect("write test input");
+        let args = FindArgs {
+            input: FindInput {
+                file: file.path().to_path_buf(),
+                needle: "a".into(),
+            },
+            encoding: FindEncoding::Ascii,
+            max: None,
+            context: u64::MAX,
+            json: false,
+        };
+        assert!(find(&args).is_err());
     }
 }

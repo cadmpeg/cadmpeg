@@ -397,7 +397,7 @@ pub(crate) fn entity_graph(
         let name_end = token.offset + token.length - 1;
         let entity_id = u32::try_from(entities.len())
             .map_err(|_| CodecError::malformed("creo feature entity id exceeds u32"))?;
-        ctx.try_reserve_items(&mut entities, 1, "creo feature entity graph nodes")?;
+        ctx.reserve_vec(&mut entities, 1, "creo feature entity graph nodes")?;
         entities.push(FeatureEntity {
             entity_id,
             type_byte: payload[token.offset + 1],
@@ -418,7 +418,7 @@ pub(crate) fn entity_graph(
             let Ok((target_entity_id, _)) = psb::reference_id(payload, token.offset + 1) else {
                 continue;
             };
-            ctx.try_reserve_items(&mut references, 1, "creo feature entity graph references")?;
+            ctx.reserve_vec(&mut references, 1, "creo feature entity graph references")?;
             references.push(FeatureEntityReference {
                 source_entity_id: source,
                 target_entity_id,
@@ -449,7 +449,7 @@ pub(super) fn read_entries(
         return Ok(None);
     }
     let mut entries = Vec::new();
-    ctx.try_reserve_items(&mut entries, count, "creo feature table entries")?;
+    ctx.reserve_vec(&mut entries, count, "creo feature table entries")?;
     Ok((move || {
         let mut cursor = body_start;
         for index in 0..count {
@@ -593,7 +593,7 @@ pub(crate) fn entity_tables(
                 table_surface_ids.insert(entry.entity_id);
             }
         }
-        ctx.try_reserve_items(&mut tables, 1, "creo feature entity tables")?;
+        ctx.reserve_vec(&mut tables, 1, "creo feature entity tables")?;
         tables.push(FeatureEntityTable {
             feature_id,
             table_class_id,

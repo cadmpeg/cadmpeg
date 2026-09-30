@@ -5,18 +5,17 @@ use super::super::super::graph::{
     B5PcurveParameterization, B5SupportedSurface, B5SupportedSurfaceParameters, B5Surface,
 };
 use super::super::edges::{
-    b5_edge_support_definition, b5_supports_follow_edge, ordered_subrange,
-    orient_b5_supports_to_edge,
+    b5_edge_support_definition as charged_b5_edge_support_definition, b5_supports_follow_edge,
+    ordered_subrange, orient_b5_supports_to_edge,
 };
 use super::super::faces::{orient_loop_members, ownership_plan};
-use super::super::surfaces::{rational_arc, revolve_nurbs};
-use super::super::vertices::transfer_vertex_tolerances;
+use super::super::surfaces::{rational_arc as charged_rational_arc, revolve_nurbs};
 use crate::families::b5::graph::vertex_refs::B5VertexRef;
 use crate::families::b5::tests::test_loop_members;
 use crate::families::b5::tests::test_loop_metadata;
 use crate::families::b5::transfer::edges::b5_supports_agree;
 use crate::families::b5::transfer::{
-    curve_on_parameter_range, referenced_surface_ids, transfer, SurfacePlan,
+    curve_on_parameter_range as charged_curve_on_parameter_range, transfer, SurfacePlan,
 };
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
@@ -30,6 +29,197 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::AnnotationBuilder;
 use std::collections::{BTreeMap, HashMap, HashSet};
+
+fn curve_on_parameter_range(
+    curve: CurveGeometry,
+    source: [f64; 2],
+    target: cadmpeg_ir::topology::IncreasingParameterInterval,
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<CurveGeometry> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_curve_on_parameter_range(ctx, curve, source, target, record, refusal)
+    })
+    .expect("service resource budget")
+}
+
+fn rational_arc(
+    center: [f64; 3],
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+    radius: f64,
+    interval: [f64; 2],
+    record: &dyn std::fmt::Display,
+    refusal: &mut crate::nurbs::LaneRefusals,
+) -> Option<NurbsCurve> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_rational_arc(
+            ctx,
+            center,
+            (direction_x, direction_y),
+            radius,
+            interval,
+            record,
+            refusal,
+        )
+    })
+    .expect("service resource budget")
+}
+
+fn b5_edge_support_definition(
+    supports: &[super::super::B5Support],
+    surface_ids: &HashMap<u32, SurfaceId>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
+    solved_parameter_range: Option<[f64; 2]>,
+) -> Option<(
+    cadmpeg_ir::ids::IdentityNamespace,
+    &'static str,
+    ProceduralCurveDefinition,
+)> {
+    crate::test_support::with_service_context(|ctx| {
+        charged_b5_edge_support_definition(
+            ctx,
+            supports,
+            surface_ids,
+            pcurves,
+            solved_parameter_range,
+        )
+    })
+    .expect("service resource budget")
+}
+
+#[test]
+fn edge_support_pcurve_copy_refuses_collection_limit() {
+    let surfaces = HashMap::from([(
+        10,
+        SurfaceId::mint("catia:b5:surface#10".to_string()).expect("identity grammar"),
+    )]);
+    let pcurves = BTreeMap::from([(
+        20,
+        (
+            PcurveGeometry::Nurbs {
+                nurbs: PcurveNurbs::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    None,
+                    false,
+                )
+                .expect("valid pcurve"),
+            },
+            false,
+            crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+        ),
+    )]);
+    let supports = [(
+        10,
+        20,
+        crate::test_support::test_b5::finite_pair([0.0, 1.0]),
+    )];
+    let refused = crate::test_support::with_collection_limit(0, |ctx| {
+        charged_b5_edge_support_definition(ctx, &supports, &surfaces, &pcurves, None)
+    });
+    assert!(
+        matches!(refused, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_edge_support_pcurve")
+    );
+    assert!(b5_edge_support_definition(&supports, &surfaces, &pcurves, None).is_some());
+}
+
+#[test]
+fn rational_arc_refuses_collection_limit_before_control_net() {
+    let refused = crate::test_support::with_collection_limit(4, |ctx| {
+        charged_rational_arc(
+            ctx,
+            [0.0; 3],
+            ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            1.0,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            &"arc",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    assert!(rational_arc(
+        [0.0; 3],
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        1.0,
+        [0.0, std::f64::consts::FRAC_PI_2],
+        &"arc",
+        &mut crate::nurbs::LaneRefusals::new()
+    )
+    .is_some());
+}
+
+#[test]
+fn reparameterized_nurbs_knots_refuse_collection_limit_below_need() {
+    let curve = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![10.0, 10.0, 20.0, 20.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("valid curve"),
+    ));
+    let target = crate::test_support::test_b5::increasing([0.0, 2.0]);
+    let refused = crate::test_support::with_collection_limit(3, |ctx| {
+        charged_curve_on_parameter_range(
+            ctx,
+            curve.clone(),
+            [10.0, 20.0],
+            target,
+            &"curve",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    });
+    assert!(matches!(
+        refused,
+        Err(cadmpeg_core::CodecError::ResourceLimit(_))
+    ));
+    let admitted = crate::test_support::with_service_context(|ctx| {
+        charged_curve_on_parameter_range(
+            ctx,
+            curve,
+            [10.0, 20.0],
+            target,
+            &"curve",
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+    })
+    .expect("service budget");
+    assert!(admitted.is_some());
+}
+
+fn transfer_vertex_tolerances(
+    graph: &B5Graph,
+    supports: &super::super::B5SupportPlan,
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [cadmpeg_ir::scalar::FiniteReal; 2])>,
+) -> BTreeMap<usize, cadmpeg_ir::scalar::PositiveReal> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::vertices::transfer_vertex_tolerances(ctx, graph, supports, surfaces, pcurves)
+    })
+    .expect("service budget")
+}
+
+fn referenced_surface_ids(
+    roots: impl IntoIterator<Item = u32>,
+    offsets: &BTreeMap<u32, B5OffsetSurface>,
+    supported: &BTreeMap<u32, B5SupportedSurface>,
+    extrusions: &BTreeMap<u32, B5ExtrusionSurface>,
+    aliases: &BTreeMap<u32, u32>,
+) -> HashSet<u32> {
+    crate::test_support::with_service_context(|ctx| {
+        super::super::referenced_surface_ids(ctx, roots, offsets, supported, extrusions, aliases)
+    })
+    .expect("service budget")
+}
 
 #[test]
 fn affine_curve_ranges_reparameterize_without_changing_geometry() {
@@ -317,6 +507,21 @@ fn surface_closure_follows_aliases_to_native_constructions() {
         },
     )]);
     let aliases = BTreeMap::from([(10, 11), (11, 20)]);
+
+    let limited = crate::test_support::with_collection_limit(0, |ctx| {
+        super::super::referenced_surface_ids(
+            ctx,
+            [10],
+            &offsets,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &aliases,
+        )
+    });
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_referenced_surface_ids")
+    );
 
     assert_eq!(
         referenced_surface_ids([10], &offsets, &BTreeMap::new(), &BTreeMap::new(), &aliases,),
@@ -1014,21 +1219,24 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
     assert!(!b5_supports_follow_edge(
         &supports,
         [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
     assert!(!b5_supports_follow_edge(
         &supports,
         [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
     let mut reversed_supports = [(
         10,
         20,
@@ -1040,7 +1248,8 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    );
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(
         reversed_supports[0].2,
         crate::test_support::test_b5::finite_pair([0.0, 1.0])
@@ -1051,7 +1260,8 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         [1.5e-3; 2],
         &surfaces,
         &pcurves,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
     let mut tolerance_ambiguous_supports = [(
         10,
         20,
@@ -1063,7 +1273,8 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         [1.01; 2],
         &surfaces,
         &pcurves,
-    );
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(
         tolerance_ambiguous_supports[0].2,
         crate::test_support::test_b5::finite_pair([0.0, 1.0])
@@ -1086,23 +1297,24 @@ fn procedural_support_requires_physical_edge_endpoint_agreement() {
         [1.01; 2],
         &surfaces,
         &pcurves,
-    );
+    )
+    .expect("evaluator allocation succeeds");
     assert_eq!(
         oppositely_parameterized_supports[1].2,
         crate::test_support::test_b5::finite_pair([1.0, 0.0])
     );
-    assert!(b5_supports_agree(
-        &oppositely_parameterized_supports,
-        &surfaces,
-        &pcurves,
-    ));
+    assert!(
+        b5_supports_agree(&oppositely_parameterized_supports, &surfaces, &pcurves,)
+            .expect("evaluator allocation succeeds")
+    );
     assert!(b5_supports_follow_edge(
         &supports,
         [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
         [1.01; 2],
         &surfaces,
         &pcurves,
-    ));
+    )
+    .expect("evaluator allocation succeeds"));
 }
 
 #[test]
@@ -1258,7 +1470,17 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("service decode")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 1]);
-    assert_eq!(ownership.components().len(), 2);
+    let limited = crate::test_support::with_collection_limit(0, |ctx| ownership.components(ctx));
+    assert!(
+        matches!(limited, Err(cadmpeg_core::CodecError::ResourceLimit(error))
+        if error.operation == "catia_b5_face_component_groups")
+    );
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+            .expect("service budget")
+            .len(),
+        2
+    );
     assert_eq!(ownership.body_kind, BodyKind::Sheet);
     assert_eq!(ownership.loop_owners.get(&2), Some(&0));
     assert_eq!(ownership.loop_owners.get(&6), Some(&1));
@@ -1292,7 +1514,12 @@ fn body_kind_requires_unique_complete_loop_ownership() {
         .expect("service decode")
         .expect("required invariant");
     assert_eq!(ownership.face_components, vec![0, 0]);
-    assert_eq!(ownership.components().len(), 1);
+    assert_eq!(
+        crate::test_support::with_service_context(|ctx| ownership.components(ctx))
+            .expect("service budget")
+            .len(),
+        1
+    );
     assert_eq!(ownership.body_kind, BodyKind::Solid);
 
     graph.faces.pop();
@@ -1564,7 +1791,9 @@ fn b5_supports_with_an_overflowing_endpoint_agree_on_their_finite_endpoints() {
             crate::test_support::test_b5::finite_pair([1.0, -1.0]),
         ),
     ];
-    assert!(b5_supports_agree(&supports, &surfaces, &pcurves));
+    assert!(
+        b5_supports_agree(&supports, &surfaces, &pcurves).expect("evaluator allocation succeeds")
+    );
 }
 
 #[test]
@@ -1623,5 +1852,7 @@ fn b5_supports_with_an_overflowing_placed_endpoint_agree_on_their_finite_endpoin
             crate::test_support::test_b5::finite_pair([1.0, -1.0]),
         ),
     ];
-    assert!(b5_supports_agree(&supports, &surfaces, &pcurves));
+    assert!(
+        b5_supports_agree(&supports, &surfaces, &pcurves).expect("evaluator allocation succeeds")
+    );
 }

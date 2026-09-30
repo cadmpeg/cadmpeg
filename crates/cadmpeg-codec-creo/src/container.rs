@@ -707,12 +707,12 @@ fn scan_sections<'a>(
             }
         }
         let raw = ctx.copy_retained_text(name, "creo section header names")?;
-        ctx.try_reserve_items(&mut hits, 1, "creo section header hits")?;
+        ctx.reserve_vec(&mut hits, 1, "creo section header hits")?;
         hits.push((hash_off, raw));
     }
 
     let mut sections = Vec::new();
-    ctx.try_reserve_items(&mut sections, hits.len(), "creo scanned sections")?;
+    ctx.reserve_vec(&mut sections, hits.len(), "creo scanned sections")?;
     for (idx, (hdr_off, raw)) in hits.iter().enumerate() {
         let end = hits.get(idx + 1).map_or(data.len(), |(next, _)| *next);
         let name = ctx.copy_retained_text(raw, "creo scanned section names")?;
@@ -821,7 +821,7 @@ fn toc_sections<'a>(
             {
                 continue;
             }
-            ctx.try_reserve_items(&mut sections, 1, "creo TOC sections")?;
+            ctx.reserve_vec(&mut sections, 1, "creo TOC sections")?;
             sections.extend(Section::scan(
                 raw_name,
                 offset,
@@ -970,7 +970,7 @@ fn legacy_toc_sections<'a>(
             continue;
         }
         let raw_name = ctx.copy_retained_text(raw_name, "creo legacy TOC section names")?;
-        ctx.try_reserve_items(&mut sections, 1, "creo legacy TOC sections")?;
+        ctx.reserve_vec(&mut sections, 1, "creo legacy TOC sections")?;
         sections.extend(Section::scan(raw_name, offset, end, None, data));
     }
     crate::sort::stable_sort_by_key(
@@ -1013,7 +1013,7 @@ fn expanded_sections(
             continue;
         };
         let name = ctx.copy_retained_text(section.section.name(), "creo expanded section names")?;
-        ctx.try_reserve_items(&mut expanded_sections, 1, "creo expanded sections")?;
+        ctx.reserve_vec(&mut expanded_sections, 1, "creo expanded sections")?;
         expanded_sections.push(ExpandedSection {
             name,
             source_offset,
@@ -1163,7 +1163,7 @@ fn legacy_scope_ranges(
         .checked_add(1)
         .ok_or_else(|| CodecError::malformed("legacy persistence scope count exceeds usize"))?;
     let mut scopes = Vec::new();
-    ctx.try_reserve_items(&mut scopes, count, "creo legacy persistence scopes")?;
+    ctx.reserve_vec(&mut scopes, count, "creo legacy persistence scopes")?;
     let initial_end = sections
         .first()
         .map_or(data.len(), |section| section.section.offset());
@@ -1441,7 +1441,7 @@ fn model_geometry_sections<'a>(
             false
         };
         if keep {
-            ctx.try_reserve_items(&mut selected, 1, "creo model geometry sections")?;
+            ctx.reserve_vec(&mut selected, 1, "creo model geometry sections")?;
             selected.push(section.copy_retained(ctx)?);
         }
     }
@@ -1457,7 +1457,7 @@ fn nonvisible_geometry_sections<'a>(
         .iter()
         .filter(|section| section.section.name() == "NovisGeom")
     {
-        ctx.try_reserve_items(&mut selected, 1, "creo nonvisible geometry sections")?;
+        ctx.reserve_vec(&mut selected, 1, "creo nonvisible geometry sections")?;
         selected.push(section.copy_retained(ctx)?);
     }
     Ok(selected)
@@ -1471,7 +1471,7 @@ fn loop_array_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     let mut selected = Vec::new();
     for section in model.iter().chain(nonvisible) {
-        ctx.try_reserve_items(&mut selected, 1, "creo loop array sections")?;
+        ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
         selected.push(section.copy_retained(ctx)?);
     }
     for section in sections
@@ -1479,7 +1479,7 @@ fn loop_array_sections<'a>(
         .filter(|section| section.section.name() == "Xsections")
     {
         if find(section.region, b"Sld_Xsections\0", 0).is_some() {
-            ctx.try_reserve_items(&mut selected, 1, "creo loop array sections")?;
+            ctx.reserve_vec(&mut selected, 1, "creo loop array sections")?;
             selected.push(section.copy_retained(ctx)?);
         }
     }
@@ -1623,7 +1623,7 @@ fn loop_array_scan(
     for section in sections {
         let payload = section.region;
         let scan = loop_array::scan(ctx, payload)?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut frames,
             scan.frames.len(),
             "creo loop array aggregate frames",
@@ -1634,7 +1634,7 @@ fn loop_array_scan(
             frame.end += section.section.offset();
             frame
         }));
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             scan.records.len(),
             "creo loop array aggregate records",
@@ -1907,7 +1907,7 @@ fn datum_planes(
         |bytes| {
             let mut planes = datum::planes(ctx, bytes)?;
             if let Some(plane) = datum::named_plane(ctx, bytes)? {
-                ctx.try_reserve_items(&mut planes, 1, "creo named datum plane aggregation")?;
+                ctx.reserve_vec(&mut planes, 1, "creo named datum plane aggregation")?;
                 planes.push(plane);
             }
             Ok(planes)
@@ -2025,7 +2025,7 @@ fn complete_feature_ids(
         }
     }
     let mut ordered = Vec::new();
-    ctx.try_reserve_items(&mut ordered, structural.len(), "creo ordered feature ids")?;
+    ctx.reserve_vec(&mut ordered, structural.len(), "creo ordered feature ids")?;
     ordered.extend(structural);
     Ok(ordered)
 }
@@ -2165,7 +2165,7 @@ fn feature_rows(
         let section_bytes = section.region;
         let decoded =
             feature::rows::rows(ctx, section_bytes, feature_ids, section.section.offset())?;
-        ctx.try_reserve_items(&mut rows, decoded.len(), "creo feature row aggregation")?;
+        ctx.reserve_vec(&mut rows, decoded.len(), "creo feature row aggregation")?;
         rows.extend(decoded);
     }
     crate::sort::stable_sort_by_key(
@@ -2305,7 +2305,7 @@ fn feature_definitions(
         } else {
             feature::definitions::definitions(ctx, payload)?
         };
-        ctx.try_reserve_items(&mut definitions, decoded.len(), "creo feature definitions")?;
+        ctx.reserve_vec(&mut definitions, decoded.len(), "creo feature definitions")?;
         definitions.extend(decoded.into_iter().map(|mut definition| {
             offset_feature_definition(&mut definition, section.section.offset());
             definition
@@ -2330,7 +2330,7 @@ fn feature_definitions(
                     {
                         *existing = definition;
                     } else {
-                        ctx.try_reserve_items(&mut definitions, 1, "creo feature definitions")?;
+                        ctx.reserve_vec(&mut definitions, 1, "creo feature definitions")?;
                         definitions.push(definition);
                     }
                 }
@@ -2358,7 +2358,7 @@ fn feature_row_definitions(
             continue;
         };
         offset_feature_definition(&mut definition, row.body_offset);
-        ctx.try_reserve_items(&mut definitions, 1, "creo feature row definitions")?;
+        ctx.reserve_vec(&mut definitions, 1, "creo feature row definitions")?;
         definitions.push(definition);
     }
     crate::sort::stable_sort_by_key(
@@ -2376,7 +2376,7 @@ fn append_feature_definitions(
     additions: Vec<FeatureDefinition>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.try_reserve_items(definitions, additions.len(), operation)?;
+    ctx.reserve_vec(definitions, additions.len(), operation)?;
     definitions.extend(additions);
     Ok(())
 }
@@ -2405,7 +2405,7 @@ fn feature_geometry_tables(
 ) -> Result<Vec<FeatureGeometryTable>, CodecError> {
     let mut tables = feature::rows::geometry_tables(ctx, rows)?;
     let depdb_tables = feature::rows::geometry_tables(ctx, depdb_rows)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut tables,
         depdb_tables.len(),
         "creo feature geometry table aggregation",
@@ -2427,7 +2427,7 @@ fn feature_affected_ids(
 ) -> Result<Vec<FeatureAffectedIds>, CodecError> {
     let mut records = feature::rows::affected_ids(ctx, rows)?;
     let depdb_records = feature::rows::affected_ids(ctx, depdb_rows)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut records,
         depdb_records.len(),
         "creo affected-id aggregation",
@@ -2451,7 +2451,7 @@ fn feature_revolution_extents(
     let mut extents = feature::rows::revolution_extents(ctx, rows)?;
     let definition_extents =
         feature::definitions::definition_revolution_extents(ctx, definitions, operations)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut extents,
         definition_extents.len(),
         "creo revolution extent aggregation",
@@ -2478,7 +2478,7 @@ fn section_owner_ranges(
         .checked_add(feature_rows.len())
         .ok_or_else(|| CodecError::malformed("feature owner range count exceeds usize"))?;
     let mut ranges = Vec::new();
-    ctx.try_reserve_items(&mut ranges, count, "creo section owner ranges")?;
+    ctx.reserve_vec(&mut ranges, count, "creo section owner ranges")?;
     ranges.extend(
         sections
             .iter()
@@ -2538,7 +2538,7 @@ fn feature_operations(
         }
     }
     let mut current = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut current,
         by_feature.len(),
         "creo current feature operation order",
@@ -2564,7 +2564,7 @@ fn feature_reference_names(
     {
         let section_bytes = section.region;
         let decoded = feature::operations::reference_names(ctx, section_bytes)?;
-        ctx.try_reserve_items(&mut records, decoded.len(), "creo feature reference names")?;
+        ctx.reserve_vec(&mut records, decoded.len(), "creo feature reference names")?;
         records.extend(decoded.into_iter().map(|mut record| {
             record.offset += section.section.offset();
             record
@@ -2634,7 +2634,7 @@ fn depdb_recipe_rows(
                 .copy_retained(body_bytes, "creo DEPDB recipe row body")?
                 .try_into()
                 .map_err(CodecError::malformed)?;
-            ctx.try_reserve_items(&mut rows, 1, "creo DEPDB recipe rows")?;
+            ctx.reserve_vec(&mut rows, 1, "creo DEPDB recipe rows")?;
             rows.push(FeatureRow {
                 feature_id: operation.feature_id,
                 root_schema_class: operation.root_schema_class(),
@@ -2708,12 +2708,12 @@ fn reference_scan(
             .into_iter()
             .chain(reference::line3d_lines(ctx, payload)?)
         {
-            ctx.try_reserve_items(&mut lines, 1, "creo reference line aggregation")?;
+            ctx.reserve_vec(&mut lines, 1, "creo reference line aggregation")?;
             line.offset += section.section.offset();
             lines.push(line);
         }
         for mut circle in reference::arc_z_circles(ctx, payload)? {
-            ctx.try_reserve_items(&mut circles, 1, "creo reference circle aggregation")?;
+            ctx.reserve_vec(&mut circles, 1, "creo reference circle aggregation")?;
             circle.offset += section.section.offset();
             circles.push(circle);
         }
@@ -2721,7 +2721,7 @@ fn reference_scan(
             .into_iter()
             .chain(reference::positional_conics(ctx, payload)?)
         {
-            ctx.try_reserve_items(&mut conics, 1, "creo reference conic aggregation")?;
+            ctx.reserve_vec(&mut conics, 1, "creo reference conic aggregation")?;
             conic.offset += section.section.offset();
             conics.push(conic);
         }
@@ -2742,7 +2742,7 @@ fn placement_outline_planes(
     positional_frame_planes: &[surface::OutlinePlane],
 ) -> Result<Vec<surface::OutlinePlane>, CodecError> {
     let mut result = Vec::new();
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut result,
         outline_planes.len(),
         "creo placement outline plane copies",
@@ -2753,7 +2753,7 @@ fn placement_outline_planes(
             .iter()
             .any(|outline| outline.surface_id == plane.surface_id)
         {
-            ctx.try_reserve_items(&mut result, 1, "creo positional placement plane copies")?;
+            ctx.reserve_vec(&mut result, 1, "creo positional placement plane copies")?;
             result.push(plane.clone());
         }
     }
@@ -2766,7 +2766,7 @@ fn append_topology_rows(
     additional: impl ExactSizeIterator<Item = curve::CurveTopologyRow>,
     operation: &'static str,
 ) -> Result<(), CodecError> {
-    ctx.try_reserve_items(rows, additional.len(), operation)?;
+    ctx.reserve_vec(rows, additional.len(), operation)?;
     rows.extend(additional);
     crate::sort::stable_sort_by_key(
         ctx,
@@ -2791,7 +2791,7 @@ fn append_legacy_curve_witnesses(
         legacy_topology_rows.iter().cloned(),
         "creo legacy topology row aggregation",
     )?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         pcurves,
         legacy_pcurves.len(),
         "creo legacy pcurve aggregation",
@@ -2908,7 +2908,7 @@ pub(crate) fn scan_bytes<'a>(
     )?;
     let loop_arrays = loop_array_scan(ctx, &loop_array_sections)?;
     let mut nonvisible_surface_rows = surface_rows(ctx, &nonvisible_geometry_sections)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut nonvisible_surface_rows,
         legacy_geometry.nonvisible_rows.len(),
         "creo legacy nonvisible surface row aggregation",
@@ -2921,7 +2921,7 @@ pub(crate) fn scan_bytes<'a>(
         "creo scan bytes nonvisible surface rows ordering",
     )?;
     let mut surface_rows = surface_rows(ctx, &model_geometry_sections)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut surface_rows,
         legacy_geometry.rows.len(),
         "creo legacy surface row aggregation",
@@ -3189,7 +3189,7 @@ pub(crate) fn scan_bytes<'a>(
     // the framing keeps the owned sections.
     let mut retained_sections = Vec::new();
     for section in sections {
-        ctx.try_reserve_items(&mut retained_sections, 1, "creo retained scan sections")?;
+        ctx.reserve_vec(&mut retained_sections, 1, "creo retained scan sections")?;
         retained_sections.push(section.section);
     }
 
@@ -3305,7 +3305,7 @@ fn scan_primitives(
     let mut conflicting_triangle_strip_representation_count = 0usize;
     for section in expanded_sections {
         let tables = crate::scalar::double_xar_tables(ctx, &section.data)?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut double_xar_tables,
             tables.len(),
             "creo model double_xar tables",
@@ -3321,14 +3321,14 @@ fn scan_primitives(
         }
         if section.name == "SolidPrimdata" {
             let arrays = primdata::scalar_arrays(ctx, &section.data)?;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut primitive_scalar_arrays,
                 arrays.len(),
                 "creo model primitive scalar arrays",
             )?;
             primitive_scalar_arrays.extend(arrays);
             let scan = primdata::triangle_strips(ctx, &section.data)?;
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut primitive_triangle_strips,
                 scan.strips.len(),
                 "creo model triangle strips",
@@ -3365,7 +3365,7 @@ fn collect_section_records_result<'a, 'data: 'a, T>(
     let mut records = Vec::new();
     for section in sections {
         let decoded = decode(section.region)?;
-        ctx.try_reserve_items(
+        ctx.reserve_vec(
             &mut records,
             decoded.len(),
             "creo section record aggregation",
@@ -3444,7 +3444,7 @@ pub(crate) fn summarize(
         ctx.charge_collection_items(1, "creo summary attribute nodes")?;
         attributes.insert(
             ctx.copy_retained_text("offset", "creo summary attribute key")?,
-            ctx.format_retained(s.offset(), "creo summary offset")?,
+            ctx.format_retained(format_args!("{}", s.offset()), "creo summary offset")?,
         );
         if s.raw_name != s.name() {
             ctx.charge_collection_items(1, "creo summary attribute nodes")?;
@@ -3458,11 +3458,14 @@ pub(crate) fn summarize(
             ctx.charge_collection_items(1, "creo summary attribute nodes")?;
             attributes.insert(
                 ctx.copy_retained_text("expanded_payload_size", "creo summary attribute key")?,
-                ctx.format_retained(expanded.data.len(), "creo summary expanded size")?,
+                ctx.format_retained(
+                    format_args!("{}", expanded.data.len()),
+                    "creo summary expanded size",
+                )?,
             );
         }
         let name = ctx.copy_retained_text(s.name(), "creo summary entry name")?;
-        ctx.try_reserve_items(&mut entries, 1, "creo summary entries")?;
+        ctx.reserve_vec(&mut entries, 1, "creo summary entries")?;
         entries.push(ContainerEntry {
             name,
             role: s.role().into(),
@@ -3481,7 +3484,7 @@ pub(crate) fn summarize(
     let notes = notes(ctx, scan)?;
     let mut losses = Vec::new();
     if let Some(loss) = classification.loss(ctx)? {
-        ctx.try_reserve_items(&mut losses, 1, "creo summary losses")?;
+        ctx.reserve_vec(&mut losses, 1, "creo summary losses")?;
         losses.push(loss);
     }
 
@@ -3504,8 +3507,8 @@ pub(crate) fn notes(
         notes: &mut Vec<String>,
         value: impl std::fmt::Display,
     ) -> Result<(), CodecError> {
-        let value = ctx.format_retained(value, "creo container note text")?;
-        ctx.try_reserve_items(notes, 1, "creo container notes")?;
+        let value = ctx.format_retained(format_args!("{value}"), "creo container note text")?;
+        ctx.reserve_vec(notes, 1, "creo container notes")?;
         notes.push(value);
         Ok(())
     }

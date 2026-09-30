@@ -2,12 +2,16 @@
 //! Resolved extrusion construction from a structured branch.
 
 use super::FeatureConstructionMember;
+use crate::iter_wire::IterWire;
 use crate::om::branch_items::BranchItems;
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
+mod borrowed_wires;
+
 /// Complete alternate extrusion construction using the structured `32` branch.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "ConstructionWire", into = "ConstructionWire")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "ConstructionWire")]
 pub(in crate::native) struct FeatureExtrude32Construction {
     /// Globally unique construction identity.
     pub(in crate::native) id: String,
@@ -27,6 +31,38 @@ pub(in crate::native) struct FeatureExtrude32Construction {
     pub(super) second_data_blocks: BranchItems<String>,
 }
 
+impl Serialize for FeatureExtrude32Construction {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut wire = serializer.serialize_struct("ConstructionWire", 9)?;
+        wire.serialize_field("id", &self.id)?;
+        wire.serialize_field("operation_label", &self.operation_label)?;
+        wire.serialize_field("branch", &self.branch)?;
+        wire.serialize_field("body_object_index", &self.body_object_index)?;
+        wire.serialize_field(
+            "profile_references",
+            &IterWire(
+                self.profiles
+                    .as_slice()
+                    .iter()
+                    .map(|member| member.reference.as_str()),
+            ),
+        )?;
+        wire.serialize_field(
+            "profile_data_blocks",
+            &IterWire(
+                self.profiles
+                    .as_slice()
+                    .iter()
+                    .map(|member| member.data_block.as_str()),
+            ),
+        )?;
+        wire.serialize_field("atom_data_blocks", self.atom_data_blocks.as_slice())?;
+        wire.serialize_field("first_data_blocks", self.first_data_blocks.as_slice())?;
+        wire.serialize_field("second_data_blocks", self.second_data_blocks.as_slice())?;
+        wire.end()
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct ConstructionWire {
     id: String,
@@ -40,6 +76,7 @@ struct ConstructionWire {
     second_data_blocks: Vec<String>,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrude32Construction> for ConstructionWire {
     fn from(value: FeatureExtrude32Construction) -> Self {
         let (profile_references, profile_data_blocks) = value
@@ -95,11 +132,8 @@ impl TryFrom<ConstructionWire> for FeatureExtrude32Construction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "FeatureExtrudePayload32BranchWire",
-    into = "FeatureExtrudePayload32BranchWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "FeatureExtrudePayload32BranchWire")]
 pub(in crate::native) struct FeatureExtrudePayload32Branch {
     pub(in crate::native) id: String,
     pub(in crate::native) operation_label: String,
@@ -152,6 +186,7 @@ struct FeatureExtrudePayload32BranchWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<FeatureExtrudePayload32Branch> for FeatureExtrudePayload32BranchWire {
     fn from(branch: FeatureExtrudePayload32Branch) -> Self {
         Self {
@@ -332,7 +367,31 @@ impl TryFrom<FeatureExtrudePayload32BranchWire> for FeatureExtrudePayload32Branc
 
 #[cfg(test)]
 mod tests {
-    use super::{FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
+    use super::{ConstructionWire, FeatureExtrude32Construction, FeatureExtrudePayload32Branch};
+
+    const CONSTRUCTION_WIRE: &str = r#"{"id":"nx:feature:extrude32#0","operation_label":"operation","branch":"branch","body_object_index":0,"profile_references":["a","b"],"profile_data_blocks":["first","second"],"atom_data_blocks":["atom"],"first_data_blocks":["first"],"second_data_blocks":["second"]}"#;
+
+    #[test]
+    fn extrude32_construction_borrowed_wire_preserves_bytes() {
+        let record: FeatureExtrude32Construction = serde_json::from_str(CONSTRUCTION_WIRE).unwrap();
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            CONSTRUCTION_WIRE.as_bytes()
+        );
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&ConstructionWire::from(record.clone())).unwrap()
+        );
+    }
+
+    #[test]
+    fn extrude32_construction_native_limit_refuses_before_clone() {
+        let record: FeatureExtrude32Construction = serde_json::from_str(CONSTRUCTION_WIRE).unwrap();
+        cadmpeg_test_support::native_serialization::assert_native_limit(
+            &record,
+            serde_json::from_str::<serde_json::Value>(CONSTRUCTION_WIRE).unwrap(),
+        );
+    }
 
     #[test]
     fn construction_keeps_paired_nonempty_profiles_and_the_exact_wire() {

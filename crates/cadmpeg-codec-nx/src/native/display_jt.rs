@@ -2,23 +2,32 @@
 //! JT display-model record extractors and their record types.
 
 pub(crate) mod admission;
+#[cfg(test)]
+mod document_admission_tests;
+#[cfg(test)]
+mod index_admission_tests;
 mod packet_role;
+#[cfg(test)]
+mod scene_admission_tests;
+#[cfg(test)]
+mod segment_admission_tests;
 mod version;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::ser::SerializeSeq;
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
 use cadmpeg_core::CodecError;
 
-use super::hex::Sha256Hex;
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use packet_role::{TopologyContext, TopologyPacketRole};
 use version::JtVersionField;
 
-use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zlib_probe};
+use cadmpeg_container::compression::inflate_zlib_exact;
 use cadmpeg_core::bytes::{assemble_f32_le, assemble_u32_le, assemble_u64_le};
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, ScopedReservation, View};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteBinary32, UnitBinary32};
@@ -35,46 +44,86 @@ use crate::layout::jt_toc_entry as jt_toc;
 use crate::layout::jt_tristrip_shape_node_family_data as jt_family;
 use crate::om::nonempty::NonEmpty;
 
-/// Session-free `DisplayJT` inflate bound: 16 MiB plus 256× input, at most 2 GiB.
-const DISPLAY_JT_PROBE_INFLATE_BASE: usize = 16 * 1024 * 1024;
-const DISPLAY_JT_PROBE_INFLATE_RATIO: usize = 256;
-const DISPLAY_JT_PROBE_INFLATE_MAX: usize = 2 * 1024 * 1024 * 1024;
-
-fn display_jt_probe_cap(compressed_len: usize) -> usize {
-    DISPLAY_JT_PROBE_INFLATE_BASE
-        .saturating_add(compressed_len.saturating_mul(DISPLAY_JT_PROBE_INFLATE_RATIO))
-        .min(DISPLAY_JT_PROBE_INFLATE_MAX)
+fn replace_jt_text_once(
+    ctx: &DecodeContext<'_>,
+    source: &str,
+    from: &str,
+    to: &str,
+    operation: &'static str,
+) -> Result<String, CodecError> {
+    let Some(index) = source.find(from) else {
+        return ctx.join_retained(&[source], "", operation);
+    };
+    let after = index + from.len();
+    ctx.join_retained(&[&source[..index], to, &source[after..]], "", operation)
 }
 
-/// Child whose window is exactly `slice` when `slice` sits inside `source`.
-fn child_for_subslice<'a>(source: View<'a>, slice: &[u8]) -> Option<View<'a>> {
-    let window = source.window();
-    let relative = (slice.as_ptr() as usize).checked_sub(window.as_ptr() as usize)?;
-    let relative_end = relative.checked_add(slice.len())?;
-    if relative_end > window.len() {
-        return None;
+fn retain_jt_tessellation_id(
+    ctx: &DecodeContext<'_>,
+    offset: u64,
+    object_id: u32,
+    path: Option<&str>,
+) -> Result<cadmpeg_ir::tessellation::TessellationId, CodecError> {
+    let operation = "nx JT tessellation identity";
+    let digits = |mut value: u64| {
+        let mut count = 1usize;
+        while value >= 10 {
+            value /= 10;
+            count += 1;
+        }
+        count
+    };
+    let prefix = "nx:display-jt:tessellation#";
+    let path_length = path
+        .map_or(Some(0), |path| 6usize.checked_add(path.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let length = prefix
+        .len()
+        .checked_add(digits(offset))
+        .and_then(|length| length.checked_add(1 + digits(u64::from(object_id))))
+        .and_then(|length| length.checked_add(path_length))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, 0, u64::MAX))?;
+    let mut id = ctx.retained_string(length, operation)?;
+    id.push_str(prefix);
+    std::fmt::Write::write_fmt(&mut id, format_args!("{offset}-{object_id}")).map_err(|_| {
+        ctx.refuse_codec_limit(operation, 0, cadmpeg_core::decode::u64_from_index(length))
+    })?;
+    if let Some(path) = path {
+        id.push_str("-path-");
+        id.push_str(path);
     }
-    let start = source.start().checked_add(relative)?;
-    let end = start.checked_add(slice.len())?;
-    source.child(start, end)
+    cadmpeg_ir::tessellation::TessellationId::mint(id)
+        .map_err(|error| CodecError::malformed(format_args!("display-jt tessellation: {error}")))
+}
+
+fn display_jt_text_size(
+    ctx: &DecodeContext<'_>,
+    parts: &[&str],
+    digits: u64,
+) -> Result<u64, CodecError> {
+    let invalid = || ctx.refuse_codec_limit("size DisplayJT text", 0, digits);
+    parts.iter().try_fold(digits, |sum, part| {
+        let len = u64::try_from(part.len()).map_err(|_| invalid())?;
+        sum.checked_add(len).ok_or_else(invalid)
+    })
 }
 
 fn inflate_display_jt(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
-    compressed: &[u8],
-) -> Option<Vec<u8>> {
-    let Some((ctx, source)) = budget else {
-        return inflate_zlib_probe(compressed, display_jt_probe_cap(compressed.len()));
+    ctx: &DecodeContext<'_>,
+    member: View<'_>,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    let view = match inflate_zlib_exact(ctx, member) {
+        Ok(view) => view,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
     };
-    let member = child_for_subslice(source, compressed)?;
-    let view = inflate_zlib_exact(ctx, member).ok()?;
     ctx.copy_retained(view.window(), "retain inflated DisplayJT payload")
-        .ok()
+        .map(Some)
 }
 
 /// Outer index of the embedded JT display-model stream.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DisplayJtIndexWire", into = "DisplayJtIndexWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtIndexWire")]
 pub(super) struct DisplayJtIndex {
     /// Globally unique index identity.
     pub(super) id: String,
@@ -86,6 +135,24 @@ pub(super) struct DisplayJtIndex {
     pub(super) source_offset: u64,
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_INDEX_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DisplayJtIndex {
+    fn clone(&self) -> Self {
+        JT_INDEX_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            version: self.version,
+            rows: self.rows.clone(),
+            source_offset: self.source_offset,
+        }
+    }
+}
+
 impl DisplayJtIndex {
     fn new(
         id: String,
@@ -94,7 +161,7 @@ impl DisplayJtIndex {
         source_offset: u64,
     ) -> Result<Self, &'static str> {
         u32::try_from(rows.len()).map_err(|_| "rows: count exceeds u32")?;
-        let rows = NonEmpty::new(rows).ok_or("rows: at least one row is required")?;
+        let rows = NonEmpty::from_vec(rows).ok_or("rows: at least one row is required")?;
         Ok(Self {
             id,
             version,
@@ -114,7 +181,42 @@ impl DisplayJtIndex {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+struct DisplayJtIndexRows<'a>(&'a NonEmpty<DisplayJtIndexRow>);
+
+impl Serialize for DisplayJtIndexRows<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for row in self.0.iter() {
+            rows.serialize_element(row)?;
+        }
+        rows.end()
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtIndexRef<'a> {
+    id: &'a str,
+    version: u32,
+    declared_count: usize,
+    rows: DisplayJtIndexRows<'a>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtIndex {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtIndexRef {
+            id: &self.id,
+            version: self.version,
+            declared_count: self.declared_count(),
+            rows: DisplayJtIndexRows(&self.rows),
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtIndexWire {
     id: String,
     version: u32,
@@ -123,6 +225,7 @@ struct DisplayJtIndexWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtIndex> for DisplayJtIndexWire {
     fn from(value: DisplayJtIndex) -> Self {
         let declared_count = value.declared_count();
@@ -163,8 +266,9 @@ pub(in crate::native) struct DisplayJtIndexRow {
 }
 
 /// One bounded embedded JT document and its table of contents.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "DisplayJtDocumentWire", into = "DisplayJtDocumentWire")]
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[cfg_attr(not(test), derive(Clone))]
+#[serde(try_from = "DisplayJtDocumentWire")]
 pub(in crate::native) struct DisplayJtDocument {
     /// Globally unique document identity.
     pub(super) id: String,
@@ -184,7 +288,64 @@ pub(in crate::native) struct DisplayJtDocument {
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[cfg(test)]
+std::thread_local! {
+    static JT_DOCUMENT_CLONE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+impl Clone for DisplayJtDocument {
+    fn clone(&self) -> Self {
+        JT_DOCUMENT_CLONE_COUNT.with(|count| count.set(count.get() + 1));
+        Self {
+            id: self.id.clone(),
+            index_row: self.index_row.clone(),
+            version: self.version.clone(),
+            toc_offset: self.toc_offset,
+            lsg_segment_id: self.lsg_segment_id,
+            toc_entries: self.toc_entries.clone(),
+            physical_byte_len: self.physical_byte_len,
+            source_offset: self.source_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtDocumentRef<'a> {
+    id: &'a str,
+    index_row: &'a str,
+    version_field: &'a str,
+    format_major: u16,
+    format_minor: u16,
+    byte_order: u8,
+    toc_offset: u32,
+    lsg_segment_id: &'a [u8; 16],
+    toc_entries: &'a [DisplayJtTocEntry],
+    physical_byte_len: u64,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtDocument {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtDocumentRef {
+            id: &self.id,
+            index_row: &self.index_row,
+            version_field: self.version.as_str(),
+            format_major: self.version.major(),
+            format_minor: self.version.minor(),
+            byte_order: 0,
+            toc_offset: self.toc_offset,
+            lsg_segment_id: &self.lsg_segment_id,
+            toc_entries: &self.toc_entries,
+            physical_byte_len: self.physical_byte_len,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtDocumentWire {
     id: String,
     index_row: String,
@@ -199,6 +360,7 @@ struct DisplayJtDocumentWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtDocument> for DisplayJtDocumentWire {
     fn from(value: DisplayJtDocument) -> Self {
         let format_major = value.version.major();
@@ -277,7 +439,7 @@ pub(super) struct DisplayJtSegment {
     /// Physical segment byte length, including its 24-byte header.
     segment_byte_len: u32,
     /// SHA-256 of the bytes following the segment header.
-    payload_sha256: Sha256Hex,
+    payload_sha256: Sha256Digest,
     /// Complete compressed-data envelope when the payload is compressed.
     compression: Option<DisplayJtCompression>,
     /// Absolute source offset of the segment header.
@@ -285,24 +447,44 @@ pub(super) struct DisplayJtSegment {
 }
 
 /// Validated compressed-data envelope following a JT segment header.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressionWire",
-    into = "DisplayJtCompressionWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtCompressionWire")]
 struct DisplayJtCompression {
     envelope: JtCompressionEnvelope,
     /// SHA-256 of the completely inflated payload.
-    inflated_sha256: Sha256Hex,
+    inflated_sha256: Sha256Digest,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct DisplayJtCompressionRef<'a> {
+    flag: u32,
+    compressed_data_byte_len: u32,
+    algorithm: u8,
+    compressed_byte_len: u32,
+    inflated_sha256: &'a Sha256Digest,
+}
+
+impl Serialize for DisplayJtCompression {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtCompressionRef {
+            flag: 2,
+            compressed_data_byte_len: self.envelope.compressed_byte_len + 1,
+            algorithm: 2,
+            compressed_byte_len: self.envelope.compressed_byte_len,
+            inflated_sha256: &self.inflated_sha256,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressionWire {
     flag: u32,
     compressed_data_byte_len: u32,
     algorithm: u8,
     compressed_byte_len: u32,
-    inflated_sha256: Sha256Hex,
+    inflated_sha256: Sha256Digest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,8 +532,17 @@ impl TryFrom<DisplayJtCompressionWire> for DisplayJtCompression {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_COMPRESSION_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_SHAPE_LOD_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<DisplayJtCompression> for DisplayJtCompressionWire {
     fn from(value: DisplayJtCompression) -> Self {
+        JT_COMPRESSION_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             flag: 2,
             compressed_data_byte_len: value.envelope.compressed_byte_len + 1,
@@ -363,11 +554,8 @@ impl From<DisplayJtCompression> for DisplayJtCompressionWire {
 }
 
 /// One length-bounded object element in a JT shape-LOD segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtShapeLodElementWire",
-    into = "DisplayJtShapeLodElementWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtShapeLodElementWire")]
 pub(super) struct DisplayJtShapeLodElement {
     /// Globally unique element identity.
     pub(super) id: String,
@@ -382,12 +570,43 @@ pub(super) struct DisplayJtShapeLodElement {
     /// Bytes following the common element header.
     body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     /// Absolute source offset of the element length.
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize)]
+struct DisplayJtShapeLodElementRef<'a> {
+    id: &'a str,
+    segment: &'a str,
+    ordinal: u32,
+    object_type_id: &'a [u8; 16],
+    object_base_type: u8,
+    object_id: u32,
+    body_byte_len: u32,
+    body_sha256: &'a Sha256Digest,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtShapeLodElement {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtShapeLodElementRef {
+            id: &self.id,
+            segment: &self.segment,
+            ordinal: self.ordinal,
+            object_type_id: &self.object_type_id,
+            object_base_type: 4,
+            object_id: self.object_id,
+            body_byte_len: self.body_byte_len,
+            body_sha256: &self.body_sha256,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtShapeLodElementWire {
     id: String,
     segment: String,
@@ -396,7 +615,7 @@ struct DisplayJtShapeLodElementWire {
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     source_offset: u64,
 }
 
@@ -418,8 +637,10 @@ impl TryFrom<DisplayJtShapeLodElementWire> for DisplayJtShapeLodElement {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtShapeLodElement> for DisplayJtShapeLodElementWire {
     fn from(value: DisplayJtShapeLodElement) -> Self {
+        JT_SHAPE_LOD_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: value.id,
             segment: value.segment,
@@ -456,7 +677,7 @@ pub(super) struct DisplayJtTriStripLodHeader {
     /// Bytes following the fixed header.
     compressed_representation_byte_len: u32,
     /// SHA-256 of the bytes following the fixed header.
-    compressed_representation_sha256: Sha256Hex,
+    compressed_representation_sha256: Sha256Digest,
     /// Absolute source offset of the fixed header.
     pub(super) source_offset: u64,
 }
@@ -473,7 +694,7 @@ pub(super) struct DisplayJtInitialFaceDegreeSymbols {
     /// Complete compressed-packet byte length.
     packet_byte_len: u32,
     /// SHA-256 of the complete compressed packet.
-    packet_sha256: Sha256Hex,
+    packet_sha256: Sha256Digest,
     /// Absolute source offset of the compressed packet.
     pub(super) source_offset: u64,
 }
@@ -490,7 +711,7 @@ struct DisplayJtTopologyPacket {
     /// Complete packet length in bytes.
     byte_len: u32,
     /// Digest of the complete packet bytes.
-    sha256: Sha256Hex,
+    sha256: Sha256Digest,
     /// Mesh-representation-relative packet offset.
     representation_offset: u32,
     /// Reconstructed primal values when the packet codec is decoded.
@@ -515,11 +736,8 @@ pub(super) struct DisplayJtTopologyPacketSequence {
 }
 
 /// Polygon connectivity reconstructed from one JT topological dual mesh.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtPolygonMeshWire",
-    into = "DisplayJtPolygonMeshWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtPolygonMeshWire")]
 pub(super) struct DisplayJtPolygonMesh {
     /// Globally unique polygon-mesh identity.
     pub(super) id: String,
@@ -531,6 +749,94 @@ pub(super) struct DisplayJtPolygonMesh {
     polygons: Vec<Polygon>,
     /// Absolute source offset of the topology packet sequence.
     pub(super) source_offset: u64,
+}
+
+struct PolygonVertices<'a>(&'a [Polygon]);
+struct PolygonAttributes<'a>(&'a [Polygon]);
+struct PolygonVertexRow<'a>(&'a [(u32, Option<u32>)]);
+struct PolygonAttributeRow<'a>(&'a [(u32, Option<u32>)]);
+
+impl Serialize for PolygonVertices<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            rows.serialize_element(&PolygonVertexRow(&polygon.corners))?;
+        }
+        rows.end()
+    }
+}
+
+impl Serialize for PolygonAttributes<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut rows = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            rows.serialize_element(&PolygonAttributeRow(&polygon.corners))?;
+        }
+        rows.end()
+    }
+}
+
+impl Serialize for PolygonVertexRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for (vertex, _) in self.0 {
+            values.serialize_element(vertex)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for PolygonAttributeRow<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for (_, attribute) in self.0 {
+            values.serialize_element(attribute)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for DisplayJtPolygonMesh {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // The group and flag columns stream below so no column buffer is built.
+        use serde::ser::SerializeStruct;
+        let mut wire = serializer.serialize_struct("DisplayJtPolygonMeshWire", 8)?;
+        wire.serialize_field("id", &self.id)?;
+        wire.serialize_field("topology", &self.topology)?;
+        wire.serialize_field("coordinate_header", &self.coordinate_header)?;
+        wire.serialize_field("polygons", &PolygonVertices(&self.polygons))?;
+        wire.serialize_field(
+            "vertex_attribute_indices",
+            &PolygonAttributes(&self.polygons),
+        )?;
+        wire.serialize_field("polygon_groups", &PolygonGroups(&self.polygons))?;
+        wire.serialize_field("polygon_flags", &PolygonFlags(&self.polygons))?;
+        wire.serialize_field("source_offset", &self.source_offset)?;
+        wire.end()
+    }
+}
+
+struct PolygonGroups<'a>(&'a [Polygon]);
+struct PolygonFlags<'a>(&'a [Polygon]);
+
+impl Serialize for PolygonGroups<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            values.serialize_element(&polygon.group)?;
+        }
+        values.end()
+    }
+}
+
+impl Serialize for PolygonFlags<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut values = serializer.serialize_seq(Some(self.0.len()))?;
+        for polygon in self.0 {
+            values.serialize_element(&polygon.flags)?;
+        }
+        values.end()
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -580,6 +886,7 @@ impl TryFrom<DisplayJtPolygonMeshWire> for DisplayJtPolygonMesh {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtPolygonMesh> for DisplayJtPolygonMeshWire {
     fn from(value: DisplayJtPolygonMesh) -> Self {
         let mut polygons = Vec::with_capacity(value.polygons.len());
@@ -630,7 +937,7 @@ pub(super) struct DisplayJtCompressedVertexRecordsHeader {
     /// Remaining compressed vertex-array length.
     compressed_arrays_byte_len: u32,
     /// Digest of the remaining compressed vertex arrays.
-    compressed_arrays_sha256: Sha256Hex,
+    compressed_arrays_sha256: Sha256Digest,
     /// Absolute source offset of this header.
     pub(super) source_offset: u64,
 }
@@ -653,7 +960,7 @@ pub(super) struct DisplayJtVertexCoordinateArrayHeader {
     /// Remaining compressed component-data length.
     compressed_components_byte_len: u32,
     /// Digest of the remaining compressed component data.
-    compressed_components_sha256: Sha256Hex,
+    compressed_components_sha256: Sha256Digest,
     /// Absolute source offset of this header.
     pub(super) source_offset: u64,
 }
@@ -795,9 +1102,15 @@ impl JtMaterialVersion {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(try_from = "Vec<f32>", into = "Vec<f32>")]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "Vec<f32>")]
 struct JtRangeLimits(Vec<FiniteBinary32>);
+
+impl Serialize for JtRangeLimits {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
 
 impl JtRangeLimits {
     fn from_finite(values: Vec<FiniteBinary32>) -> Result<Self, &'static str> {
@@ -825,8 +1138,16 @@ impl TryFrom<Vec<f32>> for JtRangeLimits {
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_RANGE_LIMITS_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static JT_STRING_PROPERTY_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<JtRangeLimits> for Vec<f32> {
     fn from(value: JtRangeLimits) -> Self {
+        JT_RANGE_LIMITS_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         value.0.into_iter().map(FiniteBinary32::get).collect()
     }
 }
@@ -988,11 +1309,8 @@ impl From<JtTransformMatrix> for [[f32; 4]; 4] {
 }
 
 /// Complete JT 9 tri-strip shape node controlling one late-loaded mesh.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtTriStripShapeNodeWire",
-    into = "DisplayJtTriStripShapeNodeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtTriStripShapeNodeWire")]
 pub(super) struct DisplayJtTriStripShapeNode {
     /// Globally unique shape-node identity.
     pub(super) id: String,
@@ -1030,6 +1348,57 @@ pub(super) struct DisplayJtTriStripShapeNode {
     color_quantization_bits: u8,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DisplayJtTriStripShapeNodeRef<'a> {
+    id: &'a str,
+    base_node: &'a str,
+    object_id: u32,
+    reserved_bounds: [[f32; 3]; 2],
+    untransformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    memory_byte_len: u32,
+    compression_level: f32,
+    vertex_version: u16,
+    vertex_bindings: u64,
+    vertex_quantization_bits: u8,
+    normal_quantization_factor: u8,
+    texture_quantization_bits: u8,
+    color_quantization_bits: u8,
+    version_2_vertex_bindings: Option<u64>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtTriStripShapeNode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (vertex_version, version_2_vertex_bindings) = self.vertex_version.into_wire();
+        DisplayJtTriStripShapeNodeRef {
+            id: &self.id,
+            base_node: &self.base_node,
+            object_id: self.object_id,
+            reserved_bounds: self.reserved_bounds.get(),
+            untransformed_bounds: self.untransformed_bounds.get(),
+            area: self.area.get(),
+            vertex_count_range: self.vertex_count_range,
+            node_count_range: self.node_count_range,
+            polygon_count_range: self.polygon_count_range,
+            memory_byte_len: self.memory_byte_len,
+            compression_level: self.compression_level.get(),
+            vertex_version,
+            vertex_bindings: self.vertex_bindings,
+            vertex_quantization_bits: self.vertex_quantization_bits,
+            normal_quantization_factor: self.normal_quantization_factor,
+            texture_quantization_bits: self.texture_quantization_bits,
+            color_quantization_bits: self.color_quantization_bits,
+            version_2_vertex_bindings,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1083,6 +1452,7 @@ impl TryFrom<DisplayJtTriStripShapeNodeWire> for DisplayJtTriStripShapeNode {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
     fn from(value: DisplayJtTriStripShapeNode) -> Self {
         let (vertex_version, version_2_vertex_bindings) = value.vertex_version.into_wire();
@@ -1112,10 +1482,7 @@ impl From<DisplayJtTriStripShapeNode> for DisplayJtTriStripShapeNodeWire {
 
 /// One object element decoded from a compressed JT segment payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressedElementWire",
-    into = "DisplayJtCompressedElementWire"
-)]
+#[serde(try_from = "DisplayJtCompressedElementWire")]
 pub(super) struct DisplayJtCompressedElement {
     /// Globally unique element identity.
     pub(super) id: String,
@@ -1134,7 +1501,7 @@ pub(super) struct DisplayJtCompressedElement {
     /// Bytes following the common element header.
     body_byte_len: u32,
     /// SHA-256 of the bytes following the common element header.
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     /// Offset of the element length in the inflated payload.
     inflated_offset: u32,
     /// Absolute source offset of the owning compressed envelope.
@@ -1148,7 +1515,8 @@ impl DisplayJtCompressedElement {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressedElementWire {
     id: String,
     segment: String,
@@ -1158,7 +1526,7 @@ struct DisplayJtCompressedElementWire {
     object_base_type: u8,
     object_id: u32,
     body_byte_len: u32,
-    body_sha256: Sha256Hex,
+    body_sha256: Sha256Digest,
     inflated_offset: u32,
     source_offset: u64,
 }
@@ -1187,8 +1555,10 @@ impl TryFrom<DisplayJtCompressedElementWire> for DisplayJtCompressedElement {
     }
 }
 
+#[cfg(test)]
 impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
     fn from(value: DisplayJtCompressedElement) -> Self {
+        JT_COMPRESSED_ELEMENT_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         Self {
             id: value.id,
             segment: value.segment,
@@ -1206,11 +1576,8 @@ impl From<DisplayJtCompressedElement> for DisplayJtCompressedElementWire {
 }
 
 /// Complete element sequence and post-marker tail of one compressed JT segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtCompressedElementSequenceWire",
-    into = "DisplayJtCompressedElementSequenceWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtCompressedElementSequenceWire")]
 pub(super) struct DisplayJtCompressedElementSequence {
     /// Globally unique sequence identity.
     pub(super) id: String,
@@ -1224,6 +1591,8 @@ pub(super) struct DisplayJtCompressedElementSequence {
     framed_byte_len: u32,
     /// Exact bytes following the end-object marker.
     tail: Vec<u8>,
+    /// SHA-256 of the exact post-marker tail.
+    tail_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1238,14 +1607,38 @@ impl DisplayJtCompressedElementSequence {
     fn framed_byte_len(&self) -> u32 {
         self.framed_byte_len
     }
+}
 
-    /// SHA-256 of the exact post-marker tail.
-    fn tail_sha256(&self) -> Sha256Hex {
-        Sha256Hex::digest(&self.tail)
+#[derive(Serialize)]
+struct DisplayJtCompressedElementSequenceRef<'a> {
+    id: &'a str,
+    segment: &'a str,
+    segment_type: u32,
+    elements: &'a [String],
+    framed_byte_len: u32,
+    tail: &'a [u8],
+    tail_sha256: &'a Sha256Digest,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtCompressedElementSequence {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtCompressedElementSequenceRef {
+            id: &self.id,
+            segment: &self.segment,
+            segment_type: self.segment_type,
+            elements: &self.elements,
+            framed_byte_len: self.framed_byte_len,
+            tail: &self.tail,
+            tail_sha256: &self.tail_sha256,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtCompressedElementSequenceWire {
     id: String,
     segment: String,
@@ -1253,14 +1646,14 @@ struct DisplayJtCompressedElementSequenceWire {
     elements: Vec<String>,
     framed_byte_len: u32,
     tail: Vec<u8>,
-    tail_sha256: Sha256Hex,
+    tail_sha256: Sha256Digest,
     source_offset: u64,
 }
 
 impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElementSequence {
     type Error = &'static str;
     fn try_from(wire: DisplayJtCompressedElementSequenceWire) -> Result<Self, Self::Error> {
-        if wire.tail_sha256 != Sha256Hex::digest(&wire.tail) {
+        if wire.tail_sha256 != Sha256Digest::digest(&wire.tail) {
             return Err("DisplayJtCompressedElementSequence.tail_sha256 disagrees with tail");
         }
         let minimum = u64::try_from(wire.elements.len())
@@ -1277,14 +1670,22 @@ impl TryFrom<DisplayJtCompressedElementSequenceWire> for DisplayJtCompressedElem
             elements: wire.elements,
             framed_byte_len: wire.framed_byte_len,
             tail: wire.tail,
+            tail_sha256: wire.tail_sha256,
             source_offset: wire.source_offset,
         })
     }
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
 impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequenceWire {
     fn from(value: DisplayJtCompressedElementSequence) -> Self {
-        let tail_sha256 = value.tail_sha256();
+        JT_COMPRESSED_SEQUENCE_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
+        let tail_sha256 = Sha256Digest::digest(&value.tail);
         Self {
             id: value.id,
             segment: value.segment,
@@ -1299,11 +1700,8 @@ impl From<DisplayJtCompressedElementSequence> for DisplayJtCompressedElementSequ
 }
 
 /// One UTF-16 string property atom in a type-31 JT segment.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtStringPropertyAtomWire",
-    into = "DisplayJtStringPropertyAtomWire"
-)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(try_from = "DisplayJtStringPropertyAtomWire")]
 pub(super) struct DisplayJtStringPropertyAtom {
     /// Globally unique property-atom identity.
     pub(super) id: String,
@@ -1317,7 +1715,44 @@ pub(super) struct DisplayJtStringPropertyAtom {
     pub(super) source_offset: u64,
 }
 
-#[derive(Serialize, Deserialize)]
+struct Utf16CodeUnits<'a>(&'a str);
+
+impl Serialize for Utf16CodeUnits<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut sequence = serializer.serialize_seq(Some(self.0.encode_utf16().count()))?;
+        for unit in self.0.encode_utf16() {
+            sequence.serialize_element(&unit)?;
+        }
+        sequence.end()
+    }
+}
+
+#[derive(Serialize)]
+struct DisplayJtStringPropertyAtomRef<'a> {
+    id: &'a str,
+    element: &'a str,
+    object_id: u32,
+    code_units: Utf16CodeUnits<'a>,
+    value: &'a str,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtStringPropertyAtom {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        DisplayJtStringPropertyAtomRef {
+            id: &self.id,
+            element: &self.element,
+            object_id: self.object_id,
+            code_units: Utf16CodeUnits(&self.value),
+            value: &self.value,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(test, derive(Serialize))]
 struct DisplayJtStringPropertyAtomWire {
     id: String,
     element: String,
@@ -1327,8 +1762,10 @@ struct DisplayJtStringPropertyAtomWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtStringPropertyAtom> for DisplayJtStringPropertyAtomWire {
     fn from(value: DisplayJtStringPropertyAtom) -> Self {
+        JT_STRING_PROPERTY_INTO_WIRE_COUNT.with(|count| count.set(count.get() + 1));
         let code_units = value.value.encode_utf16().collect();
         Self {
             id: value.id,
@@ -1412,7 +1849,7 @@ pub(super) struct DisplayJtBaseNodeData {
     /// Byte length after the common node-data header.
     family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common node-data header.
-    family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1450,7 +1887,7 @@ pub(super) struct DisplayJtGroupNodeData {
     /// Byte length after the common group-node data.
     family_data_byte_len: u32,
     /// SHA-256 of the bytes after the common group-node data.
-    family_data_sha256: Sha256Hex,
+    family_data_sha256: Sha256Digest,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
 }
@@ -1477,11 +1914,8 @@ pub(super) struct DisplayJtGeometricTransformAttribute {
 }
 
 /// One JT material attribute attached to logical scene nodes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtMaterialAttributeWire",
-    into = "DisplayJtMaterialAttributeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtMaterialAttributeWire")]
 pub(super) struct DisplayJtMaterialAttribute {
     /// Globally unique material-attribute identity.
     pub(super) id: String,
@@ -1509,6 +1943,48 @@ pub(super) struct DisplayJtMaterialAttribute {
     shininess: JtShininess,
     /// Absolute source offset of the owning compressed envelope.
     pub(super) source_offset: u64,
+}
+
+#[derive(Serialize)]
+struct DisplayJtMaterialAttributeRef<'a> {
+    id: &'a str,
+    element: &'a str,
+    object_id: u32,
+    state_flags: u8,
+    field_inhibit_flags: u32,
+    version: u16,
+    data_flags: u16,
+    ambient: [f32; 4],
+    diffuse: [f32; 4],
+    specular: [f32; 4],
+    emission: [f32; 4],
+    shininess: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reflectivity: Option<f32>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtMaterialAttribute {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (version, reflectivity) = self.version.into_wire();
+        DisplayJtMaterialAttributeRef {
+            id: &self.id,
+            element: &self.element,
+            object_id: self.object_id,
+            state_flags: self.state_flags,
+            field_inhibit_flags: self.field_inhibit_flags,
+            version,
+            data_flags: self.data_flags,
+            ambient: self.ambient.map(UnitBinary32::get),
+            diffuse: self.diffuse.map(UnitBinary32::get),
+            specular: self.specular.map(UnitBinary32::get),
+            emission: self.emission.map(UnitBinary32::get),
+            shininess: self.shininess.get(),
+            reflectivity,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1554,6 +2030,7 @@ impl TryFrom<DisplayJtMaterialAttributeWire> for DisplayJtMaterialAttribute {
         })
     }
 }
+#[cfg(test)]
 impl From<DisplayJtMaterialAttribute> for DisplayJtMaterialAttributeWire {
     fn from(value: DisplayJtMaterialAttribute) -> Self {
         let (version, reflectivity) = value.version.into_wire();
@@ -1586,11 +2063,8 @@ enum DisplayJtPartitionBounds {
 }
 
 /// Complete JT 9 partition node linking an LSG branch to a partition file.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(
-    try_from = "DisplayJtPartitionNodeWire",
-    into = "DisplayJtPartitionNodeWire"
-)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(try_from = "DisplayJtPartitionNodeWire")]
 pub(super) struct DisplayJtPartitionNode {
     /// Globally unique partition-node identity.
     pub(super) id: String,
@@ -1620,6 +2094,54 @@ pub(super) struct DisplayJtPartitionNode {
     pub(super) source_offset: u64,
 }
 
+#[derive(Serialize)]
+struct DisplayJtPartitionNodeRef<'a> {
+    id: &'a str,
+    base_node: &'a str,
+    object_id: u32,
+    group_version: u16,
+    child_object_ids: &'a [u32],
+    partition_flags: u32,
+    file_name_code_units: Utf16CodeUnits<'a>,
+    file_name: &'a str,
+    transformed_bounds: [[f32; 3]; 2],
+    area: f32,
+    vertex_count_range: [i32; 2],
+    node_count_range: [i32; 2],
+    polygon_count_range: [i32; 2],
+    untransformed_bounds: Option<[[f32; 3]; 2]>,
+    reserved_bounds: Option<[[f32; 3]; 2]>,
+    source_offset: u64,
+}
+
+impl Serialize for DisplayJtPartitionNode {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let (partition_flags, untransformed_bounds, reserved_bounds) = match self.bounds {
+            DisplayJtPartitionBounds::Reserved(bounds) => (0, None, Some(bounds.get())),
+            DisplayJtPartitionBounds::Untransformed(bounds) => (1, Some(bounds.get()), None),
+        };
+        DisplayJtPartitionNodeRef {
+            id: &self.id,
+            base_node: &self.base_node,
+            object_id: self.object_id,
+            group_version: self.group_version,
+            child_object_ids: &self.child_object_ids,
+            partition_flags,
+            file_name_code_units: Utf16CodeUnits(&self.file_name),
+            file_name: &self.file_name,
+            transformed_bounds: self.transformed_bounds.get(),
+            area: self.area.get(),
+            vertex_count_range: self.vertex_count_range,
+            node_count_range: self.node_count_range,
+            polygon_count_range: self.polygon_count_range,
+            untransformed_bounds,
+            reserved_bounds,
+            source_offset: self.source_offset,
+        }
+        .serialize(serializer)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 struct DisplayJtPartitionNodeWire {
     id: String,
@@ -1640,6 +2162,7 @@ struct DisplayJtPartitionNodeWire {
     source_offset: u64,
 }
 
+#[cfg(test)]
 impl From<DisplayJtPartitionNode> for DisplayJtPartitionNodeWire {
     fn from(value: DisplayJtPartitionNode) -> Self {
         let (partition_flags, untransformed_bounds, reserved_bounds) = match value.bounds {
@@ -1743,6 +2266,7 @@ pub(super) struct DisplayJtRangeLodNode {
     pub(super) source_offset: u64,
 }
 
+#[derive(Debug)]
 struct ParsedJtElement<'a> {
     offset: usize,
     object_type_id: [u8; 16],
@@ -1751,41 +2275,120 @@ struct ParsedJtElement<'a> {
     body: &'a [u8],
 }
 
-fn parse_jt_element_sequence(payload: &[u8]) -> Option<(Vec<ParsedJtElement<'_>>, usize)> {
+fn parse_jt_element_sequence<'a>(
+    ctx: &DecodeContext<'_>,
+    payload: &'a [u8],
+) -> Result<Option<(Vec<ParsedJtElement<'a>>, usize)>, CodecError> {
     const END_OBJECT_TYPE: [u8; 16] = [0xff; 16];
     let mut elements = Vec::new();
     let mut view = View::over_retained(payload);
     loop {
+        ctx.charge_work(1, "scan DisplayJT element")?;
         let cursor = view.position();
-        let element_byte_len = view.u32_le()?;
-        let element = view.take(usize::try_from(element_byte_len).ok()?)?;
+        let Some(element_byte_len) = view.u32_le() else {
+            return Ok(None);
+        };
+        let Ok(element_len) = usize::try_from(element_byte_len) else {
+            return Ok(None);
+        };
+        let Some(element) = view.take(element_len) else {
+            return Ok(None);
+        };
         if element_byte_len == 16 && element == END_OBJECT_TYPE {
-            return Some((elements, view.position()));
+            return Ok(Some((elements, view.position())));
         }
-        let object_type_id = element.get(..16)?.try_into().ok()?;
-        let &object_base_type = element.get(16)?;
-        let object_id = View::u32_le_at(element, 17)?;
+        let Some(object_type_id) = element.get(..16).and_then(|bytes| bytes.try_into().ok()) else {
+            return Ok(None);
+        };
+        let Some(&object_base_type) = element.get(16) else {
+            return Ok(None);
+        };
+        let Some(object_id) = View::u32_le_at(element, 17) else {
+            return Ok(None);
+        };
+        let Some(body) = element.get(21..) else {
+            return Ok(None);
+        };
+        ctx.reserve_retained_vec(&mut elements, 1, "store DisplayJT element")?;
         elements.push(ParsedJtElement {
             offset: cursor,
             object_type_id,
             object_id,
             object_base_type,
-            body: element.get(21..)?,
+            body,
         });
     }
 }
 
-fn parse_jt_string_property_atom_body(body: &[u8]) -> Option<String> {
+fn utf16_utf8_len(bytes: &[u8]) -> Option<usize> {
+    let mut view = View::over_retained(bytes);
+    let mut byte_len = 0usize;
+    while !view.is_empty() {
+        let first = view.u16_le()?;
+        let scalar = if (0xd800..=0xdbff).contains(&first) {
+            let second = view.u16_le()?;
+            if !(0xdc00..=0xdfff).contains(&second) {
+                return None;
+            }
+            0x10000 + ((u32::from(first) - 0xd800) << 10) + (u32::from(second) - 0xdc00)
+        } else if (0xdc00..=0xdfff).contains(&first) {
+            return None;
+        } else {
+            u32::from(first)
+        };
+        byte_len = byte_len.checked_add(char::from_u32(scalar)?.len_utf8())?;
+    }
+    Some(byte_len)
+}
+
+fn parse_jt_string_property_atom_body(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+) -> Result<Option<String>, CodecError> {
     const PREFIX: [u8; 8] = [1, 0, 0, 0, 0, 0x40, 1, 0];
     if body.get(..8) != Some(PREFIX.as_slice()) {
-        return None;
+        return Ok(None);
     }
     let mut view = View::over_retained(body);
-    view.seek(8)?;
-    let count = usize::try_from(view.u32_le()?).ok()?;
-    let value = view.utf16_le(count)?;
-    view.is_empty().then_some(())?;
-    Some(value)
+    if view.seek(8).is_none() {
+        return Ok(None);
+    }
+    let Some(count) = view.u32_le().and_then(|count| usize::try_from(count).ok()) else {
+        return Ok(None);
+    };
+    let Some(unit_bytes) = count.checked_mul(2) else {
+        return Ok(None);
+    };
+    if view.remaining() != unit_bytes {
+        return Ok(None);
+    }
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(count),
+        "decode DisplayJT string code units",
+    )?;
+    let Some(raw) = body.get(view.position()..) else {
+        return Ok(None);
+    };
+    let Some(utf8_len) = utf16_utf8_len(raw) else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(
+        cadmpeg_core::decode::u64_from_index(count),
+        "decode DisplayJT string code units",
+    )?;
+    ctx.charge_retained(
+        cadmpeg_core::decode::u64_from_index(utf8_len),
+        "retain DisplayJT string property",
+    )?;
+    let _units_reservation = ctx.reserve_scoped(
+        cadmpeg_core::decode::u64_from_index(unit_bytes),
+        "decode DisplayJT string code units",
+    )?;
+    let value = view.utf16_le(count);
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    Ok(Some(value))
 }
 
 fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[u8])> {
@@ -1812,38 +2415,65 @@ fn parse_jt9_tri_strip_lod_header(body: &[u8]) -> Option<(u64, u16, u32, u16, &[
 }
 
 fn jt9_topology_high_degree_lane_count(
+    ctx: &DecodeContext<'_>,
     representation: &[u8],
     expected_vertex_bindings: u64,
-) -> Option<usize> {
+) -> Result<Option<usize>, CodecError> {
+    let result =
+        jt9_topology_high_degree_lane_count_inner(ctx, representation, expected_vertex_bindings)?;
+    ctx.charge_work(0, "complete JT topology lane scan")?;
+    Ok(result)
+}
+
+fn jt9_topology_high_degree_lane_count_inner(
+    ctx: &DecodeContext<'_>,
+    representation: &[u8],
+    expected_vertex_bindings: u64,
+) -> Result<Option<usize>, CodecError> {
     const PREFIX_PACKET_COUNT: usize = 21;
     let mut prefix_end = 0usize;
     for _ in 0..PREFIX_PACKET_COUNT {
-        let (_, _, byte_len) = crate::jt::frame_int32_cdp2(representation.get(prefix_end..)?, 0)?;
-        prefix_end = prefix_end.checked_add(byte_len)?;
+        let Some(bytes) = representation.get(prefix_end..) else {
+            return Ok(None);
+        };
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+            return Ok(None);
+        };
+        let Some(end) = prefix_end.checked_add(byte_len) else {
+            return Ok(None);
+        };
+        prefix_end = end;
     }
     let mut match_count = 0usize;
     let mut matched_lane_count = 0usize;
     let mut cursor = prefix_end;
     let mut lane_count = 1usize;
     while cursor < representation.len() {
-        let Some((_, _, byte_len)) = representation
-            .get(cursor..)
-            .and_then(|bytes| crate::jt::frame_int32_cdp2(bytes, 0))
-        else {
+        let Some(bytes) = representation.get(cursor..) else {
             break;
         };
-        cursor = cursor.checked_add(byte_len)?;
+        let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+            break;
+        };
+        let Some(end) = cursor.checked_add(byte_len) else {
+            return Ok(None);
+        };
+        cursor = end;
         let mut candidate_end = cursor;
         let mut split_packets_valid = true;
         for _ in 0..2 {
-            let Some((_, _, byte_len)) = representation
-                .get(candidate_end..)
-                .and_then(|bytes| crate::jt::frame_int32_cdp2(bytes, 0))
-            else {
+            let Some(bytes) = representation.get(candidate_end..) else {
                 split_packets_valid = false;
                 break;
             };
-            candidate_end = candidate_end.checked_add(byte_len)?;
+            let Some((_, _, byte_len)) = crate::jt::frame_int32_cdp2(ctx, bytes, 0)? else {
+                split_packets_valid = false;
+                break;
+            };
+            let Some(end) = candidate_end.checked_add(byte_len) else {
+                return Ok(None);
+            };
+            candidate_end = end;
         }
         if !split_packets_valid {
             continue;
@@ -1854,9 +2484,13 @@ fn jt9_topology_high_degree_lane_count(
         let Some(envelope) = representation.get(candidate_end..header_end) else {
             continue;
         };
-        let bindings = View::u64_le_at(envelope, 4)?;
+        let Some(bindings) = View::u64_le_at(envelope, 4) else {
+            return Ok(None);
+        };
         let quantization = &envelope[12..16];
-        let topological_vertex_count = View::u32_le_at(envelope, 16)?;
+        let Some(topological_vertex_count) = View::u32_le_at(envelope, 16) else {
+            return Ok(None);
+        };
         let vertex_attribute_count = if topological_vertex_count == 0 {
             0
         } else {
@@ -1876,9 +2510,12 @@ fn jt9_topology_high_degree_lane_count(
             match_count += 1;
             matched_lane_count = lane_count;
         }
-        lane_count = lane_count.checked_add(1)?;
+        let Some(next_lane_count) = lane_count.checked_add(1) else {
+            return Ok(None);
+        };
+        lane_count = next_lane_count;
     }
-    (match_count == 1).then_some(matched_lane_count)
+    Ok((match_count == 1).then_some(matched_lane_count))
 }
 
 fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, Vec<u32>, &[u8])> {
@@ -1899,6 +2536,159 @@ fn parse_jt_base_node_body(body: &[u8], format_major: u16) -> Option<(u16, u32, 
         attribute_object_ids,
         body.get(view.position()..)?,
     ))
+}
+
+type AdmittedJtTail<'a, 'ctx> = Option<(&'a [u8], Option<ScopedReservation<'ctx>>)>;
+
+#[derive(Debug)]
+enum JtOptionalReservation<'a> {
+    Invalid,
+    Admitted(ScopedReservation<'a>),
+}
+
+fn admit_jt_counted_u32<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    bytes: &'a [u8],
+    count_offset: usize,
+    values_offset: usize,
+    operation: &'static str,
+    retained: bool,
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
+    let Some(count) = View::u32_le_at(bytes, count_offset) else {
+        return Ok(None);
+    };
+    let Some(byte_len) = usize::try_from(count)
+        .ok()
+        .and_then(|count| count.checked_mul(4))
+    else {
+        return Ok(None);
+    };
+    let Some(end) = values_offset.checked_add(byte_len) else {
+        return Ok(None);
+    };
+    let Some(tail) = bytes.get(end..) else {
+        return Ok(None);
+    };
+    ctx.charge_collection_items(u64::from(count), operation)?;
+    let reservation = if retained {
+        ctx.charge_retained(u64::from(count) * 4, operation)?;
+        None
+    } else {
+        Some(ctx.reserve_scoped(u64::from(count) * 4, operation)?)
+    };
+    Ok(Some((tail, reservation)))
+}
+
+fn admit_jt_base_body<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    body: &'a [u8],
+    major: u16,
+    retained: bool,
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
+    let (count_offset, values_offset) = if major < 10 { (6, 10) } else { (5, 9) };
+    admit_jt_counted_u32(
+        ctx,
+        body,
+        count_offset,
+        values_offset,
+        "decode DisplayJT base node attributes",
+        retained,
+    )
+}
+
+fn admit_jt_group_body<'a, 'ctx>(
+    ctx: &'ctx DecodeContext<'_>,
+    body: &'a [u8],
+) -> Result<AdmittedJtTail<'a, 'ctx>, CodecError> {
+    let Some((family, base_reservation)) = admit_jt_base_body(ctx, body, 9, false)? else {
+        return Ok(None);
+    };
+    let Some((family, _)) =
+        admit_jt_counted_u32(ctx, family, 2, 6, "decode DisplayJT group children", true)?
+    else {
+        return Ok(None);
+    };
+    Ok(Some((family, base_reservation)))
+}
+
+fn admit_jt_partition_name<'a>(
+    ctx: &'a DecodeContext<'_>,
+    family: &[u8],
+) -> Result<JtOptionalReservation<'a>, CodecError> {
+    let Some(count) = View::u32_le_at(family, 4) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some(byte_len) = usize::try_from(count)
+        .ok()
+        .and_then(|count| count.checked_mul(2))
+    else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some(end) = 8usize.checked_add(byte_len) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some(raw) = family.get(8..end) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some(utf8_len) = utf16_utf8_len(raw) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    ctx.charge_work(u64::from(count), "decode DisplayJT partition name")?;
+    ctx.charge_collection_items(u64::from(count), "decode DisplayJT partition name")?;
+    ctx.charge_retained(
+        u64::try_from(utf8_len)
+            .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT partition name", 0, u64::MAX))?,
+        "retain DisplayJT partition name",
+    )?;
+    let reservation =
+        ctx.reserve_scoped(u64::from(count) * 2, "decode DisplayJT partition name")?;
+    Ok(JtOptionalReservation::Admitted(reservation))
+}
+
+fn jt_f32_vector_tail(bytes: &[u8]) -> Option<(&[u8], u64)> {
+    let count = View::u32_le_at(bytes, 0)?;
+    let byte_len = usize::try_from(count).ok()?.checked_mul(4)?;
+    let end = 4usize.checked_add(byte_len)?;
+    Some((bytes.get(end..)?, u64::from(count)))
+}
+
+fn admit_jt_range_vectors<'a>(
+    ctx: &'a DecodeContext<'_>,
+    family: &[u8],
+) -> Result<JtOptionalReservation<'a>, CodecError> {
+    let Some(first) = family.get(2..) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some((after_first, first_count)) = jt_f32_vector_tail(first) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some(second) = after_first.get(6..) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let Some((_, second_count)) = jt_f32_vector_tail(second) else {
+        return Ok(JtOptionalReservation::Invalid);
+    };
+    let total = first_count
+        .checked_add(second_count)
+        .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?;
+    ctx.charge_work(total, "decode DisplayJT range values")?;
+    ctx.charge_collection_items(
+        total
+            .checked_mul(2)
+            .ok_or_else(|| ctx.refuse_codec_limit("decode DisplayJT range values", 0, u64::MAX))?,
+        "decode DisplayJT range values",
+    )?;
+    ctx.charge_retained(
+        total
+            .checked_mul(4)
+            .ok_or_else(|| ctx.refuse_codec_limit("retain DisplayJT range values", 0, u64::MAX))?,
+        "retain DisplayJT range values",
+    )?;
+    let reservation = ctx.reserve_scoped(
+        first_count.max(second_count) * 4,
+        "decode DisplayJT range values",
+    )?;
+    Ok(JtOptionalReservation::Admitted(reservation))
 }
 
 fn parse_jt9_instance_node_body(body: &[u8]) -> Option<(u16, u32)> {
@@ -2262,188 +3052,312 @@ fn parse_jt9_material_body(body: &[u8]) -> Option<ParsedJt9Material> {
     ))
 }
 
+fn decimal_digits(mut value: usize) -> u64 {
+    let mut digits = 1;
+    while value >= 10 {
+        value /= 10;
+        digits += 1;
+    }
+    digits
+}
+
 /// Decode the complete outer index of each `/Root/UG_PART/DisplayJT` stream.
-pub(super) fn display_jt_indices(container: &Container) -> Vec<DisplayJtIndex> {
+pub(super) fn display_jt_indices(
+    ctx: &DecodeContext<'_>,
+    container: &Container,
+) -> Result<Vec<DisplayJtIndex>, CodecError> {
     const JT_HEADER: &[u8] = b"Version ";
     let word_swapped_u64 = |bytes: &[u8]| -> Option<u64> {
         let high = View::u32_le_at(bytes, 0)?;
         let low = View::u32_le_at(bytes, 4)?;
         Some((u64::from(high) << 32) | u64::from(low))
     };
-    container
+    let mut indices = Vec::new();
+    for (index_ordinal, entry) in container
         .entries
         .iter()
         .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
         .enumerate()
-        .filter_map(|(index_ordinal, entry)| {
-            let (source_offset, byte_len) = entry.file_span()?;
-            let payload = container.bounded_entry_bytes(source_offset, byte_len)?;
-            let version = View::u32_le_at(payload, 0)?;
-            let declared_count = View::u32_le_at(payload, 4)?;
-            let row_count = usize::try_from(declared_count).ok()?;
-            let table_end = 8usize.checked_add(row_count.checked_mul(16)?)?;
-            (table_end <= payload.len()).then_some(())?;
+    {
+        let parsed = (|| -> Result<Option<DisplayJtIndex>, CodecError> {
+            let Some((source_offset, byte_len)) = entry.file_span() else {
+                return Ok(None);
+            };
+            let Some(payload) = container.bounded_entry_bytes(source_offset, byte_len) else {
+                return Ok(None);
+            };
+            let (Some(version), Some(declared_count)) =
+                (View::u32_le_at(payload, 0), View::u32_le_at(payload, 4))
+            else {
+                return Ok(None);
+            };
+            let Ok(row_count) = usize::try_from(declared_count) else {
+                return Ok(None);
+            };
+            let Some(table_end) = row_count
+                .checked_mul(16)
+                .and_then(|bytes| 8usize.checked_add(bytes))
+            else {
+                return Ok(None);
+            };
+            if table_end > payload.len() {
+                return Ok(None);
+            }
+            if row_count == 0 {
+                return Ok(None);
+            }
+            let row_size = u64::try_from(std::mem::size_of::<DisplayJtIndexRow>())
+                .map_err(|_| ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX))?;
+            ctx.charge_collection_items(u64::from(declared_count), "admit DisplayJT index rows")?;
+            ctx.charge_retained(
+                u64::from(declared_count)
+                    .checked_mul(row_size)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT index rows", 0, u64::MAX)
+                    })?,
+                "retain DisplayJT index rows",
+            )?;
             let mut rows = Vec::new();
-            rows.try_reserve_exact(row_count).ok()?;
+            cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+                &mut rows,
+                row_count,
+                "allocate DisplayJT index rows",
+            )?;
             let mut previous_header_offset = None;
             for ordinal in 0..row_count {
                 let row_offset = 8 + ordinal * 16;
-                let value =
-                    NonZeroU64::new(word_swapped_u64(payload.get(row_offset..row_offset + 8)?)?)?;
-                let header_offset =
-                    word_swapped_u64(payload.get(row_offset + 8..row_offset + 16)?)?;
+                let Some(value) = payload
+                    .get(row_offset..row_offset + 8)
+                    .and_then(word_swapped_u64)
+                    .and_then(NonZeroU64::new)
+                else {
+                    return Ok(None);
+                };
+                let Some(header_offset) = payload
+                    .get(row_offset + 8..row_offset + 16)
+                    .and_then(word_swapped_u64)
+                else {
+                    return Ok(None);
+                };
                 if header_offset > u64::from(u32::MAX) {
-                    return None;
+                    return Ok(None);
                 }
-                let header_offset_usize = usize::try_from(header_offset).ok()?;
+                let Ok(header_offset_usize) = usize::try_from(header_offset) else {
+                    return Ok(None);
+                };
                 if header_offset_usize < table_end
                     || !payload
                         .get(header_offset_usize..)
                         .is_some_and(|tail| tail.starts_with(JT_HEADER))
                     || previous_header_offset.is_some_and(|previous| header_offset <= previous)
                 {
-                    return None;
+                    return Ok(None);
                 }
                 previous_header_offset = Some(header_offset);
+                ctx.charge_entities(1, "admit DisplayJT index row")?;
+                let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                    .checked_add(decimal_digits(index_ordinal))
+                    .and_then(|len| {
+                        len.checked_add(cadmpeg_core::decode::u64_from_index("-row-".len()))
+                    })
+                    .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("retain DisplayJT index row identity", 0, u64::MAX)
+                    })?;
+                ctx.charge_retained(id_len, "retain DisplayJT index row identity")?;
                 rows.push(DisplayJtIndexRow {
                     id: format!("nx:display-jt:index#{index_ordinal}-row-{ordinal}"),
-                    ordinal: ordinal as u32,
-                    header_offset: header_offset as u32,
+                    ordinal: u32::try_from(ordinal).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "DisplayJT count exceeds u32",
+                            u64::from(u32::MAX),
+                            cadmpeg_core::decode::u64_from_index(ordinal),
+                        )
+                    })?,
+                    header_offset: u32::try_from(header_offset).map_err(|_| {
+                        CodecError::malformed("DisplayJT header offset exceeds u32")
+                    })?,
                     value,
-                    source_offset: source_offset + row_offset as u64,
+                    source_offset: source_offset + cadmpeg_core::decode::u64_from_index(row_offset),
                 });
             }
-            DisplayJtIndex::new(
+            ctx.charge_entities(1, "admit DisplayJT index entity")?;
+            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:index#".len())
+                .checked_add(decimal_digits(index_ordinal))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT index identity", 0, u64::MAX)
+                })?;
+            ctx.charge_retained(id_len, "retain DisplayJT index identity")?;
+            Ok(DisplayJtIndex::new(
                 format!("nx:display-jt:index#{index_ordinal}"),
                 version,
                 rows,
                 source_offset,
             )
-            .ok()
-        })
-        .collect()
+            .ok())
+        })()?;
+        if let Some(index) = parsed {
+            ctx.reserve_retained_vec(&mut indices, 1, "admit DisplayJT index")?;
+            indices.push(index);
+        }
+    }
+    Ok(indices)
 }
 
 /// Decode complete standard JT headers and tables of contents from an outer index.
 pub(super) fn display_jt_documents(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     indices: &[DisplayJtIndex],
-) -> Vec<DisplayJtDocument> {
-    let entries = container
+) -> Result<Vec<DisplayJtDocument>, CodecError> {
+    let mut entries = container
         .entries
         .iter()
-        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT")
-        .collect::<Vec<_>>();
-    let [entry] = entries.as_slice() else {
-        return Vec::new();
+        .filter(|entry| entry.name == "/Root/UG_PART/DisplayJT");
+    let Some(entry) = entries.next() else {
+        return Ok(Vec::new());
     };
+    if entries.next().is_some() {
+        return Ok(Vec::new());
+    }
     let Some((stream_source_offset, stream_byte_len)) = entry.file_span() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(stream) = container.bounded_entry_bytes(stream_source_offset, stream_byte_len) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let [index] = indices else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let mut documents = Vec::new();
     let mut rows = index.rows.iter().peekable();
     while let Some(row) = rows.next() {
+        ctx.charge_work(1, "scan DisplayJT document")?;
         let Ok(document_start) = usize::try_from(row.header_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let document_end = rows
-            .peek()
-            .map_or(stream.len(), |next| next.header_offset as usize);
+        let document_end = rows.peek().map_or(stream.len(), |next| {
+            cadmpeg_core::decode::index_from_u32(next.header_offset)
+        });
         let Some(document) = stream.get(document_start..document_end) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(version_bytes) = document.get(..jt_hdr::BYTE_ORDER) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(version_field) = std::str::from_utf8(version_bytes).ok() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(version_field.len()),
+            "retain DisplayJT version text",
+        )?;
         let Ok(version) = JtVersionField::new(version_field.to_owned()) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(&byte_order) = document.get(jt_hdr::BYTE_ORDER) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if byte_order != 0 || document.get(jt_hdr::RESERVED..jt_hdr::TOC_OFFSET) != Some(&[0; 4]) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(toc_offset) = View::u32_le_at(document, jt_hdr::TOC_OFFSET) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(lsg_segment_id) = document
             .get(jt_hdr::LSG_SEGMENT_ID..jt_hdr::LEN)
             .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(toc_start) = usize::try_from(toc_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(toc_count) = View::u32_le_at(document, toc_start) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(toc_count_usize) = usize::try_from(toc_count) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if toc_count_usize == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(toc_end) = toc_start
             .checked_add(4)
             .and_then(|start| start.checked_add(toc_count_usize.checked_mul(jt_toc::LEN)?))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if toc_end > document.len() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let document_key = row
             .id
             .rsplit_once('#')
             .map_or(row.id.as_str(), |(_, key)| key);
-        let mut toc_entries = Vec::new();
-        if toc_entries.try_reserve_exact(toc_count_usize).is_err() {
-            return Vec::new();
-        }
+        ctx.charge_work(u64::from(toc_count), "scan DisplayJT table of contents")?;
+        let mut toc_entries = ctx.retained_vec(toc_count_usize, "admit DisplayJT toc entries")?;
         for ordinal in 0..toc_count_usize {
             let offset = toc_start + 4 + ordinal * jt_toc::LEN;
             let Some(bytes) = View::over_retained(&document[offset..offset + jt_toc::LEN])
                 .array::<{ jt_toc::LEN }>()
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let [segment_id @ .., o0, o1, o2, o3, l0, l1, l2, l3, a0, a1, a2, a3] = bytes;
             let segment_offset = assemble_u32_le([o0, o1, o2, o3]);
             let segment_byte_len = assemble_u32_le([l0, l1, l2, l3]);
             let attributes = [a0, a1, a2, a3];
-            let Some(segment_end) = usize::try_from(segment_offset)
-                .ok()
-                .and_then(|start| start.checked_add(segment_byte_len as usize))
-            else {
-                return Vec::new();
+            let Some(segment_end) = usize::try_from(segment_offset).ok().and_then(|start| {
+                start.checked_add(cadmpeg_core::decode::index_from_u32(segment_byte_len))
+            }) else {
+                return Ok(Vec::new());
             };
             if segment_byte_len == 0
-                || (segment_offset as usize) < toc_end
+                || (cadmpeg_core::decode::index_from_u32(segment_offset)) < toc_end
                 || segment_end > document.len()
             {
-                return Vec::new();
+                return Ok(Vec::new());
             }
+            ctx.charge_entities(1, "admit DisplayJT toc entry")?;
+            let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:toc-entry#".len())
+                .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+                .and_then(|len| len.checked_add(1))
+                .and_then(|len| len.checked_add(decimal_digits(ordinal)))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("retain DisplayJT toc identity", 0, u64::MAX)
+                })?;
+            ctx.charge_retained(id_len, "retain DisplayJT toc identity")?;
             toc_entries.push(DisplayJtTocEntry {
                 id: format!("nx:display-jt:toc-entry#{document_key}-{ordinal}"),
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(ordinal),
+                    )
+                })?,
                 segment_id,
                 segment_offset,
                 segment_byte_len,
                 attributes,
-                source_offset: stream_source_offset + document_start as u64 + offset as u64,
+                source_offset: stream_source_offset
+                    + cadmpeg_core::decode::u64_from_index(document_start)
+                    + cadmpeg_core::decode::u64_from_index(offset),
             });
         }
+        ctx.charge_entities(1, "admit DisplayJT document entity")?;
+        let id_len = cadmpeg_core::decode::u64_from_index("nx:display-jt:document#".len())
+            .checked_add(cadmpeg_core::decode::u64_from_index(document_key.len()))
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("retain DisplayJT document identity", 0, u64::MAX)
+            })?;
+        ctx.charge_retained(id_len, "retain DisplayJT document identity")?;
+        ctx.charge_retained(
+            cadmpeg_core::decode::u64_from_index(row.id.len()),
+            "retain DisplayJT document index reference",
+        )?;
+        ctx.reserve_retained_vec(&mut documents, 1, "admit DisplayJT document")?;
         documents.push(DisplayJtDocument {
             id: format!("nx:display-jt:document#{document_key}"),
             index_row: row.id.clone(),
@@ -2451,19 +3365,20 @@ pub(super) fn display_jt_documents(
             toc_offset,
             lsg_segment_id,
             toc_entries,
-            physical_byte_len: document.len() as u64,
-            source_offset: stream_source_offset + document_start as u64,
+            physical_byte_len: cadmpeg_core::decode::u64_from_index(document.len()),
+            source_offset: stream_source_offset
+                + cadmpeg_core::decode::u64_from_index(document_start),
         });
     }
-    documents
+    Ok(documents)
 }
 
 /// Decode every segment declared by complete embedded JT documents.
 pub(super) fn display_jt_segments(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtSegment> {
+) -> Result<Vec<DisplayJtSegment>, CodecError> {
     let mut segments = Vec::new();
     for document in documents {
         let document_key = document
@@ -2473,51 +3388,51 @@ pub(super) fn display_jt_segments(
         let Some(bytes) =
             container.bounded_entry_bytes(document.source_offset, document.physical_byte_len)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for entry in &document.toc_entries {
             let (Ok(segment_start), Ok(segment_len)) = (
                 usize::try_from(entry.segment_offset),
                 usize::try_from(entry.segment_byte_len),
             ) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment) = bytes.get(segment_start..segment_start.saturating_add(segment_len))
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment_id) = segment
                 .get(..16)
                 .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(segment_type) = View::u32_le_at(segment, 16) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(header_byte_len) = View::u32_le_at(segment, 20) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(attribute_type) = View::u32_be_at(&entry.attributes, 0) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if segment_id != entry.segment_id
                 || segment_type != attribute_type
                 || header_byte_len != entry.segment_byte_len
             {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let payload = &segment[24..];
             let compression = if payload.get(..4) == Some(2_u32.to_le_bytes().as_slice()) {
                 let Some(compressed_data_byte_len) = View::u32_le_at(payload, 4) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(&algorithm) = payload.get(8) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let compressed = &payload[9..];
                 let Ok(compressed_byte_len) = u32::try_from(compressed.len()) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Ok(envelope) = JtCompressionEnvelope::try_new(
                     2,
@@ -2525,18 +3440,52 @@ pub(super) fn display_jt_segments(
                     algorithm,
                     compressed_byte_len,
                 ) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
-                let Some(inflated) = inflate_display_jt(budget, compressed) else {
-                    return Vec::new();
+                let Some(member) = document
+                    .source_offset
+                    .checked_add(u64::from(entry.segment_offset))
+                    .and_then(|offset| offset.checked_add(33))
+                    .and_then(cadmpeg_core::decode::index_from_u64)
+                    .and_then(|start| {
+                        start
+                            .checked_add(compressed.len())
+                            .and_then(|end| budget.1.child(start, end))
+                    })
+                else {
+                    return Ok(Vec::new());
+                };
+                let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+                    return Ok(Vec::new());
                 };
                 Some(DisplayJtCompression {
                     envelope,
-                    inflated_sha256: Sha256Hex::digest(&inflated),
+                    inflated_sha256: Sha256Digest::digest_for_decode(
+                        budget.0,
+                        &inflated,
+                        "retain DisplayJT hash",
+                    )?,
                 })
             } else {
                 None
             };
+            let ctx = budget.0;
+            let digits = entry
+                .ordinal
+                .checked_ilog10()
+                .map_or(1, |value| u64::from(value) + 1);
+            let text_bytes = display_jt_text_size(
+                ctx,
+                &[
+                    "nx:display-jt:segment#",
+                    document_key,
+                    "-",
+                    &document.id,
+                    &entry.id,
+                ],
+                digits,
+            )?;
+            ctx.reserve_record_vec(&mut segments, 1, text_bytes, "store DisplayJT segment")?;
             segments.push(DisplayJtSegment {
                 id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
@@ -2544,59 +3493,95 @@ pub(super) fn display_jt_segments(
                 segment_id,
                 segment_type,
                 segment_byte_len: header_byte_len,
-                payload_sha256: Sha256Hex::digest(payload),
+                payload_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    payload,
+                    "retain DisplayJT hash",
+                )?,
                 compression,
                 source_offset: document.source_offset + u64::from(entry.segment_offset),
             });
         }
     }
-    segments
+    Ok(segments)
 }
 
 /// Decode complete object-element sequences from type-7 shape-LOD segments.
 pub(super) fn display_jt_shape_lod_elements(
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> Vec<DisplayJtShapeLodElement> {
+) -> Result<Vec<DisplayJtShapeLodElement>, CodecError> {
     const SEGMENT_TAIL: [u8; 6] = [1, 0, 0, 0, 0, 0];
     let mut elements = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 7) {
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let payload = &bytes[24..];
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(payload) else {
-            return Vec::new();
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, payload)? else {
+            return Ok(Vec::new());
         };
         if payload.get(framed_end..) != Some(SEGMENT_TAIL.as_slice()) {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         for (ordinal, element) in parsed.into_iter().enumerate() {
             if element.object_base_type != 4 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
+            let ctx = budget.0;
+            let text_bytes = display_jt_text_size(
+                ctx,
+                &[&segment.id, "-element-", &segment.id],
+                decimal_digits(ordinal),
+            )?;
+            ctx.reserve_record_vec(
+                &mut elements,
+                1,
+                text_bytes,
+                "store DisplayJT shape element",
+            )?;
             elements.push(DisplayJtShapeLodElement {
                 id: format!("{}-element-{ordinal}", segment.id),
                 segment: segment.id.clone(),
-                ordinal: ordinal as u32,
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(ordinal),
+                    )
+                })?,
                 object_type_id: element.object_type_id,
                 object_id: element.object_id,
-                body_byte_len: element.body.len() as u32,
-                body_sha256: Sha256Hex::digest(element.body),
-                source_offset: segment.source_offset + 24 + element.offset as u64,
+                body_byte_len: u32::try_from(element.body.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(element.body.len()),
+                    )
+                })?,
+                body_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    element.body,
+                    "retain DisplayJT hash",
+                )?,
+                source_offset: segment.source_offset
+                    + 24
+                    + cadmpeg_core::decode::u64_from_index(element.offset),
             });
         }
     }
-    elements
+    Ok(elements)
 }
 
 /// Decode fixed headers from JT 9 tri-strip shape-LOD elements.
 pub(super) fn display_jt_tri_strip_lod_headers(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
-) -> Vec<DisplayJtTriStripLodHeader> {
+) -> Result<Vec<DisplayJtTriStripLodHeader>, CodecError> {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -2607,12 +3592,12 @@ pub(super) fn display_jt_tri_strip_lod_headers(
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
         let Some(body_start) = element.source_offset.checked_add(25) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(body) =
             container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some((
             vertex_bindings,
@@ -2622,30 +3607,47 @@ pub(super) fn display_jt_tri_strip_lod_headers(
             compressed_representation,
         )) = parse_jt9_tri_strip_lod_header(body)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut headers, 1, 0, "nx JT tri-strip headers")?;
         headers.push(DisplayJtTriStripLodHeader {
-            id: format!("{}-tri-strip-header", element.id),
-            element: element.id.clone(),
+            id: ctx.join_retained(
+                &[&element.id, "-tri-strip-header"],
+                "",
+                "nx JT tri-strip identity",
+            )?,
+            element: ctx.join_retained(&[&element.id], "", "nx JT tri-strip element reference")?,
             base_version: 1,
             vertex_version: 1,
             vertex_bindings,
             topological_mesh_version,
             vertex_records_object_id,
             compressed_lod_version,
-            compressed_representation_byte_len: compressed_representation.len() as u32,
-            compressed_representation_sha256: Sha256Hex::digest(compressed_representation),
+            compressed_representation_byte_len: u32::try_from(compressed_representation.len())
+                .map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(compressed_representation.len()),
+                    )
+                })?,
+            compressed_representation_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                compressed_representation,
+                "retain DisplayJT hash",
+            )?,
             source_offset: element.source_offset + 25,
         });
     }
-    headers
+    Ok(headers)
 }
 
 /// Decode the initial face-degree packet from each JT 9 topological mesh.
 pub(super) fn display_jt_initial_face_degree_symbols(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
-) -> Vec<DisplayJtInitialFaceDegreeSymbols> {
+) -> Result<Vec<DisplayJtInitialFaceDegreeSymbols>, CodecError> {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -2656,45 +3658,62 @@ pub(super) fn display_jt_initial_face_degree_symbols(
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
         let Some(body_start) = element.source_offset.checked_add(25) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(body) =
             container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some((_, _, _, _, representation)) = parse_jt9_tri_strip_lod_header(body) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((residuals, packet_byte_len)) = crate::jt::decode_int32_cdp2(representation, 0)
+        let Some((residuals, packet_byte_len)) =
+            crate::jt::decode_int32_cdp2(ctx, representation, 0)?
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let degrees = crate::jt::unpack_predictor_residuals(&residuals, crate::jt::Predictor::Null);
+        let degrees =
+            crate::jt::unpack_predictor_residuals(ctx, &residuals, crate::jt::Predictor::Null)?;
         let Some(packet) = representation.get(..packet_byte_len) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut vectors, 1, 0, "nx JT face degree records")?;
         vectors.push(DisplayJtInitialFaceDegreeSymbols {
-            id: format!("{}-initial-face-degrees", element.id),
-            element: element.id.clone(),
+            id: ctx.join_retained(
+                &[&element.id, "-initial-face-degrees"],
+                "",
+                "nx JT face degree identity",
+            )?,
+            element: ctx.join_retained(&[&element.id], "", "nx JT face degree reference")?,
             degrees,
-            packet_byte_len: packet_byte_len as u32,
-            packet_sha256: Sha256Hex::digest(packet),
+            packet_byte_len: u32::try_from(packet_byte_len).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "DisplayJT count exceeds u32",
+                    u64::from(u32::MAX),
+                    cadmpeg_core::decode::u64_from_index(packet_byte_len),
+                )
+            })?,
+            packet_sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
             source_offset: element.source_offset + 45,
         });
     }
-    vectors
+    Ok(vectors)
 }
 
 /// Bound every JT 9 topology vector and decode the following vertex-record header.
+#[derive(Default)]
+pub(super) struct DisplayJtTopologyArrays {
+    pub(super) sequences: Vec<DisplayJtTopologyPacketSequence>,
+    pub(super) vertex_headers: Vec<DisplayJtCompressedVertexRecordsHeader>,
+    pub(super) coordinate_headers: Vec<DisplayJtVertexCoordinateArrayHeader>,
+}
+
 pub(super) fn display_jt_topology_packet_sequences(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     elements: &[DisplayJtShapeLodElement],
-) -> (
-    Vec<DisplayJtTopologyPacketSequence>,
-    Vec<DisplayJtCompressedVertexRecordsHeader>,
-    Vec<DisplayJtVertexCoordinateArrayHeader>,
-) {
+) -> Result<DisplayJtTopologyArrays, CodecError> {
     const TRI_STRIP_LOD_TYPE: [u8; 16] = [
         0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -2707,26 +3726,26 @@ pub(super) fn display_jt_topology_packet_sequences(
         .filter(|element| element.object_type_id == TRI_STRIP_LOD_TYPE)
     {
         let Some(body_start) = element.source_offset.checked_add(25) else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let Some(body) =
             container.bounded_entry_bytes(body_start, u64::from(element.body_byte_len))
         else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let Some((lod_vertex_bindings, _, _, _, representation)) =
             parse_jt9_tri_strip_lod_header(body)
         else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let mut cursor = 0usize;
         let Some(high_degree_lane_count) =
-            jt9_topology_high_degree_lane_count(representation, lod_vertex_bindings)
+            jt9_topology_high_degree_lane_count(ctx, representation, lod_vertex_bindings)?
         else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let Some(role_count) = 23usize.checked_add(high_degree_lane_count) else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let roles = TopologyContext::ALL
             .map(TopologyPacketRole::FaceDegrees)
@@ -2748,64 +3767,64 @@ pub(super) fn display_jt_topology_packet_sequences(
                 TopologyPacketRole::SplitFaceSymbols,
                 TopologyPacketRole::SplitFacePositions,
             ]);
-        let mut packets = Vec::new();
-        if packets.try_reserve_exact(role_count).is_err() {
-            return (Vec::new(), Vec::new(), Vec::new());
-        }
+        let mut packets = ctx.retained_vec(role_count, "nx JT topology packets")?;
         for role in roles {
             let Some(remaining) = representation.get(cursor..) else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
-            let Some((value_count, codec, byte_len)) = crate::jt::frame_int32_cdp2(remaining, 0)
+            let Some((value_count, codec, byte_len)) =
+                crate::jt::frame_int32_cdp2(ctx, remaining, 0)?
             else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let Some(packet_end) = cursor.checked_add(byte_len) else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let Some(packet) = representation.get(cursor..packet_end) else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let (Ok(byte_len), Ok(representation_offset)) =
                 (u32::try_from(byte_len), u32::try_from(cursor))
             else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
-            let values = crate::jt::decode_int32_cdp2(packet, 0).and_then(
-                |(residuals, decoded_byte_len)| {
-                    (decoded_byte_len == packet.len()).then(|| {
-                        let predictor = match role {
-                            TopologyPacketRole::VertexFlags
-                            | TopologyPacketRole::SplitFaceSymbols => crate::jt::Predictor::Lag1,
-                            _ => crate::jt::Predictor::Null,
-                        };
-                        crate::jt::unpack_predictor_residuals(&residuals, predictor)
-                    })
-                },
-            );
+            let values = match crate::jt::decode_int32_cdp2(ctx, packet, 0)? {
+                Some((residuals, decoded_byte_len)) if decoded_byte_len == packet.len() => {
+                    let predictor = match role {
+                        TopologyPacketRole::VertexFlags | TopologyPacketRole::SplitFaceSymbols => {
+                            crate::jt::Predictor::Lag1
+                        }
+                        _ => crate::jt::Predictor::Null,
+                    };
+                    Some(crate::jt::unpack_predictor_residuals(
+                        ctx, &residuals, predictor,
+                    )?)
+                }
+                _ => None,
+            };
             packets.push(DisplayJtTopologyPacket {
                 role,
                 value_count,
                 codec,
                 byte_len,
-                sha256: Sha256Hex::digest(packet),
+                sha256: Sha256Digest::digest_for_decode(ctx, packet, "retain DisplayJT hash")?,
                 representation_offset,
                 values,
             });
-            cursor += byte_len as usize;
+            cursor += cadmpeg_core::decode::index_from_u32(byte_len);
         }
         let Some(composite_hash) = View::u32_le_at(representation, cursor) else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         cursor += 4;
         let Some(required_header_end) = cursor.checked_add(16) else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let Some(required_header) = representation
             .get(cursor..required_header_end)
             .and_then(|bytes| View::over_retained(bytes).array::<16>())
         else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let [bindings @ .., q0, q1, q2, q3, n0, n1, n2, n3] = required_header;
         let vertex_bindings = assemble_u64_le(bindings);
@@ -2815,46 +3834,46 @@ pub(super) fn display_jt_topology_packet_sequences(
             || quantization[2] > 24
             || quantization[3] > 24
         {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         }
         if vertex_bindings != lod_vertex_bindings {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         }
         let topological_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
         let (vertex_attribute_count, vertex_header_byte_len) = if topological_vertex_count == 0 {
             (0, 16)
         } else {
             let Some(attribute_end) = cursor.checked_add(20) else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let Some(attribute_bytes) = representation
                 .get(cursor + 16..attribute_end)
                 .and_then(|bytes| View::over_retained(bytes).array::<4>())
             else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             (assemble_u32_le(attribute_bytes), 20)
         };
         if i32::try_from(topological_vertex_count).is_err()
             || i32::try_from(vertex_attribute_count).is_err()
         {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         }
         let arrays = &representation[cursor + vertex_header_byte_len..];
         let (Ok(topology_byte_len), Ok(compressed_arrays_byte_len)) =
             (u32::try_from(cursor), u32::try_from(arrays.len()))
         else {
-            return (Vec::new(), Vec::new(), Vec::new());
+            return Ok(DisplayJtTopologyArrays::default());
         };
         let representation_source_offset = element.source_offset + 45;
         if topological_vertex_count != 0 {
             let Some(coordinate_header) = View::over_retained(arrays).array::<32>() else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let [n0, n1, n2, n3, component_count, ranges @ ..] = coordinate_header;
             let unique_vertex_count = assemble_u32_le([n0, n1, n2, n3]);
             if unique_vertex_count != topological_vertex_count || component_count != 3 {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             }
             let mut component_ranges = [QuantizedRange::ZERO; 3];
             let mut component_quantization_bits = [0; 3];
@@ -2864,10 +3883,10 @@ pub(super) fn display_jt_topology_packet_sequences(
                 let minimum = assemble_f32_le([m0, m1, m2, m3]);
                 let maximum = assemble_f32_le([x0, x1, x2, x3]);
                 let Some(range) = QuantizedRange::new(minimum, maximum) else {
-                    return (Vec::new(), Vec::new(), Vec::new());
+                    return Ok(DisplayJtTopologyArrays::default());
                 };
                 if bits > 32 || bits != quantization[0] {
-                    return (Vec::new(), Vec::new(), Vec::new());
+                    return Ok(DisplayJtTopologyArrays::default());
                 }
                 component_ranges[component] = range;
                 component_quantization_bits[component] = bits;
@@ -2875,36 +3894,55 @@ pub(super) fn display_jt_topology_packet_sequences(
             let compressed_components = &arrays[32..];
             let Ok(compressed_components_byte_len) = u32::try_from(compressed_components.len())
             else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
             let Ok(vertex_header_byte_len_u64) = u64::try_from(vertex_header_byte_len) else {
-                return (Vec::new(), Vec::new(), Vec::new());
+                return Ok(DisplayJtTopologyArrays::default());
             };
+            ctx.reserve_record_vec(&mut coordinate_headers, 1, 0, "nx JT coordinate headers")?;
             coordinate_headers.push(DisplayJtVertexCoordinateArrayHeader {
-                id: format!("{}-coordinate-array-header", element.id),
-                element: element.id.clone(),
+                id: ctx.join_retained(
+                    &[&element.id, "-coordinate-array-header"],
+                    "",
+                    "nx JT coordinate header identity",
+                )?,
+                element: ctx.join_retained(&[&element.id], "", "nx JT element reference")?,
                 unique_vertex_count,
                 component_count,
                 component_ranges,
                 component_quantization_bits,
                 compressed_components_byte_len,
-                compressed_components_sha256: Sha256Hex::digest(compressed_components),
+                compressed_components_sha256: Sha256Digest::digest_for_decode(
+                    ctx,
+                    compressed_components,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: representation_source_offset
                     + u64::from(topology_byte_len)
                     + vertex_header_byte_len_u64,
             });
         }
+        ctx.reserve_record_vec(&mut sequences, 1, 0, "nx JT topology sequences")?;
         sequences.push(DisplayJtTopologyPacketSequence {
-            id: format!("{}-topology-packets", element.id),
-            element: element.id.clone(),
+            id: ctx.join_retained(
+                &[&element.id, "-topology-packets"],
+                "",
+                "nx JT topology sequence identity",
+            )?,
+            element: ctx.join_retained(&[&element.id], "", "nx JT element reference")?,
             packets,
             composite_hash,
             topology_byte_len,
             source_offset: representation_source_offset,
         });
+        ctx.reserve_record_vec(&mut headers, 1, 0, "nx JT vertex headers")?;
         headers.push(DisplayJtCompressedVertexRecordsHeader {
-            id: format!("{}-vertex-records-header", element.id),
-            element: element.id.clone(),
+            id: ctx.join_retained(
+                &[&element.id, "-vertex-records-header"],
+                "",
+                "nx JT vertex header identity",
+            )?,
+            element: ctx.join_retained(&[&element.id], "", "nx JT element reference")?,
             vertex_bindings,
             vertex_quantization_bits: quantization[0],
             normal_quantization_factor: quantization[1],
@@ -2913,51 +3951,71 @@ pub(super) fn display_jt_topology_packet_sequences(
             topological_vertex_count,
             vertex_attribute_count,
             compressed_arrays_byte_len,
-            compressed_arrays_sha256: Sha256Hex::digest(arrays),
+            compressed_arrays_sha256: Sha256Digest::digest_for_decode(
+                ctx,
+                arrays,
+                "retain DisplayJT hash",
+            )?,
             source_offset: representation_source_offset + u64::from(topology_byte_len),
         });
     }
-    (sequences, headers, coordinate_headers)
+    Ok(DisplayJtTopologyArrays {
+        sequences,
+        vertex_headers: headers,
+        coordinate_headers,
+    })
 }
 
 /// Decode every complete JT 9 coordinate array.
 pub(super) fn display_jt_vertex_coordinates(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     headers: &[DisplayJtVertexCoordinateArrayHeader],
-) -> Vec<DisplayJtVertexCoordinates> {
+) -> Result<Vec<DisplayJtVertexCoordinates>, CodecError> {
     let mut arrays = Vec::new();
     for header in headers {
         let Some(start) = header.source_offset.checked_add(32) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(bytes) =
             container.bounded_entry_bytes(start, u64::from(header.compressed_components_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((points_m, coordinate_hash, consumed)) = crate::jt::decode_vertex_coordinates(
+        let Some(crate::jt::DecodedVertexArray {
+            values: points_m,
+            hash: coordinate_hash,
+            byte_len: consumed,
+        }) = crate::jt::decode_vertex_coordinates(
+            ctx,
             bytes,
-            header.unique_vertex_count as usize,
+            cadmpeg_core::decode::index_from_u32(header.unique_vertex_count),
             header.component_ranges,
             header.component_quantization_bits,
-        ) else {
-            return Vec::new();
+        )?
+        else {
+            return Ok(Vec::new());
         };
         let Ok(consumed) = u32::try_from(consumed) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex coordinates")?;
         arrays.push(DisplayJtVertexCoordinates {
-            id: header
-                .id
-                .replacen("coordinate-array-header", "vertex-coordinates", 1),
-            header: header.id.clone(),
+            id: replace_jt_text_once(
+                ctx,
+                &header.id,
+                "coordinate-array-header",
+                "vertex-coordinates",
+                "nx JT coordinate identity",
+            )?,
+            header: ctx.join_retained(&[&header.id], "", "nx JT coordinate header reference")?,
             points_m,
             coordinate_hash,
             byte_len: consumed,
             source_offset: header.source_offset + 32,
         });
     }
-    arrays
+    Ok(arrays)
 }
 
 /// Reconstruct every complete JT 9 polygon mesh from its dual-mesh lanes.
@@ -2988,22 +4046,24 @@ pub(super) fn display_jt_polygon_meshes(
         else {
             return Ok(Vec::new());
         };
-        ctx.charge_collection_items(8, "nx JT face degree lanes")?;
-        let Some(degrees) = TopologyContext::ALL
-            .into_iter()
-            .map(|context| values(TopologyPacketRole::FaceDegrees(context)))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(Vec::new());
-        };
-        ctx.charge_collection_items(8, "nx JT attribute mask lanes")?;
-        let Some(attribute_masks) = TopologyContext::ALL
-            .into_iter()
-            .map(|context| values(TopologyPacketRole::FaceAttributeMasks(context)))
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(Vec::new());
-        };
+        let mut degrees = Vec::new();
+        let _degrees_reservation =
+            ctx.reserve_temporary_vec(&mut degrees, 8, "nx JT face degree lanes")?;
+        for context in TopologyContext::ALL {
+            let Some(lane) = values(TopologyPacketRole::FaceDegrees(context)) else {
+                return Ok(Vec::new());
+            };
+            degrees.push(lane);
+        }
+        let mut attribute_masks = Vec::new();
+        let _attribute_reservation =
+            ctx.reserve_temporary_vec(&mut attribute_masks, 8, "nx JT attribute mask lanes")?;
+        for context in TopologyContext::ALL {
+            let Some(lane) = values(TopologyPacketRole::FaceAttributeMasks(context)) else {
+                return Ok(Vec::new());
+            };
+            attribute_masks.push(lane);
+        }
         let Some(context_7_next_30) = values(TopologyPacketRole::FaceAttributeMasks7Next30) else {
             return Ok(Vec::new());
         };
@@ -3020,33 +4080,36 @@ pub(super) fn display_jt_polygon_meshes(
                 )
             })
             .count();
-        ctx.charge_collection_items(large_lane_count as u64, "nx JT large mask lanes")?;
-        let Some(large_lanes) = sequence
-            .packets
-            .iter()
-            .filter(|packet| {
-                matches!(
-                    packet.role,
-                    TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
-                )
-            })
-            .map(|packet| packet.values.as_deref())
-            .collect::<Option<Vec<_>>>()
-        else {
-            return Ok(Vec::new());
-        };
+        let mut large_lanes = Vec::new();
+        let _large_lane_reservation = ctx.reserve_temporary_vec(
+            &mut large_lanes,
+            large_lane_count,
+            "nx JT large mask lanes",
+        )?;
+        for packet in sequence.packets.iter().filter(|packet| {
+            matches!(
+                packet.role,
+                TopologyPacketRole::HighDegreeFaceAttributeMasks(_)
+            )
+        }) {
+            let Some(lane) = packet.values.as_deref() else {
+                return Ok(Vec::new());
+            };
+            large_lanes.push(lane);
+        }
         let Some(large_word_count) = large_lanes
             .iter()
             .try_fold(0usize, |sum, lane| sum.checked_add(lane.len()))
         else {
             return Ok(Vec::new());
         };
-        ctx.charge_collection_items(large_word_count as u64, "nx JT large mask words")?;
-        let large_words = large_lanes
-            .into_iter()
-            .flatten()
-            .copied()
-            .collect::<Vec<_>>();
+        let mut large_words = Vec::new();
+        let _large_word_reservation = ctx.reserve_temporary_vec(
+            &mut large_words,
+            large_word_count,
+            "nx JT large mask words",
+        )?;
+        large_words.extend(large_lanes.into_iter().flatten().copied());
         let (Ok(degrees), Ok(attribute_masks)) = (
             <[_; 8]>::try_from(degrees),
             <[_; 8]>::try_from(attribute_masks),
@@ -3081,14 +4144,24 @@ pub(super) fn display_jt_polygon_meshes(
         }) {
             return Ok(Vec::new());
         }
+        ctx.reserve_record_vec(&mut meshes, 1, 0, "nx JT polygon meshes")?;
         let mesh = DisplayJtPolygonMesh {
-            id: sequence.id.replacen("topology-packets", "polygon-mesh", 1),
-            topology: sequence.id.clone(),
-            coordinate_header: coordinate_header.id.clone(),
+            id: replace_jt_text_once(
+                ctx,
+                &sequence.id,
+                "topology-packets",
+                "polygon-mesh",
+                "nx JT polygon mesh identity",
+            )?,
+            topology: ctx.join_retained(&[&sequence.id], "", "nx JT topology reference")?,
+            coordinate_header: ctx.join_retained(
+                &[&coordinate_header.id],
+                "",
+                "nx JT coordinate reference",
+            )?,
             polygons,
             source_offset: sequence.source_offset,
         };
-        ctx.charge_collection_items(1, "nx JT polygon meshes")?;
         meshes.push(mesh);
     }
     Ok(meshes)
@@ -3096,11 +4169,12 @@ pub(super) fn display_jt_polygon_meshes(
 
 /// Decode every complete JT 9 normal array following a coordinate array.
 pub(super) fn display_jt_vertex_normals(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
     coordinates: &[DisplayJtVertexCoordinates],
-) -> Vec<DisplayJtVertexNormals> {
+) -> Result<Vec<DisplayJtVertexNormals>, CodecError> {
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x8 == 0 {
@@ -3110,53 +4184,69 @@ pub(super) fn display_jt_vertex_normals(
             .iter()
             .find(|header| header.element == vertex_header.element)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(coordinates) = coordinates
             .iter()
             .find(|coordinates| coordinates.header == coordinate_header.id)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(source_offset) = coordinates
             .source_offset
             .checked_add(u64::from(coordinates.byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(bytes) = container.bounded_entry_tail(source_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((normals, normal_hash, byte_len)) = crate::jt::decode_vertex_normals(
+        let Some(crate::jt::DecodedVertexArray {
+            values: normals,
+            hash: normal_hash,
+            byte_len,
+        }) = crate::jt::decode_vertex_normals(
+            ctx,
             bytes,
-            vertex_header.vertex_attribute_count as usize,
+            cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
             vertex_header.normal_quantization_factor,
-        ) else {
-            return Vec::new();
+        )?
+        else {
+            return Ok(Vec::new());
         };
         let Ok(byte_len) = u32::try_from(byte_len) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex normals")?;
         arrays.push(DisplayJtVertexNormals {
-            id: format!("{}-vertex-normals", vertex_header.element),
-            vertex_records_header: vertex_header.id.clone(),
+            id: ctx.join_retained(
+                &[&vertex_header.element, "-vertex-normals"],
+                "",
+                "nx JT normal identity",
+            )?,
+            vertex_records_header: ctx.join_retained(
+                &[&vertex_header.id],
+                "",
+                "nx JT normal header reference",
+            )?,
             normals,
             normal_hash,
             byte_len,
             source_offset,
         });
     }
-    arrays
+    Ok(arrays)
 }
 
 /// Decode every complete JT 9 color array after coordinates and optional normals.
 pub(super) fn display_jt_vertex_colors(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
     coordinates: &[DisplayJtVertexCoordinates],
     normals: &[DisplayJtVertexNormals],
-) -> Vec<DisplayJtVertexColors> {
+) -> Result<Vec<DisplayJtVertexColors>, CodecError> {
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x30 == 0 {
@@ -3166,104 +4256,119 @@ pub(super) fn display_jt_vertex_colors(
             .iter()
             .find(|header| header.element == vertex_header.element)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(coordinates) = coordinates
             .iter()
             .find(|coordinates| coordinates.header == coordinate_header.id)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
             .source_offset
             .checked_add(u64::from(coordinates.byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
             let Some(normal_array) = normals
                 .iter()
                 .find(|normal| normal.vertex_records_header == vertex_header.id)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
         let Some(bytes) = container.bounded_entry_tail(source_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((colors, color_hash, byte_len)) = crate::jt::decode_vertex_colors(
+        let Some(crate::jt::DecodedVertexArray {
+            values: colors,
+            hash: color_hash,
+            byte_len,
+        }) = crate::jt::decode_vertex_colors(
+            ctx,
             bytes,
-            vertex_header.vertex_attribute_count as usize,
+            cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
             vertex_header.color_quantization_bits,
-        ) else {
-            return Vec::new();
+        )?
+        else {
+            return Ok(Vec::new());
         };
         let Ok(byte_len) = u32::try_from(byte_len) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex colors")?;
         arrays.push(DisplayJtVertexColors {
-            id: format!("{}-vertex-colors", vertex_header.element),
-            vertex_records_header: vertex_header.id.clone(),
+            id: ctx.join_retained(
+                &[&vertex_header.element, "-vertex-colors"],
+                "",
+                "nx JT color identity",
+            )?,
+            vertex_records_header: ctx.join_retained(
+                &[&vertex_header.id],
+                "",
+                "nx JT color header reference",
+            )?,
             colors,
             color_hash,
             byte_len,
             source_offset,
         });
     }
-    arrays
+    Ok(arrays)
 }
 
 /// Decode texture-coordinate channels after preceding coordinate, normal, and color arrays.
 pub(super) fn display_jt_vertex_texture_coordinates(
+    ctx: &DecodeContext<'_>,
     container: &Container,
     vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
     coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
     coordinates: &[DisplayJtVertexCoordinates],
     normals: &[DisplayJtVertexNormals],
     colors: &[DisplayJtVertexColors],
-) -> Vec<DisplayJtVertexTextureCoordinates> {
+) -> Result<Vec<DisplayJtVertexTextureCoordinates>, CodecError> {
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
-        let texture_channels = (0..8)
-            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
-            .collect::<Vec<_>>();
-        if texture_channels.is_empty() {
+        if !(0..8)
+            .any(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+        {
             continue;
         }
         if vertex_header.vertex_attribute_count == 0 {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(coordinate_header) = coordinate_headers
             .iter()
             .find(|header| header.element == vertex_header.element)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(coordinates) = coordinates
             .iter()
             .find(|coordinates| coordinates.header == coordinate_header.id)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
             .source_offset
             .checked_add(u64::from(coordinates.byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
             let Some(normal_array) = normals
                 .iter()
                 .find(|normal| normal.vertex_records_header == vertex_header.id)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(normal_array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
@@ -3272,57 +4377,92 @@ pub(super) fn display_jt_vertex_texture_coordinates(
                 .iter()
                 .find(|color| color.vertex_records_header == vertex_header.id)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(color_array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
-        for channel in texture_channels {
+        for channel in (0..8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+        {
             let Some(bytes) = container.bounded_entry_tail(source_offset) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
-            let Some((values, texture_coordinate_hash, byte_len)) =
-                crate::jt::decode_vertex_texture_coordinates(
-                    bytes,
-                    vertex_header.vertex_attribute_count as usize,
-                    vertex_header.texture_quantization_bits,
-                )
+            let Some(crate::jt::DecodedVertexArray {
+                values,
+                hash: texture_coordinate_hash,
+                byte_len,
+            }) = crate::jt::decode_vertex_texture_coordinates(
+                ctx,
+                bytes,
+                cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
+                vertex_header.texture_quantization_bits,
+            )?
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Ok(byte_len) = u32::try_from(byte_len) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
+            ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT texture coordinates")?;
             arrays.push(DisplayJtVertexTextureCoordinates {
-                id: format!("{}-texture-coordinates-{channel}", vertex_header.element),
-                vertex_records_header: vertex_header.id.clone(),
-                channel: channel as u8,
+                id: ctx.join_retained(
+                    &[
+                        &vertex_header.element,
+                        "-texture-coordinates-",
+                        ["0", "1", "2", "3", "4", "5", "6", "7"][channel],
+                    ],
+                    "",
+                    "nx JT texture identity",
+                )?,
+                vertex_records_header: ctx.join_retained(
+                    &[&vertex_header.id],
+                    "",
+                    "nx JT texture header reference",
+                )?,
+                channel: u8::try_from(channel)
+                    .map_err(|_| CodecError::malformed("DisplayJT texture channel exceeds u8"))?,
                 values,
                 texture_coordinate_hash,
                 byte_len,
                 source_offset,
             });
             let Some(next) = source_offset.checked_add(u64::from(byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
     }
-    arrays
+    Ok(arrays)
 }
 
 /// Decode every complete JT 9 vertex-flag array after all preceding vertex arrays.
+#[derive(Clone, Copy)]
+pub(super) struct DisplayJtVertexFlagInputs<'a, 'b> {
+    pub(super) container: &'a Container<'b>,
+    pub(super) vertex_headers: &'a [DisplayJtCompressedVertexRecordsHeader],
+    pub(super) coordinate_headers: &'a [DisplayJtVertexCoordinateArrayHeader],
+    pub(super) coordinates: &'a [DisplayJtVertexCoordinates],
+    pub(super) normals: &'a [DisplayJtVertexNormals],
+    pub(super) colors: &'a [DisplayJtVertexColors],
+    pub(super) texture_coordinates: &'a [DisplayJtVertexTextureCoordinates],
+}
+
 pub(super) fn display_jt_vertex_flags(
-    container: &Container,
-    vertex_headers: &[DisplayJtCompressedVertexRecordsHeader],
-    coordinate_headers: &[DisplayJtVertexCoordinateArrayHeader],
-    coordinates: &[DisplayJtVertexCoordinates],
-    normals: &[DisplayJtVertexNormals],
-    colors: &[DisplayJtVertexColors],
-    texture_coordinates: &[DisplayJtVertexTextureCoordinates],
-) -> Vec<DisplayJtVertexFlags> {
+    ctx: &DecodeContext<'_>,
+    inputs: DisplayJtVertexFlagInputs<'_, '_>,
+) -> Result<Vec<DisplayJtVertexFlags>, CodecError> {
+    let DisplayJtVertexFlagInputs {
+        container,
+        vertex_headers,
+        coordinate_headers,
+        coordinates,
+        normals,
+        colors,
+        texture_coordinates,
+    } = inputs;
     let mut arrays = Vec::new();
     for vertex_header in vertex_headers {
         if vertex_header.vertex_attribute_count == 0 || vertex_header.vertex_bindings & 0x40 == 0 {
@@ -3332,29 +4472,29 @@ pub(super) fn display_jt_vertex_flags(
             .iter()
             .find(|header| header.element == vertex_header.element)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(coordinates) = coordinates
             .iter()
             .find(|coordinates| coordinates.header == coordinate_header.id)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(mut source_offset) = coordinates
             .source_offset
             .checked_add(u64::from(coordinates.byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if vertex_header.vertex_bindings & 0x8 != 0 {
             let Some(array) = normals
                 .iter()
                 .find(|array| array.vertex_records_header == vertex_header.id)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
@@ -3363,10 +4503,10 @@ pub(super) fn display_jt_vertex_flags(
                 .iter()
                 .find(|array| array.vertex_records_header == vertex_header.id)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
@@ -3377,38 +4517,50 @@ pub(super) fn display_jt_vertex_flags(
                 array.vertex_records_header == vertex_header.id
                     && usize::from(array.channel) == channel
             }) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let Some(next) = source_offset.checked_add(u64::from(array.byte_len)) else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             source_offset = next;
         }
         let Some(bytes) = container.bounded_entry_tail(source_offset) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((values, byte_len)) =
-            crate::jt::decode_vertex_flags(bytes, vertex_header.vertex_attribute_count as usize)
+        let Some((values, byte_len)) = crate::jt::decode_vertex_flags(
+            ctx,
+            bytes,
+            cadmpeg_core::decode::index_from_u32(vertex_header.vertex_attribute_count),
+        )?
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Ok(byte_len) = u32::try_from(byte_len) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
+        ctx.reserve_record_vec(&mut arrays, 1, 0, "nx JT vertex flags")?;
         arrays.push(DisplayJtVertexFlags {
-            id: format!("{}-vertex-flags", vertex_header.element),
-            vertex_records_header: vertex_header.id.clone(),
+            id: ctx.join_retained(
+                &[&vertex_header.element, "-vertex-flags"],
+                "",
+                "nx JT flag identity",
+            )?,
+            vertex_records_header: ctx.join_retained(
+                &[&vertex_header.id],
+                "",
+                "nx JT flag header reference",
+            )?,
             values,
             byte_len,
             source_offset,
         });
     }
-    arrays
+    Ok(arrays)
 }
 
 /// Decode element framing and exact post-marker tails from compressed segments.
 pub(super) fn display_jt_compressed_element_sequences(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
 ) -> Result<
@@ -3432,17 +4584,99 @@ pub(super) fn display_jt_compressed_element_sequences(
         let Some(compressed) = bytes.get(33..) else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
             return Ok((Vec::new(), Vec::new()));
         };
-        let Some((parsed, framed_end)) = parse_jt_element_sequence(&inflated) else {
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
             return Ok((Vec::new(), Vec::new()));
         };
+        let Some((parsed, framed_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok((Vec::new(), Vec::new()));
+        };
+        {
+            let ctx = budget.0;
+            let count = u64::try_from(parsed.len()).map_err(|_| {
+                ctx.refuse_codec_limit("count DisplayJT compressed elements", 0, u64::MAX)
+            })?;
+            let id_slots = count
+                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    String,
+                >()))
+                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element ids", 0, count))?;
+            let element_slots = count
+                .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    DisplayJtCompressedElement,
+                >()))
+                .ok_or_else(|| {
+                    ctx.refuse_codec_limit("size DisplayJT compressed elements", 0, count)
+                })?;
+            ctx.charge_collection_items(count, "store DisplayJT element ids")?;
+            ctx.charge_retained(id_slots, "retain DisplayJT element ids")?;
+            ctx.charge_collection_items(count, "store DisplayJT compressed elements")?;
+            ctx.charge_retained(element_slots, "retain DisplayJT compressed elements")?;
+        }
         let mut element_ids = Vec::new();
-        if element_ids.try_reserve_exact(parsed.len()).is_err() {
-            return Ok((Vec::new(), Vec::new()));
+        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut element_ids,
+            parsed.len(),
+            "allocate DisplayJT element ids",
+        )
+        .is_err()
+        {
+            return Err(budget
+                .0
+                .refuse_codec_limit("allocate DisplayJT element ids", 0, 1));
+        }
+        if cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut elements,
+            parsed.len(),
+            "allocate DisplayJT compressed elements",
+        )
+        .is_err()
+        {
+            return Err(budget.0.refuse_codec_limit(
+                "allocate DisplayJT compressed elements",
+                0,
+                1,
+            ));
         }
         for (ordinal, element) in parsed.into_iter().enumerate() {
+            {
+                let ctx = budget.0;
+                let digits = if ordinal == 0 {
+                    1
+                } else {
+                    cadmpeg_core::decode::index_from_u32(ordinal.ilog10()) + 1
+                };
+                let id_len = segment
+                    .id
+                    .len()
+                    .checked_add("-inflated-element-".len())
+                    .and_then(|len| len.checked_add(digits))
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit("size DisplayJT element identity", 0, 1)
+                    })?;
+                let string_bytes = id_len
+                    .checked_mul(2)
+                    .and_then(|len| len.checked_add(segment.id.len()))
+                    .and_then(|len| len.checked_add(64))
+                    .and_then(|len| u64::try_from(len).ok())
+                    .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT element fields", 0, 1))?;
+                ctx.charge_retained(string_bytes, "retain DisplayJT compressed element fields")?;
+                let body_work = u64::try_from(element.body.len()).map_err(|_| {
+                    ctx.refuse_codec_limit("size DisplayJT compressed element body", 0, u64::MAX)
+                })?;
+                ctx.charge_work(body_work, "hash DisplayJT compressed element body")?;
+            }
             let id = format!("{}-inflated-element-{ordinal}", segment.id);
             element_ids.push(id.clone());
             elements.push(
@@ -3457,7 +4691,7 @@ pub(super) fn display_jt_compressed_element_sequences(
                     object_base_type: element.object_base_type,
                     body_byte_len: u32::try_from(element.body.len())
                         .map_err(|_| display_jt_framing_error("body_byte_len exceeds u32"))?,
-                    body_sha256: Sha256Hex::digest(element.body),
+                    body_sha256: Sha256Digest::digest(element.body),
                     inflated_offset: u32::try_from(element.offset)
                         .map_err(|_| display_jt_framing_error("inflated_offset exceeds u32"))?,
                     source_offset: segment.source_offset + 24,
@@ -3466,6 +4700,38 @@ pub(super) fn display_jt_compressed_element_sequences(
             );
         }
         let tail = &inflated[framed_end..];
+        {
+            let ctx = budget.0;
+            ctx.charge_collection_items(1, "store DisplayJT compressed sequence")?;
+            ctx.charge_retained(
+                cadmpeg_core::decode::u64_from_index(std::mem::size_of::<
+                    DisplayJtCompressedElementSequence,
+                >()),
+                "retain DisplayJT compressed sequence",
+            )?;
+            let string_bytes = segment
+                .id
+                .len()
+                .checked_mul(2)
+                .and_then(|len| len.checked_add("-inflated-sequence".len()))
+                .and_then(|len| len.checked_add(64))
+                .and_then(|len| u64::try_from(len).ok())
+                .ok_or_else(|| ctx.refuse_codec_limit("size DisplayJT sequence fields", 0, 1))?;
+            ctx.charge_retained(string_bytes, "retain DisplayJT compressed sequence fields")?;
+            let tail_work = u64::try_from(tail.len())
+                .map_err(|_| ctx.refuse_codec_limit("size DisplayJT sequence tail", 0, u64::MAX))?;
+            ctx.charge_work(tail_work, "hash DisplayJT compressed sequence tail")?;
+        }
+        let ctx = budget.0;
+        cadmpeg_core::decode::DecodeContext::reserve_admitted_vec(
+            &mut sequences,
+            1,
+            "allocate DisplayJT compressed sequence",
+        )?;
+        let retained_tail = ctx.copy_retained(tail, "retain DisplayJT compressed sequence tail")?;
+        let tail_work = cadmpeg_core::decode::u64_from_index(tail.len());
+        ctx.charge_work(tail_work, "check DisplayJT compressed sequence tail hash")?;
+        let _digest_check = ctx.reserve_scoped(64, "check DisplayJT sequence tail hash")?;
         sequences.push(
             DisplayJtCompressedElementSequence::try_from(DisplayJtCompressedElementSequenceWire {
                 id: format!("{}-inflated-sequence", segment.id),
@@ -3474,8 +4740,8 @@ pub(super) fn display_jt_compressed_element_sequences(
                 elements: element_ids,
                 framed_byte_len: u32::try_from(framed_end)
                     .map_err(|_| display_jt_framing_error("framed_byte_len exceeds u32"))?,
-                tail: tail.to_vec(),
-                tail_sha256: Sha256Hex::digest(tail),
+                tail: retained_tail,
+                tail_sha256: Sha256Digest::digest(tail),
                 source_offset: segment.source_offset + 24,
             })
             .map_err(display_jt_framing_error)?,
@@ -3493,10 +4759,10 @@ fn display_jt_framing_error(message: &str) -> cadmpeg_core::CodecError {
 
 /// Decode all string property atoms from complete type-31 segment sequences.
 pub(super) fn display_jt_string_property_atoms(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> Vec<DisplayJtStringPropertyAtom> {
+) -> Result<Vec<DisplayJtStringPropertyAtom>, CodecError> {
     const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3504,30 +4770,63 @@ pub(super) fn display_jt_string_property_atoms(
     let mut atoms = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 31) {
         if segment.compression.is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != STRING_PROPERTY_ATOM_TYPE || element.object_base_type != 5
             {
-                return Vec::new();
+                return Ok(Vec::new());
             }
-            let Some(value) = parse_jt_string_property_atom_body(element.body) else {
-                return Vec::new();
+            let Some(value) = parse_jt_string_property_atom_body(budget.0, element.body)? else {
+                return Ok(Vec::new());
             };
+            budget.0.reserve_record_vec(
+                &mut atoms,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[
+                        &segment.id,
+                        "-string-property-atom-",
+                        &segment.id,
+                        "-inflated-element-",
+                    ],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget.0.refuse_codec_limit(
+                            "store DisplayJT string property atom",
+                            0,
+                            u64::MAX,
+                        )
+                    })?,
+                )?,
+                "store DisplayJT string property atom",
+            )?;
             atoms.push(DisplayJtStringPropertyAtom {
                 id: format!("{}-string-property-atom-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -3537,15 +4836,14 @@ pub(super) fn display_jt_string_property_atoms(
             });
         }
     }
-    atoms
+    Ok(atoms)
 }
-
 /// Resolve JT 9 logical shape nodes to their late-loaded type-7 LOD segments.
 pub(super) fn display_jt_shape_lod_bindings(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
-) -> Vec<DisplayJtShapeLodBinding> {
+) -> Result<Vec<DisplayJtShapeLodBinding>, CodecError> {
     const STRING_PROPERTY_ATOM_TYPE: [u8; 16] = [
         0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3561,54 +4859,87 @@ pub(super) fn display_jt_shape_lod_bindings(
             scene_segment.source_offset,
             u64::from(scene_segment.segment_byte_len),
         ) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = scene_segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((_, scene_end)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((_, scene_end)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         let tail = &inflated[scene_end..];
-        let Some((property_atoms, property_table_offset)) = parse_jt_element_sequence(tail) else {
-            return Vec::new();
+        let Some((property_atoms, property_table_offset)) =
+            parse_jt_element_sequence(budget.0, tail)?
+        else {
+            return Ok(Vec::new());
+        };
+        let _map_reservation = {
+            let ctx = budget.0;
+            let count = property_atoms
+                .iter()
+                .filter(|atom| {
+                    (atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5)
+                        || (atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
+                            && atom.object_base_type == 8)
+                })
+                .count();
+            let count = u64::try_from(count).map_err(|_| {
+                ctx.refuse_codec_limit("store DisplayJT property atoms", 0, u64::MAX)
+            })?;
+            ctx.charge_collection_items(count, "store DisplayJT property atoms")?;
+            let bytes = count.checked_mul(128).ok_or_else(|| {
+                ctx.refuse_codec_limit("store DisplayJT property atoms", 0, u64::MAX)
+            })?;
+            ctx.reserve_scoped(bytes, "store DisplayJT property atoms")?
         };
         let mut strings = BTreeMap::new();
         let mut late_loaded = BTreeMap::new();
         for atom in property_atoms {
             if atom.object_type_id == STRING_PROPERTY_ATOM_TYPE && atom.object_base_type == 5 {
-                let Some(value) = parse_jt_string_property_atom_body(atom.body) else {
-                    return Vec::new();
+                let Some(value) = parse_jt_string_property_atom_body(budget.0, atom.body)? else {
+                    return Ok(Vec::new());
                 };
                 strings.insert(atom.object_id, value);
             } else if atom.object_type_id == LATE_LOADED_PROPERTY_ATOM_TYPE
                 && atom.object_base_type == 8
             {
                 if atom.body.len() != 36 || View::u16_le_at(atom.body, 0) != Some(1) {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 }
                 let Some(state_flags) = View::u32_le_at(atom.body, 2) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(property_version) = View::u16_le_at(atom.body, 6) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Ok(segment_id) = <[u8; 16]>::try_from(&atom.body[8..24]) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(segment_type) = View::u32_le_at(atom.body, 24) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(payload_object_id) = View::u32_le_at(atom.body, 28) else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 let Some(reserved_value) =
                     View::u32_le_at(atom.body, 32).filter(|value| *value != 0)
                 else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 late_loaded.insert(
                     atom.object_id,
@@ -3626,25 +4957,25 @@ pub(super) fn display_jt_shape_lod_bindings(
         let table = &tail[property_table_offset..];
         let mut table_view = View::over_retained(table);
         let Some(table_version) = table_view.u16_le() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(table_count) = table_view.u32_le() else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         for table_ordinal in 0..table_count {
             let Some(shape_node_object_id) = table_view.u32_le() else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             let mut pair_ordinal = 0u32;
             loop {
                 let Some(key_object_id) = table_view.u32_le() else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 if key_object_id == 0 {
                     break;
                 }
                 let Some(value_object_id) = table_view.u32_le() else {
-                    return Vec::new();
+                    return Ok(Vec::new());
                 };
                 if strings.get(&key_object_id).map(String::as_str) == Some(SHAPE_IMPLEMENTATION_KEY)
                 {
@@ -3657,7 +4988,7 @@ pub(super) fn display_jt_shape_lod_bindings(
                         reserved_value,
                     )) = late_loaded.get(&value_object_id)
                     else {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     };
                     let mut targets = segments.iter().filter(|segment| {
                         segment.document == scene_segment.document
@@ -3665,11 +4996,30 @@ pub(super) fn display_jt_shape_lod_bindings(
                             && segment.segment_type == *segment_type
                     });
                     let Some(target) = targets.next() else {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     };
                     if targets.next().is_some() || target.segment_type != 7 {
-                        return Vec::new();
+                        return Ok(Vec::new());
                     }
+                    let ctx = budget.0;
+                    let text_bytes = display_jt_text_size(
+                        ctx,
+                        &[
+                            &scene_segment.id,
+                            "-shape-lod-binding--",
+                            &scene_segment.id,
+                            SHAPE_IMPLEMENTATION_KEY,
+                            &target.id,
+                        ],
+                        decimal_digits(cadmpeg_core::decode::index_from_u32(table_ordinal))
+                            + decimal_digits(cadmpeg_core::decode::index_from_u32(pair_ordinal)),
+                    )?;
+                    ctx.reserve_record_vec(
+                        &mut bindings,
+                        1,
+                        text_bytes,
+                        "store DisplayJT shape LOD binding",
+                    )?;
                     bindings.push(DisplayJtShapeLodBinding {
                         id: format!(
                             "{}-shape-lod-binding-{table_ordinal}-{pair_ordinal}",
@@ -3693,53 +5043,88 @@ pub(super) fn display_jt_shape_lod_bindings(
             }
         }
         if !table_view.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
     }
-    bindings
+    Ok(bindings)
 }
-
 /// Decode the common node-data header from every type-1 segment element.
 pub(super) fn display_jt_base_node_data(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtBaseNodeData> {
+) -> Result<Vec<DisplayJtBaseNodeData>, CodecError> {
     let mut nodes = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Some(document) = documents
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if segment.compression.is_none() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type > 2 {
                 continue;
             }
+            let Some((_, _base_reservation)) =
+                admit_jt_base_body(budget.0, element.body, document.version.major(), true)?
+            else {
+                return Ok(Vec::new());
+            };
             let Some((version, flags, attribute_object_ids, family_data)) =
                 parse_jt_base_node_body(element.body, document.version.major())
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[
+                        &segment.id,
+                        "-base-node-",
+                        &segment.id,
+                        "-inflated-element-",
+                    ],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget
+                            .0
+                            .refuse_codec_limit("store DisplayJT base node", 0, u64::MAX)
+                    })?,
+                )?,
+                "store DisplayJT base node",
+            )?;
             nodes.push(DisplayJtBaseNodeData {
                 id: format!("{}-base-node-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -3748,29 +5133,38 @@ pub(super) fn display_jt_base_node_data(
                 version,
                 flags,
                 attribute_object_ids,
-                family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Hex::digest(family_data),
+                family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
+                    budget.0.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(family_data.len()),
+                    )
+                })?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode common group-node data from every JT 9 group-derived scene node.
 pub(super) fn display_jt_group_node_data(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtGroupNodeData> {
+) -> Result<Vec<DisplayJtGroupNodeData>, CodecError> {
     let mut nodes = Vec::new();
     for segment in segments.iter().filter(|segment| segment.segment_type == 1) {
         let Some(document) = documents
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3778,51 +5172,89 @@ pub(super) fn display_jt_group_node_data(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_base_type != 1 {
                 continue;
             }
+            let Some((_, _base_reservation)) = admit_jt_group_body(budget.0, element.body)? else {
+                return Ok(Vec::new());
+            };
             let Some((version, child_object_ids, family_data)) =
                 parse_jt9_group_node_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
             if version != 1 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[&segment.id, "-group-node-data-", &segment.id, "-base-node-"],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget
+                            .0
+                            .refuse_codec_limit("store DisplayJT group node", 0, u64::MAX)
+                    })?,
+                )?,
+                "store DisplayJT group node",
+            )?;
             nodes.push(DisplayJtGroupNodeData {
                 id: format!("{}-group-node-data-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
                 object_id: element.object_id,
                 version,
                 child_object_ids,
-                family_data_byte_len: family_data.len() as u32,
-                family_data_sha256: Sha256Hex::digest(family_data),
+                family_data_byte_len: u32::try_from(family_data.len()).map_err(|_| {
+                    budget.0.refuse_codec_limit(
+                        "DisplayJT count exceeds u32",
+                        u64::from(u32::MAX),
+                        cadmpeg_core::decode::u64_from_index(family_data.len()),
+                    )
+                })?,
+                family_data_sha256: Sha256Digest::digest_for_decode(
+                    budget.0,
+                    family_data,
+                    "retain DisplayJT hash",
+                )?,
                 source_offset: segment.source_offset + 24,
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 instance nodes from logical scene-graph segments.
 pub(super) fn display_jt_instance_nodes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtInstanceNode> {
+) -> Result<Vec<DisplayJtInstanceNode>, CodecError> {
     const INSTANCE_NODE_TYPE: [u8; 16] = [
         0x2a, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3833,7 +5265,7 @@ pub(super) fn display_jt_instance_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3841,28 +5273,59 @@ pub(super) fn display_jt_instance_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != INSTANCE_NODE_TYPE {
                 continue;
             }
             if element.object_base_type != 0 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
+            let Some((_, _base_reservation)) =
+                admit_jt_base_body(budget.0, element.body, 9, false)?
+            else {
+                return Ok(Vec::new());
+            };
             let Some((version, child_object_id)) = parse_jt9_instance_node_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[&segment.id, "-instance-node-", &segment.id, "-base-node-"],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget
+                            .0
+                            .refuse_codec_limit("store DisplayJT instance node", 0, u64::MAX)
+                    })?,
+                )?,
+                "store DisplayJT instance node",
+            )?;
             nodes.push(DisplayJtInstanceNode {
                 id: format!("{}-instance-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -3873,16 +5336,15 @@ pub(super) fn display_jt_instance_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode JT 9 geometric-transform attributes from logical scene-graph segments.
 pub(super) fn display_jt_geometric_transform_attributes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtGeometricTransformAttribute> {
+) -> Result<Vec<DisplayJtGeometricTransformAttribute>, CodecError> {
     const GEOMETRIC_TRANSFORM_TYPE: [u8; 16] = [
         0x83, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3893,7 +5355,7 @@ pub(super) fn display_jt_geometric_transform_attributes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3901,29 +5363,62 @@ pub(super) fn display_jt_geometric_transform_attributes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != GEOMETRIC_TRANSFORM_TYPE {
                 continue;
             }
             if element.object_base_type != 3 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some((state_flags, field_inhibit_flags, stored_values_mask, matrix)) =
                 parse_jt9_geometric_transform_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
+            budget.0.reserve_record_vec(
+                &mut attributes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[
+                        &segment.id,
+                        "-geometric-transform-",
+                        &segment.id,
+                        "-inflated-element-",
+                    ],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget.0.refuse_codec_limit(
+                            "store DisplayJT geometric transform",
+                            0,
+                            u64::MAX,
+                        )
+                    })?,
+                )?,
+                "store DisplayJT geometric transform",
+            )?;
             attributes.push(DisplayJtGeometricTransformAttribute {
                 id: format!("{}-geometric-transform-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -3936,16 +5431,15 @@ pub(super) fn display_jt_geometric_transform_attributes(
             });
         }
     }
-    attributes
+    Ok(attributes)
 }
-
 /// Decode JT 9 material attributes from logical scene-graph segments.
 pub(super) fn display_jt_material_attributes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtMaterialAttribute> {
+) -> Result<Vec<DisplayJtMaterialAttribute>, CodecError> {
     const MATERIAL_ATTRIBUTE_TYPE: [u8; 16] = [
         0x30, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -3956,7 +5450,7 @@ pub(super) fn display_jt_material_attributes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -3964,29 +5458,62 @@ pub(super) fn display_jt_material_attributes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = bytes
-            .get(33..)
-            .and_then(|compressed| inflate_display_jt(budget, compressed))
+        let Some(compressed) = bytes.get(33..) else {
+            return Ok(Vec::new());
+        };
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != MATERIAL_ATTRIBUTE_TYPE {
                 continue;
             }
             if element.object_base_type != 3 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
             let Some((state_flags, field_inhibit_flags, version, data_flags, colors, shininess)) =
                 parse_jt9_material_body(element.body)
             else {
-                return Vec::new();
+                return Ok(Vec::new());
             };
+            budget.0.reserve_record_vec(
+                &mut attributes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[
+                        &segment.id,
+                        "-material-attribute-",
+                        &segment.id,
+                        "-inflated-element-",
+                    ],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget.0.refuse_codec_limit(
+                            "store DisplayJT material attribute",
+                            0,
+                            u64::MAX,
+                        )
+                    })?,
+                )?,
+                "store DisplayJT material attribute",
+            )?;
             attributes.push(DisplayJtMaterialAttribute {
                 id: format!("{}-material-attribute-{ordinal}", segment.id),
                 element: format!("{}-inflated-element-{ordinal}", segment.id),
@@ -4005,16 +5532,15 @@ pub(super) fn display_jt_material_attributes(
             });
         }
     }
-    attributes
+    Ok(attributes)
 }
-
 /// Decode complete JT 9 partition nodes from logical scene-graph segments.
 pub(super) fn display_jt_partition_nodes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtPartitionNode> {
+) -> Result<Vec<DisplayJtPartitionNode>, CodecError> {
     const PARTITION_NODE_TYPE: [u8; 16] = [
         0x3e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4025,7 +5551,7 @@ pub(super) fn display_jt_partition_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() >= 10 {
             continue;
@@ -4033,24 +5559,59 @@ pub(super) fn display_jt_partition_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != PARTITION_NODE_TYPE {
                 continue;
             }
-            let Some(node) = parse_jt9_partition_node_body(element.body) else {
-                return Vec::new();
+            let ctx = budget.0;
+            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+                return Ok(Vec::new());
             };
+            let JtOptionalReservation::Admitted(_name_reservation) =
+                admit_jt_partition_name(ctx, family)?
+            else {
+                return Ok(Vec::new());
+            };
+            let Some(node) = parse_jt9_partition_node_body(element.body) else {
+                return Ok(Vec::new());
+            };
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[&segment.id, "-partition-node-", &segment.id, "-base-node-"],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget
+                            .0
+                            .refuse_codec_limit("store DisplayJT partition node", 0, u64::MAX)
+                    })?,
+                )?,
+                "store DisplayJT partition node",
+            )?;
             nodes.push(DisplayJtPartitionNode {
                 id: format!("{}-partition-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -4068,16 +5629,15 @@ pub(super) fn display_jt_partition_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 range-LOD nodes from logical scene-graph segments.
 pub(super) fn display_jt_range_lod_nodes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtRangeLodNode> {
+) -> Result<Vec<DisplayJtRangeLodNode>, CodecError> {
     const RANGE_LOD_NODE_TYPE: [u8; 16] = [
         0x4c, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4088,7 +5648,7 @@ pub(super) fn display_jt_range_lod_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() >= 10 {
             continue;
@@ -4096,24 +5656,59 @@ pub(super) fn display_jt_range_lod_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != RANGE_LOD_NODE_TYPE {
                 continue;
             }
-            let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
-                return Vec::new();
+            let ctx = budget.0;
+            let Some((family, _base_reservation)) = admit_jt_group_body(ctx, element.body)? else {
+                return Ok(Vec::new());
             };
+            let JtOptionalReservation::Admitted(_vector_reservation) =
+                admit_jt_range_vectors(ctx, family)?
+            else {
+                return Ok(Vec::new());
+            };
+            let Some(node) = parse_jt9_range_lod_node_body(element.body) else {
+                return Ok(Vec::new());
+            };
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[&segment.id, "-range-lod-node-", &segment.id, "-base-node-"],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget
+                            .0
+                            .refuse_codec_limit("store DisplayJT range LOD node", 0, u64::MAX)
+                    })?,
+                )?,
+                "store DisplayJT range LOD node",
+            )?;
             nodes.push(DisplayJtRangeLodNode {
                 id: format!("{}-range-lod-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -4130,16 +5725,15 @@ pub(super) fn display_jt_range_lod_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 /// Decode complete JT 9 tri-strip shape nodes from logical scene-graph segments.
 pub(super) fn display_jt_tri_strip_shape_nodes(
-    budget: Option<(&DecodeContext<'_>, View<'_>)>,
+    budget: (&DecodeContext<'_>, View<'_>),
     container: &Container,
     segments: &[DisplayJtSegment],
     documents: &[DisplayJtDocument],
-) -> Vec<DisplayJtTriStripShapeNode> {
+) -> Result<Vec<DisplayJtTriStripShapeNode>, CodecError> {
     const TRI_STRIP_SHAPE_NODE_TYPE: [u8; 16] = [
         0x77, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb, 0x59,
         0x97,
@@ -4150,7 +5744,7 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             .iter()
             .find(|document| document.id == segment.document)
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         if document.version.major() != 9 || segment.compression.is_none() {
             continue;
@@ -4158,27 +5752,65 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
         let Some(bytes) = container
             .bounded_entry_bytes(segment.source_offset, u64::from(segment.segment_byte_len))
         else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
         let Some(compressed) = bytes.get(33..) else {
-            return Vec::new();
+            return Ok(Vec::new());
         };
-        let Some(inflated) = inflate_display_jt(budget, compressed) else {
-            return Vec::new();
+        let Some(member) = segment
+            .source_offset
+            .checked_add(33)
+            .and_then(cadmpeg_core::decode::index_from_u64)
+            .and_then(|start| {
+                start
+                    .checked_add(compressed.len())
+                    .and_then(|end| budget.1.child(start, end))
+            })
+        else {
+            return Ok(Vec::new());
         };
-        let Some((elements, _)) = parse_jt_element_sequence(&inflated) else {
-            return Vec::new();
+        let Some(inflated) = inflate_display_jt(budget.0, member)? else {
+            return Ok(Vec::new());
+        };
+        let Some((elements, _)) = parse_jt_element_sequence(budget.0, &inflated)? else {
+            return Ok(Vec::new());
         };
         for (ordinal, element) in elements.into_iter().enumerate() {
             if element.object_type_id != TRI_STRIP_SHAPE_NODE_TYPE {
                 continue;
             }
             if element.object_base_type != 2 {
-                return Vec::new();
+                return Ok(Vec::new());
             }
-            let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
-                return Vec::new();
+            let Some((_, _base_reservation)) =
+                admit_jt_base_body(budget.0, element.body, 9, false)?
+            else {
+                return Ok(Vec::new());
             };
+            let Some(node) = parse_jt9_tri_strip_shape_node_body(element.body) else {
+                return Ok(Vec::new());
+            };
+            budget.0.reserve_record_vec(
+                &mut nodes,
+                1,
+                display_jt_text_size(
+                    budget.0,
+                    &[
+                        &segment.id,
+                        "-tri-strip-shape-node-",
+                        &segment.id,
+                        "-base-node-",
+                    ],
+                    decimal_digits(ordinal).checked_mul(2).ok_or_else(|| {
+                        budget.0.refuse_codec_limit(
+                            "store DisplayJT tri strip shape node",
+                            0,
+                            u64::MAX,
+                        )
+                    })?,
+                )?,
+                "store DisplayJT tri strip shape node",
+            )?;
             nodes.push(DisplayJtTriStripShapeNode {
                 id: format!("{}-tri-strip-shape-node-{ordinal}", segment.id),
                 base_node: format!("{}-base-node-{ordinal}", segment.id),
@@ -4202,9 +5834,8 @@ pub(super) fn display_jt_tri_strip_shape_nodes(
             });
         }
     }
-    nodes
+    Ok(nodes)
 }
-
 const DISPLAY_JT_COLOR_CHANNEL: u32 = 0x4e58_0001;
 const DISPLAY_JT_VERTEX_FLAG_CHANNEL: u32 = 0x4e58_0002;
 const DISPLAY_JT_TEXTURE_CHANNEL_BASE: u32 = 0x4e58_0100;
@@ -4299,190 +5930,309 @@ fn multiply_jt_matrices(left: DisplayJtMatrix, right: DisplayJtMatrix) -> Option
     Some(product)
 }
 
+struct JtPathLookup<'a, 'b> {
+    by_object: &'a BTreeMap<u32, &'b DisplayJtBaseNodeData>,
+    parents: &'a BTreeMap<u32, Vec<u32>>,
+    instance_ids: &'a BTreeMap<u32, String>,
+    transforms: &'a [&'b DisplayJtGeometricTransformAttribute],
+    materials: &'a [&'b DisplayJtMaterialAttribute],
+}
+
 fn resolve_display_jt_node_paths(
+    ctx: &DecodeContext<'_>,
     object_id: u32,
-    by_object: &BTreeMap<u32, &DisplayJtBaseNodeData>,
-    parents: &BTreeMap<u32, Vec<u32>>,
-    instance_ids: &BTreeMap<u32, String>,
-    transforms: &[&DisplayJtGeometricTransformAttribute],
-    materials: &[&DisplayJtMaterialAttribute],
+    lookup: &JtPathLookup<'_, '_>,
     visiting: &mut BTreeSet<u32>,
-) -> Option<Vec<DisplayJtPath>> {
-    let base = by_object.get(&object_id)?;
+    visiting_reservation: &mut ScopedReservation<'_>,
+) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+    let _depth = ctx.enter_nested("resolve JT node path")?;
+    let Some(base) = lookup.by_object.get(&object_id) else {
+        return Ok(None);
+    };
     if base.flags & 1 != 0 {
-        return Some(Vec::new());
+        return Ok(Some(Vec::new()));
     }
-    if !visiting.insert(object_id) {
-        return None;
+    if visiting.contains(&object_id) {
+        return Ok(None);
     }
-    let parent_states = parents.get(&object_id).map_or_else(
-        || {
-            Some(vec![DisplayJtPath {
-                matrix: [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ],
-                final_transform: false,
-                diffuse: [None; 4],
-                override_vertex_colors: None,
-                final_material: false,
-                node_path: Vec::new(),
-                instance_path: Vec::new(),
-            }])
-        },
-        |ids| {
-            ids.iter()
-                .map(|id| {
-                    resolve_display_jt_node_paths(
-                        *id,
-                        by_object,
-                        parents,
-                        instance_ids,
-                        transforms,
-                        materials,
-                        visiting,
-                    )
-                })
-                .collect::<Option<Vec<_>>>()
-                .map(|paths| paths.into_iter().flatten().collect())
-        },
-    )?;
+    ctx.charge_collection_items(1, "nx JT visiting nodes")?;
+    visiting_reservation.grow(cadmpeg_core::decode::u64_from_index(
+        std::mem::size_of::<u32>() * 4,
+    ))?;
+    visiting.insert(object_id);
+    let mut parent_states = Vec::new();
+    let mut parent_states_reservation = ctx.reserve_scoped(0, "nx JT parent path states")?;
+    if let Some(ids) = lookup.parents.get(&object_id) {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(ids.len()),
+            "resolve JT parent paths",
+        )?;
+        for id in ids {
+            let Some(paths) =
+                resolve_display_jt_node_paths(ctx, *id, lookup, visiting, visiting_reservation)?
+            else {
+                return Ok(None);
+            };
+            let count = paths.len();
+            ctx.reserve_scoped_vec(
+                &mut parent_states_reservation,
+                &mut parent_states,
+                count,
+                "nx JT parent path states",
+            )?;
+            parent_states.extend(paths);
+        }
+    } else {
+        ctx.reserve_scoped_vec(
+            &mut parent_states_reservation,
+            &mut parent_states,
+            1,
+            "nx JT root path state",
+        )?;
+        parent_states.push(DisplayJtPath {
+            matrix: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            final_transform: false,
+            diffuse: [None; 4],
+            override_vertex_colors: None,
+            final_material: false,
+            node_path: Vec::new(),
+            instance_path: Vec::new(),
+        });
+    }
     visiting.remove(&object_id);
     let mut results = Vec::new();
     for mut path in parent_states {
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(base.attribute_object_ids.len()),
+            "resolve JT path attributes",
+        )?;
         for attribute_id in &base.attribute_object_ids {
-            let matching_transforms = transforms
+            let mut matching_transforms = lookup
+                .transforms
                 .iter()
                 .filter(|attribute| attribute.object_id == *attribute_id)
-                .copied()
-                .collect::<Vec<_>>();
-            let matching_materials = materials
+                .copied();
+            let transform = matching_transforms.next();
+            let duplicate_transform = matching_transforms.next().is_some();
+            let mut matching_materials = lookup
+                .materials
                 .iter()
                 .filter(|attribute| attribute.object_id == *attribute_id)
-                .copied()
-                .collect::<Vec<_>>();
-            if matching_transforms.len() > 1
-                || matching_materials.len() > 1
-                || !matching_transforms.is_empty() && !matching_materials.is_empty()
+                .copied();
+            let material = matching_materials.next();
+            if duplicate_transform
+                || matching_materials.next().is_some()
+                || transform.is_some() && material.is_some()
             {
-                return None;
+                return Ok(None);
             }
-            if let Some(attribute) = matching_transforms.first() {
+            if let Some(attribute) = transform {
                 if attribute.state_flags & 0x04 == 0
                     && (!path.final_transform || attribute.state_flags & 0x02 != 0)
                 {
                     let local = attribute.matrix.get().map(|row| row.map(f64::from));
-                    path.matrix = multiply_jt_matrices(local, path.matrix)?;
+                    let Some(matrix) = multiply_jt_matrices(local, path.matrix) else {
+                        return Ok(None);
+                    };
+                    path.matrix = matrix;
                     path.final_transform |= attribute.state_flags & 0x01 != 0;
                 }
             }
-            if let Some(attribute) = matching_materials.first() {
+            if let Some(attribute) = material {
                 accumulate_display_jt_material(&mut path, attribute);
             }
         }
-        if let Some(instance_id) = instance_ids.get(&object_id) {
-            path.instance_path.push(instance_id.clone());
+        if let Some(instance_id) = lookup.instance_ids.get(&object_id) {
+            ctx.reserve_vec(&mut path.instance_path, 1, "nx JT instance path nodes")?;
+            path.instance_path.push(ctx.join_retained(
+                &[instance_id],
+                "",
+                "nx JT instance path identity",
+            )?);
         }
+        ctx.reserve_vec(&mut path.node_path, 1, "nx JT node path nodes")?;
         path.node_path.push(object_id);
+        ctx.reserve_retained_vec(&mut results, 1, "nx JT resolved paths")?;
         results.push(path);
     }
-    Some(results)
+    Ok(Some(results))
 }
 
 fn display_jt_node_paths(
+    ctx: &DecodeContext<'_>,
     scene_segment: &str,
     shape_object_id: u32,
     inputs: &DisplayJtTessellationInputs<'_>,
-) -> Option<Vec<DisplayJtPath>> {
-    let scoped = inputs
+) -> Result<Option<Vec<DisplayJtPath>>, CodecError> {
+    let scene_scans = inputs
+        .base_nodes
+        .len()
+        .checked_add(inputs.transforms.len())
+        .and_then(|count| count.checked_add(inputs.materials.len()))
+        .and_then(|count| count.checked_mul(2))
+        .and_then(|count| count.checked_mul(inputs.compressed_elements.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let instance_scans = inputs
+        .instance_nodes
+        .len()
+        .checked_mul(inputs.base_nodes.len())
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let child_scans = inputs
+        .group_nodes
+        .len()
+        .checked_add(inputs.instance_nodes.len())
+        .and_then(|count| count.checked_mul(inputs.base_nodes.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    let work = scene_scans
+        .checked_add(instance_scans)
+        .and_then(|count| count.checked_add(child_scans))
+        .ok_or_else(|| ctx.refuse_codec_limit("scan JT node paths", 0, 1))?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(work),
+        "scan JT node paths",
+    )?;
+    let in_scene = |element_id: &str| {
+        inputs
+            .compressed_elements
+            .iter()
+            .find(|element| element.id == element_id)
+            .is_some_and(|element| element.segment == scene_segment)
+    };
+    let scoped_count = inputs
         .base_nodes
         .iter()
-        .filter(|base| {
-            inputs
-                .compressed_elements
-                .iter()
-                .find(|element| element.id == base.element)
-                .is_some_and(|element| element.segment == scene_segment)
-        })
-        .collect::<Vec<_>>();
+        .filter(|base| in_scene(&base.element))
+        .count();
+    let mut scoped = Vec::new();
+    let _scoped_reservation =
+        ctx.reserve_temporary_vec(&mut scoped, scoped_count, "nx JT scoped base nodes")?;
+    scoped.extend(
+        inputs
+            .base_nodes
+            .iter()
+            .filter(|base| in_scene(&base.element)),
+    );
     let mut by_object = BTreeMap::new();
+    let mut by_object_reservation = ctx.reserve_scoped(0, "nx JT node index")?;
     for base in &scoped {
-        if by_object.insert(base.object_id, *base).is_some() {
-            return None;
+        if by_object.contains_key(&base.object_id) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "nx JT node index")?;
+        by_object_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, &DisplayJtBaseNodeData)>() * 4,
+        ))?;
+        by_object.insert(base.object_id, *base);
     }
-    by_object.get(&shape_object_id)?;
-    let scoped_transforms = inputs
+    if !by_object.contains_key(&shape_object_id) {
+        return Ok(None);
+    }
+    let transform_count = inputs
         .transforms
         .iter()
-        .filter(|attribute| {
-            inputs
-                .compressed_elements
-                .iter()
-                .find(|element| element.id == attribute.element)
-                .is_some_and(|element| element.segment == scene_segment)
-        })
-        .collect::<Vec<_>>();
-    let scoped_materials = inputs
+        .filter(|attribute| in_scene(&attribute.element))
+        .count();
+    let mut scoped_transforms = Vec::new();
+    let _transform_reservation = ctx.reserve_temporary_vec(
+        &mut scoped_transforms,
+        transform_count,
+        "nx JT scoped transforms",
+    )?;
+    scoped_transforms.extend(
+        inputs
+            .transforms
+            .iter()
+            .filter(|attribute| in_scene(&attribute.element)),
+    );
+    let material_count = inputs
         .materials
         .iter()
-        .filter(|attribute| {
-            inputs
-                .compressed_elements
-                .iter()
-                .find(|element| element.id == attribute.element)
-                .is_some_and(|element| element.segment == scene_segment)
-        })
-        .collect::<Vec<_>>();
+        .filter(|attribute| in_scene(&attribute.element))
+        .count();
+    let mut scoped_materials = Vec::new();
+    let _material_reservation = ctx.reserve_temporary_vec(
+        &mut scoped_materials,
+        material_count,
+        "nx JT scoped materials",
+    )?;
+    scoped_materials.extend(
+        inputs
+            .materials
+            .iter()
+            .filter(|attribute| in_scene(&attribute.element)),
+    );
     let mut parents = BTreeMap::<u32, Vec<u32>>::new();
+    let mut parents_reservation = ctx.reserve_scoped(0, "nx JT parent index")?;
     let mut instance_ids = BTreeMap::new();
+    let mut instances_reservation = ctx.reserve_scoped(0, "nx JT instance index")?;
     for node in inputs.instance_nodes {
         if !by_object.values().any(|base| base.id == node.base_node) {
             continue;
         }
-        if instance_ids
-            .insert(node.object_id, node.id.clone())
-            .is_some()
-        {
-            return None;
+        if instance_ids.contains_key(&node.object_id) {
+            return Ok(None);
         }
+        ctx.charge_collection_items(1, "nx JT instance index")?;
+        instances_reservation.grow(cadmpeg_core::decode::u64_from_index(
+            std::mem::size_of::<(u32, String)>() * 4,
+        ))?;
+        let id = ctx.join_retained(&[&node.id], "", "nx JT instance identity")?;
+        instance_ids.insert(node.object_id, id);
     }
     for (object_id, base) in &by_object {
-        let group_children = inputs
+        let mut group_children = inputs
             .group_nodes
             .iter()
             .filter(|node| node.base_node == base.id)
-            .map(|node| node.child_object_ids.as_slice())
-            .collect::<Vec<_>>();
-        let instance_children = inputs
+            .map(|node| node.child_object_ids.as_slice());
+        let group = group_children.next();
+        if group_children.next().is_some() {
+            return Ok(None);
+        }
+        let mut instance_children = inputs
             .instance_nodes
             .iter()
             .filter(|node| node.base_node == base.id)
-            .map(|node| std::slice::from_ref(&node.child_object_id))
-            .collect::<Vec<_>>();
-        if group_children.len() + instance_children.len() > 1 {
-            return None;
+            .map(|node| std::slice::from_ref(&node.child_object_id));
+        let instance = instance_children.next();
+        if instance_children.next().is_some() || group.is_some() && instance.is_some() {
+            return Ok(None);
         }
-        let children = group_children
-            .into_iter()
-            .chain(instance_children)
-            .next()
-            .unwrap_or_default();
+        let children = group.or(instance).unwrap_or_default();
         for &child in children {
-            by_object.get(&child)?;
-            parents.entry(child).or_default().push(*object_id);
+            if !by_object.contains_key(&child) {
+                return Ok(None);
+            }
+            if !parents.contains_key(&child) {
+                ctx.charge_collection_items(1, "nx JT parent index")?;
+                parents_reservation.grow(cadmpeg_core::decode::u64_from_index(
+                    std::mem::size_of::<(u32, Vec<u32>)>() * 4,
+                ))?;
+            }
+            let ids = parents.entry(child).or_default();
+            ctx.reserve_scoped_vec(&mut parents_reservation, ids, 1, "nx JT parent references")?;
+            ids.push(*object_id);
         }
     }
+    let lookup = JtPathLookup {
+        by_object: &by_object,
+        parents: &parents,
+        instance_ids: &instance_ids,
+        transforms: &scoped_transforms,
+        materials: &scoped_materials,
+    };
+    let mut visiting_reservation = ctx.reserve_scoped(0, "nx JT visiting nodes")?;
     resolve_display_jt_node_paths(
+        ctx,
         shape_object_id,
-        &by_object,
-        &parents,
-        &instance_ids,
-        &scoped_transforms,
-        &scoped_materials,
+        &lookup,
         &mut BTreeSet::new(),
+        &mut visiting_reservation,
     )
 }
 
@@ -4536,29 +6286,33 @@ fn transform_jt_normal(matrix: [[f64; 4]; 4], normal: [f32; 3]) -> Option<UnitVe
 /// Every Display-JT tessellation the shape graph states.
 ///
 /// A record the graph does not shape as a mesh yields no tessellation and is
-/// not an error; a mesh whose lanes do not pair is. The refusal travels in
-/// `refusal` because the walk itself answers absence, and
-/// [`display_jt_tessellations`] turns it into the codec's error.
+/// not an error; a mesh whose lanes do not pair is.
 ///
 /// # Errors
 ///
 /// Refuses a vertex-normal lane that does not cover the vertex lane, and a
 /// tessellation the IR will not admit.
 pub(super) fn display_jt_tessellations(
+    ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
 ) -> Result<Vec<(Tessellation, u64)>, CodecError> {
-    let mut refusal = None;
-    let rows = display_jt_tessellation_rows(inputs, &mut refusal);
-    match refusal {
-        Some(error) => Err(error),
-        None => Ok(rows.unwrap_or_default()),
-    }
+    let rows = display_jt_tessellation_rows(ctx, inputs)?;
+    ctx.charge_work(0, "complete JT tessellation decode")?;
+    Ok(rows.unwrap_or_default())
 }
 
 fn display_jt_tessellation_rows(
+    ctx: &DecodeContext<'_>,
     inputs: &DisplayJtTessellationInputs<'_>,
-    refusal: &mut Option<CodecError>,
-) -> Option<Vec<(Tessellation, u64)>> {
+) -> Result<Option<Vec<(Tessellation, u64)>>, CodecError> {
+    macro_rules! required {
+        ($value:expr) => {
+            match $value {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     let DisplayJtTessellationInputs {
         meshes,
         coordinates,
@@ -4576,24 +6330,23 @@ fn display_jt_tessellation_rows(
         ..
     } = *inputs;
     let mut tessellations = Vec::new();
-    tessellations.try_reserve(meshes.len()).ok()?;
     for mesh in meshes {
-        let coordinate_header = coordinate_headers
+        let coordinate_header = required!(coordinate_headers
             .iter()
-            .find(|header| header.id == mesh.coordinate_header)?;
-        let coordinates = coordinates
+            .find(|header| header.id == mesh.coordinate_header));
+        let coordinates = required!(coordinates
             .iter()
-            .find(|coordinates| coordinates.header == coordinate_header.id)?;
-        let shape_element = shape_elements
+            .find(|coordinates| coordinates.header == coordinate_header.id));
+        let shape_element = required!(shape_elements
             .iter()
-            .find(|element| element.id == coordinate_header.element)?;
+            .find(|element| element.id == coordinate_header.element));
         let mut matching_bindings = bindings.iter().filter(|binding| {
             binding.shape_segment == shape_element.segment
                 && binding.payload_object_id == shape_element.object_id
         });
-        let binding = matching_bindings.next()?;
+        let binding = required!(matching_bindings.next());
         if matching_bindings.next().is_some() {
-            return None;
+            return Ok(None);
         }
         let mut matching_nodes = shape_nodes.iter().filter(|node| {
             if node.object_id != binding.shape_node_object_id {
@@ -4607,28 +6360,40 @@ fn display_jt_tessellation_rows(
                 .find(|element| element.id == base.element)
                 .is_some_and(|element| element.segment == binding.scene_segment)
         });
-        let shape_node = matching_nodes.next()?;
+        let shape_node = required!(matching_nodes.next());
         if matching_nodes.next().is_some() {
-            return None;
+            return Ok(None);
         }
-        let paths = display_jt_node_paths(&binding.scene_segment, shape_node.object_id, inputs)?;
+        let paths = required!(display_jt_node_paths(
+            ctx,
+            &binding.scene_segment,
+            shape_node.object_id,
+            inputs
+        )?);
         let mut rendered = Vec::new();
-        rendered.try_reserve_exact(mesh.polygons.len()).ok()?;
+        let render_count = mesh
+            .polygons
+            .iter()
+            .filter(|polygon| polygon.group >= 0)
+            .count();
+        let _render_reservation =
+            (ctx.reserve_temporary_vec(&mut rendered, render_count, "nx JT rendered triangles"))?;
         for polygon in &mesh.polygons {
             if polygon.group < 0 {
                 continue;
             }
-            let corners: &[(u32, Option<u32>); 3] = polygon.corners.as_slice().try_into().ok()?;
+            let corners: &[(u32, Option<u32>); 3] =
+                required!(polygon.corners.as_slice().try_into().ok());
             let triangle = corners.map(|(vertex, _)| vertex);
             let attributes = corners.map(|(_, attribute)| attribute);
             rendered.push((triangle, attributes));
         }
         if rendered.is_empty() {
-            return None;
+            return Ok(None);
         }
-        let vertex_header = vertex_headers
+        let vertex_header = required!(vertex_headers
             .iter()
-            .find(|header| header.element == shape_element.id)?;
+            .find(|header| header.element == shape_element.id));
         let normal_array = (vertex_header.vertex_bindings & 0x8 != 0)
             .then(|| {
                 normals
@@ -4637,7 +6402,7 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x8 != 0 && normal_array.is_none() {
-            return None;
+            return Ok(None);
         }
         let color_array = (vertex_header.vertex_bindings & 0x30 != 0)
             .then(|| {
@@ -4647,17 +6412,26 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x30 != 0 && color_array.is_none() {
-            return None;
+            return Ok(None);
         }
-        let texture_arrays = (0..8_u8)
+        let texture_channels = (0..8_u8)
             .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
-            .map(|channel| {
-                texture_coordinates.iter().find(|coordinates| {
-                    coordinates.vertex_records_header == vertex_header.id
-                        && coordinates.channel == channel
-                })
-            })
-            .collect::<Option<Vec<_>>>()?;
+            .count();
+        let mut texture_arrays = Vec::new();
+        let _texture_array_reservation = (ctx.reserve_temporary_vec(
+            &mut texture_arrays,
+            texture_channels,
+            "nx JT texture array references",
+        ))?;
+        for channel in (0..8_u8)
+            .filter(|channel| vertex_header.vertex_bindings & (0xf_u64 << (8 + 4 * channel)) != 0)
+        {
+            let array = required!(texture_coordinates.iter().find(|coordinates| {
+                coordinates.vertex_records_header == vertex_header.id
+                    && coordinates.channel == channel
+            }));
+            texture_arrays.push(array);
+        }
         let vertex_flag_array = (vertex_header.vertex_bindings & 0x40 != 0)
             .then(|| {
                 vertex_flags
@@ -4666,7 +6440,7 @@ fn display_jt_tessellation_rows(
             })
             .flatten();
         if vertex_header.vertex_bindings & 0x40 != 0 && vertex_flag_array.is_none() {
-            return None;
+            return Ok(None);
         }
         for path in paths {
             let transform = path.matrix;
@@ -4676,14 +6450,10 @@ fn display_jt_tessellation_rows(
                 None
             };
             let instance_path = path.instance_path;
-            let node_path = path
-                .node_path
-                .iter()
-                .map(u32::to_string)
-                .collect::<Vec<_>>()
-                .join("-");
+            let node_path =
+                ctx.join_display_retained(path.node_path.iter(), "-", "nx JT rendered node path")?;
             let convert_point = |index: u32| {
-                let point = coordinates.points_m.get(index as usize)?;
+                let point = coordinates.points_m.get(usize::try_from(index).ok()?)?;
                 transform_jt_point(transform, point.map(FiniteBinary32::get))
             };
             let has_vertex_attributes = normal_array.is_some()
@@ -4691,94 +6461,133 @@ fn display_jt_tessellation_rows(
                 || !texture_arrays.is_empty()
                 || vertex_flag_array.is_some();
             let (vertices, triangles, normal_vectors, channels) = if has_vertex_attributes {
-                let triangle_vertex_count = rendered.len().checked_mul(3)?;
+                let triangle_vertex_count = required!(rendered.len().checked_mul(3));
                 let mut vertices = Vec::new();
-                vertices.try_reserve_exact(triangle_vertex_count).ok()?;
+                (ctx.reserve_retained_vec(
+                    &mut vertices,
+                    triangle_vertex_count,
+                    "nx JT tessellation vertices",
+                ))?;
                 let mut triangles = Vec::new();
-                triangles.try_reserve_exact(rendered.len()).ok()?;
+                (ctx.reserve_retained_vec(
+                    &mut triangles,
+                    rendered.len(),
+                    "nx JT tessellation triangles",
+                ))?;
                 // An unshaded mesh is stated by absence: no normal record, no
                 // normal lane.
                 let mut normal_vectors = normal_array.is_some().then(Vec::new);
                 if let Some(normal_vectors) = normal_vectors.as_mut() {
-                    normal_vectors
-                        .try_reserve_exact(triangle_vertex_count)
-                        .ok()?;
+                    (ctx.reserve_retained_vec(
+                        normal_vectors,
+                        triangle_vertex_count,
+                        "nx JT tessellation normals",
+                    ))?;
                 }
                 let mut color_data = Vec::new();
                 if color_array.is_some() {
-                    let color_byte_count = triangle_vertex_count.checked_mul(16)?;
-                    color_data.try_reserve_exact(color_byte_count).ok()?;
+                    let color_byte_count = required!(triangle_vertex_count.checked_mul(16));
+                    (ctx.reserve_retained_vec(
+                        &mut color_data,
+                        color_byte_count,
+                        "nx JT tessellation colors",
+                    ))?;
                 }
-                let texture_component_counts = texture_arrays
-                    .iter()
-                    .map(|array| {
-                        let count = array.values.first()?.len();
-                        (1..=4)
-                            .contains(&count)
-                            .then_some(count)
-                            .filter(|count| array.values.iter().all(|value| value.len() == *count))
-                    })
-                    .collect::<Option<Vec<_>>>()?;
+                let mut texture_component_counts = Vec::new();
+                let _texture_count_reservation = (ctx.reserve_temporary_vec(
+                    &mut texture_component_counts,
+                    texture_arrays.len(),
+                    "nx JT texture component counts",
+                ))?;
+                for array in &texture_arrays {
+                    let count = required!(array.values.first()).len();
+                    if !(1..=4).contains(&count)
+                        || !array.values.iter().all(|value| value.len() == count)
+                    {
+                        return Ok(None);
+                    }
+                    texture_component_counts.push(count);
+                }
                 let mut texture_data = Vec::new();
-                texture_data
-                    .try_reserve_exact(texture_component_counts.len())
-                    .ok()?;
+                (ctx.reserve_retained_vec(
+                    &mut texture_data,
+                    texture_component_counts.len(),
+                    "nx JT tessellation texture buffers",
+                ))?;
                 for component_count in &texture_component_counts {
-                    let byte_count = triangle_vertex_count
-                        .checked_mul(*component_count)?
-                        .checked_mul(4)?;
+                    let byte_count = required!(triangle_vertex_count
+                        .checked_mul(*component_count)
+                        .and_then(|count| count.checked_mul(4)));
                     let mut data = Vec::new();
-                    data.try_reserve_exact(byte_count).ok()?;
+                    (ctx.reserve_retained_vec(
+                        &mut data,
+                        byte_count,
+                        "nx JT tessellation texture bytes",
+                    ))?;
                     texture_data.push(data);
                 }
                 let mut vertex_flag_data = Vec::new();
                 if vertex_flag_array.is_some() {
-                    let flag_byte_count = triangle_vertex_count.checked_mul(4)?;
-                    vertex_flag_data.try_reserve_exact(flag_byte_count).ok()?;
+                    let flag_byte_count = required!(triangle_vertex_count.checked_mul(4));
+                    (ctx.reserve_retained_vec(
+                        &mut vertex_flag_data,
+                        flag_byte_count,
+                        "nx JT tessellation flag bytes",
+                    ))?;
                 }
                 for (triangle, attributes) in rendered.iter().copied() {
-                    let base = u32::try_from(vertices.len()).ok()?;
+                    let base = required!(u32::try_from(vertices.len()).ok());
                     for (coordinate, attribute) in triangle.into_iter().zip(attributes) {
-                        vertices.push(convert_point(coordinate)?);
-                        let attribute = attribute? as usize;
+                        vertices.push(required!(convert_point(coordinate)));
+                        let attribute = required!(usize::try_from(required!(attribute)).ok());
                         if let (Some(normal_array), Some(normal_vectors)) =
                             (normal_array, normal_vectors.as_mut())
                         {
-                            let normal = normal_array.normals.get(attribute)?;
-                            normal_vectors.push(FiniteVector3::from(transform_jt_normal(
-                                transform,
-                                normal.map(FiniteBinary32::get),
-                            )?));
+                            let normal = required!(normal_array.normals.get(attribute));
+                            normal_vectors.push(FiniteVector3::from(required!(
+                                transform_jt_normal(transform, normal.map(FiniteBinary32::get),)
+                            )));
                         }
                         if let Some(color_array) = color_array {
-                            for component in color_array.colors.get(attribute)? {
+                            for component in required!(color_array.colors.get(attribute)) {
                                 color_data.extend_from_slice(&component.get().to_le_bytes());
                             }
                         }
                         for (array, data) in texture_arrays.iter().zip(&mut texture_data) {
-                            for component in array.values.get(attribute)? {
+                            for component in required!(array.values.get(attribute)) {
                                 data.extend_from_slice(&component.get().to_le_bytes());
                             }
                         }
                         if let Some(array) = vertex_flag_array {
-                            vertex_flag_data
-                                .extend_from_slice(&array.values.get(attribute)?.to_le_bytes());
+                            vertex_flag_data.extend_from_slice(
+                                &required!(array.values.get(attribute)).to_le_bytes(),
+                            );
                         }
                     }
-                    triangles.push([base, base.checked_add(1)?, base.checked_add(2)?]);
+                    triangles.push([
+                        base,
+                        required!(base.checked_add(1)),
+                        required!(base.checked_add(2)),
+                    ]);
                 }
                 let mut channels = Vec::new();
+                let channel_count = required!(usize::from(color_array.is_some())
+                    .checked_add(texture_arrays.len())
+                    .and_then(|count| count.checked_add(usize::from(vertex_flag_array.is_some()))));
+                (ctx.reserve_retained_vec(
+                    &mut channels,
+                    channel_count,
+                    "nx JT tessellation channels",
+                ))?;
                 if color_array.is_some() {
-                    channels.push(
-                        TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            16,
-                            DISPLAY_JT_COLOR_CHANNEL,
-                            ((vertex_header.vertex_bindings >> 4) & 0x3) as u32,
-                            color_data,
-                        )
-                        .ok()?,
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        16,
+                        DISPLAY_JT_COLOR_CHANNEL,
+                        required!(u32::try_from((vertex_header.vertex_bindings >> 4) & 0x3).ok()),
+                        color_data,
+                    )
+                    .ok()));
                 }
                 for (((array, component_count), data), ordinal) in texture_arrays
                     .iter()
@@ -4786,85 +6595,85 @@ fn display_jt_tessellation_rows(
                     .zip(texture_data)
                     .zip(0_u32..)
                 {
-                    channels.push(
-                        TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            u32::try_from(component_count.checked_mul(4)?).ok()?,
-                            DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)?,
-                            u32::from(array.channel)
-                                | (((vertex_header.vertex_bindings >> (8 + 4 * array.channel))
-                                    & 0xf) as u32)
-                                    << 8,
-                            data,
-                        )
-                        .ok()?,
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        required!(u32::try_from(required!(component_count.checked_mul(4))).ok()),
+                        required!(DISPLAY_JT_TEXTURE_CHANNEL_BASE.checked_add(ordinal)),
+                        u32::from(array.channel)
+                            | required!(u32::try_from(
+                                (vertex_header.vertex_bindings >> (8 + 4 * array.channel)) & 0xf
+                            )
+                            .ok())
+                                << 8,
+                        data,
+                    )
+                    .ok()));
                 }
                 if vertex_flag_array.is_some() {
-                    channels.push(
-                        TessellationChannel::new(
-                            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-                            4,
-                            DISPLAY_JT_VERTEX_FLAG_CHANNEL,
-                            0,
-                            vertex_flag_data,
-                        )
-                        .ok()?,
-                    );
+                    channels.push(required!(TessellationChannel::new(
+                        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+                        4,
+                        DISPLAY_JT_VERTEX_FLAG_CHANNEL,
+                        0,
+                        vertex_flag_data,
+                    )
+                    .ok()));
                 }
                 (vertices, triangles, normal_vectors, channels)
             } else {
                 let mut vertices = Vec::new();
-                vertices
-                    .try_reserve_exact(coordinates.points_m.len())
-                    .ok()?;
+                (ctx.reserve_retained_vec(
+                    &mut vertices,
+                    coordinates.points_m.len(),
+                    "nx JT tessellation vertices",
+                ))?;
                 for index in 0..coordinates.points_m.len() {
-                    vertices.push(convert_point(index as u32)?);
+                    vertices.push(required!(convert_point(required!(
+                        u32::try_from(index).ok()
+                    ))));
                 }
                 let mut triangles = Vec::new();
-                triangles.try_reserve_exact(rendered.len()).ok()?;
+                (ctx.reserve_retained_vec(
+                    &mut triangles,
+                    rendered.len(),
+                    "nx JT tessellation triangles",
+                ))?;
                 triangles.extend(rendered.iter().map(|(triangle, _)| *triangle));
                 (vertices, triangles, None, Vec::new())
             };
-            tessellations.try_reserve(1).ok()?;
-            tessellations.push((
-                Tessellation::from_parts(
-                    if path.node_path.len() == 1 {
-                        format!(
-                            "nx:display-jt:tessellation#{}-{}",
-                            shape_element.source_offset, shape_element.object_id
-                        )
-                    } else {
-                        format!(
-                            "nx:display-jt:tessellation#{}-{}-path-{node_path}",
-                            shape_element.source_offset, shape_element.object_id
-                        )
-                    },
-                    match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
-                        vertices,
-                        triangles,
-                        normal_vectors,
-                    ) {
-                        Ok(mesh) => mesh,
-                        Err(error) => {
-                            *refusal = Some(CodecError::malformed(format_args!(
-                                "display-jt tessellation: {error}"
-                            )));
-                            return None;
-                        }
-                    },
-                    channels,
-                )
+            (ctx.reserve_record_vec(&mut tessellations, 1, 0, "nx JT tessellations"))?;
+            let tessellation_id = (retain_jt_tessellation_id(
+                ctx,
+                shape_element.source_offset,
+                shape_element.object_id,
+                (path.node_path.len() != 1).then_some(node_path.as_str()),
+            ))?;
+            let mesh = match cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+                vertices,
+                triangles,
+                normal_vectors,
+            ) {
+                Ok(mesh) => mesh,
+                Err(error) => {
+                    return Err(CodecError::malformed(format_args!(
+                        "display-jt tessellation: {error}"
+                    )));
+                }
+            };
+            let tessellation = (Tessellation::from_parts(tessellation_id, mesh, channels)
                 .map_err(|error| {
                     CodecError::malformed(format_args!("display-jt tessellation: {error}"))
-                })
-                .map_err(|error| {
-                    *refusal = Some(error);
-                })
-                .ok()?
-                .with_source_object(Some(SourceObjectAssociation {
+                }))?;
+            tessellations.push((
+                tessellation.with_source_object(Some(SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Nx,
-                    object_id: cadmpeg_core::text::NonBlankString::new(shape_node.id.clone())?,
+                    object_id: required!(cadmpeg_core::text::NonBlankString::new(
+                        (ctx.join_retained(
+                            &[&shape_node.id],
+                            "",
+                            "nx JT tessellation source identity"
+                        ))?,
+                    )),
                     name: None,
                     color,
                     visible: None,
@@ -4875,1502 +6684,11 @@ fn display_jt_tessellation_rows(
             ));
         }
     }
-    Some(tessellations)
+    Ok(Some(tessellations))
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn transformed_jt_geometry_holds_checked_points_and_normals() {
-        let identity = [
-            [1.0, 0.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-            [0.0, 0.0, 0.0, 1.0],
-        ];
-        let point = super::transform_jt_point(identity, [1.0, -2.0, 3.0]).unwrap();
-        assert_eq!(
-            point.get(),
-            cadmpeg_ir::math::Point3::new(1000.0, -2000.0, 3000.0)
-        );
-        let normal = super::transform_jt_normal(identity, [3.0, 4.0, 0.0]).unwrap();
-        assert_eq!(
-            *normal.as_raw(),
-            cadmpeg_ir::math::Vector3::new(0.6, 0.8, 0.0)
-        );
-        assert!(super::transform_jt_normal(identity, [0.0, 0.0, 0.0]).is_none());
-        let mut overflow = identity;
-        overflow[3][0] = f64::MAX;
-        assert!(super::transform_jt_point(overflow, [1.0, 0.0, 0.0]).is_none());
-    }
-
-    #[test]
-    fn numerical_followup_jt_transform_accepts_extreme_finite_scales() {
-        for scale in [1.0_f32, 1e20, 1e-30] {
-            let mut body = 1_u16.to_le_bytes().to_vec();
-            body.push(0);
-            body.extend(0_u32.to_le_bytes());
-            body.extend(1_u16.to_le_bytes());
-            body.extend(0x8420_u16.to_le_bytes());
-            for _ in 0..3 {
-                body.extend(scale.to_le_bytes());
-            }
-            let (_, _, _, matrix) = super::parse_jt9_geometric_transform_body(&body).unwrap();
-            let matrix = matrix.get();
-            assert_eq!([matrix[0][0], matrix[1][1], matrix[2][2]], [scale; 3]);
-        }
-    }
-
-    #[test]
-    fn range_limits_admit_only_finite_nonnegative_increasing_values() {
-        for valid in [vec![], vec![0.0], vec![0.0, 1.0, 2.0]] {
-            let admitted = super::JtRangeLimits::try_from(valid.clone()).unwrap();
-            assert_eq!(
-                serde_json::to_value(&admitted).unwrap(),
-                serde_json::json!(valid)
-            );
-            assert_eq!(
-                serde_json::from_value::<super::JtRangeLimits>(serde_json::json!(valid)).unwrap(),
-                admitted
-            );
-        }
-        for invalid in [
-            vec![-1.0],
-            vec![1.0, 1.0],
-            vec![2.0, 1.0],
-            vec![f32::NAN],
-            vec![f32::INFINITY],
-        ] {
-            assert!(super::JtRangeLimits::try_from(invalid).is_err());
-        }
-        assert!(serde_json::from_str::<super::JtRangeLimits>("[2,1]").is_err());
-    }
-
-    #[test]
-    fn compression_wire_checks_constants_and_length_without_changing_evidence() {
-        let valid = serde_json::json!({
-            "flag": 2, "algorithm": 2, "compressed_data_byte_len": 4,
-            "compressed_byte_len": 3, "inflated_sha256": cadmpeg_ir::hash::sha256_hex(b"hash")
-        });
-        let value: super::DisplayJtCompression = serde_json::from_value(valid.clone()).unwrap();
-        assert_eq!(serde_json::to_value(value).unwrap(), valid);
-        for (field, invalid) in [
-            ("flag", 0),
-            ("algorithm", 1),
-            ("compressed_data_byte_len", 3),
-            ("compressed_byte_len", u32::MAX),
-        ] {
-            let mut wire = valid.clone();
-            wire[field] = invalid.into();
-            assert!(serde_json::from_value::<super::DisplayJtCompression>(wire).is_err());
-        }
-    }
-
-    #[test]
-    fn index_wire_preserves_count_and_rejects_invalid_rows() {
-        let wire = r#"{"id":"index","version":9,"declared_count":1,"rows":[{"id":"row","ordinal":0,"header_offset":28,"value":100,"source_offset":8}],"source_offset":0}"#;
-        let index: super::DisplayJtIndex = serde_json::from_str(wire).unwrap();
-        assert_eq!(index.declared_count(), 1);
-        assert_eq!(serde_json::to_string(&index).unwrap(), wire);
-        for (invalid, field) in [
-            (
-                wire.replace("\"declared_count\":1", "\"declared_count\":7"),
-                "declared_count",
-            ),
-            (wire.replace("\"value\":100", "\"value\":0"), "value"),
-            (
-                r#"{"id":"index","version":9,"declared_count":0,"rows":[],"source_offset":0}"#
-                    .to_string(),
-                "rows",
-            ),
-        ] {
-            let error = serde_json::from_str::<super::DisplayJtIndex>(&invalid).unwrap_err();
-            assert!(error.to_string().contains(field), "{error}");
-        }
-    }
-
-    #[test]
-    fn document_wire_derives_version_numbers_and_rejects_disagreement() {
-        let mut wire = serde_json::json!({
-            "id": "document", "index_row": "row",
-            "version_field": format!("{:<80}", "Version +0009.005"),
-            "format_major": 9, "format_minor": 5, "byte_order": 0,
-            "toc_offset": 105, "lsg_segment_id": vec![0; 16], "toc_entries": [],
-            "physical_byte_len": 105, "source_offset": 0
-        });
-        let document: super::DisplayJtDocument = serde_json::from_value(wire.clone()).unwrap();
-        assert_eq!(serde_json::to_value(document).unwrap(), wire);
-        let mut invalid = wire.clone();
-        invalid["byte_order"] = serde_json::json!(1);
-        assert!(serde_json::from_value::<super::DisplayJtDocument>(invalid).is_err());
-        wire["format_minor"] = serde_json::json!(6);
-        assert!(serde_json::from_value::<super::DisplayJtDocument>(wire).is_err());
-    }
-
-    #[test]
-    fn string_property_wire_derives_exact_utf16_and_rejects_disagreement() {
-        let wire = r#"{"id":"atom","element":"element","object_id":1,"code_units":[78,88,55357,56960],"value":"NX🚀","source_offset":0}"#;
-        let record: super::DisplayJtStringPropertyAtom = serde_json::from_str(wire).unwrap();
-        assert_eq!(serde_json::to_string(&record).unwrap(), wire);
-        let inconsistent = wire.replace("[78,88,55357,56960]", "[78,88,55357]");
-        assert!(serde_json::from_str::<super::DisplayJtStringPropertyAtom>(&inconsistent).is_err());
-    }
-
-    use std::io::Write;
-
-    use flate2::write::ZlibEncoder;
-    use flate2::Compression;
-
-    use super::super::hex::Sha256Hex;
-    use super::{
-        DisplayJtMaterialAttribute, DisplayJtPartitionBounds, FiniteBinary32, UnitBinary32,
-    };
-    use cadmpeg_ir::topology::Color;
-
-    const EPS_JT_TRANSFORMED_VERTEX: f64 = 1.0e-6;
-
-    fn finite<const N: usize>(values: [f32; N]) -> [FiniteBinary32; N] {
-        values.map(|value| FiniteBinary32::new(value).expect("fixture values are finite"))
-    }
-
-    #[test]
-    fn display_jt_index_requires_every_declared_header() {
-        use crate::container::{Container, DirEntry, Region};
-
-        let mut inflated = Vec::new();
-        inflated.extend_from_slice(&24_u32.to_le_bytes());
-        inflated.extend_from_slice(&[3; 16]);
-        inflated.push(1);
-        inflated.extend_from_slice(&5_u32.to_le_bytes());
-        inflated.extend_from_slice(&[9, 8, 7]);
-        inflated.extend_from_slice(&16_u32.to_le_bytes());
-        inflated.extend_from_slice(&[0xff; 16]);
-        inflated.extend_from_slice(&[6, 5]);
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(&inflated).expect("required invariant");
-        let compressed = encoder.finish().expect("required invariant");
-        let segment_byte_len = 24 + 9 + compressed.len() as u32;
-        let mut data = Vec::new();
-        data.extend_from_slice(&9_u32.to_le_bytes());
-        data.extend_from_slice(&1_u32.to_le_bytes());
-        data.extend_from_slice(&0_u32.to_le_bytes());
-        data.extend_from_slice(&100_u32.to_le_bytes());
-        data.extend_from_slice(&0_u32.to_le_bytes());
-        data.extend_from_slice(&28_u32.to_le_bytes());
-        data.extend_from_slice(&[0; 4]);
-        let mut version = [b' '; 80];
-        version[..14].copy_from_slice(b"Version 9.4 JT");
-        data.extend_from_slice(&version);
-        data.push(0);
-        data.extend_from_slice(&0_u32.to_le_bytes());
-        data.extend_from_slice(&105_u32.to_le_bytes());
-        data.extend_from_slice(&[1; 16]);
-        data.extend_from_slice(&1_u32.to_le_bytes());
-        data.extend_from_slice(&[2; 16]);
-        data.extend_from_slice(&137_u32.to_le_bytes());
-        data.extend_from_slice(&segment_byte_len.to_le_bytes());
-        data.extend_from_slice(&1_u32.to_be_bytes());
-        data.extend_from_slice(&[2; 16]);
-        data.extend_from_slice(&1_u32.to_le_bytes());
-        data.extend_from_slice(&segment_byte_len.to_le_bytes());
-        data.extend_from_slice(&2_u32.to_le_bytes());
-        data.extend_from_slice(&(compressed.len() as u32 + 1).to_le_bytes());
-        data.push(2);
-        data.extend_from_slice(&compressed);
-        let physical_size = data.len() as u64;
-        let data_len = data.len() as u64;
-        let container = Container {
-            data: data.clone().into(),
-            physical_size,
-            layout: crate::container::test_modern_layout(6),
-            entries: vec![DirEntry {
-                name: "/Root/UG_PART/DisplayJT".to_string(),
-                region: Region::Footer,
-                body: crate::container::DirEntryBody::File {
-                    offset: 0,
-                    len: data_len,
-                },
-            }],
-            fastload_table: None,
-            indexed_section_layouts: std::sync::OnceLock::new(),
-            om_section_cache: std::sync::OnceLock::new(),
-        };
-        let indices = super::display_jt_indices(&container);
-        assert_eq!(indices[0].version, 9);
-        assert_eq!(indices[0].declared_count(), 1);
-        assert_eq!(indices[0].rows.first().header_offset, 28);
-        assert_eq!(indices[0].rows.first().value.get(), 100);
-        let documents = super::display_jt_documents(&container, &indices);
-        assert_eq!(
-            (documents[0].version.major(), documents[0].version.minor()),
-            (9, 4)
-        );
-        assert_eq!(documents[0].toc_offset, 105);
-        assert_eq!(
-            documents[0].physical_byte_len,
-            137 + u64::from(segment_byte_len)
-        );
-        assert_eq!(documents[0].toc_entries.len(), 1);
-        assert_eq!(documents[0].toc_entries[0].segment_offset, 137);
-        assert_eq!(
-            documents[0].toc_entries[0].segment_byte_len,
-            segment_byte_len
-        );
-        assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
-        let segments = super::display_jt_segments(None, &container, &documents);
-        assert_eq!(segments.len(), 1);
-        assert_eq!(segments[0].id.matches('#').count(), 1);
-        assert!(!segments[0].id.contains(&documents[0].id));
-        assert_eq!(segments[0].segment_type, 1);
-        assert_eq!(segments[0].segment_byte_len, segment_byte_len);
-        let compression = segments[0]
-            .compression
-            .as_ref()
-            .expect("required invariant");
-        assert_eq!(
-            super::DisplayJtCompressionWire::from(compression.clone()).compressed_data_byte_len,
-            compressed.len() as u32 + 1
-        );
-        assert_eq!(
-            compression.envelope.compressed_byte_len,
-            compressed.len() as u32
-        );
-        assert_eq!(
-            compression.inflated_sha256,
-            crate::native::hex::Sha256Hex::digest(&inflated)
-        );
-
-        let mut cross_entry = container.clone();
-        cross_entry.entries[0].body = crate::container::DirEntryBody::File {
-            offset: 0,
-            len: data_len - 1,
-        };
-        cross_entry.entries.push(DirEntry {
-            name: "/Root/other".to_string(),
-            region: Region::Header,
-            body: crate::container::DirEntryBody::File {
-                offset: data_len - 1,
-                len: 1,
-            },
-        });
-        assert!(super::display_jt_segments(None, &cross_entry, &documents).is_empty());
-
-        let (compressed_elements, sequences) =
-            super::display_jt_compressed_element_sequences(None, &container, &segments).unwrap();
-        assert_eq!(compressed_elements.len(), 1);
-        assert_eq!(compressed_elements[0].segment_type, 1);
-        assert_eq!(compressed_elements[0].object_type_id, [3; 16]);
-        assert_eq!(compressed_elements[0].object_id, 5);
-        assert_eq!(compressed_elements[0].object_base_type, 1);
-        assert_eq!(compressed_elements[0].body_byte_len(), 3);
-        assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].framed_byte_len(), 48);
-        assert_eq!(sequences[0].tail, [6, 5]);
-
-        let mut malformed_compression = container.clone();
-        malformed_compression.data.to_mut()[193..197]
-            .copy_from_slice(&(compressed.len() as u32 + 2).to_le_bytes());
-        assert!(super::display_jt_segments(None, &malformed_compression, &documents).is_empty());
-
-        let mut malformed = container;
-        malformed.data.to_mut()[28] = b'X';
-        assert!(super::display_jt_indices(&malformed).is_empty());
-    }
-
-    #[test]
-    fn display_jt_shape_lod_requires_canonical_end_marker_and_tail() {
-        use super::DisplayJtSegment;
-        use crate::container::{Container, DirEntry, Region};
-
-        let object_type_id = [0x5a; 16];
-        let body = [9, 8, 7];
-        let mut data = Vec::new();
-        data.extend_from_slice(&[1; 16]);
-        data.extend_from_slice(&7_u32.to_le_bytes());
-        data.extend_from_slice(&78_u32.to_le_bytes());
-        data.extend_from_slice(&24_u32.to_le_bytes());
-        data.extend_from_slice(&object_type_id);
-        data.push(4);
-        data.extend_from_slice(&42_u32.to_le_bytes());
-        data.extend_from_slice(&body);
-        data.extend_from_slice(&16_u32.to_le_bytes());
-        data.extend_from_slice(&[0xff; 16]);
-        data.extend_from_slice(&[1, 0, 0, 0, 0, 0]);
-        let physical_size = data.len() as u64;
-        let data_len = data.len() as u64;
-        let container = Container {
-            data: data.into(),
-            physical_size,
-            layout: crate::container::test_modern_layout(6),
-            entries: vec![DirEntry {
-                name: "/Root/UG_PART/DisplayJT".to_string(),
-                region: Region::Header,
-                body: crate::container::DirEntryBody::File {
-                    offset: 0,
-                    len: data_len,
-                },
-            }],
-            fastload_table: None,
-            indexed_section_layouts: std::sync::OnceLock::new(),
-            om_section_cache: std::sync::OnceLock::new(),
-        };
-        let segment = DisplayJtSegment {
-            id: "segment".to_string(),
-            document: "document".to_string(),
-            toc_entry: "entry".to_string(),
-            segment_id: [1; 16],
-            segment_type: 7,
-            segment_byte_len: 78,
-            payload_sha256: Sha256Hex::digest(&[]),
-            compression: None,
-            source_offset: 0,
-        };
-        let elements =
-            super::display_jt_shape_lod_elements(&container, std::slice::from_ref(&segment));
-        assert_eq!(elements.len(), 1);
-        assert_eq!(elements[0].object_type_id, object_type_id);
-        assert_eq!(elements[0].object_id, 42);
-        assert_eq!(
-            serde_json::to_value(&elements[0]).unwrap()["object_base_type"],
-            4
-        );
-        assert_eq!(elements[0].body_byte_len, 3);
-        let wire = serde_json::to_value(&elements[0]).unwrap();
-        for length in [15, 17] {
-            let mut invalid = wire.clone();
-            invalid["object_type_id"] = serde_json::json!(vec![0; length]);
-            assert!(serde_json::from_value::<super::DisplayJtShapeLodElement>(invalid).is_err());
-        }
-
-        let mut malformed = container;
-        *malformed
-            .data
-            .to_mut()
-            .last_mut()
-            .expect("required invariant") = 1;
-        assert!(super::display_jt_shape_lod_elements(&malformed, &[segment]).is_empty());
-    }
-
-    #[test]
-    fn display_jt_shape_lod_binding_resolves_property_table_segment_reference() {
-        use super::DisplayJtSegment;
-        use crate::container::{Container, DirEntry, Region};
-
-        let mut inflated = Vec::new();
-        inflated.extend_from_slice(&16_u32.to_le_bytes());
-        inflated.extend_from_slice(&[0xff; 16]);
-
-        let mut late_body = vec![1, 0];
-        late_body.extend_from_slice(&0x4000_0000_u32.to_le_bytes());
-        late_body.extend_from_slice(&1_u16.to_le_bytes());
-        late_body.extend_from_slice(&[9; 16]);
-        late_body.extend_from_slice(&7_u32.to_le_bytes());
-        late_body.extend_from_slice(&12_u32.to_le_bytes());
-        late_body.extend_from_slice(&1_u32.to_le_bytes());
-        inflated.extend_from_slice(&57_u32.to_le_bytes());
-        inflated.extend_from_slice(&[
-            0xe5, 0x5b, 0xb0, 0xe0, 0xbd, 0xfb, 0xd1, 0x11, 0xa3, 0xa7, 0x00, 0xaa, 0x00, 0xd1,
-            0x09, 0x54,
-        ]);
-        inflated.push(8);
-        inflated.extend_from_slice(&3_u32.to_le_bytes());
-        inflated.extend_from_slice(&late_body);
-
-        let key = "JT_LLPROP_SHAPEIMPL";
-        let mut string_body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-        string_body.extend_from_slice(&(key.len() as u32).to_le_bytes());
-        for unit in key.encode_utf16() {
-            string_body.extend_from_slice(&unit.to_le_bytes());
-        }
-        inflated.extend_from_slice(&(21_u32 + string_body.len() as u32).to_le_bytes());
-        inflated.extend_from_slice(&[
-            0x6e, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
-            0x59, 0x97,
-        ]);
-        inflated.push(5);
-        inflated.extend_from_slice(&4_u32.to_le_bytes());
-        inflated.extend_from_slice(&string_body);
-        inflated.extend_from_slice(&16_u32.to_le_bytes());
-        inflated.extend_from_slice(&[0xff; 16]);
-        inflated.extend_from_slice(&1_u16.to_le_bytes());
-        inflated.extend_from_slice(&1_u32.to_le_bytes());
-        inflated.extend_from_slice(&2_u32.to_le_bytes());
-        inflated.extend_from_slice(&4_u32.to_le_bytes());
-        inflated.extend_from_slice(&3_u32.to_le_bytes());
-        inflated.extend_from_slice(&0_u32.to_le_bytes());
-
-        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
-        encoder.write_all(&inflated).expect("required invariant");
-        let compressed = encoder.finish().expect("required invariant");
-        let mut data = vec![0; 33];
-        data.extend_from_slice(&compressed);
-        let physical_size = data.len() as u64;
-        let data_len = data.len() as u64;
-        let container = Container {
-            data: data.into(),
-            physical_size,
-            layout: crate::container::test_modern_layout(6),
-            entries: vec![DirEntry {
-                name: "/Root/UG_PART/DisplayJT".to_string(),
-                region: Region::Header,
-                body: crate::container::DirEntryBody::File {
-                    offset: 0,
-                    len: data_len,
-                },
-            }],
-            fastload_table: None,
-            indexed_section_layouts: std::sync::OnceLock::new(),
-            om_section_cache: std::sync::OnceLock::new(),
-        };
-        let scene = DisplayJtSegment {
-            id: "scene".into(),
-            document: "document".into(),
-            toc_entry: "scene-entry".into(),
-            segment_id: [1; 16],
-            segment_type: 1,
-            segment_byte_len: (33 + compressed.len()) as u32,
-            payload_sha256: Sha256Hex::digest(&[]),
-            compression: None,
-            source_offset: 0,
-        };
-        let shape = DisplayJtSegment {
-            id: "shape".into(),
-            document: "document".into(),
-            toc_entry: "shape-entry".into(),
-            segment_id: [9; 16],
-            segment_type: 7,
-            segment_byte_len: 0,
-            payload_sha256: Sha256Hex::digest(&[]),
-            compression: None,
-            source_offset: 0,
-        };
-        let bindings = super::display_jt_shape_lod_bindings(None, &container, &[scene, shape]);
-        assert_eq!(bindings.len(), 1);
-        assert_eq!(bindings[0].shape_node_object_id, 2);
-        assert_eq!(bindings[0].shape_segment, "shape");
-        assert_eq!(bindings[0].payload_object_id, 12);
-        assert_eq!(bindings[0].key, key);
-    }
-
-    #[test]
-    fn display_jt_string_property_body_requires_exact_utf16_frame() {
-        let mut body = vec![1, 0, 0, 0, 0, 0x40, 1, 0];
-        body.extend_from_slice(&3_u32.to_le_bytes());
-        body.extend_from_slice(&[b'N', 0, b'X', 0, 0xa9, 0x03]);
-        let value = super::parse_jt_string_property_atom_body(&body).expect("required invariant");
-        assert_eq!(
-            value.encode_utf16().collect::<Vec<_>>(),
-            [0x4e, 0x58, 0x3a9]
-        );
-        assert_eq!(value, "NXΩ");
-
-        body.push(0);
-        assert!(super::parse_jt_string_property_atom_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt9_tri_strip_header_requires_supported_versions() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0x4a_u64.to_le_bytes());
-        body.extend_from_slice(&2_u16.to_le_bytes());
-        body.extend_from_slice(&0x1234_u32.to_le_bytes());
-        body.extend_from_slice(&2_u16.to_le_bytes());
-        body.extend_from_slice(&[9, 8, 7]);
-        let (bindings, mesh_version, records_id, compressed_version, compressed) =
-            super::parse_jt9_tri_strip_lod_header(&body).expect("required invariant");
-        assert_eq!(bindings, 0x4a);
-        assert_eq!(mesh_version, 2);
-        assert_eq!(records_id, 0x1234);
-        assert_eq!(compressed_version, 2);
-        assert_eq!(compressed, [9, 8, 7]);
-
-        body[12..14].copy_from_slice(&3_u16.to_le_bytes());
-        assert!(super::parse_jt9_tri_strip_lod_header(&body).is_none());
-    }
-
-    #[test]
-    fn polygon_mesh_wire_preserves_corner_pairs_and_rejects_unequal_rings() {
-        let wire = serde_json::json!({
-            "id": "mesh",
-            "topology": "topology",
-            "coordinate_header": "coordinates",
-            "polygons": [[0, 1, 2], [2, 1, 0, 2]],
-            "vertex_attribute_indices": [[0, null, 2], [null, null, null, null]],
-            "polygon_groups": [4, -1],
-            "polygon_flags": [0, 7],
-            "source_offset": 80
-        });
-        let mesh = serde_json::from_value::<super::DisplayJtPolygonMesh>(wire.clone())
-            .expect("matched polygon corner arrays");
-        assert_eq!(serde_json::to_value(mesh).unwrap(), wire);
-        for field in ["polygons", "vertex_attribute_indices"] {
-            let mut invalid = wire.clone();
-            invalid[field][0].as_array_mut().unwrap().pop();
-            assert!(serde_json::from_value::<super::DisplayJtPolygonMesh>(invalid).is_err());
-        }
-    }
-
-    #[test]
-    fn jt_scene_binding_transfers_visible_triangles_in_document_units() {
-        use super::{
-            DisplayJtBaseNodeData, DisplayJtCompressedElement,
-            DisplayJtCompressedVertexRecordsHeader, DisplayJtGeometricTransformAttribute,
-            DisplayJtGroupNodeData, DisplayJtInstanceNode, DisplayJtPolygonMesh,
-            DisplayJtShapeLodBinding, DisplayJtShapeLodElement, DisplayJtTriStripShapeNode,
-            DisplayJtVertexColors, DisplayJtVertexCoordinateArrayHeader,
-            DisplayJtVertexCoordinates, DisplayJtVertexFlags, DisplayJtVertexNormals,
-            DisplayJtVertexTextureCoordinates,
-        };
-
-        let mesh = DisplayJtPolygonMesh::try_from(super::DisplayJtPolygonMeshWire {
-            id: "native-mesh".into(),
-            topology: "topology".into(),
-            coordinate_header: "coordinate-header".into(),
-            polygons: vec![vec![0, 1, 2], vec![2, 1, 0, 2]],
-            vertex_attribute_indices: vec![vec![Some(0), Some(1), Some(2)], vec![None; 4]],
-            polygon_groups: vec![4, -1],
-            polygon_flags: vec![0, 0],
-            source_offset: 80,
-        })
-        .unwrap();
-        let wire = serde_json::to_value(&mesh).unwrap();
-        assert_eq!(
-            serde_json::from_value::<DisplayJtPolygonMesh>(wire.clone()).unwrap(),
-            mesh
-        );
-        for field in [
-            "polygons",
-            "vertex_attribute_indices",
-            "polygon_groups",
-            "polygon_flags",
-        ] {
-            let mut invalid = wire.clone();
-            invalid[field].as_array_mut().unwrap().pop();
-            assert!(serde_json::from_value::<DisplayJtPolygonMesh>(invalid).is_err());
-        }
-        let coordinates = DisplayJtVertexCoordinates {
-            id: "coordinates".into(),
-            header: "coordinate-header".into(),
-            points_m: vec![
-                finite([0.0, 0.0, 0.0]),
-                finite([0.001, 0.0, 0.0]),
-                finite([0.0, 0.002, 0.0]),
-            ],
-            coordinate_hash: 0,
-            byte_len: 4,
-            source_offset: 90,
-        };
-        let header = DisplayJtVertexCoordinateArrayHeader {
-            id: "coordinate-header".into(),
-            element: "shape-element".into(),
-            unique_vertex_count: 3,
-            component_count: 3,
-            component_ranges: [super::QuantizedRange::ZERO; 3],
-            component_quantization_bits: [0; 3],
-            compressed_components_byte_len: 4,
-            compressed_components_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 60,
-        };
-        let shape_element = DisplayJtShapeLodElement {
-            id: "shape-element".into(),
-            segment: "shape-segment".into(),
-            ordinal: 0,
-            object_type_id: [0; 16],
-            object_id: 7,
-            body_byte_len: 0,
-            body_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 100,
-        };
-        let binding = DisplayJtShapeLodBinding {
-            id: "binding".into(),
-            scene_segment: "scene-segment".into(),
-            table_version: 1,
-            shape_node_object_id: 9,
-            key_object_id: 1,
-            key: "JT_LLPROP_SHAPEIMPL".into(),
-            value_object_id: 2,
-            state_flags: 0,
-            property_version: 1,
-            shape_segment: "shape-segment".into(),
-            payload_object_id: 7,
-            reserved_value: 1,
-            source_offset: 110,
-        };
-        let base = DisplayJtBaseNodeData {
-            id: "base".into(),
-            element: "scene-element".into(),
-            object_type_id: [0; 16],
-            object_id: 9,
-            version: 1,
-            flags: 0,
-            attribute_object_ids: vec![10, 13],
-            family_data_byte_len: 0,
-            family_data_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 120,
-        };
-        let compressed: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
-            id: "scene-element".into(),
-            segment: "scene-segment".into(),
-            segment_type: 1,
-            ordinal: 0,
-            object_type_id: [0; 16],
-            object_base_type: 2,
-            object_id: 9,
-            body_byte_len: 0,
-            body_sha256: "00".repeat(32).try_into().unwrap(),
-            inflated_offset: 0,
-            source_offset: 120,
-        }
-        .try_into()
-        .unwrap();
-        let instance_base = DisplayJtBaseNodeData {
-            id: "instance-base".into(),
-            element: "instance-element".into(),
-            object_type_id: [0; 16],
-            object_id: 11,
-            version: 1,
-            flags: 0,
-            attribute_object_ids: Vec::new(),
-            family_data_byte_len: 6,
-            family_data_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 122,
-        };
-        let instance_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
-            id: "instance-element".into(),
-            segment: "scene-segment".into(),
-            segment_type: 1,
-            ordinal: 1,
-            object_type_id: [0; 16],
-            object_base_type: 0,
-            object_id: 11,
-            body_byte_len: 0,
-            body_sha256: "00".repeat(32).try_into().unwrap(),
-            inflated_offset: 0,
-            source_offset: 122,
-        }
-        .try_into()
-        .unwrap();
-        let instance = DisplayJtInstanceNode {
-            id: "instance-node".into(),
-            base_node: "instance-base".into(),
-            object_id: 11,
-            version: 1,
-            child_object_id: 9,
-            source_offset: 122,
-        };
-        let mut second_instance_base = instance_base.clone();
-        second_instance_base.id = "second-instance-base".into();
-        second_instance_base.element = "second-instance-element".into();
-        second_instance_base.object_id = 12;
-        second_instance_base.source_offset = 123;
-        let mut second_instance_element = instance_element.clone();
-        second_instance_element.id = "second-instance-element".into();
-        second_instance_element.ordinal = 2;
-        second_instance_element.object_id = 12;
-        second_instance_element.source_offset = 123;
-        let second_instance = DisplayJtInstanceNode {
-            id: "second-instance-node".into(),
-            base_node: "second-instance-base".into(),
-            object_id: 12,
-            version: 1,
-            child_object_id: 9,
-            source_offset: 123,
-        };
-        let group_base = DisplayJtBaseNodeData {
-            id: "group-base".into(),
-            element: "group-element".into(),
-            object_type_id: [0; 16],
-            object_id: 20,
-            version: 1,
-            flags: 0,
-            attribute_object_ids: Vec::new(),
-            family_data_byte_len: 14,
-            family_data_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 124,
-        };
-        let group_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
-            id: "group-element".into(),
-            segment: "scene-segment".into(),
-            segment_type: 1,
-            ordinal: 3,
-            object_type_id: [0; 16],
-            object_base_type: 1,
-            object_id: 20,
-            body_byte_len: 0,
-            body_sha256: "00".repeat(32).try_into().unwrap(),
-            inflated_offset: 0,
-            source_offset: 124,
-        }
-        .try_into()
-        .unwrap();
-        let group = DisplayJtGroupNodeData {
-            id: "group-node".into(),
-            base_node: "group-base".into(),
-            object_id: 20,
-            version: 1,
-            child_object_ids: vec![11, 12],
-            family_data_byte_len: 0,
-            family_data_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 124,
-        };
-        let mut ignored_group_base = group_base.clone();
-        ignored_group_base.id = "ignored-group-base".into();
-        ignored_group_base.element = "ignored-group-element".into();
-        ignored_group_base.object_id = 21;
-        ignored_group_base.flags = 1;
-        ignored_group_base.source_offset = 125;
-        let mut ignored_group_element = group_element.clone();
-        ignored_group_element.id = "ignored-group-element".into();
-        ignored_group_element.ordinal = 4;
-        ignored_group_element.object_id = 21;
-        ignored_group_element.source_offset = 125;
-        let ignored_group = DisplayJtGroupNodeData {
-            id: "ignored-group-node".into(),
-            base_node: "ignored-group-base".into(),
-            object_id: 21,
-            version: 1,
-            child_object_ids: vec![9],
-            family_data_byte_len: 0,
-            family_data_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 125,
-        };
-        let transform = DisplayJtGeometricTransformAttribute {
-            id: "transform".into(),
-            element: "scene-element".into(),
-            object_id: 10,
-            state_flags: 0,
-            field_inhibit_flags: 0,
-            stored_values_mask: 0xffff,
-            matrix: super::JtTransformMatrix::try_from([
-                [2.0, 0.0, 0.0, 0.0],
-                [0.0, 3.0, 0.0, 0.0],
-                [0.0, 0.0, 4.0, 0.0],
-                [0.01, 0.02, 0.03, 1.0],
-            ])
-            .unwrap(),
-            source_offset: 121,
-        };
-        let material_element: DisplayJtCompressedElement = super::DisplayJtCompressedElementWire {
-            id: "material-element".into(),
-            segment: "scene-segment".into(),
-            segment_type: 1,
-            ordinal: 5,
-            object_type_id: [0; 16],
-            object_base_type: 3,
-            object_id: 13,
-            body_byte_len: 0,
-            body_sha256: "00".repeat(32).try_into().unwrap(),
-            inflated_offset: 0,
-            source_offset: 126,
-        }
-        .try_into()
-        .unwrap();
-        let material = DisplayJtMaterialAttribute {
-            id: "material".into(),
-            element: "material-element".into(),
-            object_id: 13,
-            state_flags: 0,
-            field_inhibit_flags: 0,
-            version: super::JtMaterialVersion::One,
-            data_flags: 0x20,
-            ambient: super::jt_rgba_from_wire([0.1, 0.1, 0.1, 1.0]).unwrap(),
-            diffuse: super::jt_rgba_from_wire([0.2, 0.3, 0.4, 0.5]).unwrap(),
-            specular: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
-            emission: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
-            shininess: super::JtShininess::new(1.0).unwrap(),
-            source_offset: 126,
-        };
-        let material_wire = serde_json::to_value(&material).unwrap();
-        assert_eq!(
-            serde_json::from_value::<DisplayJtMaterialAttribute>(material_wire.clone()).unwrap(),
-            material
-        );
-        for (version, reflectivity) in [(1, Some(0.5)), (2, None), (3, None), (2, Some(-0.5))] {
-            let mut wire = material_wire.clone();
-            wire["version"] = version.into();
-            wire["reflectivity"] = serde_json::json!(reflectivity);
-            assert!(serde_json::from_value::<DisplayJtMaterialAttribute>(wire).is_err());
-        }
-        let node = DisplayJtTriStripShapeNode {
-            id: "shape-node".into(),
-            base_node: "base".into(),
-            object_id: 9,
-            reserved_bounds: super::JtBounds::try_from([[0.0; 3]; 2]).unwrap(),
-            untransformed_bounds: super::JtBounds::try_from([[0.0; 3]; 2]).unwrap(),
-            area: super::JtArea::new(0.0).unwrap(),
-            vertex_count_range: [0, 0],
-            node_count_range: [0, 0],
-            polygon_count_range: [0, 0],
-            memory_byte_len: 0,
-            compression_level: 0.0.try_into().unwrap(),
-            vertex_version: super::JtVertexVersion::One,
-            vertex_bindings: 2,
-            vertex_quantization_bits: 0,
-            normal_quantization_factor: 0,
-            texture_quantization_bits: 0,
-            color_quantization_bits: 0,
-            source_offset: 120,
-        };
-        let node_wire = serde_json::to_value(&node).unwrap();
-        assert_eq!(
-            serde_json::from_value::<DisplayJtTriStripShapeNode>(node_wire.clone()).unwrap(),
-            node
-        );
-        for level in [0.0, 1.0] {
-            let mut wire = node_wire.clone();
-            wire["compression_level"] = serde_json::json!(level);
-            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire).is_ok());
-        }
-        for level in [-0.25, 1.25] {
-            let mut wire = node_wire.clone();
-            wire["compression_level"] = serde_json::json!(level);
-            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire)
-                .unwrap_err()
-                .to_string()
-                .contains("compression_level"));
-        }
-        for level in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
-            assert!(super::UnitBinary32::try_from(level).is_err());
-        }
-        for (version, bindings) in [(1, Some(4)), (2, None), (3, None)] {
-            let mut wire = node_wire.clone();
-            wire["vertex_version"] = version.into();
-            wire["version_2_vertex_bindings"] = serde_json::json!(bindings);
-            assert!(serde_json::from_value::<DisplayJtTriStripShapeNode>(wire).is_err());
-        }
-        let vertex_header = DisplayJtCompressedVertexRecordsHeader {
-            id: "vertex-header".into(),
-            element: "shape-element".into(),
-            vertex_bindings: 0x15a,
-            vertex_quantization_bits: 0,
-            normal_quantization_factor: 0,
-            texture_quantization_bits: 0,
-            color_quantization_bits: 0,
-            topological_vertex_count: 3,
-            vertex_attribute_count: 3,
-            compressed_arrays_byte_len: 0,
-            compressed_arrays_sha256: "00".repeat(32).try_into().unwrap(),
-            source_offset: 80,
-        };
-        let normals = DisplayJtVertexNormals {
-            id: "normals".into(),
-            vertex_records_header: "vertex-header".into(),
-            normals: vec![
-                finite([1.0, 0.0, 0.0]),
-                finite([0.0, 1.0, 0.0]),
-                finite([0.0, 0.0, 1.0]),
-            ],
-            normal_hash: 0,
-            byte_len: 4,
-            source_offset: 94,
-        };
-        let colors = DisplayJtVertexColors {
-            id: "colors".into(),
-            vertex_records_header: "vertex-header".into(),
-            colors: vec![
-                finite([1.0, 0.0, 0.0, 1.0]),
-                finite([0.0, 1.0, 0.0, 0.5]),
-                finite([0.0, 0.0, 1.0, 0.25]),
-            ],
-            color_hash: 0,
-            byte_len: 4,
-            source_offset: 98,
-        };
-        let texture_coordinates = DisplayJtVertexTextureCoordinates {
-            id: "texture".into(),
-            vertex_records_header: "vertex-header".into(),
-            channel: 0,
-            values: vec![
-                finite([0.0, 0.0]).to_vec(),
-                finite([1.0, 0.0]).to_vec(),
-                finite([0.0, 1.0]).to_vec(),
-            ],
-            texture_coordinate_hash: 0,
-            byte_len: 4,
-            source_offset: 102,
-        };
-        let vertex_flags = DisplayJtVertexFlags {
-            id: "flags".into(),
-            vertex_records_header: "vertex-header".into(),
-            values: vec![0, 1, 0],
-            byte_len: 4,
-            source_offset: 106,
-        };
-
-        let tessellations = super::display_jt_tessellations(&super::DisplayJtTessellationInputs {
-            meshes: &[mesh],
-            coordinates: &[coordinates],
-            normals: &[normals],
-            colors: &[colors],
-            texture_coordinates: &[texture_coordinates],
-            vertex_flags: &[vertex_flags],
-            vertex_headers: &[vertex_header],
-            coordinate_headers: &[header],
-            shape_elements: &[shape_element],
-            bindings: &[binding],
-            shape_nodes: &[node],
-            base_nodes: &[
-                base,
-                instance_base,
-                second_instance_base,
-                group_base,
-                ignored_group_base,
-            ],
-            group_nodes: &[group, ignored_group],
-            instance_nodes: &[instance, second_instance],
-            transforms: &[transform],
-            materials: &[material],
-            compressed_elements: &[
-                compressed,
-                instance_element,
-                second_instance_element,
-                group_element,
-                ignored_group_element,
-                material_element,
-            ],
-        })
-        .expect("complete scene binding");
-        assert_eq!(tessellations.len(), 2);
-        assert!((tessellations[0].0.vertices()[1].x - 12.0).abs() < EPS_JT_TRANSFORMED_VERTEX);
-        assert!((tessellations[0].0.vertices()[2].y - 26.0).abs() < EPS_JT_TRANSFORMED_VERTEX);
-        assert_eq!(tessellations[0].0.triangles(), vec![[0, 1, 2]]);
-        assert_eq!(
-            tessellations[0].0.vertex_normals()[1],
-            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
-        );
-        assert_eq!(
-            tessellations[0]
-                .0
-                .source_object
-                .as_ref()
-                .expect("required invariant")
-                .object_id,
-            "shape-node"
-        );
-        assert_eq!(
-            tessellations[0]
-                .0
-                .source_object
-                .as_ref()
-                .expect("required invariant")
-                .instance_path,
-            ["instance-node"]
-        );
-        assert_eq!(
-            tessellations[0]
-                .0
-                .source_object
-                .as_ref()
-                .expect("required invariant")
-                .color,
-            Some(Color::new(0.2, 0.3, 0.4, 0.5).expect("valid color"))
-        );
-        assert_eq!(
-            tessellations[1]
-                .0
-                .source_object
-                .as_ref()
-                .expect("required invariant")
-                .instance_path,
-            ["second-instance-node"]
-        );
-        assert_eq!(tessellations[0].0.channels().len(), 3);
-        assert_eq!(tessellations[0].0.channels()[0].kind(), 0x4e58_0001);
-        assert_eq!(tessellations[0].0.channels()[0].item_size(), 16);
-        assert_eq!(tessellations[0].0.channels()[0].flags(), 1);
-        assert_eq!(tessellations[0].0.channels()[0].count(), 3);
-        assert_eq!(
-            &tessellations[0].0.channels()[0].data()[16..32],
-            &[
-                0.0_f32.to_le_bytes(),
-                1.0_f32.to_le_bytes(),
-                0.0_f32.to_le_bytes(),
-                0.5_f32.to_le_bytes(),
-            ]
-            .concat()
-        );
-        assert_eq!(tessellations[0].0.channels()[1].kind(), 0x4e58_0100);
-        assert_eq!(tessellations[0].0.channels()[1].item_size(), 8);
-        assert_eq!(tessellations[0].0.channels()[1].flags(), 0x100);
-        assert_eq!(tessellations[0].0.channels()[1].count(), 3);
-        assert_eq!(
-            &tessellations[0].0.channels()[1].data()[16..24],
-            &[0.0_f32.to_le_bytes(), 1.0_f32.to_le_bytes()].concat()
-        );
-        assert_eq!(tessellations[0].0.channels()[2].kind(), 0x4e58_0002);
-        assert_eq!(tessellations[0].0.channels()[2].item_size(), 4);
-        assert_eq!(tessellations[0].0.channels()[2].count(), 3);
-        assert_eq!(
-            tessellations[0].0.channels()[2].data(),
-            [
-                0_u32.to_le_bytes(),
-                1_u32.to_le_bytes(),
-                0_u32.to_le_bytes(),
-            ]
-            .concat()
-        );
-        assert_eq!(tessellations[0].1, 120);
-    }
-
-    #[test]
-    fn jt9_topology_bounds_variable_high_degree_lane_count() {
-        fn representation(high_degree_lanes: usize, topological_vertices: u32) -> Vec<u8> {
-            let mut bytes = vec![0; (21 + high_degree_lanes + 2) * 4];
-            bytes.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-            bytes.extend_from_slice(&10_u64.to_le_bytes());
-            bytes.extend_from_slice(&[24, 13, 16, 8]);
-            bytes.extend_from_slice(&topological_vertices.to_le_bytes());
-            if topological_vertices != 0 {
-                bytes.extend_from_slice(&(topological_vertices + 1).to_le_bytes());
-            }
-            bytes
-        }
-
-        let empty = representation(1, 0);
-        assert_eq!(
-            super::jt9_topology_high_degree_lane_count(&empty, 10),
-            Some(1)
-        );
-        let populated = representation(13, 20);
-        assert_eq!(
-            super::jt9_topology_high_degree_lane_count(&populated, 10),
-            Some(13)
-        );
-        let beyond_legacy_ceiling = representation(65, 20);
-        assert_eq!(
-            super::jt9_topology_high_degree_lane_count(&beyond_legacy_ceiling, 10),
-            Some(65)
-        );
-        assert_eq!(
-            super::jt9_topology_high_degree_lane_count(&populated, 11),
-            None
-        );
-    }
-
-    #[test]
-    fn display_jt_base_node_body_bounds_ordered_attribute_ids() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0x20_u32.to_le_bytes());
-        body.extend_from_slice(&2_u32.to_le_bytes());
-        body.extend_from_slice(&7_u32.to_le_bytes());
-        body.extend_from_slice(&9_u32.to_le_bytes());
-        body.extend_from_slice(&[4, 3, 2, 1]);
-        let (version, flags, attributes, family) =
-            super::parse_jt_base_node_body(&body, 9).expect("required invariant");
-        assert_eq!(version, 1);
-        assert_eq!(flags, 0x20);
-        assert_eq!(attributes, [7, 9]);
-        assert_eq!(family, [4, 3, 2, 1]);
-
-        body.truncate(17);
-        assert!(super::parse_jt_base_node_body(&body, 9).is_none());
-
-        let mut modern = vec![2];
-        modern.extend_from_slice(&0x40_u32.to_le_bytes());
-        modern.extend_from_slice(&1_u32.to_le_bytes());
-        modern.extend_from_slice(&11_u32.to_le_bytes());
-        modern.push(0xaa);
-        let (version, flags, attributes, family) =
-            super::parse_jt_base_node_body(&modern, 10).expect("required invariant");
-        assert_eq!((version, flags), (2, 0x40));
-        assert_eq!(attributes, [11]);
-        assert_eq!(family, [0xaa]);
-    }
-
-    #[test]
-    fn display_jt9_instance_node_requires_one_exact_child_reference() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0x20_u32.to_le_bytes());
-        body.extend_from_slice(&1_u32.to_le_bytes());
-        body.extend_from_slice(&7_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&9_u32.to_le_bytes());
-
-        assert_eq!(super::parse_jt9_instance_node_body(&body), Some((1, 9)));
-        body.push(0);
-        assert!(super::parse_jt9_instance_node_body(&body).is_none());
-        body.pop();
-        body[14..16].copy_from_slice(&2_u16.to_le_bytes());
-        assert!(super::parse_jt9_instance_node_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt9_group_node_bounds_ordered_children_and_family_tail() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&2_u32.to_le_bytes());
-        body.extend_from_slice(&7_u32.to_le_bytes());
-        body.extend_from_slice(&9_u32.to_le_bytes());
-        body.extend_from_slice(&[4, 3, 2, 1]);
-
-        let (version, children, family) =
-            super::parse_jt9_group_node_body(&body).expect("required invariant");
-        assert_eq!(version, 1);
-        assert_eq!(children, [7, 9]);
-        assert_eq!(family, [4, 3, 2, 1]);
-        body.truncate(body.len() - 5);
-        assert!(super::parse_jt9_group_node_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt9_tri_strip_shape_node_requires_exact_shape_data() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0x20_u32.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        for value in [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in [-3.0_f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        body.extend_from_slice(&6.0_f32.to_le_bytes());
-        for value in [7_i32, 8, 9, 10, 11, 12] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        body.extend_from_slice(&4096_u32.to_le_bytes());
-        body.extend_from_slice(&0.75_f32.to_le_bytes());
-        body.extend_from_slice(&2_u16.to_le_bytes());
-        body.extend_from_slice(&0x102_u64.to_le_bytes());
-        body.extend_from_slice(&[24, 13, 16, 8]);
-        body.extend_from_slice(&0x304_u64.to_le_bytes());
-
-        let node = super::parse_jt9_tri_strip_shape_node_body(&body).expect("required invariant");
-        assert_eq!(
-            node.reserved_bounds.get(),
-            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]
-        );
-        assert_eq!(
-            node.untransformed_bounds.get(),
-            [[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]]
-        );
-        assert_eq!(node.area.get(), 6.0);
-        assert_eq!(node.vertex_count_range, [7, 8]);
-        assert_eq!(node.node_count_range, [9, 10]);
-        assert_eq!(node.polygon_count_range, [11, 12]);
-        assert_eq!(node.memory_byte_len, 4096);
-        assert_eq!(f32::from(node.compression_level), 0.75);
-        assert_eq!(node.vertex_version.into_wire().0, 2);
-        assert_eq!(node.vertex_bindings, 0x102);
-        assert_eq!(node.vertex_quantization_bits, 24);
-        assert_eq!(node.normal_quantization_factor, 13);
-        assert_eq!(node.texture_quantization_bits, 16);
-        assert_eq!(node.color_quantization_bits, 8);
-        assert_eq!(node.vertex_version.into_wire().1, Some(0x304));
-
-        let mut malformed = body.clone();
-        malformed[60..64].copy_from_slice(&(-1.0_f32).to_le_bytes());
-        assert!(super::parse_jt9_tri_strip_shape_node_body(&malformed).is_none());
-        let mut malformed = body.clone();
-        malformed[109] = 25;
-        assert!(super::parse_jt9_tri_strip_shape_node_body(&malformed).is_none());
-        body.truncate(body.len() - 8);
-        assert!(super::parse_jt9_tri_strip_shape_node_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt9_geometric_transform_reconstructs_sparse_affine_matrix() {
-        let mut body = 1_u16.to_le_bytes().to_vec();
-        body.push(0x08);
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0x000e_u16.to_le_bytes());
-        for value in [1.25_f32, -2.5, 4.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        let (state, inhibit, mask, matrix) =
-            super::parse_jt9_geometric_transform_body(&body).expect("required invariant");
-        assert_eq!(state, 0x08);
-        assert_eq!(inhibit, 0);
-        assert_eq!(mask, 0x000e);
-        assert_eq!(matrix.get()[0], [1.0, 0.0, 0.0, 0.0]);
-        assert_eq!(matrix.get()[3], [1.25, -2.5, 4.0, 1.0]);
-
-        body[2] = 0x10;
-        assert!(super::parse_jt9_geometric_transform_body(&body).is_none());
-
-        let mut shear = 1_u16.to_le_bytes().to_vec();
-        shear.push(0);
-        shear.extend_from_slice(&0_u32.to_le_bytes());
-        shear.extend_from_slice(&1_u16.to_le_bytes());
-        shear.extend_from_slice(&0x4800_u16.to_le_bytes());
-        shear.extend_from_slice(&0.5_f32.to_le_bytes());
-        shear.extend_from_slice(&0.5_f32.to_le_bytes());
-        assert!(super::parse_jt9_geometric_transform_body(&shear).is_none());
-    }
-
-    #[test]
-    fn display_jt9_material_requires_complete_bounded_components() {
-        let mut body = 1_u16.to_le_bytes().to_vec();
-        body.push(0x02);
-        body.extend_from_slice(&0x41_u32.to_le_bytes());
-        body.extend_from_slice(&2_u16.to_le_bytes());
-        body.extend_from_slice(&0x3990_u16.to_le_bytes());
-        for color in [
-            [0.1_f32, 0.2, 0.3, 1.0],
-            [0.4_f32, 0.5, 0.6, 0.75],
-            [0.7_f32, 0.8, 0.9, 1.0],
-            [0.0_f32, 0.1, 0.2, 1.0],
-        ] {
-            for component in color {
-                body.extend_from_slice(&component.to_le_bytes());
-            }
-        }
-        body.extend_from_slice(&64.0_f32.to_le_bytes());
-        body.extend_from_slice(&0.25_f32.to_le_bytes());
-        let (state, inhibit, version, flags, colors, shininess) =
-            super::parse_jt9_material_body(&body).expect("required invariant");
-        let (version, reflectivity) = version.into_wire();
-        assert_eq!(state, 0x02);
-        assert_eq!(inhibit, 0x41);
-        assert_eq!(version, 2);
-        assert_eq!(flags, 0x3990);
-        assert_eq!(colors[1].map(UnitBinary32::get), [0.4, 0.5, 0.6, 0.75]);
-        assert_eq!(shininess.get(), 64.0);
-        assert_eq!(reflectivity, Some(0.25));
-
-        let mut invalid = body.clone();
-        invalid[27..31].copy_from_slice(&1.1_f32.to_le_bytes());
-        assert!(super::parse_jt9_material_body(&invalid).is_none());
-        let mut invalid = body.clone();
-        invalid[75..79].copy_from_slice(&0.0_f32.to_le_bytes());
-        assert!(super::parse_jt9_material_body(&invalid).is_none());
-        let mut invalid = body.clone();
-        invalid[9..11].copy_from_slice(&0x0001_u16.to_le_bytes());
-        assert!(super::parse_jt9_material_body(&invalid).is_none());
-        body.pop();
-        assert!(super::parse_jt9_material_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt_material_accumulation_respects_inhibit_final_and_force() {
-        let material = |diffuse, state_flags, field_inhibit_flags| DisplayJtMaterialAttribute {
-            id: "material".into(),
-            element: "element".into(),
-            object_id: 1,
-            state_flags,
-            field_inhibit_flags,
-            version: super::JtMaterialVersion::try_from((2, Some(0.0))).unwrap(),
-            data_flags: 0,
-            ambient: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
-            diffuse: super::jt_rgba_from_wire(diffuse).unwrap(),
-            specular: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
-            emission: super::jt_rgba_from_wire([0.0, 0.0, 0.0, 1.0]).unwrap(),
-            shininess: super::JtShininess::new(1.0).unwrap(),
-            source_offset: 0,
-        };
-        let mut path = super::DisplayJtPath {
-            matrix: [[0.0; 4]; 4],
-            final_transform: false,
-            diffuse: [None; 4],
-            override_vertex_colors: None,
-            final_material: false,
-            node_path: Vec::new(),
-            instance_path: Vec::new(),
-        };
-        super::accumulate_display_jt_material(
-            &mut path,
-            &material([0.1, 0.2, 0.3, 0.4], 0x01, 1 << 8),
-        );
-        assert_eq!(
-            path.diffuse.map(|value| value.map(UnitBinary32::get)),
-            [Some(0.1), Some(0.2), Some(0.3), None]
-        );
-        assert!(path.final_material);
-
-        super::accumulate_display_jt_material(&mut path, &material([0.5, 0.6, 0.7, 0.8], 0, 0));
-        assert_eq!(
-            path.diffuse.map(|value| value.map(UnitBinary32::get)),
-            [Some(0.1), Some(0.2), Some(0.3), None]
-        );
-
-        super::accumulate_display_jt_material(
-            &mut path,
-            &material([0.5, 0.6, 0.7, 0.8], 0x02, 1 << 7),
-        );
-        assert_eq!(
-            path.diffuse.map(|value| value.map(UnitBinary32::get)),
-            [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
-        );
-        assert_eq!(
-            super::display_jt_path_color(&path),
-            Some(Color::new(0.1, 0.2, 0.3, 0.8).expect("valid color"))
-        );
-
-        super::accumulate_display_jt_material(&mut path, &material([1.0; 4], 0x06, 0));
-        assert_eq!(
-            path.diffuse.map(|value| value.map(UnitBinary32::get)),
-            [Some(0.1), Some(0.2), Some(0.3), Some(0.8)]
-        );
-    }
-
-    #[test]
-    fn display_jt9_partition_node_requires_complete_bounds_and_ranges() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&1_u32.to_le_bytes());
-        body.extend_from_slice(&2_u32.to_le_bytes());
-        body.extend_from_slice(&1_u32.to_le_bytes());
-        body.extend_from_slice(&1_u32.to_le_bytes());
-        body.extend_from_slice(&u16::from(b'x').to_le_bytes());
-        for value in [0.0_f32, 1.0, 2.0, 3.0, 4.0, 5.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        body.extend_from_slice(&6.0_f32.to_le_bytes());
-        for value in [1_i32, 2, 3, 4, 5, 6] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        for value in [-3.0_f32, -2.0, -1.0, 0.0, 1.0, 2.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        let node = super::parse_jt9_partition_node_body(&body).expect("required invariant");
-        assert_eq!(node.group_version, 1);
-        assert_eq!(node.child_object_ids, [2]);
-        assert_eq!(node.file_name, "x");
-        assert_eq!(
-            node.transformed_bounds.get(),
-            [[0.0, 1.0, 2.0], [3.0, 4.0, 5.0]]
-        );
-        assert_eq!(node.area.get(), 6.0);
-        assert_eq!(node.vertex_count_range, [1, 2]);
-        assert_eq!(node.node_count_range, [3, 4]);
-        assert_eq!(node.polygon_count_range, [5, 6]);
-        assert_eq!(
-            node.bounds,
-            DisplayJtPartitionBounds::Untransformed(
-                super::JtBounds::try_from([[-3.0, -2.0, -1.0], [0.0, 1.0, 2.0]]).unwrap()
-            )
-        );
-
-        body.pop();
-        assert!(super::parse_jt9_partition_node_body(&body).is_none());
-    }
-
-    #[test]
-    fn display_jt9_range_lod_requires_ordered_finite_limits() {
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&0_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&2_u32.to_le_bytes());
-        body.extend_from_slice(&7_u32.to_le_bytes());
-        body.extend_from_slice(&9_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&1_u32.to_le_bytes());
-        body.extend_from_slice(&0.25_f32.to_le_bytes());
-        body.extend_from_slice(&(-2_i32).to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&2_u32.to_le_bytes());
-        body.extend_from_slice(&10.0_f32.to_le_bytes());
-        body.extend_from_slice(&20.0_f32.to_le_bytes());
-        for value in [1.0_f32, 2.0, 3.0] {
-            body.extend_from_slice(&value.to_le_bytes());
-        }
-        let node = super::parse_jt9_range_lod_node_body(&body).expect("required invariant");
-        assert_eq!(node.group_version, 1);
-        assert_eq!(node.child_object_ids, [7, 9]);
-        assert_eq!(node.lod_version, 1);
-        assert_eq!(
-            node.reserved_values
-                .iter()
-                .copied()
-                .map(super::FiniteBinary32::get)
-                .collect::<Vec<_>>(),
-            [0.25]
-        );
-        assert_eq!(node.reserved_value, -2);
-        assert_eq!(node.range_version, 1);
-        assert_eq!(
-            node.range_limits
-                .0
-                .iter()
-                .copied()
-                .map(super::FiniteBinary32::get)
-                .collect::<Vec<_>>(),
-            [10.0, 20.0]
-        );
-        assert_eq!(node.center.map(super::FiniteBinary32::get), [1.0, 2.0, 3.0]);
-
-        let range_offset = body.len() - 20;
-        body[range_offset..range_offset + 4].copy_from_slice(&5.0_f32.to_le_bytes());
-        body[range_offset + 4..range_offset + 8].copy_from_slice(&4.0_f32.to_le_bytes());
-        assert!(super::parse_jt9_range_lod_node_body(&body).is_none());
-    }
-
-    #[test]
-    fn jt9_topology_packets_retain_decoded_primal_values() {
-        use super::{display_jt_topology_packet_sequences, DisplayJtShapeLodElement};
-
-        let mut representation = vec![0; 24 * 4];
-        representation.extend_from_slice(&0x1234_5678_u32.to_le_bytes());
-        representation.extend_from_slice(&10_u64.to_le_bytes());
-        representation.extend_from_slice(&[24, 13, 16, 8]);
-        representation.extend_from_slice(&0_u32.to_le_bytes());
-
-        let mut body = Vec::new();
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&10_u64.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&7_u32.to_le_bytes());
-        body.extend_from_slice(&1_u16.to_le_bytes());
-        body.extend_from_slice(&representation);
-        let source_offset = 64_u64;
-        let mut data = vec![0; source_offset as usize + 25];
-        data.extend_from_slice(&body);
-        let physical_size = data.len() as u64;
-        let data_len = data.len() as u64;
-        let container = crate::container::Container {
-            data: data.into(),
-            physical_size,
-            layout: crate::container::test_modern_layout(1),
-            entries: vec![crate::container::DirEntry {
-                name: "/Root/UG_PART/DisplayJT".to_string(),
-                region: crate::container::Region::Header,
-                body: crate::container::DirEntryBody::File {
-                    offset: 0,
-                    len: data_len,
-                },
-            }],
-            fastload_table: None,
-            indexed_section_layouts: std::sync::OnceLock::new(),
-            om_section_cache: std::sync::OnceLock::new(),
-        };
-        let elements = [DisplayJtShapeLodElement {
-            id: "shape-lod".into(),
-            segment: "segment".into(),
-            ordinal: 0,
-            object_type_id: [
-                0xab, 0x10, 0xdd, 0x10, 0xc8, 0x2a, 0xd1, 0x11, 0x9b, 0x6b, 0x00, 0x80, 0xc7, 0xbb,
-                0x59, 0x97,
-            ],
-            object_id: 1,
-            body_byte_len: body.len() as u32,
-            body_sha256: Sha256Hex::digest(&[]),
-            source_offset,
-        }];
-
-        let (sequences, _, _) = display_jt_topology_packet_sequences(&container, &elements);
-        assert_eq!(sequences.len(), 1);
-        assert_eq!(sequences[0].packets.len(), 24);
-        assert!(sequences[0]
-            .packets
-            .iter()
-            .all(|packet| packet.values == Some(Vec::new())));
-    }
-}
+mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_reflectivity, f32, "reflectivity");

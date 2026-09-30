@@ -38,7 +38,7 @@ fn basis_refusal<T>(result: &Result<T, CodecError>) {
 
 #[test]
 fn nonperiodic_endpoint_recovery_propagates_evaluator_refusal() {
-    for cap in [2, 8] {
+    for cap in [2, 5] {
         context_test(
             |ctx| basis_refusal(&super::nonperiodic_nurbs_endpoint_points(ctx, &line(false))),
             cap,
@@ -85,7 +85,7 @@ fn nonperiodic_orientation_propagates_evaluator_refusal() {
 
 #[test]
 fn periodic_range_recovery_propagates_evaluator_refusal() {
-    for cap in [2, 8] {
+    for cap in [2, 5] {
         context_test(
             |ctx| {
                 basis_refusal(&super::full_periodic_nurbs_edge_parameter_range(

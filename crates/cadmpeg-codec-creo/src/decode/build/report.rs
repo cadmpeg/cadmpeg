@@ -131,7 +131,7 @@ pub(in super::super) fn build_report(
     // read, not what any one record cost. Identity itself is authored once, in
     // `ir.source`; the report body carries only the charge.
     if let Some(loss) = classification.loss(ctx)? {
-        ctx.try_reserve_items(&mut losses, 1, "creo dialect report losses")?;
+        ctx.reserve_vec(&mut losses, 1, "creo dialect report losses")?;
         losses.push(loss);
     }
 

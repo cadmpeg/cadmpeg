@@ -73,8 +73,11 @@ fn push_revolution_surface_loss(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     message: impl std::fmt::Display,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let message = ctx.format_retained(message, "creo revolved saved spline loss text")?;
-    ctx.try_reserve_items(losses, 1, "creo revolved saved spline losses")?;
+    let message = ctx.format_retained(
+        format_args!("{message}"),
+        "creo revolved saved spline loss text",
+    )?;
+    ctx.reserve_vec(losses, 1, "creo revolved saved spline losses")?;
     losses.push(crate::loss::CreoLossCode::FeatureSurfaceOperationIncomplete.note(message));
     Ok(())
 }
@@ -374,7 +377,10 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
             })
         {
             let (suffix, _suffix_reservation) = if let Some(entity_id) = spline.entity_id {
-                ctx.format_scoped(entity_id, "creo revolved spline identity suffix")?
+                ctx.format_scoped(
+                    format_args!("{entity_id}"),
+                    "creo revolved spline identity suffix",
+                )?
             } else {
                 ctx.format_scoped(
                     format_args!("offset{}", spline.offset),
@@ -470,7 +476,8 @@ pub(in super::super) fn transfer_resolved_revolution_surfaces(
                 ctx,
                 ir,
                 Surface {
-                    id: surface_id.copy_admitted(ctx, "creo construction surface identity copy")?,
+                    id: surface_id
+                        .try_clone_for_decode(ctx, "creo construction surface identity copy")?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)),
                     source_object: Some(SourceObjectAssociation {
                         format: cadmpeg_ir::CodecFormat::Creo,
@@ -584,7 +591,7 @@ pub(in super::super) fn transfer_resolved_revolution_vertex_orbit_curves(
                 };
                 let geometry = CurveGeometry::try_from(geometry)
                     .map_err(cadmpeg_core::CodecError::malformed)?;
-                ctx.try_reserve_items(&mut pending, 1, "creo revolution vertex orbit candidates")?;
+                ctx.reserve_vec(&mut pending, 1, "creo revolution vertex orbit candidates")?;
                 pending.push((
                     crate::identity::compose_checked::<CurveId>(
                         ctx, &crate::identity::FEATURE_REVOLUTION_VERTEX_ORBIT,
@@ -683,7 +690,7 @@ pub(in super::super) fn transfer_resolved_extrusion_vertex_orbit_curves(
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;
                 };
-                ctx.try_reserve_items(&mut pending, 1, "creo extrusion vertex orbit candidates")?;
+                ctx.reserve_vec(&mut pending, 1, "creo extrusion vertex orbit candidates")?;
                 pending.push((
                     crate::identity::compose_checked::<CurveId>(
                         ctx, &crate::identity::FEATURE_EXTRUSION_VERTEX_ORBIT,

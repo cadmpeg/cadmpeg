@@ -1,11 +1,38 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{
-    analytic_segment_intersections, angle_strictly_inside_arc,
-    arrangement_region_containing_points, closed_sketch_profiles, point_on_sketch_entity,
-    region_containing_points, sketch_arrangement_faces, ProfileBoundary, ProfileBoundarySegment,
-    MAX_ARRANGEMENT_WALK_WORK,
-};
+use super::analytic_segment_intersections;
+use super::angle_strictly_inside_arc;
+use super::arrangement_region_containing_points;
+use super::closed_sketch_profiles;
+use super::point_on_sketch_entity;
+use super::region_containing_points;
+use super::sketch_arrangement_faces;
+use super::ProfileBoundary;
+use super::ProfileBoundarySegment;
+use super::MAX_ARRANGEMENT_WALK_WORK;
+use crate::design::dimensions::point_lies_on_sketch_geometry;
+use cadmpeg_core::decode::DecodeArena;
+use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::DecodePolicy;
+use cadmpeg_core::decode::WorkBudget;
+use cadmpeg_ir::features::SketchProfileRegion;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::Vector3;
+use cadmpeg_ir::scalar::Angle;
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::scalar::PositiveLength;
+use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::sketches::SketchEntity;
+use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::SketchEntityUse;
+use cadmpeg_ir::sketches::SketchGeometry;
+use cadmpeg_ir::sketches::SketchGeometryDefinition;
+use cadmpeg_ir::sketches::SketchId;
+
+mod evaluator_refusal;
+mod historical_allocation;
 
 #[test]
 fn subdivision_count_requires_positive_target_error() {
@@ -13,17 +40,6 @@ fn subdivision_count_requires_positive_target_error() {
     assert_eq!(super::subdivision_count(0.0, 0.0), None);
     assert_eq!(super::subdivision_count(100.0, 10.0), Some(10));
 }
-use crate::design::dimensions::point_lies_on_sketch_geometry;
-use cadmpeg_core::decode::WorkBudget;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::SketchProfileRegion;
-use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
-use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
-use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry,
-    SketchGeometryDefinition, SketchId,
-};
 
 fn local_arrangement_budget() -> WorkBudget<'static> {
     WorkBudget::new(MAX_ARRANGEMENT_WALK_WORK)
@@ -81,6 +97,30 @@ fn certified_nurbs_tubes_cover_a_wide_finite_parameter_span() {
     assert!(tubes
         .iter()
         .all(|tube| { tube.start.is_finite() && tube.end.is_finite() && tube.error.is_finite() }));
+}
+
+#[test]
+fn certified_nurbs_tubes_refuse_collection_limit() {
+    let curve = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let Err(error) = super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)) else {
+        panic!("one certified span needs a tube");
+    };
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+            && limit.operation == "f3d certified nurbs tube")
+    );
 }
 
 #[test]
@@ -679,30 +719,62 @@ fn arrangement_refusal_with_collection_limit(maximum: u64) -> cadmpeg_core::Code
         .expect("arrangement exceeds the selected collection limit")
 }
 
+fn arrangement_refusal_at_operation(
+    operation: &'static str,
+    mut maximum: u64,
+) -> (cadmpeg_core::decode::ResourceLimit, u64) {
+    for _ in 0..10_000 {
+        let error = arrangement_refusal_with_collection_limit(maximum);
+        let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
+            panic!("arrangement refused for a reason other than resource use");
+        };
+        if limit.operation == operation {
+            return (limit, maximum);
+        }
+        maximum = limit.used.checked_add(limit.additional).unwrap();
+    }
+    panic!("arrangement did not reach the requested resource operation");
+}
+
 #[test]
 fn arrangement_outgoing_refuses_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1826);
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d_arrangement_outgoing", 0);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 2);
+}
+
+#[test]
+fn arrangement_outgoing_entries_refuse_materialized_limit() {
+    let (sketch, entities, _, _) = coincident_circle_arc_arrangement();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_materialized_bytes = 143;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let budget = local_arrangement_budget();
+    let error = sketch_arrangement_faces(&sketch, &entities, 1.0e-7, &budget, Some(&ctx))
+        .err()
+        .expect("six outgoing entries require 144 temporary bytes");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d_arrangement_outgoing"
-                && limit.used == 1825
-                && limit.additional == 2
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+                && limit.operation == "f3d arrangement outgoing entries"
     ));
 }
 
 #[test]
 fn arrangement_edge_visits_refuse_collection_limit() {
-    let error = arrangement_refusal_with_collection_limit(1829);
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
-            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
-                && limit.operation == "f3d arrangement edge visits"
-                && limit.used == 1827
-                && limit.additional == 3
-    ));
+    let (limit, maximum) = arrangement_refusal_at_operation("f3d arrangement edge visits", 0);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
+    assert_eq!(limit.used, maximum);
+    assert_eq!(limit.additional, 3);
 }
 
 #[test]
@@ -721,7 +793,9 @@ fn analytic_arrangement_intersections_include_hidden_second_crossing() {
     assert_eq!(
         analytic_segment_intersections(&line, &circle)
             .expect("analytic intersection family")
-            .len(),
+            .into_iter()
+            .flatten()
+            .count(),
         2
     );
 }
@@ -834,7 +908,7 @@ fn circular_arc_loop_uses_analytic_containment_and_distance() {
     assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
     assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-    assert!(boundary.strictly_contains(&hole));
+    assert!(boundary.strictly_contains(&hole, None).unwrap());
 }
 
 #[test]
@@ -858,8 +932,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         },
     ]);
 
-    assert!(polygon.strictly_contains(&arc_loop));
-    assert!(!arc_loop.strictly_contains(&polygon));
+    assert!(polygon.strictly_contains(&arc_loop, None).unwrap());
+    assert!(!arc_loop.strictly_contains(&polygon, None).unwrap());
 
     let crossing = ProfileBoundary::CircularArcLoop(vec![
         ProfileBoundarySegment::Line {
@@ -873,8 +947,8 @@ fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
             end_angle: std::f64::consts::PI,
         },
     ]);
-    assert!(!polygon.strictly_contains(&crossing));
-    assert!(!crossing.strictly_contains(&polygon));
+    assert!(!polygon.strictly_contains(&crossing, None).unwrap());
+    assert!(!crossing.strictly_contains(&polygon, None).unwrap());
 }
 
 #[test]
@@ -898,10 +972,10 @@ fn arc_loop_containment_rejects_crossing_and_touching_segments() {
     let crossing = d_loop(-1.5, 1.0);
     let touching = d_loop(-1.0, 1.0);
 
-    assert!(outer.strictly_contains(&inner));
-    assert!(!inner.strictly_contains(&outer));
-    assert!(!outer.strictly_contains(&crossing));
-    assert!(!outer.strictly_contains(&touching));
+    assert!(outer.strictly_contains(&inner, None).unwrap());
+    assert!(!inner.strictly_contains(&outer, None).unwrap());
+    assert!(!outer.strictly_contains(&crossing, None).unwrap());
+    assert!(!outer.strictly_contains(&touching, None).unwrap());
 }
 
 #[test]
@@ -942,7 +1016,9 @@ fn historical_edge_positions_require_a_complete_state_chain() {
             crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
-        ),
+            None,
+        )
+        .unwrap(),
         Some(vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0),])
     );
     topology.point_positions.pop();
@@ -951,7 +1027,9 @@ fn historical_edge_positions_require_a_complete_state_chain() {
             crate::records::topology::body_recipe::AsmHistoricalEntityKind::Edge,
             7,
             &topology,
-        ),
+            None,
+        )
+        .unwrap(),
         None
     );
 }
@@ -987,24 +1065,30 @@ fn historical_region_faces_follow_complete_ownership_hierarchy() {
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Body,
             1,
-            &topology
-        ),
+            &topology,
+            None,
+        )
+        .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Region,
             2,
-            &topology
-        ),
+            &topology,
+            None,
+        )
+        .unwrap(),
         Some(vec![5, 6, 7])
     );
     assert_eq!(
         crate::design::geometry::historical_owned_faces(
             AsmHistoricalEntityKind::Shell,
             3,
-            &topology
-        ),
+            &topology,
+            None,
+        )
+        .unwrap(),
         Some(vec![5, 7])
     );
 }
@@ -1028,12 +1112,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         })
         .unwrap(),
     );
-    assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
-    assert!(!point_on_sketch_entity(
-        Point2::new(-2.0, 0.0),
-        &arc,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(None, Point2::new(0.0, 2.0), &arc, EPS_CONTAINMENT_LINEAR)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(None, Point2::new(-2.0, 0.0), &arc, EPS_CONTAINMENT_LINEAR)
+            .expect("resource allocation did not fail")
+    );
     let clockwise_arc = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Arc {
             center: Point2::new(0.0, 0.0),
@@ -1044,13 +1130,15 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     );
     assert!(point_lies_on_sketch_geometry(
+        None,
         Point2::new(std::f64::consts::SQRT_2, std::f64::consts::SQRT_2),
         &clockwise_arc.geometry
-    ));
-    assert!(!point_lies_on_sketch_geometry(
-        Point2::new(-2.0, 0.0),
-        &clockwise_arc.geometry
-    ));
+    )
+    .expect("resource allocation did not fail"));
+    assert!(
+        !point_lies_on_sketch_geometry(None, Point2::new(-2.0, 0.0), &clockwise_arc.geometry)
+            .expect("resource allocation did not fail")
+    );
 
     let ellipse = entity(
         SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
@@ -1068,20 +1156,26 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         .unwrap(),
     );
     assert!(point_on_sketch_entity(
+        None,
         Point2::new(-1.0, -1.0),
         &ellipse,
-        1.0e-6
-    ));
+        EPS_CONTAINMENT_LINEAR
+    )
+    .expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
+        None,
         Point2::new(3.0, -1.0),
         &ellipse,
-        1.0e-6
-    ));
+        EPS_CONTAINMENT_LINEAR
+    )
+    .expect("resource allocation did not fail"));
     assert!(!point_on_sketch_entity(
+        None,
         Point2::new(-1.0, -0.9),
         &ellipse,
-        1.0e-6
-    ));
+        EPS_CONTAINMENT_LINEAR
+    )
+    .expect("resource allocation did not fail"));
 
     let nurbs = entity(SketchGeometry::nurbs(
         cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
@@ -1097,16 +1191,14 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         )
         .unwrap(),
     ));
-    assert!(point_on_sketch_entity(
-        Point2::new(3.0, 2.0),
-        &nurbs,
-        1.0e-6
-    ));
-    assert!(!point_on_sketch_entity(
-        Point2::new(2.0, 4.0),
-        &nurbs,
-        1.0e-6
-    ));
+    assert!(
+        point_on_sketch_entity(None, Point2::new(3.0, 2.0), &nurbs, EPS_CONTAINMENT_LINEAR)
+            .expect("resource allocation did not fail")
+    );
+    assert!(
+        !point_on_sketch_entity(None, Point2::new(2.0, 4.0), &nurbs, EPS_CONTAINMENT_LINEAR)
+            .expect("resource allocation did not fail")
+    );
     let SketchGeometryDefinition::Nurbs { curve } = nurbs.geometry.definition() else {
         unreachable!()
     };
@@ -1120,7 +1212,10 @@ fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         0.375,
     )
     .unwrap();
-    assert!(point_on_sketch_entity(*interior.as_raw(), &nurbs, 1.0e-9));
+    assert!(
+        point_on_sketch_entity(None, *interior.as_raw(), &nurbs, EPS_CONTAINMENT_DISTANCE)
+            .expect("resource allocation did not fail")
+    );
 }
 
 #[test]
@@ -1349,13 +1444,17 @@ fn numerical_audit_line_circle_intersections_are_scale_invariant() {
             &circle
         )
         .unwrap()
-        .is_empty());
+        .iter()
+        .all(Option::is_none));
         let tangent = super::line_arc_intersection_points(
             (Point2::new(-radius, radius), Point2::new(radius, radius)),
             &circle,
         )
         .unwrap();
-        assert_eq!(tangent, vec![Point2::new(0.0, radius)]);
+        assert_eq!(
+            tangent.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0.0, radius)]
+        );
     }
 }
 
@@ -1370,7 +1469,7 @@ fn numerical_followup_profile_speed_bound_retains_common_weights() {
             false,
         )
         .unwrap();
-        assert_eq!(super::nurbs_speed_bound(&curve, None).unwrap(), Some(1.0));
+        assert_eq!(super::nurbs_speed_bound(&curve), Some(1.0));
     }
 }
 
@@ -1394,8 +1493,8 @@ fn implicit_profile_unit_weights_match_explicit_units() {
     )
     .expect("unit-weight pcurve");
     assert_eq!(
-        super::nurbs_speed_bound(&implicit, None).expect("no session"),
-        super::nurbs_speed_bound(&explicit, None).expect("no session")
+        super::nurbs_speed_bound(&implicit),
+        super::nurbs_speed_bound(&explicit)
     );
 }
 
@@ -1445,9 +1544,9 @@ fn scaled_planar_intersections_preserve_separation_and_witnesses() {
             end_angle: std::f64::consts::TAU,
         };
         let points = super::arc_intersection_points(&arc(0.), &arc(r)).unwrap();
-        assert_eq!(points.len(), 2);
+        assert_eq!(points.iter().flatten().count(), 2);
         assert!(super::boundary_segments_intersect(&arc(0.), &arc(r)));
-        for point in points {
+        for point in points.into_iter().flatten() {
             assert!((point.u / r - 0.5).abs() <= 4. * f64::EPSILON);
         }
     }
@@ -1471,7 +1570,8 @@ fn disparate_segment_and_point_scales_preserve_distance() {
         &arc
     )
     .unwrap()
-    .is_empty());
+    .iter()
+    .all(Option::is_none));
 }
 
 const LARGE_LINE_TOLERANCE: f64 = 1e-6;
@@ -1491,7 +1591,7 @@ fn numerical_0922b_line_arc_crossings() {
         .unwrap();
         println!("Fusion line[-{half},{half}],r=.001 => {points:?}");
         assert_eq!(
-            points,
+            points.into_iter().flatten().collect::<Vec<_>>(),
             vec![Point2::new(-0.001, 0.), Point2::new(0.001, 0.)]
         );
     }
@@ -1509,7 +1609,10 @@ fn numerical_0922b_large_line_crossing() {
         };
         let r = analytic_segment_intersections(&a, &b).unwrap();
         println!("Fusion crossing scale{s:e}: {r:?}");
-        assert_eq!(r, vec![Point2::new(0., 0.)]);
+        assert_eq!(
+            r.into_iter().flatten().collect::<Vec<_>>(),
+            vec![Point2::new(0., 0.)]
+        );
     }
 }
 #[test]
@@ -1545,4 +1648,15 @@ fn numerical_0922b_wide_segment_incidence() {
     }
 }
 
+mod arrangement_allocation;
+mod certified_allocation;
 mod predicates;
+mod region_allocation;
+const EPS_CONTAINMENT_LINEAR: f64 = 1.0e-6;
+const EPS_CONTAINMENT_DISTANCE: f64 = 1.0e-9;
+
+mod containment_limits;
+
+mod sort_limits;
+
+mod profile_limits;

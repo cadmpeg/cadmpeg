@@ -7,7 +7,11 @@
 )]
 
 mod construction;
+mod edge_index;
 mod face_sources;
+mod header_index;
+mod recipe_id_limits;
+mod recipe_structure_limits;
 mod recipes;
 mod selection;
 mod work_point;

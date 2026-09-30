@@ -523,7 +523,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
             CylinderExtentSurface::Plane => match source_geometry {
                 SourceSurfaceGeometry::Missing => {
                     if let Some(plane) = local_planes.get(&row.id) {
-                        ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                        ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
@@ -535,14 +535,14 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     else {
                         return Ok(None);
                     };
-                    ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                    ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
                     planes.push((plane.origin, plane.normal));
                 }
                 SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
                     SolvedSurfaceGeometry::Unknown { .. },
                 )) => {
                     if let Some(plane) = local_planes.get(&row.id) {
-                        ctx.try_reserve_items(&mut planes, 1, "creo bounded cylinder cap planes")?;
+                        ctx.reserve_vec(&mut planes, 1, "creo bounded cylinder cap planes")?;
                         planes.push((plane.origin, plane.normal));
                     }
                 }
@@ -588,7 +588,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
                     {
                         return Ok(None);
                     }
-                    ctx.try_reserve_items(&mut frames, 1, "creo bounded cylinder frames")?;
+                    ctx.reserve_vec(&mut frames, 1, "creo bounded cylinder frames")?;
                     frames.push(frame);
                 }
                 _ => return Ok(None),
@@ -603,7 +603,7 @@ pub(in super::super) fn generated_bounded_cylinder_extent(
         let Some(span) = bounded_cylinder_span(ctx, frame, &planes)? else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut carriers, 1, "creo bounded cylinder carriers")?;
+        ctx.reserve_vec(&mut carriers, 1, "creo bounded cylinder carriers")?;
         carriers.push(span);
     }
     Ok(blind_extrusion_from_carriers(&carriers, &planes, transform))
@@ -656,7 +656,7 @@ pub(in super::super) fn bounded_cylinder_span(
         return Ok(None);
     };
     let mut starts = Vec::new();
-    ctx.try_reserve_items(&mut starts, 1, "creo bounded cylinder starts")?;
+    ctx.reserve_vec(&mut starts, 1, "creo bounded cylinder starts")?;
     starts.push(frame.frame().origin());
     Ok(Some(ExtrusionCarrierSpan { starts, vector }))
 }
@@ -697,7 +697,7 @@ fn nurbs_translation_candidate(
     let v_count = nurbs.v_count();
     let pair_count = if along_v { u_count } else { v_count };
     let mut starts = Vec::new();
-    ctx.try_reserve_items(&mut starts, pair_count, "creo NURBS translation starts")?;
+    ctx.reserve_vec(&mut starts, pair_count, "creo NURBS translation starts")?;
     let mut vector: Option<[f64; 3]> = None;
     for index in 0..pair_count {
         let (start_index, end_index) = if along_v {
@@ -812,7 +812,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     SourceSurfaceGeometry::Present(_) => return Ok(None),
                 };
                 if let Some(plane) = plane {
-                    ctx.try_reserve_items(&mut planes, 1, "creo NURBS translation cap planes")?;
+                    ctx.reserve_vec(&mut planes, 1, "creo NURBS translation cap planes")?;
                     planes.push((plane.origin, plane.normal));
                 }
             }
@@ -824,7 +824,7 @@ pub(in super::super) fn generated_nurbs_translation_extent(
                     let Some(span) = nurbs_translation_span(ctx, nurbs)? else {
                         return Ok(None);
                     };
-                    ctx.try_reserve_items(&mut carriers, 1, "creo NURBS translation carriers")?;
+                    ctx.reserve_vec(&mut carriers, 1, "creo NURBS translation carriers")?;
                     carriers.push(span);
                 }
                 SourceSurfaceGeometry::Present(SurfaceGeometry::Solved(
@@ -1088,7 +1088,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
         }) else {
             return Ok(None);
         };
-        ctx.try_reserve_items(&mut planes, 1, "creo rectilinear cap planes")?;
+        ctx.reserve_vec(&mut planes, 1, "creo rectilinear cap planes")?;
         planes.push((plane, row.reversed));
     }
 
@@ -1119,7 +1119,7 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                     return Ok(None);
                 }
             } else {
-                ctx.try_reserve_items(&mut family.stations, 1, "creo rectilinear stations")?;
+                ctx.reserve_vec(&mut family.stations, 1, "creo rectilinear stations")?;
                 family.stations.push(RectilinearPlaneStation {
                     coordinate: station,
                     reversed,
@@ -1133,12 +1133,12 @@ pub(in super::super) fn generated_rectilinear_plane_extent(
                 return Ok(None);
             }
             let mut stations = Vec::new();
-            ctx.try_reserve_items(&mut stations, 1, "creo rectilinear stations")?;
+            ctx.reserve_vec(&mut stations, 1, "creo rectilinear stations")?;
             stations.push(RectilinearPlaneStation {
                 coordinate: station,
                 reversed,
             });
-            ctx.try_reserve_items(&mut families, 1, "creo rectilinear families")?;
+            ctx.reserve_vec(&mut families, 1, "creo rectilinear families")?;
             families.push(RectilinearPlaneFamily {
                 normal: plane.normal,
                 stations,

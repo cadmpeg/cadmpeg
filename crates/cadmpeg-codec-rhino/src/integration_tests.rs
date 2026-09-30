@@ -49,7 +49,8 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     )
 }
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
     assert!(result.ir().native.namespace("rhino").is_some());
 }
@@ -747,7 +748,9 @@ fn material_rdk_userdata_is_retained_as_callback_owned_source() {
     let xml = b"<xml><render-content-manager-data><material instance-id=\"44444444-4444-4444-4444-444444444444\"/></render-content-manager-data></xml>\0";
     let rdk_payload = [
         2_i32.to_le_bytes().as_slice(),
-        (xml.len() as i32).to_le_bytes().as_slice(),
+        (i32::try_from(xml.len()).expect("fixture value fits i32"))
+            .to_le_bytes()
+            .as_slice(),
         xml.as_slice(),
     ]
     .concat();
@@ -1484,7 +1487,10 @@ fn user_table_records_are_retained_as_complete_opaque_source_records() {
         .find(|(id, _)| id.as_str().starts_with("rhino:opaque:record#"))
         .expect("user table record must be retained");
     assert!(retained_id.as_str().contains("-70000042-"));
-    assert_eq!(retained.byte_len(), expected.len() as u64);
+    assert_eq!(
+        retained.byte_len(),
+        cadmpeg_core::decode::u64_from_index(expected.len())
+    );
     assert_eq!(retained.data(), Some(expected.as_slice()));
 }
 
@@ -1745,7 +1751,8 @@ fn decode_counts(path: &Path) -> Option<(u64, usize, usize)> {
             eprintln!("  {}: {}", loss.code, loss.message);
         }
     }
-    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone());
+    let validation = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(
         validation.findings.iter().all(|finding| !matches!(
             finding.severity,

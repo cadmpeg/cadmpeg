@@ -47,7 +47,7 @@ fn push_coordinate_equation(
     equations: &mut Vec<SectionCoordinateEquation>,
     equation: SectionCoordinateEquation,
 ) -> Result<(), CodecError> {
-    ctx.try_reserve_items(equations, 1, "creo section coordinate equations")?;
+    ctx.reserve_vec(equations, 1, "creo section coordinate equations")?;
     equations.push(equation);
     Ok(())
 }
@@ -392,7 +392,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             section_skamp_point_on_line(ctx, definition, skamp)?
         {
             if !ambiguous_point_ids.contains(&first) && !ambiguous_point_ids.contains(&second) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut point_on_line_coordinates,
                     1,
                     "creo section point-on-line coordinates",
@@ -404,7 +404,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             section_skamp_saved_point_on_line(ctx, definition, skamp)?
         {
             if !ambiguous_point_ids.contains(&point_id) {
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut saved_point_on_line_coordinates,
                     1,
                     "creo section saved point-on-line coordinates",
@@ -447,7 +447,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
                 SectionSymmetryAxis::Value(_) => true,
             }
         {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut symmetric_point_constraints,
                 1,
                 "creo section axis symmetry constraints",
@@ -526,7 +526,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
             continue;
         };
         if matches!(relation.sign, 0 | 1 | 0xf6) {
-            ctx.try_reserve_items(
+            ctx.reserve_vec(
                 &mut linear_dimension_candidates,
                 1,
                 "creo section linear dimension candidates",
@@ -559,7 +559,7 @@ pub(in crate::decode) fn resolved_section_coordinates(
     )?;
     let unsigned_equation_distances =
         section_equation_unsigned_coordinate_distances(ctx, definition, &ambiguous_point_ids)?;
-    ctx.try_reserve_items(
+    ctx.reserve_vec(
         &mut unsigned_dimension_candidates,
         unsigned_equation_distances.len(),
         "creo section unsigned dimension candidates",

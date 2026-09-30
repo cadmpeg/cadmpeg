@@ -24,13 +24,13 @@ pub(crate) fn value_index<'a, K: LegacyCode>(
                 std::collections::btree_map::Entry::Vacant(entry) => {
                     ctx.charge_collection_items(1, "creo legacy value index nodes")?;
                     let mut values = Vec::new();
-                    ctx.try_reserve_items(&mut values, 1, "creo legacy value index rows")?;
+                    ctx.reserve_vec(&mut values, 1, "creo legacy value index rows")?;
                     values.push(record);
                     entry.insert(values);
                 }
                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                     let values = entry.get_mut();
-                    ctx.try_reserve_items(values, 1, "creo legacy value index rows")?;
+                    ctx.reserve_vec(values, 1, "creo legacy value index rows")?;
                     values.push(record);
                 }
             }
@@ -974,7 +974,7 @@ fn array_dimensions(
         if dimension == 0 || bytes.get(after_dimension) != Some(&b']') {
             return Ok(None);
         }
-        ctx.try_reserve_items(&mut dimensions, 1, "creo legacy array dimensions")?;
+        ctx.reserve_vec(&mut dimensions, 1, "creo legacy array dimensions")?;
         dimensions.push(dimension);
         cursor = after_dimension + 1;
     }
@@ -1021,7 +1021,7 @@ fn continuation_numeric_runs<T>(
             let Some(run) = numeric_run(token, scalar) else {
                 return Ok(None);
             };
-            ctx.try_reserve_items(&mut runs, 1, "creo legacy continuation numeric runs")?;
+            ctx.reserve_vec(&mut runs, 1, "creo legacy continuation numeric runs")?;
             runs.push(run);
         }
     }
@@ -1161,17 +1161,13 @@ fn object_records(
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         ctx.charge_collection_items(1, "creo legacy object array index nodes")?;
                         let mut elements = Vec::new();
-                        ctx.try_reserve_items(
-                            &mut elements,
-                            1,
-                            "creo legacy object array index rows",
-                        )?;
+                        ctx.reserve_vec(&mut elements, 1, "creo legacy object array index rows")?;
                         elements.push(child.offset);
                         entry.insert(elements);
                     }
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         let elements = entry.get_mut();
-                        ctx.try_reserve_items(elements, 1, "creo legacy object array index rows")?;
+                        ctx.reserve_vec(elements, 1, "creo legacy object array index rows")?;
                         elements.push(child.offset);
                     }
                 }
@@ -1196,7 +1192,7 @@ fn object_records(
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
                 let mut elements = Vec::new();
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut elements,
                     offsets.len(),
                     "creo legacy object array elements",
@@ -1222,7 +1218,7 @@ fn object_records(
             };
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy object record names")?;
-            ctx.try_reserve_items(&mut records, 1, "creo legacy object records")?;
+            ctx.reserve_vec(&mut records, 1, "creo legacy object records")?;
             records.push(ObjectRecord {
                 name,
                 attribute_id: value.attribute_id,
@@ -1299,7 +1295,7 @@ fn scalar_string_records<K: LegacyCode<Payload = StringValue>>(
             let payload = byte_string_value(ctx, bytes, null_token)?;
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy scalar string names")?;
-            ctx.try_reserve_items(&mut records, 1, "creo legacy scalar string records")?;
+            ctx.reserve_vec(&mut records, 1, "creo legacy scalar string records")?;
             records.push(ValueRecord {
                 name,
                 attribute_id: value.attribute_id,
@@ -1344,17 +1340,13 @@ fn string_records(
                     std::collections::btree_map::Entry::Vacant(entry) => {
                         ctx.charge_collection_items(1, "creo legacy string array child nodes")?;
                         let mut children = Vec::new();
-                        ctx.try_reserve_items(
-                            &mut children,
-                            1,
-                            "creo legacy string array child rows",
-                        )?;
+                        ctx.reserve_vec(&mut children, 1, "creo legacy string array child rows")?;
                         children.push(value);
                         entry.insert(children);
                     }
                     std::collections::btree_map::Entry::Occupied(mut entry) => {
                         let children = entry.get_mut();
-                        ctx.try_reserve_items(children, 1, "creo legacy string array child rows")?;
+                        ctx.reserve_vec(children, 1, "creo legacy string array child rows")?;
                         children.push(value);
                     }
                 }
@@ -1392,7 +1384,7 @@ fn string_records(
                     .get(&value.offset)
                     .map_or(&[][..], Vec::as_slice);
                 let mut values = Vec::new();
-                ctx.try_reserve_items(
+                ctx.reserve_vec(
                     &mut values,
                     children.len(),
                     "creo legacy string array values",
@@ -1424,7 +1416,7 @@ fn string_records(
             };
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy string record names")?;
-            ctx.try_reserve_items(&mut records, 1, "creo legacy string records")?;
+            ctx.reserve_vec(&mut records, 1, "creo legacy string records")?;
             records.push(ValueRecord {
                 name,
                 attribute_id: value.attribute_id,
@@ -1500,7 +1492,7 @@ where
                             else {
                                 break;
                             };
-                            ctx.try_reserve_items(&mut runs, 1, "creo legacy numeric child runs")?;
+                            ctx.reserve_vec(&mut runs, 1, "creo legacy numeric child runs")?;
                             runs.push(run);
                             next_index += 1;
                         }
@@ -1534,7 +1526,7 @@ where
                 };
             let name =
                 ctx.copy_retained_text(&declaration.name, "creo legacy numeric record names")?;
-            ctx.try_reserve_items(&mut records, 1, "creo legacy numeric records")?;
+            ctx.reserve_vec(&mut records, 1, "creo legacy numeric records")?;
             records.push(ValueRecord {
                 name,
                 attribute_id: value.attribute_id,
@@ -1645,7 +1637,7 @@ fn scan_scope(
             } else {
                 let name = ctx.copy_retained_text(name, "creo legacy declaration names")?;
                 ctx.charge_collection_items(1, "creo legacy declaration index nodes")?;
-                ctx.try_reserve_items(&mut declarations, 1, "creo legacy declarations")?;
+                ctx.reserve_vec(&mut declarations, 1, "creo legacy declarations")?;
                 declaration_indices.insert(id, declarations.len());
                 declarations.push(AttributeDeclaration {
                     id,
@@ -1658,7 +1650,7 @@ fn scan_scope(
         }
         if let Some(value) = value(current, line_offset) {
             continuation_owner = Some(candidates.len());
-            ctx.try_reserve_items(&mut candidates, 1, "creo legacy scope value candidates")?;
+            ctx.reserve_vec(&mut candidates, 1, "creo legacy scope value candidates")?;
             candidates.push(value);
         }
     }
@@ -1686,7 +1678,7 @@ pub(crate) fn scan(
     let mut scopes = Vec::new();
     for range in ranges {
         if range.start < range.end && range.start < data.len() {
-            ctx.try_reserve_items(&mut scopes, 1, "creo legacy parsed scopes")?;
+            ctx.reserve_vec(&mut scopes, 1, "creo legacy parsed scopes")?;
             scopes.push(scan_scope(ctx, data, range)?);
         }
     }

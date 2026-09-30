@@ -7,6 +7,7 @@ use crate::decode::analytic::pcurve_geometry::{
 use crate::decode::analytic::pcurves::{
     directed_pcurve_points, linear_pcurve_carrier, mapped_pcurve_endpoints,
     oriented_native_pcurve_endpoints, planar_curve_pcurve, unique_oriented_native_pcurve,
+    OrientedNativePcurve,
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -306,7 +307,8 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
             &ir,
             [1, 2],
             [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [4.0, 3.0]]],
-        ),
+        )
+        .expect("evaluator allocation succeeds"),
         Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
     );
     assert!(mapped_pcurve_endpoints(
@@ -314,6 +316,7 @@ fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
         [1, 2],
         [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [5.0, 3.0]]],
     )
+    .expect("evaluator allocation succeeds")
     .is_none());
 }
 
@@ -702,9 +705,11 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             &[(endpoints, 20), ([endpoints[1], endpoints[0]], 10)],
             traversal,
         )
-        .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset)))
         .expect("evaluation resources"),
-        Some((endpoints, 10))
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 10,
+        })
     );
     assert_eq!(
         unique_oriented_native_pcurve(
@@ -713,9 +718,11 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             &[(endpoints, 20), ([[2.0, 4.0], [5.0, 8.0]], 10)],
             traversal,
         )
-        .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset)))
         .expect("evaluation resources"),
-        Some((endpoints, 20))
+        Some(OrientedNativePcurve {
+            endpoints,
+            offset: 20,
+        })
     );
 
     let cylinder = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
@@ -743,7 +750,6 @@ fn reconciles_agreeing_source_forms_and_rejects_competing_paths() {
             ],
             [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
         )
-        .map(|result| result.map(|candidate| (candidate.endpoints, candidate.offset)))
         .expect("evaluation resources"),
         None
     );
