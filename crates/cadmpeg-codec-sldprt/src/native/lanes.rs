@@ -3,6 +3,7 @@ use super::admission::{admit_temporary_clones, admit_validation_candidates, inva
 use super::SldprtNative;
 use cadmpeg_core::decode::DecodeContext;
 use crate::records::FeatureInputLane;
+use crate::records::charged_clone::CloneCharged;
 use crate::resolved_features::assembly::is_supplemental_config_lane;
 use crate::resolved_features::bindings::finalize_lane_bindings;
 
@@ -201,13 +202,9 @@ pub(crate) fn expected_lanes_charged<'a>(
         primary_count,
         "validate SLDPRT expected primary lanes",
     )?;
-    expected_primary_lanes.extend(
-        native
-            .feature_input_lanes
-            .iter()
-            .filter(|lane| !is_supplemental_config_lane(lane))
-            .cloned(),
-    );
+    for lane in native.feature_input_lanes.iter().filter(|lane| !is_supplemental_config_lane(lane)) {
+        expected_primary_lanes.push(lane.clone_charged(ctx, "validate SLDPRT expected primary lane copies")?);
+    }
     let supplemental_count = native.feature_input_lanes.len() - primary_count;
     let mut expected_supplemental_lanes = Vec::new();
     ctx.reserve_precharged_vec(
@@ -215,13 +212,9 @@ pub(crate) fn expected_lanes_charged<'a>(
         supplemental_count,
         "validate SLDPRT expected supplemental lanes",
     )?;
-    expected_supplemental_lanes.extend(
-        native
-            .feature_input_lanes
-            .iter()
-            .filter(|lane| is_supplemental_config_lane(lane))
-            .cloned(),
-    );
+    for lane in native.feature_input_lanes.iter().filter(|lane| is_supplemental_config_lane(lane)) {
+        expected_supplemental_lanes.push(lane.clone_charged(ctx, "validate SLDPRT expected supplemental lane copies")?);
+    }
     for lane in expected_primary_lanes
         .iter_mut()
         .chain(&mut expected_supplemental_lanes)

@@ -631,6 +631,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
+    if parameters.is_empty() { return Ok(0); }
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, false)?;
     let mut count = 0;
@@ -670,6 +671,7 @@ pub(crate) fn parameters_with_incoherent_evaluated_values(
     feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> Result<usize, CodecError> {
+    if parameters.is_empty() { return Ok(0); }
     let aliases = ParameterAliases::new(ctx, parameters, feature_names, global_owners)?;
     let mut states = parameter_value_states(ctx, parameters, configurations, true)?;
     let mut count = 0;
