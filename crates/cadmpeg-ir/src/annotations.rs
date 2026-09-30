@@ -449,6 +449,21 @@ impl AnnotationBuilder {
     }
 }
 
+fn admit_identity_work(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    entries: usize,
+    bytes: usize,
+    operation: &'static str,
+) -> Result<(), cadmpeg_core::CodecError> {
+    // A binary height bound covers node comparisons and one key copy.
+    let levels = u64::from(usize::BITS - entries.leading_zeros()) + 1;
+    let work = levels.checked_mul(32).and_then(|work| work.checked_add(4))
+        .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(bytes)))
+        .and_then(|work| work.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)
+}
+
 impl Annotations {
     /// Remap both tables together. A collision leaves both tables unchanged.
     /// The callback runs once for each distinct source identity.
@@ -492,6 +507,7 @@ impl Annotations {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let mut ids = std::collections::BTreeSet::new();
         for id in self.provenance.keys().chain(self.exactness.keys()) {
+            admit_identity_work(ctx, ids.len(), id.len(), "index annotation identities")?;
             if !ids.contains(id) {
                 ctx.charge_collection_items(1, "index annotation identities")?;
                 ids.insert(id);
@@ -504,8 +520,15 @@ impl Annotations {
         for id in ids {
             ctx.charge_work(1, "remap annotation identities")?;
             let target = map(id)?;
+            admit_identity_work(ctx, targets.len(), target.len(), "index qualified annotation targets")?;
             if targets.contains(&target) {
-                return Err(AnnotationIdentityCollision { id: target }.into());
+                const PREFIX: &str = "annotation identity collision at ";
+                let bytes = PREFIX.len().checked_add(target.len())
+                    .ok_or_else(|| ctx.refuse_codec_limit("report annotation identity collision", u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes), "report annotation identity collision")?;
+                return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
+                    format_args!("{PREFIX}{target}"), "report annotation identity collision",
+                )?));
             }
             let (mut target_check, target_reservation) =
                 ctx.reserve_scoped_string(target.len(), "index qualified annotation targets")?;
@@ -518,6 +541,7 @@ impl Annotations {
                 "retain annotation remap reservations",
             )?;
             scoped_reservations.push(target_reservation);
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "copy source annotation identity")?;
             let (mut source, source_reservation) =
                 ctx.reserve_scoped_string(id.len(), "copy source annotation identity")?;
             source.push_str(id);
@@ -531,6 +555,10 @@ impl Annotations {
         }
         let mut remapped = Self::default();
         for (id, target) in remapping {
+            admit_identity_work(ctx, self.provenance.len(), id.len(), "remove source provenance identity")?;
+            admit_identity_work(ctx, self.exactness.len(), id.len(), "remove source exactness identity")?;
+            admit_identity_work(ctx, remapped.provenance.len(), target.len(), "store qualified provenance")?;
+            admit_identity_work(ctx, remapped.exactness.len(), target.len(), "store qualified exactness")?;
             let provenance = self.provenance.remove(&id);
             let exactness = self.exactness.remove(&id);
             match (provenance, exactness) {
