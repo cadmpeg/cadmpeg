@@ -2,7 +2,6 @@
 //! Chamfer projection: the edge groups the source states and the parameter
 //! lanes they pair with.
 use super::{localized_fillet_group, localized_fillet_owner, localized_fillet_parameter};
-use crate::design::feature_project::project_parameter_design;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
@@ -60,16 +59,21 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
     )];
     let owners = [localized_fillet_owner(10, 11, 0)];
 
-    let (refused, _) = project_parameter_design(
-        &parameters,
-        &owners,
-        std::slice::from_ref(&scope),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (refused, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &parameters,
+owners: &owners,
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         refused[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -79,16 +83,21 @@ fn a_chamfer_that_states_no_edge_group_refuses_a_one_element_distance_lane() {
     ));
 
     let group = localized_fillet_group(100, 0, vec![200]);
-    let (accepted, _) = project_parameter_design(
-        &parameters,
-        &owners,
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (accepted, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &parameters,
+owners: &owners,
+scopes,
+construction_groups: std::slice::from_ref(&group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         accepted[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })

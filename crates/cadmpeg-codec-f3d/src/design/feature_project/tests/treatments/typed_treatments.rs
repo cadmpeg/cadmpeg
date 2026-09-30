@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_owner_frame;
 use crate::design::test_support::parameter_record;
 use crate::records::feature::hole::DesignHoleConstruction;
@@ -230,24 +229,29 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         .unwrap()
     };
     let chamfer_edge_group = construction_group(70, 1);
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
             parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
             parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
         ],
-        &[
+owners: &[
             owner(44, 12, 45, 0),
             owner(54, 22, 55, 0),
             owner(64, 22, 65, 1),
         ],
-        &scopes,
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
 
     let fillet = features
         .iter()
@@ -293,16 +297,21 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     distance_angle_parameters[1]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &distance_angle_parameters,
-        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &distance_angle_parameters,
+owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -332,16 +341,21 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             .unwrap(),
         )
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &distance_angle_parameters,
-        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &distance_angle_parameters,
+owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -359,20 +373,25 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     hole_parameters[2]
         .try_set_unit_value("deg".to_owned())
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &hole_parameters,
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[2]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &hole_parameters,
+owners: &[
             owner(94, 32, 95, 0),
             owner(104, 32, 105, 1),
             owner(114, 32, 115, 2),
         ],
-        std::slice::from_ref(&scopes[2]),
-        &[],
-        &[],
-        &[],
-        &hole_face_operands,
-        &[],
-    );
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &hole_face_operands,
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             face: Some(FaceSelection::Resolved { faces, native }),
@@ -395,20 +414,25 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     hole_parameters[2]
         .try_set_evaluated_value(118.0_f64.to_radians())
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &hole_parameters,
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[2]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &hole_parameters,
+owners: &[
             owner(94, 32, 95, 0),
             owner(104, 32, 105, 1),
             owner(114, 32, 115, 2),
         ],
-        std::slice::from_ref(&scopes[2]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -424,22 +448,27 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         parameter(124, 125, "CBDepth", "d7", "3 mm", 0.3),
         parameter(134, 135, "CBDiameter", "d8", "8 mm", 0.8),
     ]);
-    let (features, _) = project_parameter_design(
-        &counterbore_parameters,
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[2]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &counterbore_parameters,
+owners: &[
             owner(94, 32, 95, 0),
             owner(104, 32, 105, 1),
             owner(114, 32, 115, 2),
             owner(124, 32, 125, 3),
             owner(134, 32, 135, 4),
         ],
-        std::slice::from_ref(&scopes[2]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -457,22 +486,27 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
     counterbore_parameters[2]
         .try_set_evaluated_value(std::f64::consts::PI)
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &counterbore_parameters,
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[2]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &counterbore_parameters,
+owners: &[
             owner(94, 32, 95, 0),
             owner(104, 32, 105, 1),
             owner(114, 32, 115, 2),
             owner(124, 32, 125, 3),
             owner(134, 32, 135, 4),
         ],
-        std::slice::from_ref(&scopes[2]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Hole {
             shape,
@@ -486,19 +520,24 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 ..
             },) if actual_diameter.get() == 8.0 && actual_depth.get() == 3.0)));
 
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1),
             parameter(64, 65, "rightDistance", "d3", "2 mm", 0.2),
         ],
-        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -508,16 +547,21 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if first.get() == 1.0 && second.get() == 2.0)
     ));
 
-    let (features, _) = project_parameter_design(
-        &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
-        &[owner(54, 22, 55, 0)],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[parameter(54, 55, "leftDistance", "d2", "1 mm", 0.1)],
+owners: &[owner(54, 22, 55, 0)],
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })
@@ -527,19 +571,24 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             }] if distance.get() == 1.0)
     ));
 
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[0]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(44, 45, "Radius", "d1", "5 mm", 0.5),
             parameter(46, 47, "TangencyWeight", "w1", "0.5", 0.5),
         ],
-        &[owner(44, 12, 45, 0), owner(46, 12, 47, 1)],
-        std::slice::from_ref(&scopes[0]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+owners: &[owner(44, 12, 45, 0), owner(46, 12, 47, 1)],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -548,16 +597,21 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if parameters.len() == 2
     ));
 
-    let (features, _) = project_parameter_design(
-        &[parameter(44, 45, "Radius", "d1", "0 mm", 0.0)],
-        &[owner(44, 12, 45, 0)],
-        std::slice::from_ref(&scopes[0]),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[0]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[parameter(44, 45, "Radius", "d1", "0 mm", 0.0)],
+owners: &[owner(44, 12, 45, 0)],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -566,24 +620,29 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if parameters.len() == 1
     ));
 
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(54, 55, "Distance 1", "d2", "1 mm", 0.1),
             parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
             parameter(74, 75, "Distance", "d4", "3 mm", 0.3),
         ],
-        &[
+owners: &[
             owner(54, 22, 55, 0),
             owner(64, 22, 65, 1),
             owner(74, 22, 75, 2),
         ],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -592,19 +651,24 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
         }) if parameters.len() == 3
     ));
 
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scopes[1]);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(54, 55, "Distance 1", "d2", "0 mm", 0.0),
             parameter(64, 65, "Distance 2", "d3", "2 mm", 0.2),
         ],
-        &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
-        std::slice::from_ref(&scopes[1]),
-        std::slice::from_ref(&chamfer_edge_group),
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+owners: &[owner(54, 22, 55, 0), owner(64, 22, 65, 1)],
+scopes,
+construction_groups: std::slice::from_ref(&chamfer_edge_group),
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -624,19 +688,24 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let (features, _) = project_parameter_design(
-        &[
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&chamfer_scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter(74, 75, "Distance", "d5", "2 mm", 0.2),
             parameter(84, 85, "Distance", "d4", "2.5 mm", 0.25),
         ],
-        &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
-        std::slice::from_ref(&chamfer_scope),
-        &construction_groups,
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+owners: &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
+scopes,
+construction_groups: &construction_groups,
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Chamfer { groups, .. })

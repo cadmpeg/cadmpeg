@@ -6,7 +6,6 @@ use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::work_geometry::{
     exact_joint_origin_frame, exact_work_axis_construction, exact_work_plane_frame,
 };
-use crate::design::feature_project::project_parameter_design;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
@@ -728,16 +727,21 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     {
         *slot = Some(construction);
     }
-    let (axis_features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&axis_scope),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (axis_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&axis_scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         axis_features.as_slice(), [Feature {
             evaluation,

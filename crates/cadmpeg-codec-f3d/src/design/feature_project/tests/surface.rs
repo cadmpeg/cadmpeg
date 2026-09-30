@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_parameter_design;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignSurfaceExtendMethod;
 use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
@@ -36,7 +35,21 @@ fn dispatcher_projects_perpendicular_surface_extend() {
             tolerance_offset: 139,
         });
     }
-    let (features, _) = project_parameter_design(&[], &[], &[scope], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[scope];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
 
     let [Feature { evaluation, .. }] = features.as_slice() else {
         panic!("perpendicular SurfaceExtend did not project as a typed feature");

@@ -129,6 +129,7 @@ fn insert_feature_dependency(
 /// operand, fillet-radius, edge, edge-identity, face, and whole-body recipe
 /// operand records and the sketch placements and body bindings each feature
 /// scope resolves against.
+#[cfg_attr(test, derive(Default))]
 pub(crate) struct ProjectInputs<'a> {
     pub(crate) native: &'a [DesignParameter],
     pub(crate) owners: &'a [DesignParameterOwner],
@@ -616,79 +617,6 @@ fn ensure_feature_dependencies_precede(
     }
     Ok(())
 }
-
-/// Project parameter scopes and their document- or scope-owned parameters into
-/// the neutral construction history.
-// Faithful reduced-arg entry point over the same slices as `ProjectInputs`;
-// its many test callers pass positional slices, so it defaults the fixed
-// edge-identity and body-binding tables and forwards through the bundle.
-#[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-pub(crate) fn project_parameter_design(
-    native: &[DesignParameter],
-    owners: &[DesignParameterOwner],
-    scopes: &[DesignParameterScope],
-    construction_groups: &[DesignConstructionOperandGroup],
-    fillet_radius_groups: &[DesignFilletRadiusGroup],
-    edge_operands: &[DesignEdgeOperand],
-    face_operands: &[DesignFaceOperand],
-    placements: &[DesignSketchPlacement],
-) -> (
-    Vec<cadmpeg_ir::features::Feature>,
-    Vec<cadmpeg_ir::features::DesignParameter>,
-) { crate::test_support::with_decode_context(|decode_ctx| {
-    let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
-    for scope in scopes {
-        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        let item = crate::records::identity::Located {
-            value: u64::from(scope.record_index),
-            offset: 0,
-        };
-        if let Some((_, items)) = streams
-            .iter_mut()
-            .find(|(candidate, _)| *candidate == stream)
-        {
-            items.push(item);
-        } else {
-            streams.push((stream, vec![item]));
-        }
-    }
-    let timelines = streams
-        .into_iter()
-        .map(|(stream, items)| {
-            DesignFeatureTimeline::try_new(
-                ids::native_design_feature_timeline_id_in_stream(stream, 0),
-                crate::records::entity_header::DesignTimelineFrame::test_items(0, items),
-                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
-                std::num::NonZeroU64::new(1).unwrap(),
-                0,
-                std::num::NonZeroU64::new(1).unwrap(),
-            )
-            .unwrap()
-        })
-        .collect::<Vec<_>>();
-    project_parameter_design_with_edge_identities(decode_ctx, &ProjectInputs {
-            native,
-            owners,
-            scopes,
-            timelines: &timelines,
-            construction_groups,
-            fillet_radius_groups,
-            edge_operands,
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands,
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements,
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        })
-    .expect("test projection has a synthetic exact timeline")
-}) }
 
 /// Project Design parameters and feature scopes, including fixed edge identities.
 pub(crate) fn project_parameter_design_with_edge_identities(

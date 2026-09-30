@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::feature_project::project_parameter_design;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
 use crate::ids::neutral_sketch_id;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -68,7 +67,21 @@ fn dispatcher_projects_datum_feature_scopes() {
     }
 
     let scopes = vec![joint_origin, work_plane, work_point];
-    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
 
     assert!(matches!(
         features[0].evaluation.definition(),
@@ -111,7 +124,21 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         });
     }
 
-    let (features, _) = project_parameter_design(&[], &[], &[scale], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[scale];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let FeatureDefinition::Operation(FeatureOperation::Scale {
         bodies,
         center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
@@ -149,7 +176,21 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     );
     referenced.with_work_plane_reference(11);
 
-    let (features, _) = project_parameter_design(&[], &[], &[referenced], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[referenced];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if frame.origin() == Point3::new(0.0, 0.0, 0.0)
@@ -249,7 +290,21 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
         );
     }
 
-    let (features, _) = project_parameter_design(&[], &[], &[plane], &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[plane];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let FeatureDefinition::Operation(FeatureOperation::DatumThreePointPlane { points, .. }) =
         features[0].evaluation.definition()
     else {
@@ -346,7 +401,21 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
     let mut scopes = planes.to_vec();
     scopes.push(point);
 
-    let (features, _) = project_parameter_design(&[], &[], &scopes, &[], &[], &[], &[], &[]);
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let point = features
         .iter()
         .find(|feature| {
@@ -862,16 +931,21 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         paired_class_tag: crate::records::references::DesignClassTag::try_from("264".to_owned())
             .unwrap(),
     };
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        &scopes,
-        &groups,
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&placement),
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &groups,
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: std::slice::from_ref(&placement),
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let definition = |kind: &str| {
         features
             .iter()
