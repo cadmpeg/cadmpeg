@@ -949,7 +949,7 @@ fn constraint_locus_point(
     constraint: &SketchConstraint,
     locus: &SketchLocus,
 ) -> Result<Point2, cadmpeg_core::CodecError> {
-    let entity = sketch_constraint_entity(ir, constraint, &locus_entity(locus))?;
+    let entity = sketch_constraint_entity(ir, constraint, locus_entity(locus))?;
     sketch_entity_loci(entity)
         .into_iter()
         .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
