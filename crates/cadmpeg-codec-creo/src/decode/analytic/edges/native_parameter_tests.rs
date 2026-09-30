@@ -336,19 +336,19 @@ fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
     let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
     let root_two = std::f64::consts::SQRT_2;
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, points, [root_two, root_two, 0.0]),
+        periodic_conic_edge_parameter_range(&circle, points, [root_two, root_two, 0.0]).expect("evaluation resources"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0]),
+        periodic_conic_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0]).expect("evaluation resources"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],),
+        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],).expect("evaluation resources"),
         Some([0.0, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], points[0]),
+        periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], points[0]).expect("evaluation resources"),
         None
     );
 }
@@ -364,15 +364,15 @@ fn conic_parameters_preserve_ellipse_axis_scales() {
         [points[0], [0.0, 4.0, 0.0]],
     ));
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, points, [2.0 * root_two, root_two, 0.0],),
+        periodic_conic_edge_parameter_range(&ellipse, points, [2.0 * root_two, root_two, 0.0],).expect("evaluation resources"),
         Some([0.0, std::f64::consts::FRAC_PI_2])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, points, [-2.0 * root_two, -root_two, 0.0],),
+        periodic_conic_edge_parameter_range(&ellipse, points, [-2.0 * root_two, -root_two, 0.0],).expect("evaluation resources"),
         Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
     );
     assert_eq!(
-        periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],),
+        periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],).expect("evaluation resources"),
         Some([0.0, std::f64::consts::TAU])
     );
 }
@@ -576,4 +576,27 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
         .expect("evaluation resources"),
         None
     );
+}
+
+#[test]
+fn analytic_nurbs_endpoints_propagate_evaluator_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_core::CodecError;
+    let nurbs = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.5, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+        None,
+        false,
+    ).expect("quadratic spline");
+    let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_collection_items = 2;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert!(matches!(super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry), Err(CodecError::ResourceLimit(limit)) if limit.operation == "IR B-spline basis"));
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("root");
+    assert_eq!(super::nonperiodic_nurbs_endpoint_points(&ctx, &geometry).expect("service resources"), Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]));
 }
