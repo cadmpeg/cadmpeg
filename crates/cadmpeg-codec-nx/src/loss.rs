@@ -33,6 +33,7 @@ macro_rules! loss_codes {
 
         impl NxLossCode {
             /// Every code in declaration order.
+            #[cfg(test)]
             const ALL: &'static [Self] = &[$(Self::$variant),*];
 
             /// Stable loss code string.

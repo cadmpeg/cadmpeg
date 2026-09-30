@@ -642,7 +642,7 @@ impl TryFrom<FeatureDraftConstructionTerminalLaneWire> for FeatureDraftConstruct
 
     fn try_from(wire: FeatureDraftConstructionTerminalLaneWire) -> Result<Self, Self::Error> {
         let [first, second] = [0, 1].map(|slot| {
-            ExtendedCompactIndex::from_wire(wire.indices[slot], &wire.raw_indices[slot])
+            ExtendedCompactIndex::from_wire(wire.indices[slot], wire.raw_indices[slot])
                 .map_err(|error| format!("indices[{slot}]: {error}"))
         });
         let lane = crate::om::draft_terminal::DraftTerminalLane::<u64>::new(

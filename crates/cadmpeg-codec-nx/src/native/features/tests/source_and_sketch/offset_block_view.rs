@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::native::features::offset_data_block_bytes_for_section;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
@@ -14,24 +14,29 @@ fn offset_block_view_refusal(configure: impl FnOnce(&mut DecodePolicy)) -> Codec
         offset: 6,
         bytes: &[0xbb],
     };
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty test root");
-    let mut reservation = ctx
-        .reserve_scoped(0, "NX offset block view storage")
-        .expect("empty reservation");
-    let mut blocks = BTreeMap::new();
-    offset_data_block_bytes_for_section(
-        &ctx,
-        &mut reservation,
-        &mut blocks,
-        3,
-        100,
-        &control,
-        &[column],
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            let mut reservation = ctx
+                .reserve_scoped(0, "NX offset block view storage")
+                .expect("empty reservation");
+            let mut blocks = BTreeMap::new();
+            offset_data_block_bytes_for_section(
+                ctx,
+                &mut reservation,
+                &mut blocks,
+                3,
+                100,
+                &control,
+                &[column],
+            )
+            .unwrap_err()
+        },
     )
-    .unwrap_err()
 }
 
 #[test]

@@ -275,7 +275,7 @@ pub(in crate::native) fn material_texture_assets(
 mod tests {
     use super::{material_texture_assets, MaterialTextureAsset};
     use crate::container::{Container, DirEntry, DirEntryBody, Region};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     use std::borrow::Cow;
     use std::sync::OnceLock;
@@ -302,12 +302,18 @@ mod tests {
     }
 
     fn assert_limit(configure: impl FnOnce(&mut DecodePolicy), dimension: ResourceDimension) {
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(TIFF, &arena, &policy).unwrap();
-        let error = material_texture_assets(&ctx, &container()).unwrap_err();
-        assert!(matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+        crate::test_support::with_decode_context_over(
+            TIFF,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let error = material_texture_assets(ctx, &container()).unwrap_err();
+                assert!(
+                    matches!(error, CodecError::ResourceLimit(limit) if limit.dimension == dimension)
+                );
+            },
+        );
     }
 
     #[test]
@@ -344,14 +350,17 @@ mod tests {
 
     #[test]
     fn material_texture_assets_preserve_identity_and_source() {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, _) = DecodeContext::from_root_bytes(TIFF, &arena, &policy).unwrap();
-        let assets = material_texture_assets(&ctx, &container()).unwrap();
-        assert_eq!(assets.len(), 1);
-        assert_eq!(assets[0].id, "nx:container:material-texture#0");
-        assert_eq!(assets[0].name(), "Steel");
-        assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
+        crate::test_support::with_decode_context_over(
+            TIFF,
+            |_| {},
+            |ctx| {
+                let assets = material_texture_assets(ctx, &container()).unwrap();
+                assert_eq!(assets.len(), 1);
+                assert_eq!(assets[0].id, "nx:container:material-texture#0");
+                assert_eq!(assets[0].name(), "Steel");
+                assert_eq!(assets[0].source_entry(), "/Root/materialsTif/Steel");
+            },
+        );
     }
 
     #[test]

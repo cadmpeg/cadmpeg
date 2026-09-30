@@ -1,10 +1,10 @@
-use super::super::{evaluate_expression_graphs, Expression, ExpressionUnit};
+use super::super::{evaluate_expression_graphs, ExpressionUnit, ParameterFormula};
 
 #[test]
 fn graph_scopes_equal_names_by_native_unit_label() {
     let expression =
         |id: &str, name: &str, unit: ExpressionUnit, formula: &str, value: Option<f64>| {
-            Expression {
+            ParameterFormula {
                 id: id.into(),
                 owner: None,
                 declaration: None,

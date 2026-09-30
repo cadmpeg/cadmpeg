@@ -109,7 +109,12 @@ pub(crate) fn scan<'a>(
             });
         }
     }
-    for start in 0..bytes.len().saturating_sub(5) {
+    for start in bytes
+        .len()
+        .checked_sub(5)
+        .into_iter()
+        .flat_map(|last| 0..last)
+    {
         if bytes[start] != 0x66 {
             continue;
         }
@@ -160,14 +165,18 @@ mod tests {
     #[test]
     fn name_field_scan_refuses_collection_limit() {
         let bytes = [3, 3, b'A', 0];
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-        let error = scan(&ctx, &bytes).unwrap_err();
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+
+        crate::test_support::with_decode_context_over(
+            &bytes,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = scan(ctx, &bytes).unwrap_err();
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
     }
 

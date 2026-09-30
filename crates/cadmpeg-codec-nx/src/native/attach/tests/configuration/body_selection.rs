@@ -20,124 +20,119 @@ use std::collections::BTreeMap;
 
 #[test]
 fn feature_body_selection_retains_complete_input_local_identities_atomically() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-
-    let first = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
-    let roots = BTreeMap::from([(94, 94), (122, 122)]);
-    assert_eq!(
-        feature_body_selection(
-            &ctx,
-            &[94, 122],
-            &roots,
-            &BTreeMap::new(),
-            "nx:om-object-indices#94,122".to_string(),
-        )
-        .expect("resource admission")
-        .into_selection(&ctx)
-        .expect("resource admission"),
-        BodySelection::local(
+    crate::test_support::with_decode_context(|ctx| {
+        let first = BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar");
+        let roots = BTreeMap::from([(94, 94), (122, 122)]);
+        assert_eq!(
+            feature_body_selection(
+                ctx,
+                &[94, 122],
+                &roots,
+                &BTreeMap::new(),
+                "nx:om-object-indices#94,122".to_string(),
+            )
+            .expect("resource admission")
+            .into_selection(ctx)
+            .expect("resource admission"),
+            BodySelection::local(
+                vec![
+                    "nx:om-body-object#94".to_string(),
+                    "nx:om-body-object#122".to_string(),
+                ],
+                "nx:om-object-indices#94,122".to_string()
+            )
+            .unwrap()
+        );
+        assert!(matches!(
+            feature_body_selection(
+                ctx,
+                &[94, 123],
+                &roots,
+                &BTreeMap::new(),
+                "nx:om-object-indices#94,123".to_string(),
+            )
+            .expect("resource admission")
+            .into_selection(ctx)
+            .expect("resource admission"),
+            BodySelection::Native(_)
+        ));
+        let aliases = BTreeMap::from([(94, 94), (150, 94)]);
+        assert_eq!(
+            feature_body_selection(
+                ctx,
+                &[94, 150],
+                &aliases,
+                &BTreeMap::new(),
+                "nx:om-object-indices#94,150".to_string(),
+            )
+            .expect("resource admission")
+            .into_selection(ctx)
+            .expect("resource admission"),
+            BodySelection::local(
+                vec!["nx:om-body-object#94".to_string()],
+                "nx:om-object-indices#94,150".to_string()
+            )
+            .unwrap()
+        );
+        let bindings = BTreeMap::from([(94, vec![first.clone()])]);
+        let segment_binding = |id: &str, stream_ordinal, body_object_index, alias| {
+            crate::native::segments::SegmentBodyBinding {
+                id: id.to_string(),
+                stream_link: format!("stream-link#{stream_ordinal}"),
+                stream_ordinal,
+                stream_kind: crate::parasolid::StreamKind::Partition,
+                body_object_index,
+                body_alias_object_index: alias,
+                stream_role: 0,
+                source_offset: 0,
+            }
+        };
+        let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
+        assert_eq!(
+            feature_body_selection(
+                ctx,
+                &[94],
+                &roots,
+                &bindings,
+                "nx:om-object-index#94".to_string(),
+            )
+            .expect("resource admission")
+            .into_selection(ctx)
+            .expect("resource admission"),
+            BodySelection::Resolved {
+                bodies: vec![first.clone()].try_into().expect("distinct bodies"),
+                native: "nx:om-object-index#94".to_string(),
+            }
+        );
+        assert_eq!(
+            feature_body_outputs(ctx, 94, &segment_bindings, &bindings).unwrap(),
+            vec![first]
+        );
+        let ambiguous_body_bindings = BTreeMap::from([(
+            94,
             vec![
-                "nx:om-body-object#94".to_string(),
-                "nx:om-body-object#122".to_string(),
+                BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar"),
+                BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
             ],
-            "nx:om-object-indices#94,122".to_string()
-        )
-        .unwrap()
-    );
-    assert!(matches!(
-        feature_body_selection(
-            &ctx,
-            &[94, 123],
-            &roots,
-            &BTreeMap::new(),
-            "nx:om-object-indices#94,123".to_string(),
-        )
-        .expect("resource admission")
-        .into_selection(&ctx)
-        .expect("resource admission"),
-        BodySelection::Native(_)
-    ));
-    let aliases = BTreeMap::from([(94, 94), (150, 94)]);
-    assert_eq!(
-        feature_body_selection(
-            &ctx,
-            &[94, 150],
-            &aliases,
-            &BTreeMap::new(),
-            "nx:om-object-indices#94,150".to_string(),
-        )
-        .expect("resource admission")
-        .into_selection(&ctx)
-        .expect("resource admission"),
-        BodySelection::local(
-            vec!["nx:om-body-object#94".to_string()],
-            "nx:om-object-indices#94,150".to_string()
-        )
-        .unwrap()
-    );
-    let bindings = BTreeMap::from([(94, vec![first.clone()])]);
-    let segment_binding = |id: &str, stream_ordinal, body_object_index, alias| {
-        crate::native::segments::SegmentBodyBinding {
-            id: id.to_string(),
-            stream_link: format!("stream-link#{stream_ordinal}"),
-            stream_ordinal,
-            stream_kind: crate::parasolid::StreamKind::Partition,
-            body_object_index,
-            body_alias_object_index: alias,
-            stream_role: 0,
-            source_offset: 0,
-        }
-    };
-    let segment_bindings = [segment_binding("binding#0", 0, 94, 150)];
-    assert_eq!(
-        feature_body_selection(
-            &ctx,
-            &[94],
-            &roots,
-            &bindings,
-            "nx:om-object-index#94".to_string(),
-        )
-        .expect("resource admission")
-        .into_selection(&ctx)
-        .expect("resource admission"),
-        BodySelection::Resolved {
-            bodies: vec![first.clone()].try_into().expect("distinct bodies"),
-            native: "nx:om-object-index#94".to_string(),
-        }
-    );
-    assert_eq!(
-        feature_body_outputs(&ctx, 94, &segment_bindings, &bindings).unwrap(),
-        vec![first]
-    );
-    let ambiguous_body_bindings = BTreeMap::from([(
-        94,
-        vec![
-            BodyId::mint("nx:s2:body#3".to_string()).expect("identity grammar"),
-            BodyId::mint("nx:s2:body#4".to_string()).expect("identity grammar"),
-        ],
-    )]);
-    assert!(
-        feature_body_outputs(&ctx, 94, &segment_bindings, &ambiguous_body_bindings)
+        )]);
+        assert!(
+            feature_body_outputs(ctx, 94, &segment_bindings, &ambiguous_body_bindings)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(feature_body_outputs(ctx, 123, &segment_bindings, &bindings)
             .unwrap()
-            .is_empty()
-    );
-    assert!(
-        feature_body_outputs(&ctx, 123, &segment_bindings, &bindings)
-            .unwrap()
-            .is_empty()
-    );
-    let ambiguous_bindings = [
-        segment_binding("binding#0", 0, 94, 150),
-        segment_binding("binding#1", 1, 94, 151),
-    ];
-    assert!(
-        feature_body_outputs(&ctx, 94, &ambiguous_bindings, &bindings)
-            .unwrap()
-            .is_empty()
-    );
+            .is_empty());
+        let ambiguous_bindings = [
+            segment_binding("binding#0", 0, 94, 150),
+            segment_binding("binding#1", 1, 94, 151),
+        ];
+        assert!(
+            feature_body_outputs(ctx, 94, &ambiguous_bindings, &bindings)
+                .unwrap()
+                .is_empty()
+        );
+    });
 }
 
 fn feature_body_output_with_limit(
@@ -155,12 +150,14 @@ fn feature_body_output_with_limit(
         source_offset: 0,
     }];
     let bodies = BTreeMap::from([(94, vec![body])]);
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    feature_body_outputs(&ctx, 94, &bindings, &bodies)
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| feature_body_outputs(ctx, 94, &bindings, &bodies),
+    )
 }
 
 #[test]
@@ -187,29 +184,27 @@ fn feature_body_output_refuses_retained_limit() {
 fn feature_body_selection_uses_complete_offset_store_proof_for_colliding_index() {
     use cadmpeg_ir::features::BodySelection;
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
-    let selection = feature_body_selection_with_offset_blocks(
-        &ctx,
-        &[94],
-        &BTreeMap::from([(94, 94)]),
-        &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
-        &BTreeMap::new(),
-        "nx:om-object-index#94".to_string(),
-    );
-    assert_eq!(
-        selection
-            .expect("resource admission")
-            .into_selection(&ctx)
-            .expect("resource admission"),
-        BodySelection::local(
-            vec!["nx:om-data-blocks-3:block#94".to_string()],
-            "nx:om-object-index#94".to_string()
-        )
-        .unwrap()
-    );
+    crate::test_support::with_decode_context(|ctx| {
+        let selection = feature_body_selection_with_offset_blocks(
+            ctx,
+            &[94],
+            &BTreeMap::from([(94, 94)]),
+            &BTreeMap::from([(94, "nx:om-data-blocks-3:block#94".to_string())]),
+            &BTreeMap::new(),
+            "nx:om-object-index#94".to_string(),
+        );
+        assert_eq!(
+            selection
+                .expect("resource admission")
+                .into_selection(ctx)
+                .expect("resource admission"),
+            BodySelection::local(
+                vec!["nx:om-data-blocks-3:block#94".to_string()],
+                "nx:om-object-index#94".to_string()
+            )
+            .unwrap()
+        );
+    });
 }
 #[test]
 fn native_primary_body_references_retain_only_proven_body_namespaces() {
@@ -481,12 +476,14 @@ fn retained_history_input_result(
     };
     let mut annotations = AnnotationBuilder::new();
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    attach_initial_segment_bodies(&ctx, &mut ir, &[binding], &mut annotations, &stream)
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| attach_initial_segment_bodies(ctx, &mut ir, &[binding], &mut annotations, &stream),
+    )
 }
 
 #[test]
@@ -535,128 +532,122 @@ fn nx_boolean_retains_disjoint_current_and_input_local_bodies() {
         BodySelection, BooleanKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
+    crate::test_support::with_decode_context(|ctx| {
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#0".to_string(),
+            operation_label: "operation#0".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Subtract,
+            target: crate::test_support::native_references::boolean_reference(94, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                122, 1,
+            )],
+            source_offset: 0,
+        };
+        let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
+        let definition = boolean_feature_definition(
+            ctx,
+            &operation,
+            &BTreeMap::from([(94, 94), (122, 122)]),
+            &BooleanOffsetStoreResolution::None,
+            &BTreeMap::from([(94, vec![body.clone()])]),
+        )
+        .unwrap();
 
-    let operation = crate::native::features::FeatureBooleanOperation {
-        id: "boolean#0".to_string(),
-        operation_label: "operation#0".to_string(),
-        kind: crate::native::features::FeatureBooleanKind::Subtract,
-        target: crate::test_support::native_references::boolean_reference(94, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(
-            122, 1,
-        )],
-        source_offset: 0,
-    };
-    let body = BodyId::mint("nx:s18:body#3".to_string()).expect("identity grammar");
-    let definition = boolean_feature_definition(
-        &ctx,
-        &operation,
-        &BTreeMap::from([(94, 94), (122, 122)]),
-        &BooleanOffsetStoreResolution::None,
-        &BTreeMap::from([(94, vec![body.clone()])]),
-    )
-    .unwrap();
-
-    assert_eq!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::Resolved {
-                    bodies: vec![body.clone()].try_into().expect("distinct bodies"),
-                    native: "nx:om-object-index#94".to_string(),
-                },
-                BodySelection::local(
-                    vec!["nx:om-body-object#122".to_string()],
-                    "nx:om-object-indices#122".to_string()
-                )
-                .unwrap()
-            )
-            .unwrap(),
-
-            op: BooleanKind::Cut,
-            keep_tools: false,
-        })
-    );
-    let feature = Feature {
-        id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
-        ordinal: 0,
-        name: None,
-        suppressed: Some(false),
-        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-        source_properties: BTreeMap::new(),
-        source_tag: None,
-        source_text: None,
-        source_content: cadmpeg_ir::features::FeatureContent::default(),
-
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+        assert_eq!(
             definition,
-            (vec![body]).try_into().unwrap(),
-        ),
-        native_ref: None,
-    };
-    assert!(!combine_definition_is_incomplete(&feature));
+            FeatureDefinition::Operation(FeatureOperation::Combine {
+                operands: cadmpeg_ir::features::CombineOperands::new(
+                    BodySelection::Resolved {
+                        bodies: vec![body.clone()].try_into().expect("distinct bodies"),
+                        native: "nx:om-object-index#94".to_string(),
+                    },
+                    BodySelection::local(
+                        vec!["nx:om-body-object#122".to_string()],
+                        "nx:om-object-indices#122".to_string()
+                    )
+                    .unwrap()
+                )
+                .unwrap(),
+
+                op: BooleanKind::Cut,
+                keep_tools: false,
+            })
+        );
+        let feature = Feature {
+            id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
+            ordinal: 0,
+            name: None,
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                definition,
+                (vec![body]).try_into().unwrap(),
+            ),
+            native_ref: None,
+        };
+        assert!(!combine_definition_is_incomplete(&feature));
+    });
 }
 
 #[test]
 fn nx_boolean_projects_unique_offset_store_body_blocks_as_local_bodies() {
     use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
+    crate::test_support::with_decode_context(|ctx| {
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#offset".to_string(),
+            operation_label: "operation#offset".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target: crate::test_support::native_references::boolean_reference(401, 0),
+            tools: vec![
+                crate::test_support::native_references::boolean_reference(402, 1),
+                crate::test_support::native_references::boolean_reference(403, 2),
+            ],
+            source_offset: 0,
+        };
+        let blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-3:block#402".to_string()),
+            (403, "nx:om-data-blocks-3:block#403".to_string()),
+        ]);
 
-    let operation = crate::native::features::FeatureBooleanOperation {
-        id: "boolean#offset".to_string(),
-        operation_label: "operation#offset".to_string(),
-        kind: crate::native::features::FeatureBooleanKind::Unite,
-        target: crate::test_support::native_references::boolean_reference(401, 0),
-        tools: vec![
-            crate::test_support::native_references::boolean_reference(402, 1),
-            crate::test_support::native_references::boolean_reference(403, 2),
-        ],
-        source_offset: 0,
-    };
-    let blocks = BTreeMap::from([
-        (401, "nx:om-data-blocks-3:block#401".to_string()),
-        (402, "nx:om-data-blocks-3:block#402".to_string()),
-        (403, "nx:om-data-blocks-3:block#403".to_string()),
-    ]);
-
-    assert_eq!(
-        boolean_feature_definition(
-            &ctx,
-            &operation,
-            &BTreeMap::new(),
-            &BooleanOffsetStoreResolution::Complete(blocks.clone()),
-            &BTreeMap::new(),
-        )
-        .unwrap(),
-        FeatureDefinition::Operation(FeatureOperation::Combine {
-            operands: cadmpeg_ir::features::CombineOperands::new(
-                BodySelection::local(
-                    vec!["nx:om-data-blocks-3:block#401".to_string()],
-                    "nx:om-object-index#401".to_string()
-                )
-                .unwrap(),
-                BodySelection::local(
-                    vec![
-                        "nx:om-data-blocks-3:block#402".to_string(),
-                        "nx:om-data-blocks-3:block#403".to_string(),
-                    ],
-                    "nx:om-object-indices#402,403".to_string()
-                )
-                .unwrap()
+        assert_eq!(
+            boolean_feature_definition(
+                ctx,
+                &operation,
+                &BTreeMap::new(),
+                &BooleanOffsetStoreResolution::Complete(blocks.clone()),
+                &BTreeMap::new(),
             )
             .unwrap(),
+            FeatureDefinition::Operation(FeatureOperation::Combine {
+                operands: cadmpeg_ir::features::CombineOperands::new(
+                    BodySelection::local(
+                        vec!["nx:om-data-blocks-3:block#401".to_string()],
+                        "nx:om-object-index#401".to_string()
+                    )
+                    .unwrap(),
+                    BodySelection::local(
+                        vec![
+                            "nx:om-data-blocks-3:block#402".to_string(),
+                            "nx:om-data-blocks-3:block#403".to_string(),
+                        ],
+                        "nx:om-object-indices#402,403".to_string()
+                    )
+                    .unwrap()
+                )
+                .unwrap(),
 
-            op: BooleanKind::Join,
-            keep_tools: false,
-        })
-    );
+                op: BooleanKind::Join,
+                keep_tools: false,
+            })
+        );
+    });
 }
 
 #[test]
@@ -665,82 +656,79 @@ fn nx_boolean_writers_follow_selected_identity_namespace() {
         BodySelection, BooleanKind, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-
-    let operation = crate::native::features::FeatureBooleanOperation {
-        id: "boolean#writer-namespace".to_string(),
-        operation_label: "nx:feature-history:operation-label#section-7".to_string(),
-        kind: crate::native::features::FeatureBooleanKind::Unite,
-        target: crate::test_support::native_references::boolean_reference(401, 0),
-        tools: vec![crate::test_support::native_references::boolean_reference(
-            402, 1,
-        )],
-        source_offset: 0,
-    };
-    let blocks = BTreeMap::from([
-        (401, "nx:om-data-blocks-3:block#401".to_string()),
-        (402, "nx:om-data-blocks-3:block#402".to_string()),
-    ]);
-    let definition = boolean_feature_definition(
-        &ctx,
-        &operation,
-        &BTreeMap::new(),
-        &BooleanOffsetStoreResolution::Complete(blocks.clone()),
-        &BTreeMap::new(),
-    )
-    .unwrap();
-    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = &definition
-    else {
-        panic!("Boolean definition");
-    };
-    let target = operands.target();
-    let tools = operands.tools();
-
-    let native_prior =
-        FeatureId::mint("synthetic:test:id#native-prior".to_string()).expect("identity grammar");
-    let offset_prior =
-        FeatureId::mint("synthetic:test:id#offset-prior".to_string()).expect("identity grammar");
-    let mut history = BodyWriterHistory::default();
-    history
-        .record_writer(&ctx, Some(401), None, &[], &native_prior)
-        .expect("admitted writer history");
-    history
-        .record_writer(&ctx, None, Some(&blocks[&401]), &[], &offset_prior)
-        .expect("admitted writer history");
-    history
-        .record_writer(&ctx, None, Some(&blocks[&402]), &[], &offset_prior)
-        .expect("admitted writer history");
-
-    assert_eq!(
-        boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
-        Some(&offset_prior)
-    );
-    assert_eq!(
-        boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
-        Some(&offset_prior)
-    );
-    assert_eq!(
-        boolean_target_writer(&definition, 401),
-        (None, Some("nx:om-data-blocks-3:block#401"))
-    );
-
-    let native_definition = FeatureDefinition::Operation(FeatureOperation::Combine {
-        operands: cadmpeg_ir::features::CombineOperands::new(
-            BodySelection::Native("nx:om-object-index#401".to_string()),
-            BodySelection::Native("nx:om-object-indices#402".to_string()),
+    crate::test_support::with_decode_context(|ctx| {
+        let operation = crate::native::features::FeatureBooleanOperation {
+            id: "boolean#writer-namespace".to_string(),
+            operation_label: "nx:feature-history:operation-label#section-7".to_string(),
+            kind: crate::native::features::FeatureBooleanKind::Unite,
+            target: crate::test_support::native_references::boolean_reference(401, 0),
+            tools: vec![crate::test_support::native_references::boolean_reference(
+                402, 1,
+            )],
+            source_offset: 0,
+        };
+        let blocks = BTreeMap::from([
+            (401, "nx:om-data-blocks-3:block#401".to_string()),
+            (402, "nx:om-data-blocks-3:block#402".to_string()),
+        ]);
+        let definition = boolean_feature_definition(
+            ctx,
+            &operation,
+            &BTreeMap::new(),
+            &BooleanOffsetStoreResolution::Complete(blocks.clone()),
+            &BTreeMap::new(),
         )
-        .unwrap(),
+        .unwrap();
+        let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) = &definition
+        else {
+            panic!("Boolean definition");
+        };
+        let target = operands.target();
+        let tools = operands.tools();
 
-        op: BooleanKind::Join,
-        keep_tools: false,
+        let native_prior = FeatureId::mint("synthetic:test:id#native-prior".to_string())
+            .expect("identity grammar");
+        let offset_prior = FeatureId::mint("synthetic:test:id#offset-prior".to_string())
+            .expect("identity grammar");
+        let mut history = BodyWriterHistory::default();
+        history
+            .record_writer(ctx, Some(401), None, &[], &native_prior)
+            .expect("admitted writer history");
+        history
+            .record_writer(ctx, None, Some(&blocks[&401]), &[], &offset_prior)
+            .expect("admitted writer history");
+        history
+            .record_writer(ctx, None, Some(&blocks[&402]), &[], &offset_prior)
+            .expect("admitted writer history");
+
+        assert_eq!(
+            boolean_participant_writer(target, 401, Some(&blocks), &BTreeMap::new(), &history,),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            boolean_participant_writer(tools, 402, Some(&blocks), &BTreeMap::new(), &history,),
+            Some(&offset_prior)
+        );
+        assert_eq!(
+            boolean_target_writer(&definition, 401),
+            (None, Some("nx:om-data-blocks-3:block#401"))
+        );
+
+        let native_definition = FeatureDefinition::Operation(FeatureOperation::Combine {
+            operands: cadmpeg_ir::features::CombineOperands::new(
+                BodySelection::Native("nx:om-object-index#401".to_string()),
+                BodySelection::Native("nx:om-object-indices#402".to_string()),
+            )
+            .unwrap(),
+
+            op: BooleanKind::Join,
+            keep_tools: false,
+        });
+        assert_eq!(
+            boolean_target_writer(&native_definition, 401),
+            (Some(401), None)
+        );
     });
-    assert_eq!(
-        boolean_target_writer(&native_definition, 401),
-        (Some(401), None)
-    );
 }
 
 #[test]
@@ -849,13 +837,17 @@ fn boolean_offset_store_refusal(
         crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
     })
     .expect("admitted Boolean offset-store participants");
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    configure(&mut policy);
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty test root");
-    crate::native::segments::boolean_offset_store_resolution(&ctx, &operation, &blocks)
-        .expect_err("Boolean offset-store resource refusal")
+
+    crate::test_support::with_decode_context_over(
+        &[],
+        |policy| {
+            configure(policy);
+        },
+        |ctx| {
+            crate::native::segments::boolean_offset_store_resolution(ctx, &operation, &blocks)
+                .expect_err("Boolean offset-store resource refusal")
+        },
+    )
 }
 
 #[test]

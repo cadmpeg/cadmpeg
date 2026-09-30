@@ -91,17 +91,22 @@ pub(crate) fn operation_body_scalar_triples(
 
 #[cfg(test)]
 mod tests {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
 
     fn refusal(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
         let bytes = b"\x01\x02\x10\x42\xff\x1c\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
-        let arena = DecodeArena::new();
-        let mut policy = DecodePolicy::default();
-        configure(&mut policy);
-        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-        let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
-        super::operation_body_scalar_triples(&ctx, record).unwrap_err()
+
+        crate::test_support::with_decode_context_over(
+            bytes,
+            |policy| {
+                configure(policy);
+            },
+            |ctx| {
+                let record = super::OperationBodyInput::new(bytes, 0, 0, "TRIM BODY").unwrap();
+                super::operation_body_scalar_triples(ctx, record).unwrap_err()
+            },
+        )
     }
 
     #[test]

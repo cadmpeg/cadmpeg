@@ -49,8 +49,8 @@ use crate::native::om::column_row::{
 };
 use crate::native::om::journal_group::OmOperationStateJournalGroup;
 use crate::native::om::{
-    data_blocks, DataBlockColumnIndexTable, DataBlockReference, DataBlockRole, Expression,
-    OmSchemaRole,
+    data_blocks, DataBlockColumnIndexTable, DataBlockReference, DataBlockRole, OmSchemaRole,
+    ParameterFormula,
 };
 use crate::native::segments::{segment_om_links, SegmentBodyBinding, SegmentOmLink};
 use crate::om::binary64_pair::{
@@ -1547,8 +1547,8 @@ impl TryFrom<FeatureDatumCsysDescriptorWire> for FeatureDatumCsysDescriptor {
 
     fn try_from(wire: FeatureDatumCsysDescriptorWire) -> Result<Self, Self::Error> {
         let identity = CsysIdentity::try_from(wire.identity).map_err(str::to_owned)?;
-        let descriptor =
-            CsysDescriptor::from_wire(wire.prefix, identity, wire.suffix).map_err(str::to_owned)?;
+        let descriptor = CsysDescriptor::from_wire(&wire.prefix, &identity, &wire.suffix)
+            .map_err(str::to_owned)?;
         let descriptor =
             LocatedCsysDescriptor::new(descriptor, wire.source_offset).map_err(str::to_owned)?;
         if descriptor.identity_source_offset() != wire.identity_source_offset {
@@ -1804,9 +1804,13 @@ impl From<FeatureDatumPlaneDescriptor> for FeatureDatumPlaneDescriptorWire {
 impl TryFrom<FeatureDatumPlaneDescriptorWire> for FeatureDatumPlaneDescriptor {
     type Error = String;
     fn try_from(wire: FeatureDatumPlaneDescriptorWire) -> Result<Self, Self::Error> {
-        let descriptor =
-            PlaneDescriptor::from_wire(wire.identity, &wire.suffix, wire.schema_index, &wire.label)
-                .map_err(str::to_owned)?;
+        let descriptor = PlaneDescriptor::from_wire(
+            &wire.identity,
+            &wire.suffix,
+            wire.schema_index,
+            &wire.label,
+        )
+        .map_err(str::to_owned)?;
         Ok(Self {
             id: wire.id,
             operation_label: wire.operation_label,
@@ -8687,7 +8691,7 @@ pub(super) fn feature_parameter_bindings(
     ctx: &DecodeContext<'_>,
     inputs: &[FeatureInputBlock],
     references: &[DataBlockReference],
-    expressions: &[Expression],
+    expressions: &[ParameterFormula],
 ) -> Result<Vec<FeatureParameterBinding>, CodecError> {
     let mut bindings = Vec::new();
     for input in inputs {

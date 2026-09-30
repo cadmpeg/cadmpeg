@@ -1767,17 +1767,29 @@ pub(super) fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>
 
 // Keep the parameter-space and finite-difference policy explicit while passing
 // the caller-owned budget through every surface evaluation.
-#[allow(clippy::too_many_arguments)]
-fn model_surface_derivative(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surface: &SurfaceId,
+
+struct SurfaceDerivative {
     parameters: Point2,
     step: f64,
     along_u: bool,
     domain: Option<([f64; 2], [f64; 2])>,
     periods: [Option<f64>; 2],
+}
+
+fn model_surface_derivative(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    surface: &SurfaceId,
+    surface_derivative: &SurfaceDerivative,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<Vector3>, cadmpeg_core::decode::ResourceLimit> {
+    let &SurfaceDerivative {
+        parameters,
+        step,
+        along_u,
+        domain,
+        periods,
+    } = surface_derivative;
+
     if let Some(partials) = finite_or_refusal(model_surface_partials_by_id_with_budget(
         index,
         surface,
@@ -1866,11 +1878,13 @@ fn model_surface_point_and_derivatives(
     let Some(du) = model_surface_derivative(
         index,
         surface,
-        parameters,
-        u_step,
-        true,
-        domain,
-        [None, None],
+        &SurfaceDerivative {
+            parameters,
+            step: u_step,
+            along_u: true,
+            domain,
+            periods: [None, None],
+        },
         geometry_budget,
     )?
     else {
@@ -1879,11 +1893,13 @@ fn model_surface_point_and_derivatives(
     let Some(dv) = model_surface_derivative(
         index,
         surface,
-        parameters,
-        v_step,
-        false,
-        domain,
-        [None, None],
+        &SurfaceDerivative {
+            parameters,
+            step: v_step,
+            along_u: false,
+            domain,
+            periods: [None, None],
+        },
         geometry_budget,
     )?
     else {
@@ -2064,12 +2080,14 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
     };
     let Some(mut current) = correct_intersection_parameters(
         index,
-        surfaces,
-        seed,
-        seed_tangent,
-        space,
-        fit_tolerance,
-        1.0,
+        &IntersectionCorrection {
+            surfaces,
+            predictor: seed,
+            tangent: seed_tangent,
+            space,
+            fit_tolerance,
+            scale: 1.0,
+        },
         geometry_budget,
     )?
     else {
@@ -2154,12 +2172,14 @@ pub(super) fn continue_surface_intersection_parameters_with_index_and_seeds_and_
         }
         let Some(corrected) = correct_intersection_parameters(
             index,
-            surfaces,
-            predictor,
-            tangent,
-            space,
-            fit_tolerance,
-            scale,
+            &IntersectionCorrection {
+                surfaces,
+                predictor,
+                tangent,
+                space,
+                fit_tolerance,
+                scale,
+            },
             geometry_budget,
         )?
         else {
@@ -2271,17 +2291,30 @@ pub(super) fn surface_parameter_periods_with_index(
 
 // Newton correction carries its chart, scale, and shared work slice together
 // so no nested solve can silently create an independent budget.
-#[allow(clippy::too_many_arguments)]
-fn correct_intersection_parameters(
-    index: &cadmpeg_ir::index::ModelIndex<'_>,
-    surfaces: [&SurfaceId; 2],
+
+struct IntersectionCorrection<'inputs> {
+    surfaces: [&'inputs SurfaceId; 2],
     predictor: [f64; 4],
     tangent: [f64; 4],
     space: IntersectionParameterSpace,
     fit_tolerance: f64,
     scale: f64,
+}
+
+fn correct_intersection_parameters(
+    index: &cadmpeg_ir::index::ModelIndex<'_>,
+    intersection_correction: &IntersectionCorrection<'_>,
     geometry_budget: &GeometryWorkBudget<'_>,
 ) -> Result<Option<[f64; 4]>, cadmpeg_core::decode::ResourceLimit> {
+    let &IntersectionCorrection {
+        surfaces,
+        predictor,
+        tangent,
+        space,
+        fit_tolerance,
+        scale,
+    } = intersection_correction;
+
     let mut corrected = predictor;
     clamp_intersection_parameters(&mut corrected, space);
     for _ in 0..32 {
@@ -2428,11 +2461,13 @@ fn intersection_parameter_jacobian(
         let Some(du) = model_surface_derivative(
             index,
             surfaces[side],
-            pairs[side],
-            u_step,
-            true,
-            space.domains[side],
-            space.periods[side],
+            &SurfaceDerivative {
+                parameters: pairs[side],
+                step: u_step,
+                along_u: true,
+                domain: space.domains[side],
+                periods: space.periods[side],
+            },
             geometry_budget,
         )?
         else {
@@ -2441,11 +2476,13 @@ fn intersection_parameter_jacobian(
         let Some(dv) = model_surface_derivative(
             index,
             surfaces[side],
-            pairs[side],
-            v_step,
-            false,
-            space.domains[side],
-            space.periods[side],
+            &SurfaceDerivative {
+                parameters: pairs[side],
+                step: v_step,
+                along_u: false,
+                domain: space.domains[side],
+                periods: space.periods[side],
+            },
             geometry_budget,
         )?
         else {
@@ -2826,52 +2863,50 @@ mod tests {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
         use cadmpeg_ir::geometry::Surface;
 
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
-
-        let mut ir = CadIr::empty();
-        let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
-            .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
-            id: surface.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(
-                    NurbsSurfaceAxis::new(1, vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX], false),
-                    NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                    NurbsSurfaceLanes::new(
-                        vec![
-                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                            vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
-                        ],
-                        None,
-                    ),
-                    false,
-                )
-                .expect("finite wide surface"),
-            )),
-            source_object: None,
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let mut ir = CadIr::empty();
+            let surface = SurfaceId::mint("test:model:entity#nx:test:wide-coarse-surface")
+                .expect("identity grammar");
+            ir.model.surfaces.push(Surface {
+                id: surface.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    NurbsSurface::from_lanes(
+                        NurbsSurfaceAxis::new(
+                            1,
+                            vec![-f64::MAX, -f64::MAX, f64::MAX, f64::MAX],
+                            false,
+                        ),
+                        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                        NurbsSurfaceLanes::new(
+                            vec![
+                                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                                vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)],
+                            ],
+                            None,
+                        ),
+                        false,
+                    )
+                    .expect("finite wide surface"),
+                )),
+                source_object: None,
+            });
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+            );
+            let parameters = super::coarse_model_surface_parameters(
+                &index,
+                &surface,
+                Point3::new(1.0, 0.5, 0.0),
+                ([-f64::MAX, f64::MAX], [0.0, 1.0]),
+                &geometry_budget,
+            )
+            .expect("evaluator allocation succeeds")
+            .expect("finite grid candidate");
+            assert!(parameters.is_finite());
+            assert_eq!(parameters.u, 0.0);
         });
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-        );
-        let parameters = super::coarse_model_surface_parameters(
-            &index,
-            &surface,
-            Point3::new(1.0, 0.5, 0.0),
-            ([-f64::MAX, f64::MAX], [0.0, 1.0]),
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .expect("finite grid candidate");
-        assert!(parameters.is_finite());
-        assert_eq!(parameters.u, 0.0);
     }
 
     #[test]
@@ -2920,78 +2955,72 @@ mod tests {
 
     #[test]
     fn pointwise_offset_rejection_preserves_the_adaptive_budget() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
-
-        let coordinates = [0.0, 0.5, 1.0];
-        let square_controls = [0.0, 0.0, 1.0];
-        let support = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let coordinates = [0.0, 0.5, 1.0];
+            let square_controls = [0.0, 0.0, 1.0];
+            let support = NurbsSurface::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                    (0..3)
+                        .map(|u| {
+                            (0..3)
+                                .map(|v| {
+                                    Point3::new(
+                                        coordinates[u],
+                                        coordinates[v],
+                                        square_controls[u] + square_controls[v],
+                                    )
+                                })
+                                .collect()
+                        })
+                        .collect(),
+                    None,
+                ),
                 false,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                2,
-                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-                false,
-            ),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                (0..3)
-                    .map(|u| {
-                        (0..3)
-                            .map(|v| {
-                                Point3::new(
-                                    coordinates[u],
-                                    coordinates[v],
-                                    square_controls[u] + square_controls[v],
-                                )
-                            })
-                            .collect()
+            )
+            .expect("valid offset support");
+            let mut candidate = support.clone();
+            candidate
+                .try_map_control_points(|index, pole| {
+                    let mut pole = pole.get();
+                    if index == 4 {
+                        pole.z += 1.0;
+                    }
+                    cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
                     })
-                    .collect(),
-                None,
-            ),
-            false,
-        )
-        .expect("valid offset support");
-        let mut candidate = support.clone();
-        candidate
-            .try_map_control_points(|index, pole| {
-                let mut pole = pole.get();
-                if index == 4 {
-                    pole.z += 1.0;
-                }
-                cadmpeg_ir::features::FinitePoint3::new(pole).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
                 })
-            })
-            .expect("finite offset-support test pole edit");
-        let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
-        let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
-        let budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(200),
-        );
+                .expect("finite offset-support test pole edit");
+            let support = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support));
+            let candidate = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(candidate));
+            let budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(200),
+            );
 
-        assert!(certified_offset_cache_fit_with_budget(
-            &support,
-            &candidate,
-            0.0,
-            NonNegativeLength::new(0.01).expect("nonnegative tolerance"),
-            &budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .is_none());
-        assert!(budget.consumed() > 0);
-        assert!(!budget.exhausted());
+            assert!(certified_offset_cache_fit_with_budget(
+                &support,
+                &candidate,
+                0.0,
+                NonNegativeLength::new(0.01).expect("nonnegative tolerance"),
+                &budget,
+            )
+            .expect("evaluator allocation succeeds")
+            .is_none());
+            assert!(budget.consumed() > 0);
+            assert!(!budget.exhausted());
+        });
     }
 
     #[test]
@@ -3045,190 +3074,184 @@ mod tests {
 
     #[test]
     fn offset_inverse_continues_past_a_linear_support_boundary() {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
-
-        let support = SurfaceId::mint("test:model:entity#synthetic:linear-support")
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let support = SurfaceId::mint("test:model:entity#synthetic:linear-support")
+                .expect("identity grammar");
+            let offset = SurfaceId::mint("test:model:entity#synthetic:linear-offset")
+                .expect("identity grammar");
+            let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
+                "test:model:entity#synthetic:linear-offset-construction",
+            )
             .expect("identity grammar");
-        let offset =
-            SurfaceId::mint("test:model:entity#synthetic:linear-offset").expect("identity grammar");
-        let construction = cadmpeg_ir::ids::ProceduralSurfaceId::mint(
-            "test:model:entity#synthetic:linear-offset-construction",
-        )
-        .expect("identity grammar");
-        let mut ir = CadIr::empty();
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: support.clone(),
-            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-                NurbsSurface::from_lanes(
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
+            let mut ir = CadIr::empty();
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: support.clone(),
+                geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+                    NurbsSurface::from_lanes(
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                            1,
+                            vec![0.0, 0.0, 1.0, 1.0],
+                            false,
+                        ),
+                        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                            vec![
+                                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+                            ],
+                            None,
+                        ),
                         false,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                        1,
-                        vec![0.0, 0.0, 1.0, 1.0],
-                        false,
-                    ),
-                    cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                        vec![
-                            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
-                            vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
-                        ],
-                        None,
-                    ),
-                    false,
-                )
-                .expect("valid linear support"),
-            )),
-            source_object: None,
-        });
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
-            id: offset.clone(),
-            geometry: SurfaceGeometry::Procedural {
-                construction: construction.clone(),
-                cache: None,
-            },
-            source_object: None,
-        });
-        ir.model
-            .procedural_surfaces
-            .push(cadmpeg_ir::geometry::ProceduralSurface::new(
-                construction,
-                ProceduralSurfaceDefinition::Offset(
-                    cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
-                        support,
-                        1.0,
-                        None,
-                        None,
-                        true,
-                        cadmpeg_ir::geometry::OffsetExtension::Legacy {
-                            flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
-                            cache: None,
-                        },
                     )
-                    .unwrap(),
-                ),
-                None,
+                    .expect("valid linear support"),
+                )),
+                source_object: None,
+            });
+            ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+                id: offset.clone(),
+                geometry: SurfaceGeometry::Procedural {
+                    construction: construction.clone(),
+                    cache: None,
+                },
+                source_object: None,
+            });
+            ir.model
+                .procedural_surfaces
+                .push(cadmpeg_ir::geometry::ProceduralSurface::new(
+                    construction,
+                    ProceduralSurfaceDefinition::Offset(
+                        cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
+                            support,
+                            1.0,
+                            None,
+                            None,
+                            true,
+                            cadmpeg_ir::geometry::OffsetExtension::Legacy {
+                                flags: cadmpeg_ir::geometry::LegacyExtensionFlags::Absent {},
+                                cache: None,
+                            },
+                        )
+                        .unwrap(),
+                    ),
+                    None,
+                ));
+
+            let fit_tolerance = f64::EPSILON.sqrt();
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
+            let target = Point3::new(3.0, 0.25, 1.0);
+            let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, 3.0, 0.25)
+                .expect("linear offset evaluation")
+                .get();
+            assert!(Point3::distance(evaluated, target) <= fit_tolerance);
+            assert!(!offset_support_control_hull_excludes_point(
+                &index,
+                &offset,
+                target,
+                fit_tolerance,
             ));
+            let parameters = offset_surface_parameters_with_tolerance(
+                geometry_ctx,
+                &ir,
+                &offset,
+                target,
+                None,
+                Some(fit_tolerance),
+            )
+            .expect("linear support extension parameters");
 
-        let fit_tolerance = f64::EPSILON.sqrt();
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
-        let target = Point3::new(3.0, 0.25, 1.0);
-        let evaluated = cadmpeg_ir::eval::model_surface_point_by_id(&index, &offset, 3.0, 0.25)
-            .expect("linear offset evaluation")
-            .get();
-        assert!(Point3::distance(evaluated, target) <= fit_tolerance);
-        assert!(!offset_support_control_hull_excludes_point(
-            &index,
-            &offset,
-            target,
-            fit_tolerance,
-        ));
-        let parameters = offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
-            &ir,
-            &offset,
-            target,
-            None,
-            Some(fit_tolerance),
-        )
-        .expect("linear support extension parameters");
+            assert!((parameters.u - 3.0).abs() <= fit_tolerance);
+            assert!((parameters.v - 0.25).abs() <= fit_tolerance);
 
-        assert!((parameters.u - 3.0).abs() <= fit_tolerance);
-        assert!((parameters.v - 0.25).abs() <= fit_tolerance);
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+            );
+            let refined = refine_offset_surface_parameters_with_index_and_budget(
+                &index,
+                &offset,
+                target,
+                Point2::new(2.5, 0.25),
+                fit_tolerance,
+                &geometry_budget,
+            )
+            .expect("evaluator allocation succeeds")
+            .expect("linear support extension refinement");
+            assert!((refined.u - 3.0).abs() <= fit_tolerance);
+            assert!((refined.v - 0.25).abs() <= fit_tolerance);
 
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-        );
-        let refined = refine_offset_surface_parameters_with_index_and_budget(
-            &index,
-            &offset,
-            target,
-            Point2::new(2.5, 0.25),
-            fit_tolerance,
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .expect("linear support extension refinement");
-        assert!((refined.u - 3.0).abs() <= fit_tolerance);
-        assert!((refined.v - 0.25).abs() <= fit_tolerance);
+            let remote = Point3::new(3.0, 0.25, 1e200);
+            assert!(offset_surface_parameters_with_tolerance(
+                geometry_ctx,
+                &ir,
+                &offset,
+                remote,
+                Some(Point2::new(3.0, 0.25)),
+                Some(1e190),
+            )
+            .is_none());
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+            );
+            assert!(super::coarse_model_surface_parameters(
+                &index,
+                &offset,
+                remote,
+                ([0., 1.], [0., 1.]),
+                &geometry_budget,
+            )
+            .expect("evaluator allocation succeeds")
+            .is_some());
 
-        let remote = Point3::new(3.0, 0.25, 1e200);
-        assert!(offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
-            &ir,
-            &offset,
-            remote,
-            Some(Point2::new(3.0, 0.25)),
-            Some(1e190),
-        )
-        .is_none());
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-        );
-        assert!(super::coarse_model_surface_parameters(
-            &index,
-            &offset,
-            remote,
-            ([0., 1.], [0., 1.]),
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .is_some());
-
-        // Move the support to Z=-1 so its unit offset lies at Z=0. A small
-        // off-surface residual is then representable without adding it to 1.
-        let mut near_zero = ir.clone();
-        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) =
-            &mut near_zero.model.surfaces[0].geometry
-        else {
-            panic!("the test support is a NURBS plane");
-        };
-        support
-            .try_map_control_points(|_, point| {
-                let mut point = point.get();
-                point.z = -1.0;
-                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                        "control_points contains a non-finite point".into(),
-                    )
+            // Move the support to Z=-1 so its unit offset lies at Z=0. A small
+            // off-surface residual is then representable without adding it to 1.
+            let mut near_zero = ir.clone();
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(support)) =
+                &mut near_zero.model.surfaces[0].geometry
+            else {
+                panic!("the test support is a NURBS plane");
+            };
+            support
+                .try_map_control_points(|_, point| {
+                    let mut point = point.get();
+                    point.z = -1.0;
+                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                            "control_points contains a non-finite point".into(),
+                        )
+                    })
                 })
-            })
-            .expect("finite translated support");
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
-        let target = Point3::new(3., 0.25, 1e-200);
-        assert!(offset_surface_parameters_with_tolerance(
-            &geometry_ctx,
-            &near_zero,
-            &offset,
-            target,
-            Some(Point2::new(3., 0.25)),
-            Some(1e-210),
-        )
-        .is_none());
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-        );
-        assert!(refine_offset_surface_parameters_with_index_and_budget(
-            &index,
-            &offset,
-            target,
-            Point2::new(3., 0.25),
-            1e-210,
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
-        .is_none());
+                .expect("finite translated support");
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(&near_zero);
+            let target = Point3::new(3., 0.25, 1e-200);
+            assert!(offset_surface_parameters_with_tolerance(
+                geometry_ctx,
+                &near_zero,
+                &offset,
+                target,
+                Some(Point2::new(3., 0.25)),
+                Some(1e-210),
+            )
+            .is_none());
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+            );
+            assert!(refine_offset_surface_parameters_with_index_and_budget(
+                &index,
+                &offset,
+                target,
+                Point2::new(3., 0.25),
+                1e-210,
+                &geometry_budget,
+            )
+            .expect("evaluator allocation succeeds")
+            .is_none());
+        });
     }
     #[test]
     fn intersection_null_vector_is_invariant_under_row_scaling() {
@@ -3253,48 +3276,49 @@ mod tests {
     #[test]
     fn audit_regression_derivative_bounds_ignore_common_weight_scale() {
         use cadmpeg_ir::geometry::nurbs::{NurbsSurfaceAxis, NurbsSurfaceLanes};
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
 
-        for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
-            let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
-            let surface = NurbsSurface::from_lanes(
-                axis.clone(),
-                axis,
-                NurbsSurfaceLanes::new(
-                    vec![
-                        vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
-                        vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
-                    ],
-                    Some(vec![vec![weight, weight], vec![weight, weight]]),
-                ),
-                false,
-            )
-            .unwrap();
-            let geometry_budget = super::GeometryWorkBudget::from_context(
-                &geometry_ctx,
-                cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
-            );
-            let net =
-                super::HomogeneousSurfaceNet::from_homogeneous_surface(&surface, &geometry_budget)
-                    .unwrap()
-                    .unwrap();
-            let derivatives =
-                super::RationalSurfaceDerivativeNets::from_net(&net, &geometry_budget)
-                    .unwrap()
-                    .unwrap();
-            let bounds =
-                super::rational_surface_derivative_bounds_with_nets(&net, &derivatives, 0.5, 0.5)
-                    .unwrap();
-            assert!((bounds.u - 1.).abs() <= 16. * f64::EPSILON);
-            assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
-            assert_eq!([bounds.uu, bounds.uv, bounds.vv], [0., 0., 0.]);
-        }
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            for weight in [1., 1e-300, 1e-200, 1e-120, 1e120, 1e200, 1e300] {
+                let axis = NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false);
+                let surface = NurbsSurface::from_lanes(
+                    axis.clone(),
+                    axis,
+                    NurbsSurfaceLanes::new(
+                        vec![
+                            vec![Point3::new(0., 0., 0.), Point3::new(0., 1., 0.)],
+                            vec![Point3::new(1., 0., 0.), Point3::new(1., 1., 0.)],
+                        ],
+                        Some(vec![vec![weight, weight], vec![weight, weight]]),
+                    ),
+                    false,
+                )
+                .unwrap();
+                let geometry_budget = super::GeometryWorkBudget::from_context(
+                    geometry_ctx,
+                    cadmpeg_core::decode::u64_from_index(super::MAX_ADAPTIVE_GEOMETRY_WORK),
+                );
+                let net = super::HomogeneousSurfaceNet::from_homogeneous_surface(
+                    &surface,
+                    &geometry_budget,
+                )
+                .unwrap()
+                .unwrap();
+                let derivatives =
+                    super::RationalSurfaceDerivativeNets::from_net(&net, &geometry_budget)
+                        .unwrap()
+                        .unwrap();
+                let bounds = super::rational_surface_derivative_bounds_with_nets(
+                    &net,
+                    &derivatives,
+                    0.5,
+                    0.5,
+                )
+                .unwrap();
+                assert!((bounds.u - 1.).abs() <= 16. * f64::EPSILON);
+                assert!((bounds.v - 1.).abs() <= 16. * f64::EPSILON);
+                assert_eq!([bounds.uu, bounds.uv, bounds.vv], [0., 0., 0.]);
+            }
+        });
     }
 
     #[test]
@@ -3408,40 +3432,34 @@ mod tests {
     /// first Gauss-Newton step lands near `u = -0.2`, where x exceeds the
     /// finite range; the search halves it and converges.
     fn refine_across_the_overflowing_step(ir: &CadIr, offset: &SurfaceId) -> Option<Point2> {
-        let geometry_arena = cadmpeg_core::decode::DecodeArena::new();
-        let (geometry_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &geometry_arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .expect("empty geometry root is admitted");
-
-        let axis_x = 1.701e308;
-        let radius = 1.0e307;
-        let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
-        let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
-        let first_candidate =
-            cadmpeg_ir::eval::model_surface_point_by_id(&index, offset, -0.2, 0.0);
-        assert!(
-            matches!(
-                first_candidate,
-                Err(cadmpeg_ir::eval::EvaluationFailure::NonFinite(_))
-            ),
-            "{first_candidate:?}"
-        );
-        let geometry_budget = GeometryWorkBudget::from_context(
-            &geometry_ctx,
-            cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
-        );
-        refine_offset_surface_parameters_with_index_and_budget(
-            &index,
-            offset,
-            target,
-            Point2::new(-1.2, 0.0),
-            1.0e295,
-            &geometry_budget,
-        )
-        .expect("evaluator allocation succeeds")
+        crate::test_support::with_decode_context(|geometry_ctx| {
+            let axis_x = 1.701e308;
+            let radius = 1.0e307;
+            let target = Point3::new(axis_x + radius * 0.3_f64.cos(), radius * 0.3_f64.sin(), 0.0);
+            let index = cadmpeg_ir::index::ModelIndex::new_model_only(ir);
+            let first_candidate =
+                cadmpeg_ir::eval::model_surface_point_by_id(&index, offset, -0.2, 0.0);
+            assert!(
+                matches!(
+                    first_candidate,
+                    Err(cadmpeg_ir::eval::EvaluationFailure::NonFinite(_))
+                ),
+                "{first_candidate:?}"
+            );
+            let geometry_budget = GeometryWorkBudget::from_context(
+                geometry_ctx,
+                cadmpeg_core::decode::u64_from_index(MAX_ADAPTIVE_GEOMETRY_WORK),
+            );
+            refine_offset_surface_parameters_with_index_and_budget(
+                &index,
+                offset,
+                target,
+                Point2::new(-1.2, 0.0),
+                1.0e295,
+                &geometry_budget,
+            )
+            .expect("evaluator allocation succeeds")
+        })
     }
 
     #[test]

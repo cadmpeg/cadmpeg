@@ -127,21 +127,24 @@ mod tests {
         ];
         let record = OperationPayload::new(&payload, 100, "DELETE").expect("test DELETE payload");
         let field = DeleteReferences::read(record).expect("complete DELETE field");
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_collection_items = 0;
-        let (ctx, _) =
-            cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy)
-                .expect("test decode context");
-        let error = field
-            .resolve(0, |token| {
-                ctx.charge_collection_items(1, "NX DELETE target")?;
-                Ok(Some(token.value()))
-            })
-            .expect_err("target resolution refusal");
-        assert!(
-            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+
+        crate::test_support::with_decode_context_over(
+            &payload,
+            |policy| {
+                policy.limits.max_collection_items = 0;
+            },
+            |ctx| {
+                let error = field
+                    .resolve(0, |token| {
+                        ctx.charge_collection_items(1, "NX DELETE target")?;
+                        Ok(Some(token.value()))
+                    })
+                    .expect_err("target resolution refusal");
+                assert!(
+                    matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems)
+                );
+            },
         );
     }
 
