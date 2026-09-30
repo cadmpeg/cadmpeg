@@ -216,10 +216,11 @@ fn active_cylinder_frame(
         .into_iter()
         .all(f64::is_finite)
         .then_some(())?;
+    let preceding_count = parameter.scalar_frames.len().checked_sub(1)?;
     let preceding_values = parameter
         .scalar_frames
         .iter()
-        .take(parameter.scalar_frames.len().saturating_sub(1))
+        .take(preceding_count)
         .flat_map(|frame| frame.slots.iter().filter_map(|slot| slot.value));
     let lengths = std::iter::once(length_slot.value?).chain(preceding_values);
     let corners = [

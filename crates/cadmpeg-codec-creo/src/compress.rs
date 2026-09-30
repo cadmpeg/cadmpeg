@@ -219,7 +219,7 @@ impl<'a> CodeReader<'a> {
             if self.cursor >= self.data.len() {
                 return None;
             }
-            let end = self.cursor.saturating_add(self.width).min(self.data.len());
+            let end = self.cursor.checked_add(self.width)?.min(self.data.len());
             self.block = &self.data[self.cursor..end];
             self.cursor = end;
             self.bit_offset = 0;

@@ -662,8 +662,10 @@ fn scan_sections<'a>(
 ) -> Result<Vec<ScannedSection<'a>>, CodecError> {
     // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
-    let search_start = body_start.saturating_sub(1);
-    let mut i = search_start;
+    let mut i = body_start;
+    if i > 0 {
+        i -= 1;
+    }
     while i + 1 < data.len() {
         let toc_delimited = data[i] == 0xf1 && data[i + 1] == b'#';
         if !toc_delimited && (data[i] != b'\n' || data[i + 1] != b'#') {
@@ -749,8 +751,13 @@ fn toc_sections<'a>(
         }
         let rows_start = line_end + 1;
         for index in 0..count {
-            let start = rows_start.saturating_add(index.saturating_mul(row_width));
-            let Some(row) = data.get(start..start.saturating_add(row_width)) else {
+            let Some(start) = index.checked_mul(row_width).and_then(|relative| rows_start.checked_add(relative)) else {
+                break;
+            };
+            let Some(end) = start.checked_add(row_width) else {
+                break;
+            };
+            let Some(row) = data.get(start..end) else {
                 break;
             };
             let Ok(row) = std::str::from_utf8(row) else {
@@ -2485,12 +2492,12 @@ fn section_owner_ranges(
             .filter(|section| section.section.name() == "DEPDB_DATA")
             .map(|section| (section.section.offset(), section.section.end())),
     );
-    ranges.extend(feature_rows.iter().map(|row| {
-        (
-            row.body_offset,
-            row.body_offset.saturating_add(row.body.len()),
-        )
-    }));
+    for row in feature_rows {
+        let end = row.body_offset.checked_add(row.body.len()).ok_or_else(|| {
+            CodecError::malformed("feature owner range end exceeds usize")
+        })?;
+        ranges.push((row.body_offset, end));
+    }
     Ok(ranges)
 }
 

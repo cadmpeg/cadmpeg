@@ -44,7 +44,9 @@ pub(super) fn preserve_passthrough_sections(
                 "creo passthrough section bounds error",
             )?));
         };
-        let payload_start = section.raw_name.len().saturating_add(2);
+        let payload_start = section.raw_name.len().checked_add(2).ok_or_else(|| {
+            CodecError::malformed("section payload start exceeds usize")
+        })?;
         let raw_is_compressed = section_bytes
             .get(payload_start..)
             .is_some_and(|payload| payload.starts_with(container::UNIX_COMPRESS_MAGIC));
