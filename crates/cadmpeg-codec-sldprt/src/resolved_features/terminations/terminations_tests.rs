@@ -1667,3 +1667,4 @@ fn combine_selection_enrichment_refuses_work_limit() {
 
 mod route_limits;
 mod surface_sweep_limits;
+mod combine_projection_limits;
