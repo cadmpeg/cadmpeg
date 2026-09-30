@@ -1906,3 +1906,5 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
     ));
 }
 mod repeated_circle_dimensions;
+
+mod physical_loci;

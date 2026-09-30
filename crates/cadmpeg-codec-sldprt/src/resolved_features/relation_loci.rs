@@ -2790,26 +2790,45 @@ pub(super) fn profile_locus_point(
 }
 
 fn canonicalize_physical_loci(
+    ctx: &DecodeContext<'_>,
     loci: &mut Vec<SketchLocus>,
     sketch_entities: &[SketchEntity],
     quantum: f64,
-) {
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "canonicalize SLDPRT physical sketch loci";
     if loci.len() < 2 {
-        return;
+        return Ok(());
     }
-    let points = loci
-        .iter()
-        .map(|locus| {
-            profile_locus_point(locus, sketch_entities).map(|point| quantize(point, quantum))
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(points) = points else {
-        return;
-    };
-    if points.iter().all(|point| *point == points[0]) {
-        loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch_entities.len()), OPERATION)?;
+    let entity_bytes = sketch_entities.iter().try_fold(0u64, |sum, entity| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(entity.id().as_str().len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut first_point = None;
+    let mut coincident = true;
+    let mut minimum = 0;
+    for (index, locus) in loci.iter().enumerate() {
+        ctx.charge_work(entity_bytes.checked_add(cadmpeg_core::decode::u64_from_index(locus_entity(locus).as_str().len()))
+            .and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(sketch_entities.len())))
+            .and_then(|work| work.checked_add(64))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let Some(point) = profile_locus_point(locus, sketch_entities) else { return Ok(()); };
+        let point = quantize(point, quantum);
+        if let Some(first) = first_point {
+            coincident &= point == first;
+        } else {
+            first_point = Some(point);
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(locus_key(locus).0.len())
+            .checked_add(cadmpeg_core::decode::u64_from_index(locus_key(&loci[minimum]).0.len()))
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if locus_key(locus) < locus_key(&loci[minimum]) { minimum = index; }
+    }
+    if coincident {
+        loci.swap(0, minimum);
         loci.truncate(1);
     }
+    Ok(())
 }
 
 pub(super) fn point_line_distance_value(point: Point2, line: &SketchEntity) -> Option<f64> {
@@ -3693,7 +3712,7 @@ pub(super) fn profile_loci_by_marker(
     }
     for marker in endpoint_marker_keys {
         if let Some(loci) = result.get_mut(&marker) {
-            canonicalize_physical_loci(loci, sketch_entities, QUANTUM);
+            canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }
     }
     for lane in lanes {
@@ -3754,10 +3773,13 @@ pub(super) fn profile_loci_by_marker(
                     .iter()
                     .filter_map(|transform| transform.apply(point))
                     .collect::<HashSet<_>>();
-                let marker_loci = translated_points
-                    .into_iter()
-                    .filter_map(|translated| {
-                        let mut marker_loci = loci_by_point
+                let mut marker_loci = Vec::new();
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(translated_points.len())
+                    .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Vec<SketchLocus>>()))
+                    .ok_or_else(|| ctx.refuse_codec_limit("collect SLDPRT transformed marker loci", u64::MAX - 1, u64::MAX))?, "collect SLDPRT transformed marker loci")?;
+                ctx.reserve_collection_vec(&mut marker_loci, translated_points.len(), "collect SLDPRT transformed marker loci")?;
+                for translated in translated_points {
+                        let mut translated_loci = loci_by_point
                             .get(&GridPoint::from(translated))
                             .into_iter()
                             .flatten()
@@ -3779,9 +3801,9 @@ pub(super) fn profile_loci_by_marker(
                                 }
                             })
                             .collect::<Vec<_>>();
-                        if marker_loci.is_empty() && marker.kind() == SketchInputKind::LineOrCircle
+                        if translated_loci.is_empty() && marker.kind() == SketchInputKind::LineOrCircle
                         {
-                            marker_loci.extend(
+                            translated_loci.extend(
                                 line_midpoints.get(sketch).into_iter().flatten().filter_map(
                                     |(point, locus)| {
                                         (quantize(*point, QUANTUM) == translated)
@@ -3790,11 +3812,11 @@ pub(super) fn profile_loci_by_marker(
                                 ),
                             );
                         }
-                        if marker_loci.is_empty()
+                        if translated_loci.is_empty()
                             && primary_geometry_locus
                             && marker.kind() == SketchInputKind::LineOrCircle
                         {
-                            marker_loci.extend(sketch_entities.iter().filter_map(|entity| {
+                            translated_loci.extend(sketch_entities.iter().filter_map(|entity| {
                                 if entity.sketch != **sketch {
                                     return None;
                                 }
@@ -3811,14 +3833,13 @@ pub(super) fn profile_loci_by_marker(
                                 .then(|| SketchLocus::Entity(entity.id().clone()))
                             }));
                         }
-                        marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-                        marker_loci.dedup();
+                        translated_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+                        translated_loci.dedup();
                         if qualified_point {
-                            canonicalize_physical_loci(&mut marker_loci, sketch_entities, QUANTUM);
+                            canonicalize_physical_loci(ctx, &mut translated_loci, sketch_entities, QUANTUM)?;
                         }
-                        (!marker_loci.is_empty()).then_some(marker_loci)
-                    })
-                    .collect::<Vec<_>>();
+                        if !translated_loci.is_empty() { marker_loci.push(translated_loci); }
+                }
                 let Some(first) = marker_loci.first() else {
                     continue;
                 };
