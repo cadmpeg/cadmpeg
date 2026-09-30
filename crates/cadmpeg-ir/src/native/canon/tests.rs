@@ -40,8 +40,9 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
         captured.borrow_mut().extend_from_slice(bytes);
         Ok(())
     };
+    let ctx = crate::native::test_ctx();
     let record = super::super::NativeRecord::from_typed_with_sink(
-        &Record {
+        &ctx, &Record {
             id: "test:native:record#display",
             value: DisplayText(&calls),
         },
@@ -92,7 +93,8 @@ fn display_map_key_charges_escaped_chunks_and_formats_once() {
         captured.borrow_mut().extend_from_slice(bytes);
         Ok(())
     };
-    let record = super::super::NativeRecord::from_typed_with_sink(&Record(&calls), Some(&sink))
+    let ctx = crate::native::test_ctx();
+    let record = super::super::NativeRecord::from_typed_with_sink(&ctx, &Record(&calls), Some(&sink))
         .expect("valid key record");
     assert_eq!(calls.get(), 1);
     assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
@@ -166,13 +168,14 @@ fn duplicate_typed_fields_cannot_replace_a_native_arena() {
 
 #[test]
 fn malformed_map_protocol_is_reported() {
+    let ctx = crate::native::test_ctx();
     let mut pending =
-        serde::Serializer::serialize_map(CanonValue::for_record(), None).expect("map");
+        serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
     pending.serialize_key("first").expect("first key");
     assert!(pending.serialize_key("second").is_err());
     assert!(SerializeMap::end(pending).is_err());
 
-    let mut no_key = serde::Serializer::serialize_map(CanonValue::for_record(), None).expect("map");
+    let mut no_key = serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
     assert!(no_key.serialize_value(&1).is_err());
 }
 
@@ -185,8 +188,9 @@ fn a_rejected_sequence_element_does_not_corrupt_rendered_json() {
         }
     }
 
+    let ctx = crate::native::test_ctx();
     let mut sequence =
-        serde::Serializer::serialize_seq(CanonValue::for_record(), None).expect("sequence");
+        serde::Serializer::serialize_seq(CanonValue::for_record(&ctx), None).expect("sequence");
     sequence.serialize_element(&1).expect("first element");
     assert!(sequence.serialize_element(&Refused).is_err());
     sequence.serialize_element(&2).expect("second element");
@@ -214,7 +218,8 @@ fn raw_value_streams_unescaped_json_before_materialization() {
         captured.borrow_mut().extend_from_slice(bytes);
         Ok(())
     };
-    let stored = super::super::NativeRecord::from_typed_with_sink(&typed, Some(&sink))
+    let ctx = crate::native::test_ctx();
+    let stored = super::super::NativeRecord::from_typed_with_sink(&ctx, &typed, Some(&sink))
         .expect("valid raw record");
     assert_eq!(
         *captured.borrow(),
@@ -447,8 +452,9 @@ fn a_display_member_writes_its_text_through_collect_str() {
 
 #[test]
 fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
+    let ctx = crate::native::test_ctx();
     let make = || {
-        CanonValue::for_record()
+        CanonValue::for_record(&ctx)
             .serialize_struct(super::RAW_VALUE_STRUCT, 1)
             .expect("raw struct")
     };
@@ -469,4 +475,61 @@ fn malformed_raw_json_protocol_cannot_produce_a_native_value() {
         raw.end().expect("first payload remains intact").render(),
         "null"
     );
+}
+
+#[test]
+fn raw_native_resource_refusals_keep_the_caller_dimension() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    use serde_json::value::RawValue;
+
+    #[derive(Serialize)]
+    struct Record {
+        id: &'static str,
+        raw: Box<RawValue>,
+    }
+    let id = "test:native:record#raw-limit";
+    let json = r#"[["retained"]]"#;
+    let record = Record { id, raw: RawValue::from_string(json.into()).unwrap() };
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let stored = super::super::NativeRecord::from_typed_with_sink(&service, &record, None).unwrap();
+    assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
+    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes, ResourceDimension::RecursionDepth] {
+        let mut policy = DecodePolicy::default();
+        match dimension {
+            ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
+            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = u64::try_from(2 + id.len() + 3 + json.len()).unwrap(),
+            ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
+            _ => panic!("unsupported raw-native test dimension"),
+        }
+        let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let error = super::super::NativeRecord::from_typed_with_sink(&limited, &record, None).unwrap_err();
+        assert!(matches!(cadmpeg_core::CodecError::from(error),
+            cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+    }
+}
+
+#[test]
+fn native_float_keys_keep_the_scalar_json_spelling() {
+    struct Keyed<T>(T);
+    impl<T: Serialize> Serialize for Keyed<T> {
+        fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+            let mut map = serializer.serialize_map(Some(1))?;
+            map.serialize_entry(&self.0, &7)?;
+            map.end()
+        }
+    }
+    #[derive(Serialize)]
+    struct Record<T> { id: &'static str, keyed: Keyed<T> }
+    for value in [f64::MIN, -0.0, f64::MIN_POSITIVE, f64::from_bits(1), f64::MAX] {
+        let record = Record { id: "test:native:record#float-key", keyed: Keyed(value) };
+        let stored = super::super::NativeRecord::from_typed(&record).unwrap();
+        assert_eq!(serde_json::to_value(&stored).unwrap(), serde_json::to_value(&record).unwrap());
+    }
+    for value in [f32::MIN, -0.0, f32::MIN_POSITIVE, f32::from_bits(1), f32::MAX] {
+        let record = Record { id: "test:native:record#float-key", keyed: Keyed(value) };
+        let stored = super::super::NativeRecord::from_typed(&record).unwrap();
+        assert_eq!(serde_json::to_value(&stored).unwrap(), serde_json::to_value(&record).unwrap());
+    }
+
 }
