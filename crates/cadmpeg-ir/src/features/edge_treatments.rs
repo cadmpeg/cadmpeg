@@ -379,3 +379,5 @@ cadmpeg_core::named_optional_field!(deserialize_chamfer_spec_form, ChamferForm, 
 
 #[cfg(test)]
 mod tests;
+
+mod charged_copy;

@@ -168,3 +168,37 @@ impl ParameterValue {
         }
     }
 }
+
+/// Preserve an admitted feature value while charging every owned child.
+pub(super) trait FeatureCopy: Sized {
+    fn copy_feature(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError>;
+}
+
+mod values;
+mod definitions;
+mod operands;
+
+impl super::Feature {
+    /// Copy the complete feature after caller admission of retained text and collections.
+    pub fn try_clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        self.copy_feature(ctx, operation)
+    }
+
+    /// Copy the feature's evaluated construction state for one configuration.
+    pub fn configuration_state_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<super::ConfigurationFeatureState, CodecError> {
+        ctx.charge_work(u64_from_index(std::mem::size_of::<super::ConfigurationFeatureState>()), operation)?;
+        Ok(super::ConfigurationFeatureState {
+            evaluation: if self.suppressed.unwrap_or(false) { super::ConfigurationEvaluation::Suppressed {} }
+                else { super::ConfigurationEvaluation::Active { outputs: self.evaluation.outputs.copy_feature(ctx, operation)? } },
+            dependencies: self.dependencies.copy_feature(ctx, operation)?,
+            definition: self.evaluation.definition.copy_feature(ctx, operation)?,
+        })
+    }
+}
+
+impl super::ConfigurationFeatureState {
+    /// Copy the evaluated state after caller admission of retained text and collections.
+    pub fn try_clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+        self.copy_feature(ctx, operation)
+    }
+}

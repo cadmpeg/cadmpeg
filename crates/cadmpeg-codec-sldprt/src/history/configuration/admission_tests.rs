@@ -695,3 +695,5 @@ fn configuration_sketch_projection_refuses_parameter_overlay_retained_limit() {
 fn configuration_sketch_projection_refuses_parameter_overlay_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_parameter_overlay);
 }
+
+mod feature_copies;
