@@ -3080,13 +3080,13 @@ pub(crate) fn project_hole_axes(
             };
             let (context_start, start, end) = range;
             let Some(frame) = feature_input_sketch_frame(
-                &lane.native_payload,
+                ctx, &lane.native_payload,
                 &plane_frames,
                 &plane_index,
                 context_start,
                 start,
                 end,
-            ) else {
+            )? else {
                 continue;
             };
             let key = (lane.id.as_str(), feature.id.as_str());
@@ -4149,13 +4149,20 @@ fn hole_temporary_axis(payload: &[u8], start: usize, end: usize) -> Option<(Poin
 }
 
 pub(super) fn feature_input_sketch_frame(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     plane_frames: &HashMap<u32, SketchPlaneFrame>,
     plane_index: &CompactReferencePlaneIndex,
     context_start: usize,
     start: usize,
     end: usize,
-) -> Option<(Point3, Vector3, Vector3)> {
+) -> Result<Option<(Point3, Vector3, Vector3)>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT feature input sketch frame";
+    // The bound covers index scans, two component windows and fixed-width overlap probes.
+    const WORK_PER_BYTE: u64 = 1024;
+    let work = u64_from_index(payload.len()).checked_mul(WORK_PER_BYTE)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, OPERATION)?;
+
     let reference = plane_index
         .profile_source(context_start, start, end)
         .and_then(|source| plane_frames.get(&source).copied());
@@ -4189,7 +4196,7 @@ pub(super) fn feature_input_sketch_frame(
             ),
         ))
     };
-    match reference {
+    Ok(match reference {
         Some(reference) => {
             let component = component
                 .filter(|component| coplanar_plane_frames(reference.as_tuple(), *component));
@@ -4204,7 +4211,7 @@ pub(super) fn feature_input_sketch_frame(
             }
         }
         None => component.or_else(explicit),
-    }
+    })
 }
 
 fn coplanar_plane_frames(
@@ -4270,13 +4277,13 @@ pub(super) fn sketch_feature_frames(
                 continue;
             };
             let Some(frame) = feature_input_sketch_frame(
-                &lane.native_payload,
+                ctx, &lane.native_payload,
                 &plane_frames,
                 &plane_index,
                 context_start,
                 start,
                 end,
-            ) else {
+            )? else {
                 continue;
             };
             if let Some(candidate) = candidates.get_mut(feature.id.as_str()) {

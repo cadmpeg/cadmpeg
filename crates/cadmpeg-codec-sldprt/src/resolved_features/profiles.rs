@@ -508,13 +508,13 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|(offset, _, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
             let Some((origin, normal, u_axis)) = feature_input_sketch_frame(
-                &lane.native_payload,
+                ctx, &lane.native_payload,
                 &plane_frames,
                 &plane_index,
                 context_start,
                 start,
                 end,
-            ) else {
+            )? else {
                 continue;
             };
             let lane_key = lane
@@ -1101,13 +1101,13 @@ pub(crate) fn project_marker_backed_sketches(
                 continue;
             };
             let frame = feature_input_sketch_frame(
-                &lane.native_payload,
+                ctx, &lane.native_payload,
                 &plane_frames,
                 &plane_index,
                 context_start,
                 start,
                 end,
-            );
+            )?;
             let frame = frame
                 .or_else(|| feature_frames.get(native_feature.id.as_str()).copied())
                 .or_else(|| {
