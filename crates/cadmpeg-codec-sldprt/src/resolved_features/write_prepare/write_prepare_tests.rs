@@ -1,6 +1,6 @@
 //! Tests for the `write_prepare` module.
 
-use super::super::markers::spatial_vertex_coordinates;
+use super::super::markers::spatial_vertex_coordinates_charged;
 use super::{append_spatial_vertex, arc_angle_relation_kind, patch_spatial_vertex, solved_tangent};
 use crate::records::SketchRelationKind;
 use cadmpeg_ir::math::{Point2, Point3};
@@ -19,7 +19,7 @@ fn spatial_vertex_patch_preserves_record_shape_and_order() {
     patch_spatial_vertex(&mut payload, 0, replacement).expect("required invariant");
 
     assert_eq!(
-        spatial_vertex_coordinates(&payload),
+        spatial_vertex_coordinates_charged(&cadmpeg_test_support::service_decode_context(), &payload).unwrap(),
         vec![
             cadmpeg_ir::features::FinitePoint3::new(replacement).expect("finite replacement"),
             cadmpeg_ir::features::FinitePoint3::new(second).expect("finite second point"),

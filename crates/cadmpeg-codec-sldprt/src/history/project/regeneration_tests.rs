@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 use crate::history::bind::bind_definition_sketch;
-use crate::history::project::neutral_feature_id;
+use crate::history::project::neutral_feature_id_charged;
 use crate::history::project::project_feature_dependencies;
 use crate::history::project::project_feature_model;
 use crate::history::project::project_features;
@@ -110,7 +110,7 @@ fn exact_native_profile_source_projects_a_feature_dependency() {
     };
 
     let projected = project_features(&cadmpeg_test_support::service_decode_context(), &[history]).unwrap();
-    let sketch_id = neutral_feature_id("sketch");
+    let sketch_id = neutral_feature_id_charged(&cadmpeg_test_support::service_decode_context(), "sketch").unwrap();
     assert!(matches!(
         projected[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Extrude {

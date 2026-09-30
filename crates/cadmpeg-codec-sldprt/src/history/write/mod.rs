@@ -373,6 +373,12 @@ fn validate_compact_body_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
+    let bytes = native.feature_input_lanes.iter()
+        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputBodySelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -402,9 +408,9 @@ fn validate_compact_body_selection_edits(
                 .iter()
                 .map(u32::to_string)
                 .collect(),
-            crate::resolved_features::component_paths::compact_body_selection_value(
-                &selection.local_body_ids,
-            ),
+            crate::resolved_features::component_paths::compact_body_selection_value_charged(
+                &ctx, &selection.local_body_ids,
+            )?,
         )
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
         if bodies != &expected {
@@ -434,6 +440,12 @@ fn validate_compact_edge_selection_edits(
     let Some(native) = native else {
         return Ok(());
     };
+    let bytes = native.feature_input_lanes.iter()
+        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
     let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputEdgeSelection>>::new();
     for selection in native
         .feature_input_lanes
@@ -474,9 +486,9 @@ fn validate_compact_edge_selection_edits(
                 feature.id
             )));
         };
-        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value(
-            edge_selections,
-        );
+        let native = crate::resolved_features::component_paths::compact_edge_selection_set_value_charged(
+            &ctx, edge_selections,
+        )?;
         let generated = edge_selections
             .iter()
             .map(|selection| {

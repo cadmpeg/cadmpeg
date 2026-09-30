@@ -16,7 +16,7 @@ use crate::history::parameters::{
     expression_identifier_tokens, global_parameter_owners, parameters_with_incoherent_dependencies,
     parse_native_parameter_literal, project_parameters,
 };
-use crate::history::project::neutral_feature_id;
+use crate::history::project::neutral_feature_id_charged;
 use crate::resolved_features::relation_geometry::is_reference_relation_parameter;
 
 pub(crate) fn prepare_parameters_for_write(
@@ -123,8 +123,8 @@ fn sync_neutral_parameters(
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
-            .collect::<HashMap<_, _>>();
+            .map(|feature| Ok((neutral_feature_id_charged(&ctx, &feature.id)?, feature.name.clone())))
+            .collect::<Result<HashMap<_, _>, CodecError>>()?;
         rewrite_renamed_parameter_references(
             &ctx, &mut parameters,
             &original,

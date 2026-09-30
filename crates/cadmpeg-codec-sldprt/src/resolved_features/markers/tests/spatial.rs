@@ -1566,7 +1566,7 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         payload.extend(value.to_le_bytes());
     }
     assert_eq!(
-        crate::resolved_features::markers::spatial_vertex_coordinates(&payload),
+        crate::resolved_features::markers::spatial_vertex_coordinates_charged(&cadmpeg_test_support::service_decode_context(), &payload).unwrap(),
         vec![
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75
@@ -1575,5 +1575,5 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         ]
     );
     payload[7 + 43] = 0x1e;
-    assert!(crate::resolved_features::markers::spatial_vertex_coordinates(&payload).is_empty());
+    assert!(crate::resolved_features::markers::spatial_vertex_coordinates_charged(&cadmpeg_test_support::service_decode_context(), &payload).unwrap().is_empty());
 }

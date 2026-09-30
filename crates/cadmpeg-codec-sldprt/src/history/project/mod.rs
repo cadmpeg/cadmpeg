@@ -1594,24 +1594,3 @@ fn native_definition(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Featu
         parameters: copy_projected_feature_properties(ctx, &feature.parameters, "collect SLDPRT native definition parameters")?,
     }))
 }
-
-pub(super) fn neutral_feature_id(native_id: &str) -> FeatureId {
-    FeatureId::compose(
-        &cadmpeg_ir::identity_namespace!("sldprt", "model", "feature"),
-        feature_identity_key(native_id),
-    )
-}
-
-/// The identity key of one native feature id.
-///
-/// A minted history id carries the key `super::history_record_key` composed
-/// from its two integers, and contributes it directly. Any other id is encoded
-/// as key text, which escapes `%` and `#` exactly as before and has no refusal:
-/// every native id has a key of its own.
-fn feature_identity_key(native_id: &str) -> cadmpeg_ir::ids::IdentityKey {
-    cadmpeg_ir::ids::IdentityKey::encode_key_text(
-        native_id
-            .strip_prefix("sldprt:history:feature#")
-            .unwrap_or(native_id),
-    )
-}

@@ -10,7 +10,6 @@ use crate::history::configuration::restore_configuration_tree_node_definitions;
 use crate::history::enrich_scene_classes;
 use crate::history::parameters::native_parameter_is_length;
 use crate::history::parameters::project_parameters;
-use crate::history::project::neutral_feature_id;
 use crate::history::project::neutral_feature_id_charged;
 use crate::history::project::parameter_names;
 use crate::history::project::project_definition;
@@ -57,14 +56,14 @@ fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -
 #[test]
 fn charged_feature_ids_preserve_native_key_escaping() {
     with_test_ctx(|ctx| {
-        for native in [
-            "sldprt:history:feature#1:2",
-            "sldprt:history:feature#two#percent% space",
-            "custom-native-id",
+        for (native, expected) in [
+            ("sldprt:history:feature#1:2", "sldprt:model:feature#1:2"),
+            ("sldprt:history:feature#two#percent% space", "sldprt:model:feature#two%23percent%25%20space"),
+            ("custom-native-id", "sldprt:model:feature#custom-native-id"),
         ] {
             assert_eq!(
                 neutral_feature_id_charged(ctx, native).unwrap(),
-                neutral_feature_id(native)
+                cadmpeg_ir::features::FeatureId::mint(expected).unwrap()
             );
         }
     });

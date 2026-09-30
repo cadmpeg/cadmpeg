@@ -793,22 +793,7 @@ pub(super) fn spatial_relation_marker_coordinates(payload: &[u8], offset: usize)
     Some(Point3::new(coordinate(0)?, coordinate(8)?, coordinate(16)?))
 }
 
-#[cfg(test)]
-pub(super) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<FinitePoint3> {
-    spatial_vertex_offsets(payload)
-        .into_iter()
-        .filter_map(|offset| {
-            let point = Point3::new(
-                View::f64_le_at(payload, offset + 45)?,
-                View::f64_le_at(payload, offset + 53)?,
-                View::f64_le_at(payload, offset + 61)?,
-            );
-            FinitePoint3::new(point)
-        })
-        .collect()
-}
-
-fn spatial_vertex_coordinates_charged(
+pub(super) fn spatial_vertex_coordinates_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<FinitePoint3>, CodecError> {
@@ -829,19 +814,7 @@ fn spatial_vertex_coordinates_charged(
     Ok(vertices)
 }
 
-pub(super) fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
-    payload
-        .windows(SPATIAL_VERTEX_PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
-            (bytes == SPATIAL_VERTEX_PREFIX
-                && payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00]))
-            .then_some(offset)
-        })
-        .collect()
-}
-
-fn spatial_vertex_offsets_charged(
+pub(super) fn spatial_vertex_offsets_charged(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
 ) -> Result<Vec<usize>, CodecError> {
