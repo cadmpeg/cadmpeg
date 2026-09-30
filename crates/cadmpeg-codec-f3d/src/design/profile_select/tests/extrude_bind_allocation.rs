@@ -221,7 +221,7 @@ fn assert_extrude_binder_refusal(operation: &'static str, mode: u8, retained: bo
             linear_tolerance: 0.000_001,
             angular_tolerance: 0.000_000_001,
             arrangement_budget: &arrangement_budget,
-            ctx: Some(&ctx),
+            ctx: &ctx,
         };
         match bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),

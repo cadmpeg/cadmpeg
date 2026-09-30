@@ -29,7 +29,7 @@ fn fixture(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(crate::design::geometry::point_on_sketch_entity(Some(&ctx), Point2::new(3.0, 2.0), &entity, EPS_CONTAINMENT), Err(CodecError::ResourceLimit(failure)) if failure.operation == operation && failure.dimension == ResourceDimension::CollectionItems)
+        matches!(crate::design::geometry::point_on_sketch_entity(&ctx, Point2::new(3.0, 2.0), &entity, EPS_CONTAINMENT), Err(CodecError::ResourceLimit(failure)) if failure.operation == operation && failure.dimension == ResourceDimension::CollectionItems)
     );
 }
 #[test]

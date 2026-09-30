@@ -90,7 +90,7 @@ fn selected_planar_sketch_region_refuses_collection_limit() {
     let (arena, policy) = collection_context(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        resolved_sketch_profile_regions("stream", &operand, &sketch, &[curve], &[entity], Some(&ctx)),
+        resolved_sketch_profile_regions("stream", &operand, &sketch, &[curve], &[entity], &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d selected planar sketch profile region"
     ));
 }
@@ -151,7 +151,7 @@ fn selected_spatial_sketch_region_refuses_collection_limit() {
     let (arena, policy) = collection_context(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        resolved_spatial_sketch_profile_regions("stream", &operand, &sketch, &resolution, Some(&ctx)),
+        resolved_spatial_sketch_profile_regions("stream", &operand, &sketch, &resolution, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d selected spatial sketch profile region"
     ));
 }
@@ -194,7 +194,7 @@ fn all_spatial_sketch_regions_refuse_collection_limit() {
     let (arena, policy) = collection_context(0);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        resolved_spatial_sketch_profile_regions("stream", &operand, &sketch, &resolution, Some(&ctx)),
+        resolved_spatial_sketch_profile_regions("stream", &operand, &sketch, &resolution, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d all spatial sketch profile regions"
     ));
 }

@@ -15,7 +15,7 @@ macro_rules! region_item_refusal {
             let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let mut items = Vec::new();
             assert!(matches!(
-                super::super::push_geometry_item(Some(&ctx), &mut items, 1, $operation),
+                (&ctx).push_vec(&mut items, 1, $operation),
                 Err(CodecError::ResourceLimit(failure))
                     if failure.operation == $operation
             ));
@@ -50,8 +50,7 @@ fn incident_boundary_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut incident = std::collections::HashSet::new();
     assert!(matches!(
-        super::super::insert_geometry_set(Some(&ctx), &mut incident, 0,
-            "f3d profile incident boundary"),
+        (&ctx).insert_hash_set(&mut incident, 0, "f3d profile incident boundary"),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d profile incident boundary"
     ));
@@ -65,7 +64,7 @@ fn immediate_hole_refuses_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let containment = vec![vec![false, true], vec![false, false]];
     assert!(matches!(
-        super::super::immediate_containment_children(0, &containment, Some(&ctx)),
+        super::super::immediate_containment_children(0, &containment, &ctx),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == "f3d profile immediate hole"
     ));
@@ -104,25 +103,13 @@ fn circular_region_keeps_admitted_selection() {
     };
     let entities = [entity];
     let points = [Point3::new(0.5, 0.0, 0.0)];
-    let expected = super::region_containing_points(
-        &sketch,
-        &entities,
-        &points,
-        REGION_LIMIT_TEST_TOLERANCE,
-        None,
-    )
+    let expected = crate::test_support::with_decode_context(|decode_ctx| super::region_containing_points(&sketch, &entities, &points, REGION_LIMIT_TEST_TOLERANCE, decode_ctx))
     .unwrap();
     assert!(expected.is_some());
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let actual = super::region_containing_points(
-        &sketch,
-        &entities,
-        &points,
-        REGION_LIMIT_TEST_TOLERANCE,
-        Some(&ctx),
-    )
+    let actual = super::region_containing_points(&sketch, &entities, &points, REGION_LIMIT_TEST_TOLERANCE, &ctx)
     .unwrap();
     assert_eq!(actual, expected);
 }

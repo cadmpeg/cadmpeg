@@ -69,9 +69,9 @@ fn assert_planar_path_refusal(operation: &'static str, profile: bool) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if profile {
-            resolve_entity_selection_profile(&group, &resolution, Some(&ctx)).map(|_| ())
+            resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
         } else {
-            resolve_entity_selection_path(&group, &resolution, Some(&ctx)).map(|_| ())
+            resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
@@ -191,9 +191,9 @@ fn assert_spatial_path_refusal(operation: &'static str, retained: bool, profile:
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if profile {
-            resolve_entity_selection_profile(&group, &resolution, Some(&ctx)).map(|_| ())
+            resolve_entity_selection_profile(&group, &resolution, &ctx).map(|_| ())
         } else {
-            resolve_entity_selection_path(&group, &resolution, Some(&ctx)).map(|_| ())
+            resolve_entity_selection_path(&group, &resolution, &ctx).map(|_| ())
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,

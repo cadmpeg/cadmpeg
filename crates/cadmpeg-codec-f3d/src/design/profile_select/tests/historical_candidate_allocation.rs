@@ -49,7 +49,7 @@ fn assert_candidate_refusal(
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        historical_profile_face_candidates(Some(kind), entity, &topology, Some(&ctx)),
+        historical_profile_face_candidates(Some(kind), entity, &topology, &ctx),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == operation
     ));
 }

@@ -18,7 +18,7 @@ fn sketch_nurbs_point_refuses_pole_copy_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::sketch_geometry_point(&geometry, 0.5, Some(&ctx)).unwrap_err();
+    let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "f3d nurbs evaluator poles"));
 }
@@ -38,7 +38,7 @@ fn sketch_nurbs_point_refuses_weight_copy_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::sketch_geometry_point(&geometry, 0.5, Some(&ctx)).unwrap_err();
+    let error = super::super::sketch_geometry_point(&geometry, 0.5, &ctx).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.operation == "f3d nurbs evaluator weights"));
 }
@@ -58,7 +58,7 @@ fn certified_nurbs_tubes_refuse_point_copy_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)),
+        super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube points"
     ));
 }
@@ -78,7 +78,7 @@ fn certified_nurbs_tubes_refuse_weight_copy_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::super::certified_nurbs_tubes(&curve, 0.5, Some(&ctx)),
+        super::super::certified_nurbs_tubes(&curve, 0.5, &ctx),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs tube weights"
     ));
 }
@@ -104,7 +104,7 @@ fn sketch_nurbs_endpoints_refuse_pole_copy_limit() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        super::super::sketch_entity_endpoints(&entity, Some(&ctx)),
+        super::super::sketch_entity_endpoints(&entity, &ctx),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
@@ -130,7 +130,7 @@ fn closed_sketch_nurbs_endpoints_propagate_collection_refusal() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        closed_sketch_profiles(Some(&ctx), &sketch_id, &[entity], 0.01),
+        closed_sketch_profiles(&ctx, &sketch_id, &[entity], 0.01),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
@@ -164,7 +164,7 @@ fn coincident_nurbs_loci_propagate_endpoint_refusal() {
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], Some(&ctx)),
+        crate::design::dimensions::exact_coincident_loci(&[&nurbs, &point], &ctx),
         Err(CodecError::ResourceLimit(limit)) if limit.operation == "f3d nurbs evaluator poles"
     ));
 }
