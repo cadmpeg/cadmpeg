@@ -794,7 +794,7 @@ pub(crate) struct DesignFaceRecipeNode {
 }
 
 /// Structured topology program following a face-recipe node opener.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub(crate) struct DesignFaceRecipeStructure {
     /// Scalar before the prelude delimiters.
     pub(crate) root: i32,
@@ -807,22 +807,23 @@ pub(crate) struct DesignFaceRecipeStructure {
         default,
         rename = "postlude",
         skip_serializing_if = "Option::is_none",
-        serialize_with = "serialize_face_recipe_postlude",
         deserialize_with = "deserialize_face_recipe_postlude"
     )]
     pub(crate) postlude_value: Option<i32>,
 }
 
-// The wire adapter receives the optional field by reference, including its absence.
-// Serde passes the field by reference to this wire adapter.
-#[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)]
-fn serialize_face_recipe_postlude<S: serde::Serializer>(
-    value: &Option<i32>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    match value {
-        Some(value) => [-1, *value, -1, 0, 0, -1].as_slice().serialize(serializer),
-        None => <[i32]>::serialize(&[], serializer),
+impl Serialize for DesignFaceRecipeStructure {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let count = if self.postlude_value.is_some() { 4 } else { 3 };
+        let mut row = serializer.serialize_struct("DesignFaceRecipeStructure", count)?;
+        row.serialize_field("root", &self.root)?;
+        row.serialize_field("prelude", &self.prelude)?;
+        row.serialize_field("sides", &self.sides)?;
+        if let Some(value) = self.postlude_value {
+            row.serialize_field("postlude", &[-1, value, -1, 0, 0, -1])?;
+        }
+        row.end()
     }
 }
 

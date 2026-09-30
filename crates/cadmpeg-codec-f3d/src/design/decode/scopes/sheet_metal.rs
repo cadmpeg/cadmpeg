@@ -635,7 +635,7 @@ fn edge_flange_operation_at(
             selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
                 crate::records::feature::sheet_metal::DesignEdgeFlangeShape::from_wire(
                     vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                        wrapper_record_index: edge_wrapper_record_index,
+                        wrapper: edge_wrapper_record_index,
                         group_record_index: edge_group_record_index.try_into().ok()?,
                         aggregate_operand_record_index,
                     }],
@@ -793,7 +793,7 @@ fn edge_flange_to_object_operation_at(
         selection: crate::records::feature::sheet_metal::DesignEdgeFlangeSelection::try_new(
             crate::records::feature::sheet_metal::DesignEdgeFlangeShape::FullEdge {
                 edges: vec![crate::records::feature::sheet_metal::DesignEdgeFlangeEdge {
-                    wrapper_record_index: edge_wrapper_record_index,
+                    wrapper: edge_wrapper_record_index,
                     group_record_index: edge_group_record_index.try_into().ok()?,
                     aggregate_operand_record_index,
                 }],

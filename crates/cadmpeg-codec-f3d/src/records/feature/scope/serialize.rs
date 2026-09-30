@@ -103,28 +103,28 @@ impl Serialize for DesignParameterScope {
             emit_opt!("extrude_profile", extrude.extrude_profile.as_ref());
         }
         if let Some(coil) = self.coil() {
-            if let Some(value) = coil.coil_operation.as_ref() {
+            if let Some(value) = coil.operation.as_ref() {
                 emit!("coil_operation", &value.value);
                 emit!("coil_operation_offset", value.offset);
             }
-            if let Some(value) = coil.coil_extent.as_ref() {
+            if let Some(value) = coil.extent.as_ref() {
                 emit!("coil_extent", maybe_value(value));
                 emit_opt!("coil_extent_offset", maybe_offset(value));
             }
-            if let Some(value) = coil.coil_section.as_ref() {
+            if let Some(value) = coil.section.as_ref() {
                 emit!("coil_section", maybe_value(value));
                 emit_opt!("coil_section_offset", maybe_offset(value));
             }
-            if let Some(value) = coil.coil_section_placement.as_ref() {
+            if let Some(value) = coil.section_placement.as_ref() {
                 emit!("coil_section_placement", maybe_value(value));
                 emit_opt!("coil_section_placement_offset", maybe_offset(value));
             }
-            if let Some(value) = coil.coil_clockwise.as_ref() {
+            if let Some(value) = coil.clockwise.as_ref() {
                 emit!("coil_clockwise", maybe_value(value));
                 emit_opt!("coil_clockwise_offset", maybe_offset(value));
             }
-            emit_opt!("coil_placement", coil.coil_placement.as_ref());
-            emit_opt!("coil_transform", coil.coil_transform.as_ref());
+            emit_opt!("coil_placement", coil.placement.as_ref());
+            emit_opt!("coil_transform", coil.transform.as_ref());
         }
 
         emit!("feature_ordinal", self.feature_ordinal.get());

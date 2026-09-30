@@ -133,20 +133,26 @@ pub(crate) enum DesignEdgeFlangeShape {
     },
 }
 
+struct FlangeEdgeColumns<'a> {
+    shared: &'a [DesignEdgeFlangeEdge],
+    symmetric: &'a [DesignFlangeEdgeWidth<u32>],
+    two_sided: &'a [DesignFlangeEdgeWidth<[u32; 2]>],
+}
+
+struct FlangeOwnerColumns<'a> {
+    shared: &'a [u32],
+    symmetric: &'a [DesignFlangeEdgeWidth<u32>],
+    two_sided: &'a [DesignFlangeEdgeWidth<[u32; 2]>],
+}
+
 impl DesignEdgeFlangeShape {
-    // The tuple carries one coupled result; a separate alias would add no invariant.
-    #[allow(clippy::type_complexity)]
     pub(crate) fn edges(&self) -> impl Iterator<Item = &DesignEdgeFlangeEdge> {
-        let (shared, symmetric, two_sided): (
-            &[DesignEdgeFlangeEdge],
-            &[DesignFlangeEdgeWidth<u32>],
-            &[DesignFlangeEdgeWidth<[u32; 2]>],
-        ) = match self {
+        let FlangeEdgeColumns { shared, symmetric, two_sided } = match self {
             Self::FullEdge { edges, .. }
             | Self::Symmetric { edges, .. }
-            | Self::TwoSides { edges, .. } => (edges, &[], &[]),
-            Self::SymmetricPerEdge(edges) => (&[], edges, &[]),
-            Self::TwoSidesPerEdge { edges, .. } => (&[], &[], edges),
+            | Self::TwoSides { edges, .. } => FlangeEdgeColumns { shared: edges, symmetric: &[], two_sided: &[] },
+            Self::SymmetricPerEdge(edges) => FlangeEdgeColumns { shared: &[], symmetric: edges, two_sided: &[] },
+            Self::TwoSidesPerEdge { edges, .. } => FlangeEdgeColumns { shared: &[], symmetric: &[], two_sided: edges },
         };
         shared
             .iter()
@@ -178,19 +184,13 @@ impl DesignEdgeFlangeShape {
         }
     }
 
-    // The tuple carries one coupled result; a separate alias would add no invariant.
-    #[allow(clippy::type_complexity)]
     pub(crate) fn owner_indices(&self) -> impl Iterator<Item = &u32> {
-        let (shared, symmetric, two_sided): (
-            &[u32],
-            &[DesignFlangeEdgeWidth<u32>],
-            &[DesignFlangeEdgeWidth<[u32; 2]>],
-        ) = match self {
-            Self::FullEdge { .. } => (&[], &[], &[]),
-            Self::Symmetric { owner, .. } => (std::slice::from_ref(owner), &[], &[]),
-            Self::TwoSides { owners, .. } => (owners, &[], &[]),
-            Self::SymmetricPerEdge(edges) => (&[], edges, &[]),
-            Self::TwoSidesPerEdge { edges, .. } => (&[], &[], edges),
+        let FlangeOwnerColumns { shared, symmetric, two_sided } = match self {
+            Self::FullEdge { .. } => FlangeOwnerColumns { shared: &[], symmetric: &[], two_sided: &[] },
+            Self::Symmetric { owner, .. } => FlangeOwnerColumns { shared: std::slice::from_ref(owner), symmetric: &[], two_sided: &[] },
+            Self::TwoSides { owners, .. } => FlangeOwnerColumns { shared: owners, symmetric: &[], two_sided: &[] },
+            Self::SymmetricPerEdge(edges) => FlangeOwnerColumns { shared: &[], symmetric: edges, two_sided: &[] },
+            Self::TwoSidesPerEdge { edges, .. } => FlangeOwnerColumns { shared: &[], symmetric: &[], two_sided: edges },
         };
         shared
             .iter()
@@ -303,9 +303,8 @@ impl From<DesignRecipeGroupIndex> for u32 {
 /// One selected flange edge and its aggregate operand.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // Field names are the native record serialized keys.
-#[allow(clippy::struct_field_names)]
 pub(crate) struct DesignEdgeFlangeEdge {
-    pub(crate) wrapper_record_index: u32,
+    pub(crate) wrapper: u32,
     pub(crate) group_record_index: DesignRecipeGroupIndex,
     pub(crate) aggregate_operand_record_index: u32,
 }
@@ -343,7 +342,7 @@ impl DesignEdgeFlangeEdge {
             .map(
                 |((wrapper_record_index, group_record_index), aggregate_operand_record_index)| {
                     Ok(Self {
-                        wrapper_record_index,
+                        wrapper: wrapper_record_index,
                         group_record_index: group_record_index.try_into()?,
                         aggregate_operand_record_index,
                     })
@@ -456,7 +455,7 @@ impl Serialize for DesignEdgeFlangeOperation {
         BorrowedWire {
             edge_wrapper_record_indices: FlangeEdgeColumn {
                 shape,
-                value: |edge| edge.wrapper_record_index,
+                value: |edge| edge.wrapper,
             },
             edge_group_record_indices: FlangeEdgeColumn {
                 shape,
@@ -616,7 +615,7 @@ impl From<DesignEdgeFlangeOperation> for DesignEdgeFlangeOperationSerde {
                 .selection
                 .shape()
                 .edges()
-                .map(|edge| edge.wrapper_record_index)
+                .map(|edge| edge.wrapper)
                 .collect(),
             edge_group_record_indices: operation
                 .selection

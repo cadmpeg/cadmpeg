@@ -479,10 +479,10 @@ impl From<DesignDimensionLocusPair> for DesignDimensionLocusPairWire {
 }
 
 /// One nullable typed operand in an annotated dimension frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub(crate) struct DesignDimensionAnnotationOperand {
     /// Indexed sketch geometry record, absent for the null locus.
-    #[serde(with = "annotation_geometry_index")]
+    #[serde(deserialize_with = "annotation_geometry_index::deserialize")]
     pub(crate) geometry_record_index: Option<NonZeroU32>,
     /// Byte offset of `geometry_record_index`.
     pub(crate) geometry_reference_offset: u64,
@@ -499,23 +499,21 @@ impl DesignDimensionAnnotationOperand {
     }
 }
 
-mod annotation_geometry_index {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use std::num::NonZeroU32;
-
-    // The wire adapter receives the optional field by reference, including its absence.
-    // Serde passes the field by reference to this wire adapter.
-    #[allow(clippy::ref_option, clippy::trivially_copy_pass_by_ref)]
-    pub(super) fn serialize<S: Serializer>(
-        index: &Option<NonZeroU32>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error> {
-        match index {
-            Some(index) => index.get(),
-            None => 0,
-        }
-        .serialize(serializer)
+impl Serialize for DesignDimensionAnnotationOperand {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut row = serializer.serialize_struct("DesignDimensionAnnotationOperand", 4)?;
+        row.serialize_field("geometry_record_index", &self.geometry_index())?;
+        row.serialize_field("geometry_reference_offset", &self.geometry_reference_offset)?;
+        row.serialize_field("role", &self.role)?;
+        row.serialize_field("role_offset", &self.role_offset)?;
+        row.end()
     }
+}
+
+mod annotation_geometry_index {
+    use serde::{Deserialize, Deserializer};
+    use std::num::NonZeroU32;
 
     pub(super) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record primitives every design-record family states: entity identity, located values, counted runs and the shared affine transform.
 
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize};
 pub(super) const IDENTITY_MATRIX: [[f64; 4]; 4] = [
     [1.0, 0.0, 0.0, 0.0],
     [0.0, 1.0, 0.0, 0.0],
@@ -223,6 +223,7 @@ impl<T, O> ReferenceRun<T, O> {
         ))
     }
 
+    #[cfg(test)]
     pub(super) fn into_wire(self) -> (Vec<T>, Vec<O>) {
         match self.0 {
             ReferenceRunData::Unlocated(values) => (values, Vec::new()),
@@ -347,8 +348,9 @@ impl<T: Copy> MaybeRecordedValue<T> {
 }
 
 // The wire adapter receives the optional field by reference, including its absence.
+#[cfg(test)]
 #[allow(clippy::ref_option)]
-pub(super) fn serialize_absent_u64_offset<S: Serializer>(
+pub(super) fn serialize_absent_u64_offset<S: serde::Serializer>(
     value: &Option<u64>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {

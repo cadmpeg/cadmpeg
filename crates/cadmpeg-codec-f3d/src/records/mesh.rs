@@ -228,37 +228,44 @@ impl From<&'static str> for TextureTableError {
     }
 }
 
-impl DesignMeshTextureTable {
-    pub(crate) fn new(
-        record: DesignMeshRecordIdentity,
-        resources: Vec<DesignMeshTextureResource>,
-    ) -> Result<Self, String> {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[],
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::default(),
-        )
-        .map_err(|error| error.to_string())?;
-        Self::new_inner(&ctx, record, resources).map_err(|error| match error {
-            TextureTableError::Payload(message) => message,
-            TextureTableError::Resource(error) => error.to_string(),
-        })
-    }
+#[derive(Clone, Copy)]
+enum TextureTableAdmission<'ctx, 'arena> {
+    Charged(&'ctx DecodeContext<'arena>),
+    Admitted,
+}
 
+impl TextureTableAdmission<'_, '_> {
+    fn insert_set<T: Eq + std::hash::Hash>(
+        self,
+        values: &mut std::collections::HashSet<T>,
+        value: T,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
+        match self {
+            Self::Charged(ctx) => ctx.insert_hash_set(values, value, operation).map(|_inserted| ()),
+            Self::Admitted => {
+                DecodeContext::reserve_admitted_set(values, 1, operation)?;
+                values.insert(value);
+                Ok(())
+            }
+        }
+    }
+}
+
+impl DesignMeshTextureTable {
     pub(crate) fn new_charged(
         ctx: &DecodeContext<'_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, CodecError> {
-        Self::new_inner(ctx, record, resources).map_err(|error| match error {
+        Self::new_inner(TextureTableAdmission::Charged(ctx), record, resources).map_err(|error| match error {
             TextureTableError::Payload(message) => CodecError::Malformed(message),
             TextureTableError::Resource(error) => error,
         })
     }
 
     fn new_inner(
-        ctx: &DecodeContext<'_>,
+        admission: TextureTableAdmission<'_, '_>,
         record: DesignMeshRecordIdentity,
         resources: Vec<DesignMeshTextureResource>,
     ) -> Result<Self, TextureTableError> {
@@ -289,19 +296,19 @@ impl DesignMeshTextureTable {
                 return Err("textures.resource_guid must be unique ignoring letter case".into());
             }
 
-            ctx.insert_hash_set(
+            admission.insert_set(
                 &mut flags,
                 resource.ordinal,
                 "index F3D texture flag ordinals",
             )
             .map_err(TextureTableError::Resource)?;
-            ctx.insert_hash_set(
+            admission.insert_set(
                 &mut filenames,
                 resource.filename_ordinal,
                 "index F3D texture filename ordinals",
             )
             .map_err(TextureTableError::Resource)?;
-            ctx.insert_hash_set(&mut guids, guid, "index F3D texture GUIDs")
+            admission.insert_set(&mut guids, guid, "index F3D texture GUIDs")
                 .map_err(TextureTableError::Resource)?;
         }
         Ok(Self { record, resources })
@@ -344,7 +351,6 @@ impl DesignMeshTextureTable {
             + MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64_from_index(self.resources.len())
     }
     // Output cardinalities are bounded by already-materialized input vectors.
-    #[allow(clippy::disallowed_methods)]
     fn from_wire(
         record: DesignMeshRecordIdentity,
         flags_count_offset: u64,
@@ -358,7 +364,7 @@ impl DesignMeshTextureTable {
         let filenames_start = flags_start.and_then(|start| {
             start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(count) + 4)
         });
-        let mut resources = Vec::with_capacity(rows.len());
+        let mut resources = DecodeContext::admitted_vec(rows.len(), "reconstruct F3D texture resources").map_err(|error| error.to_string())?;
         for row in rows {
             let flags_guid = flags_start.and_then(|start| {
                 start.checked_add(MESH_TEXTURE_FLAGS_ENTRY_BYTES * u64::from(row.ordinal) + 4)
@@ -398,7 +404,7 @@ impl DesignMeshTextureTable {
                 asset: row.asset,
             });
         }
-        let table = Self::new(record, resources)?;
+        let table = Self::new_inner(TextureTableAdmission::Admitted, record, resources).map_err(|error| match error { TextureTableError::Payload(message) => message, TextureTableError::Resource(error) => error.to_string() })?;
         if table.flags_count_offset() != flags_count_offset
             || table.filename_count_offset() != filename_count_offset
         {
@@ -484,9 +490,7 @@ impl DesignMeshSceneBounds {
     pub(crate) fn minimum(&self) -> [f64; 3] {
         self.minimum
     }
-    // This conversion consumes the input carrier at the typed construction boundary.
-    #[allow(clippy::needless_pass_by_value)]
-    fn from_wire(wire: DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
+    fn from_wire(wire: &DesignMeshSceneBoundsWire, offsets: [u64; 2]) -> Result<Self, String> {
         if wire.offsets != offsets {
             return Err("scene bounds offsets must match their owning record".into());
         }
@@ -540,7 +544,7 @@ impl DesignMeshSceneState {
         let record = DesignMeshFixedRecord::try_from(record)?;
         let mut state = Self::new(record, None);
         state.bounds = bounds
-            .map(|bounds| DesignMeshSceneBounds::from_wire(bounds, state.bounds_offsets()))
+            .map(|bounds| DesignMeshSceneBounds::from_wire(&bounds, state.bounds_offsets()))
             .transpose()?;
         Ok(state)
     }
@@ -647,7 +651,7 @@ impl DesignMeshSceneNode {
             return Err("scene_node_transform_offset must match the placed record layout".into());
         }
         node.bounds = bounds
-            .map(|bounds| DesignMeshSceneBounds::from_wire(bounds, node.bounds_offsets()))
+            .map(|bounds| DesignMeshSceneBounds::from_wire(&bounds, node.bounds_offsets()))
             .transpose()?;
         Ok(node)
     }

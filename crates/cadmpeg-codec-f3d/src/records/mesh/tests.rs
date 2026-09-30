@@ -235,7 +235,7 @@ fn mesh_feature_native_retained_limit_refuses_before_clone() {
 fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
     let wire = r#"{"maximum":[1.0,2.0,3.0],"minimum":[-4.0,-5.0,-6.0],"offsets":[100,124]}"#;
     let bounds = crate::records::mesh::DesignMeshSceneBounds::from_wire(
-        serde_json::from_str(wire).unwrap(),
+        &serde_json::from_str(wire).unwrap(),
         [100, 124],
     )
     .unwrap();
@@ -253,7 +253,7 @@ fn mesh_scene_bounds_preserve_wire_and_check_corners_and_offsets() {
         let mut invalid = serde_json::to_value(bounds.into_wire([100, 124])).unwrap();
         invalid[field] = bad;
         assert!(crate::records::mesh::DesignMeshSceneBounds::from_wire(
-            serde_json::from_value(invalid).unwrap(),
+            &serde_json::from_value(invalid).unwrap(),
             [100, 124]
         )
         .unwrap_err()
@@ -779,7 +779,7 @@ fn mesh_texture_table_checks_permutations_and_preserves_wire_row_order() {
         serde_json::from_value(rows).unwrap()
     )
     .is_err());
-    assert!(crate::records::mesh::DesignMeshTextureTable::new(record(29), Vec::new()).is_ok());
+    assert!(crate::test_support::with_decode_context(|ctx| crate::records::mesh::DesignMeshTextureTable::new_charged(ctx, record(29), Vec::new())).is_ok());
 }
 
 #[test]
