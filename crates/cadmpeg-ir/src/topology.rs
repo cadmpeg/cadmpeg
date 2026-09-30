@@ -1077,17 +1077,14 @@ impl crate::geometry::nurbs::KnotVector {
     /// `first..=last`, in increasing order.
     #[must_use]
     pub(crate) fn active_spans(
-        &self,
-        first: usize,
-        last: usize,
-    ) -> Option<Vec<IncreasingParameterInterval>> {
-        Some(
-            self.get(first..=last)?
-                .windows(2)
-                .filter(|pair| pair[0] < pair[1])
-                .map(|pair| IncreasingParameterInterval([pair[0], pair[1]]))
-                .collect(),
-        )
+        &self, first: usize, last: usize,
+    ) -> Result<Option<Vec<IncreasingParameterInterval>>, cadmpeg_core::decode::ResourceLimit> {
+        let Some(knots) = self.get(first..=last) else { return Ok(None); };
+        let mut spans = Vec::new();
+        crate::geometry::nurbs::scratch::reserve_exact(&mut spans, knots.len(), "IR active knot spans")?;
+        spans.extend(knots.windows(2).filter(|pair| pair[0] < pair[1])
+            .map(|pair| IncreasingParameterInterval([pair[0], pair[1]])));
+        Ok(Some(spans))
     }
 }
 
@@ -1524,14 +1521,14 @@ mod tests {
         assert!(knots.span(4, 1).is_none());
         assert!(knots.span(1, 6).is_none());
         assert_eq!(
-            knots.active_spans(0, 5).map(|spans| spans
+            knots.active_spans(0, 5).unwrap().map(|spans| spans
                 .into_iter()
                 .map(super::IncreasingParameterInterval::endpoints)
                 .collect::<Vec<_>>()),
             Some(vec![[0.0, 1.0], [1.0, 2.5], [2.5, 4.0]])
         );
-        assert_eq!(knots.active_spans(2, 3), Some(Vec::new()));
-        assert!(knots.active_spans(0, 6).is_none());
+        assert_eq!(knots.active_spans(2, 3).unwrap(), Some(Vec::new()));
+        assert!(knots.active_spans(0, 6).unwrap().is_none());
         assert_eq!(
             knots.finite_knot(4).map(crate::scalar::FiniteReal::get),
             Some(2.5)

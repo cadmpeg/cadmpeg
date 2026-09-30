@@ -958,3 +958,5 @@ fn decoded_curve_carrier_copy_refuses_collection_limit() {
 }
 
 mod baseline_hashes;
+
+mod surface_solver;

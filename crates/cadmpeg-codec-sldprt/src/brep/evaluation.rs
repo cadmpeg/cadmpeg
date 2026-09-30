@@ -140,3 +140,72 @@ pub(super) fn admit_nurbs_isocurve<'ctx>(
     let bytes = cadmpeg_ir::eval::nurbs_surface_isocurve_scratch_bytes(surface, fixed_axis)?;
     ctx.reserve_scoped(u64_from_index(bytes), OPERATION)
 }
+
+const SURFACE_SOLVER_LOCAL_WORK: u64 = 1_000_000;
+
+fn surface_solver_budget<'ctx>(
+    ctx: &'ctx DecodeContext<'_>, surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    operation: &'static str,
+) -> Result<cadmpeg_core::decode::WorkBudget<'ctx>, CodecError> {
+    let (_, extraction_work) = cadmpeg_ir::eval::nurbs_surface_patch_workspace(surface)?;
+    ctx.charge_work(extraction_work, operation)?;
+    // One normalized evaluator unit also pays for fixed arithmetic and a
+    // complete scan of both knot vectors. Its local ceiling stays unchanged.
+    let scale = 64_u64.checked_add(u64_from_index(surface.u_knots().len()))
+        .and_then(|scale| scale.checked_add(u64_from_index(surface.v_knots().len())))
+        .and_then(std::num::NonZeroU64::new)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    Ok(ctx.work_budget(SURFACE_SOLVER_LOCAL_WORK).with_session_work_scale(scale))
+}
+
+pub(super) fn nurbs_surface_parameter_within_tolerance(
+    ctx: &DecodeContext<'_>, surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    point: cadmpeg_ir::math::Point3, seed: Option<cadmpeg_ir::math::Point2>, tolerance: f64,
+) -> Result<Option<cadmpeg_ir::units::FinitePoint2>, CodecError> {
+    const OPERATION: &str = "invert SLDPRT NURBS surface globally";
+    let budget = surface_solver_budget(ctx, surface, OPERATION)?;
+    let result = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance_with_budget(
+        surface, point, seed, tolerance, &budget,
+    );
+    // A zero charge observes the session's original sticky refusal.
+    ctx.charge_work(0, OPERATION)?;
+    if budget.exhausted() {
+        return Err(ctx.refuse_codec_limit(OPERATION, SURFACE_SOLVER_LOCAL_WORK, SURFACE_SOLVER_LOCAL_WORK + 1));
+    }
+    Ok(result?)
+}
+
+pub(super) fn nurbs_surface_parameter_segment_chord_bound(
+    ctx: &DecodeContext<'_>, surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    parameters: [cadmpeg_ir::math::Point2; 2], chord: [cadmpeg_ir::math::Point3; 2],
+) -> Result<Option<f64>, CodecError> {
+    const OPERATION: &str = "certify SLDPRT NURBS surface chord";
+    let budget = surface_solver_budget(ctx, surface, OPERATION)?;
+    let u = u64::from(surface.u_degree()).checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let v = u64::from(surface.v_degree()).checked_add(1)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let patches = u64_from_index(surface.u_count()).checked_mul(u64_from_index(surface.v_count()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let splits = patches.checked_mul(4).and_then(|count| count.checked_add(2))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    // Each split can search all patches. Restricting a tensor-product line
+    // costs at most its squared support times the combined degrees; the
+    // square of the split count also covers the in-place sort's comparisons.
+    let work = u.checked_mul(v).and_then(|support| support.checked_mul(support))
+        .and_then(|work| work.checked_mul(u.checked_add(v)?))
+        .and_then(|work| work.checked_mul(64))
+        .and_then(|work| work.checked_add(patches))
+        .and_then(|work| work.checked_mul(splits))
+        .and_then(|work| work.checked_add(splits.checked_mul(splits)?.checked_mul(64)?))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, OPERATION)?;
+    let result = cadmpeg_ir::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
+        surface, parameters, chord, &budget,
+    );
+    ctx.charge_work(0, OPERATION)?;
+    if budget.exhausted() {
+        return Err(ctx.refuse_codec_limit(OPERATION, SURFACE_SOLVER_LOCAL_WORK, SURFACE_SOLVER_LOCAL_WORK + 1));
+    }
+    Ok(result?)
+}

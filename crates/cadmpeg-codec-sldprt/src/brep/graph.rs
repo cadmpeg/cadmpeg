@@ -16,7 +16,6 @@ use cadmpeg_ir::annotations::{AnnotationBuilder, Annotations, StreamHandle};
 use cadmpeg_ir::eval::{
     analytic_surface_parameters, nurbs_curve_parameter_domain,
     nurbs_pcurve_uv, nurbs_surface_isocurve,
-    nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
 use cadmpeg_ir::geometry::{
     nurbs::{knots_nondecreasing, SurfaceParameterAxis},
@@ -36,6 +35,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
 
 use super::attrib;
+use super::evaluation::{nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance};
 use super::blend::BlendSupportRef;
 use super::entity;
 use super::index::{scan_carriers, CarrierIndex, IndexedCurve};
@@ -4753,6 +4753,7 @@ fn intersection_support_pcurve(
                     ctx.reserve_collection_vec(&mut control_points, chart_points.len(), "solve intersection support UV controls")?;
                     for point in chart_points {
                         let parameters = match nurbs_surface_parameter_within_tolerance(
+                            ctx,
                             surface,
                             point.get(),
                             control_points.last().copied(),
@@ -4825,6 +4826,7 @@ fn intersection_support_pcurve(
             let last = control_points.len() - 1;
             for (index, target) in [(0, targets[0]), (last, targets[1])] {
                 control_points[index] = match nurbs_surface_parameter_within_tolerance(
+                            ctx,
                     surface,
                     target,
                     Some(control_points[index]),
@@ -4908,6 +4910,7 @@ fn intersection_support_pcurve(
             let exceeds = match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
                     match nurbs_surface_parameter_segment_chord_bound(
+                        ctx,
                         surface,
                         [parameters[0], parameters[1]],
                         [chord[0].get(), chord[1].get()],

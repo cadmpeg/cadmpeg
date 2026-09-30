@@ -39,7 +39,8 @@ use crate::topology::{IncreasingParameterInterval, ParameterInterval};
 use crate::transform::Transform;
 use crate::units::{FinitePoint2, FiniteVector, UnitVector3};
 use crate::CadIr;
-use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::{u64_from_index, ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::work_scratch::WorkScratch;
 
 mod depth;
 mod model_surface_point;
@@ -205,37 +206,37 @@ pub fn analytic_surface_parameters_solved(
     }
 }
 
-#[derive(Clone)]
-struct RationalBezierSurfacePatch {
+struct RationalBezierSurfacePatch<'session> {
     u_domain: IncreasingParameterInterval,
     v_domain: IncreasingParameterInterval,
     u_degree: usize,
     v_degree: usize,
     controls: Vec<[f64; 4]>,
+    _scratch: WorkScratch<'session>,
 }
 
-struct SurfacePatchQueueEntry {
+struct SurfacePatchQueueEntry<'session> {
     lower_bound: f64,
     diameter: f64,
     sequence: usize,
-    patch: RationalBezierSurfacePatch,
+    patch: RationalBezierSurfacePatch<'session>,
 }
 
-impl PartialEq for SurfacePatchQueueEntry {
+impl PartialEq for SurfacePatchQueueEntry<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.sequence == other.sequence
     }
 }
 
-impl Eq for SurfacePatchQueueEntry {}
+impl Eq for SurfacePatchQueueEntry<'_> {}
 
-impl PartialOrd for SurfacePatchQueueEntry {
+impl PartialOrd for SurfacePatchQueueEntry<'_> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for SurfacePatchQueueEntry {
+impl Ord for SurfacePatchQueueEntry<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // BinaryHeap is a max-heap. Reverse the lower-bound order so the patch
         // with the strongest minimum-distance promise is examined first.
@@ -261,17 +262,40 @@ impl HomogeneousBezierSplit {
     }
 }
 
-fn rational_surface_patches(
-    surface: &NurbsSurface,
-) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
-    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
-    rational_surface_patches_with_budget(surface, &budget)
+/// Bounds temporary surface-patch workspace and knot-extraction work.
+/// The returned pair is `(temporary_bytes, extraction_work)`. Owned patch
+/// control polygons and the search queue require separate live reservations.
+pub fn nurbs_surface_patch_workspace(surface: &NurbsSurface) -> Result<(u64, u64), ResourceLimit> {
+    let bound = || -> Option<(u64, u64)> {
+        let u = u64::from(surface.u_degree()).checked_add(1)?;
+        let v = u64::from(surface.v_degree()).checked_add(1)?;
+        let uc = u64_from_index(surface.u_count());
+        let vc = u64_from_index(surface.v_count());
+        // Each original knot and both endpoints need at most one support's
+        // insertions. Span storage has at most the expanded control count.
+        let eu = uc.checked_add(u.checked_mul(u64_from_index(surface.u_knots().len()).checked_add(2)?)?)?;
+        let ev = vc.checked_add(v.checked_mul(u64_from_index(surface.v_knots().len()).checked_add(2)?)?)?;
+        let cells = eu.checked_mul(ev)?;
+        let cell_bytes = u64_from_index(std::mem::size_of::<[f64; 4]>()).checked_mul(8)?
+            .checked_add(u64_from_index(std::mem::size_of::<crate::geometry::nurbs::bezier::HomogeneousBezierSpan>()).checked_mul(4)?)?
+            .checked_add(u64_from_index(std::mem::size_of::<RationalBezierSurfacePatch<'static>>()).checked_mul(2)?)?;
+        // The split's line lists, control copies and polygons use at most
+        // sixteen control-sized lanes per tensor-product support.
+        let bytes = cells.checked_mul(cell_bytes)?
+            .checked_add(u.checked_mul(v)?.checked_mul(16)?.checked_mul(u64_from_index(std::mem::size_of::<[f64; 4]>()))?)?
+            .checked_add(u.checked_add(v)?.checked_mul(3)?.checked_mul(u64_from_index(std::mem::size_of::<f64>()))?)?;
+        let work = eu.checked_mul(eu)?.checked_mul(vc)?
+            .checked_add(ev.checked_mul(ev)?.checked_mul(uc)?.checked_mul(u)?)?
+            .checked_mul(256)?;
+        Some((bytes, work))
+    };
+    bound().ok_or_else(|| scratch::allocation_failed(surface.u_count(), "IR surface patch workspace bound"))
 }
 
-fn rational_surface_patches_with_budget(
+fn rational_surface_patches_with_budget<'session>(
     surface: &NurbsSurface,
-    budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
+    budget: &WorkBudget<'session>,
+) -> Result<Option<Vec<RationalBezierSurfacePatch<'session>>>, ResourceLimit> {
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
         return Ok(None);
     };
@@ -332,10 +356,10 @@ fn rational_surface_patches_with_budget(
     };
     // The Bezier spans of every row and column share the knots, so their
     // domains are the intervals between consecutive distinct active knots.
-    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count) else {
+    let Some(u_domains) = surface.u_knots().active_spans(u_degree, u_count)? else {
         return Ok(None);
     };
-    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count) else {
+    let Some(v_domains) = surface.v_knots().active_spans(v_degree, v_count)? else {
         return Ok(None);
     };
     let mut u_spans_by_v = Vec::new();
@@ -382,6 +406,9 @@ fn rational_surface_patches_with_budget(
             if !budget.charge_by(patch_control_count) {
                 return Ok(None);
             }
+            let control_bytes = patch_control_count.checked_mul(std::mem::size_of::<[f64; 4]>())
+                .ok_or_else(|| scratch::allocation_failed(patch_control_count, "IR surface patch control bytes"))?;
+            let control_scratch = budget.reserve_scratch(u64_from_index(control_bytes), "IR surface patch controls")?;
             let mut controls = Vec::new();
             scratch::reserve_exact(
                 &mut controls,
@@ -397,17 +424,18 @@ fn rational_surface_patches_with_budget(
                 u_degree,
                 v_degree,
                 controls,
+                _scratch: control_scratch,
             });
         }
     }
     Ok((!patches.is_empty()).then_some(patches))
 }
 
-fn rational_surface_residual_patches(
+fn rational_surface_residual_patches<'session>(
     surface: &NurbsSurface,
     point: Point3,
-    budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<RationalBezierSurfacePatch>>, ResourceLimit> {
+    budget: &WorkBudget<'session>,
+) -> Result<Option<Vec<RationalBezierSurfacePatch<'session>>>, ResourceLimit> {
     if !point.is_finite() {
         return Ok(None);
     }
@@ -531,7 +559,7 @@ fn binomial_coefficient(degree: usize, index: usize) -> f64 {
 
 /// Each temporary row and output control is bounded by the admitted patch control count.
 fn rational_patch_parameter_segment(
-    patch: &RationalBezierSurfacePatch,
+    patch: &RationalBezierSurfacePatch<'_>,
     start: FinitePoint2,
     end: FinitePoint2,
 ) -> Result<Option<Vec<[f64; 4]>>, ResourceLimit> {
@@ -682,13 +710,23 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
     parameters: [Point2; 2],
     chord: [Point3; 2],
 ) -> Result<Option<f64>, ResourceLimit> {
+    let budget = WorkBudget::new(DEFAULT_NURBS_SURFACE_INVERSION_WORK);
+    nurbs_surface_parameter_segment_chord_bound_with_budget(surface, parameters, chord, &budget)
+}
+
+/// Bound a surface segment with scratch charged to the work slice's session.
+pub fn nurbs_surface_parameter_segment_chord_bound_with_budget(
+    surface: &NurbsSurface, parameters: [Point2; 2], chord: [Point3; 2], budget: &WorkBudget<'_>,
+) -> Result<Option<f64>, ResourceLimit> {
+    let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
+    let _workspace = budget.reserve_scratch(bytes, "IR surface segment workspace")?;
     let [Some(first), Some(last)] = parameters.map(FinitePoint2::new) else {
         return Ok(None);
     };
     if chord.iter().any(|point| !point.is_finite()) {
         return Ok(None);
     }
-    let Some(patches) = rational_surface_patches(surface)? else {
+    let Some(patches) = rational_surface_patches_with_budget(surface, budget)? else {
         return Ok(None);
     };
     let [first_u, first_v] = first.coordinates();
@@ -731,7 +769,8 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
             }
         }
     }
-    splits.sort_by(f64::total_cmp);
+    // Equal finite split parameters are indistinguishable before deduplication.
+    splits.sort_unstable_by(f64::total_cmp);
     splits.dedup();
     let mut bound = 0.0_f64;
     for range in splits.windows(2) {
@@ -777,7 +816,7 @@ pub fn nurbs_surface_parameter_segment_chord_bound(
 }
 
 fn rational_patch_distance_bounds_with_budget(
-    patch: &RationalBezierSurfacePatch,
+    patch: &RationalBezierSurfacePatch<'_>,
     budget: &WorkBudget<'_>,
 ) -> Option<(f64, f64)> {
     budget.charge_by(patch.controls.len()).then_some(())?;
@@ -813,11 +852,11 @@ fn rational_patch_distance_bounds_with_budget(
     (lower.is_finite() && diameter.is_finite()).then_some((lower, diameter))
 }
 
-fn split_rational_surface_patch(
-    patch: &RationalBezierSurfacePatch,
+fn split_rational_surface_patch<'session>(
+    patch: &RationalBezierSurfacePatch<'session>,
     split_u: bool,
-    budget: &WorkBudget<'_>,
-) -> Result<Option<[RationalBezierSurfacePatch; 2]>, ResourceLimit> {
+    budget: &WorkBudget<'session>,
+) -> Result<Option<[RationalBezierSurfacePatch<'session>; 2]>, ResourceLimit> {
     let (degree, line_count) = if split_u {
         (patch.u_degree, patch.v_degree + 1)
     } else {
@@ -856,7 +895,10 @@ fn split_rational_surface_patch(
         first_lines.push(first);
         second_lines.push(second);
     }
-    let assemble = |lines: Vec<Vec<[f64; 4]>>| -> Result<Vec<[f64; 4]>, ResourceLimit> {
+    let assemble = |lines: Vec<Vec<[f64; 4]>>| -> Result<(Vec<[f64; 4]>, WorkScratch<'session>), ResourceLimit> {
+        let bytes = patch.controls.len().checked_mul(std::mem::size_of::<[f64; 4]>())
+            .ok_or_else(|| scratch::allocation_failed(patch.controls.len(), "IR assembled patch bytes"))?;
+        let reservation = budget.reserve_scratch(u64_from_index(bytes), "IR assembled surface patch controls")?;
         let mut controls = Vec::new();
         scratch::reserve_exact(
             &mut controls,
@@ -871,7 +913,7 @@ fn split_rational_surface_patch(
         } else {
             controls.extend(lines.into_iter().flatten());
         }
-        Ok(controls)
+        Ok((controls, reservation))
     };
     let (first_u, second_u, first_v, second_v) = if split_u {
         let Some((first_u, second_u)) = patch.u_domain.split_at_midpoint() else {
@@ -884,20 +926,24 @@ fn split_rational_surface_patch(
         };
         (patch.u_domain, patch.u_domain, first_v, second_v)
     };
+    let (first_controls, first_scratch) = assemble(first_lines)?;
+    let (second_controls, second_scratch) = assemble(second_lines)?;
     Ok(Some([
         RationalBezierSurfacePatch {
             u_domain: first_u,
             v_domain: first_v,
             u_degree: patch.u_degree,
             v_degree: patch.v_degree,
-            controls: assemble(first_lines)?,
+            controls: first_controls,
+            _scratch: first_scratch,
         },
         RationalBezierSurfacePatch {
             u_domain: second_u,
             v_domain: second_v,
             u_degree: patch.u_degree,
             v_degree: patch.v_degree,
-            controls: assemble(second_lines)?,
+            controls: second_controls,
+            _scratch: second_scratch,
         },
     ]))
 }
@@ -990,13 +1036,13 @@ fn nurbs_surface_evaluation_cost(surface: &NurbsSurface) -> Option<usize> {
         .checked_add(v_support.checked_mul(v_support)?)
 }
 
-fn complete_nurbs_surface_starts(
+fn complete_nurbs_surface_starts<'session>(
     surface: &NurbsSurface,
     point: Point3,
     seed: Option<FinitePoint2>,
     fit_tolerance: Option<f64>,
-    budget: &WorkBudget<'_>,
-) -> Result<Option<Vec<FinitePoint2>>, ResourceLimit> {
+    budget: &WorkBudget<'session>,
+) -> Result<Option<(Vec<FinitePoint2>, WorkScratch<'session>)>, ResourceLimit> {
     const MAX_PATCHES: usize = 1_000_000;
 
     let Some(patches) = rational_surface_residual_patches(surface, point, budget)? else {
@@ -1039,7 +1085,7 @@ fn complete_nurbs_surface_starts(
             .hypot(position.z - point.z);
         Ok(distance.is_finite().then_some(distance))
     };
-    let center = |patch: &RationalBezierSurfacePatch| {
+    let center = |patch: &RationalBezierSurfacePatch<'_>| {
         let [u_start, u_end] = patch.u_domain.finite_endpoints();
         let [v_start, v_end] = patch.v_domain.finite_endpoints();
         FinitePoint2::from_coordinates(u_start.midpoint(u_end), v_start.midpoint(v_end))
@@ -1064,12 +1110,16 @@ fn complete_nurbs_surface_starts(
             Ok(distance_at(parameters)?.map(|distance| (parameters, distance)))
         };
     let mut best_distance = f64::INFINITY;
+    let mut upper_scratch = budget.reserve_scratch(0, "IR surface upper parameters")?;
     let mut best_upper_parameters = Vec::new();
     {
         let mut consider_upper =
             |(parameters, distance): (FinitePoint2, f64)| -> Result<(), ResourceLimit> {
                 if !best_distance.is_finite() {
                     best_distance = distance;
+                    if best_upper_parameters.len() == best_upper_parameters.capacity() {
+                        upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
+                    }
                     scratch::reserve_exact(
                         &mut best_upper_parameters,
                         1,
@@ -1089,6 +1139,9 @@ fn complete_nurbs_surface_starts(
                     best_upper_parameters.clear();
                 }
                 if (distance - best_distance).abs() <= tolerance {
+                    if best_upper_parameters.len() == best_upper_parameters.capacity() {
+                        upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
+                    }
                     scratch::reserve_exact(
                         &mut best_upper_parameters,
                         1,
@@ -1118,8 +1171,9 @@ fn complete_nurbs_surface_starts(
     // A tolerance-bounded inverse needs a constructive fitting parameter, not
     // a proof of the global minimum. Every upper candidate is surface-evaluated.
     if fit_tolerance.is_some() && best_distance <= distance_tolerance {
-        return Ok((!best_upper_parameters.is_empty()).then_some(best_upper_parameters));
+        return Ok((!best_upper_parameters.is_empty()).then_some((best_upper_parameters, upper_scratch)));
     }
+    let mut queue_scratch = budget.reserve_scratch(0, "IR surface patch queue")?;
     let mut queue = BinaryHeap::new();
     let mut sequence = 0usize;
     for patch in patches {
@@ -1128,8 +1182,11 @@ fn complete_nurbs_surface_starts(
         else {
             return Ok(None);
         };
+        if queue.len() == queue.capacity() {
+            queue_scratch.grow(u64_from_index(std::mem::size_of::<SurfacePatchQueueEntry<'_>>()))?;
+        }
         queue
-            .try_reserve(1)
+            .try_reserve_exact(1)
             .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
         queue.push(SurfacePatchQueueEntry {
             lower_bound,
@@ -1139,6 +1196,7 @@ fn complete_nurbs_surface_starts(
         });
         sequence += 1;
     }
+    let mut terminal_scratch = budget.reserve_scratch(0, "IR surface terminal parameters")?;
     let mut terminal = Vec::<(FinitePoint2, f64)>::new();
     let mut examined = 0usize;
     while let Some(entry) = queue.pop() {
@@ -1168,7 +1226,8 @@ fn complete_nurbs_surface_starts(
             return Ok(None);
         };
         if fit_tolerance.is_some() && center_distance <= distance_tolerance {
-            return scratch::filled(1, upper_parameters, "IR surface parameter start").map(Some);
+            let reservation = budget.reserve_scratch(u64_from_index(std::mem::size_of::<FinitePoint2>()), "IR surface parameter start")?;
+            return scratch::filled(1, upper_parameters, "IR surface parameter start").map(|starts| Some((starts, reservation)));
         }
         let upper_tolerance = 128.0
             * f64::EPSILON
@@ -1181,6 +1240,9 @@ fn complete_nurbs_surface_starts(
             best_upper_parameters.clear();
         }
         if (center_distance - best_distance).abs() <= upper_tolerance {
+            if best_upper_parameters.len() == best_upper_parameters.capacity() {
+                upper_scratch.grow(u64_from_index(std::mem::size_of::<FinitePoint2>()))?;
+            }
             scratch::reserve_exact(&mut best_upper_parameters, 1, "IR surface upper parameters")?;
             best_upper_parameters.push(upper_parameters);
         }
@@ -1192,6 +1254,9 @@ fn complete_nurbs_surface_starts(
             || center_distance - lower_bound <= distance_tolerance
             || indivisible
         {
+            if terminal.len() == terminal.capacity() {
+                terminal_scratch.grow(u64_from_index(std::mem::size_of::<(FinitePoint2, f64)>()))?;
+            }
             scratch::reserve_exact(&mut terminal, 1, "IR surface terminal parameters")?;
             terminal.push((upper_parameters, lower_bound));
             continue;
@@ -1238,8 +1303,11 @@ fn complete_nurbs_surface_starts(
             else {
                 return Ok(None);
             };
+            if queue.len() == queue.capacity() {
+                queue_scratch.grow(u64_from_index(std::mem::size_of::<SurfacePatchQueueEntry<'_>>()))?;
+            }
             queue
-                .try_reserve(1)
+                .try_reserve_exact(1)
                 .map_err(|_| scratch::allocation_failed(1, "IR surface patch queue"))?;
             queue.push(SurfacePatchQueueEntry {
                 lower_bound,
@@ -1254,13 +1322,16 @@ fn complete_nurbs_surface_starts(
     let Some(start_count) = terminal.len().checked_add(best_upper_parameters.len()) else {
         return Ok(None);
     };
+    let start_bytes = start_count.checked_mul(std::mem::size_of::<FinitePoint2>())
+        .ok_or_else(|| scratch::allocation_failed(start_count, "IR surface start bytes"))?;
+    let _start_scratch = budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
     let mut starts = Vec::new();
     scratch::reserve_exact(&mut starts, start_count, "IR surface parameter starts")?;
     starts.extend(terminal.into_iter().filter_map(|(parameters, lower)| {
         (lower <= best_distance + final_tolerance).then_some(parameters)
     }));
     starts.extend(best_upper_parameters);
-    Ok((!starts.is_empty()).then_some(starts))
+    Ok((!starts.is_empty()).then_some((starts, _start_scratch)))
 }
 
 fn solve_nurbs_surface_parameter(
@@ -1270,6 +1341,8 @@ fn solve_nurbs_surface_parameter(
     fit_tolerance: Option<f64>,
     budget: &WorkBudget<'_>,
 ) -> Result<Option<(FinitePoint2, f64)>, ResourceLimit> {
+    let (bytes, _) = nurbs_surface_patch_workspace(surface)?;
+    let _workspace = budget.reserve_scratch(bytes, "IR surface inverse workspace")?;
     let seed = seed.and_then(FinitePoint2::new);
     let Some(u_degree) = usize::try_from(surface.u_degree()).ok() else {
         return Ok(None);
@@ -1328,7 +1401,7 @@ fn solve_nurbs_surface_parameter(
             }
         }
     }
-    let Some(starts) = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
+    let Some((starts, _start_scratch)) = complete_nurbs_surface_starts(surface, point, seed, fit_tolerance, budget)?
     else {
         return Ok(None);
     };
