@@ -992,7 +992,7 @@ let partner = resolved_or_none!(unique_profile_point_line_entity(
                     (Some(known), None) => {
 let partner = if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id)
                         {
-                            resolved_or_none!(unique_marker_line_distance_entity(
+                            resolved_or_none!(unique_marker_line_distance_entity(ctx, 
                                 marker.id(),
                                 sketch,
                                 &known,
@@ -1000,7 +1000,7 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                                 sketch_entities,
                                 markers_by_id,
                                 loci_by_marker,
-                            ))
+                            )?)
                         } else {
                             resolved_or_none!(unique_profile_line_distance_entity(ctx, 
                                 sketch,
@@ -1014,7 +1014,7 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                     (None, Some(known)) => (
                         if let Some(marker) = relation_line_point_marker(relation, 0, markers_by_id)
                         {
-                            resolved_or_none!(unique_marker_line_distance_entity(
+                            resolved_or_none!(unique_marker_line_distance_entity(ctx, 
                                 marker.id(),
                                 sketch,
                                 &known,
@@ -1022,7 +1022,7 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                                 sketch_entities,
                                 markers_by_id,
                                 loci_by_marker,
-                            ))
+                            )?)
                         } else {
                             resolved_or_none!(unique_profile_line_distance_entity(ctx, 
                                 sketch,
@@ -1155,7 +1155,7 @@ let partner = resolved_or_none!(unique_profile_line_angle_entity(ctx,
         }
         CircleDiameter => {
             if let Some(entities) =
-                repeated_dimensioned_circular_entities(relation, parameter, sketch, sketch_entities)
+                repeated_dimensioned_circular_entities(ctx, relation, parameter, sketch, sketch_entities)?
             {
                 return Ok(Some(match parameter.display {
                     Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
@@ -1198,26 +1198,21 @@ let partner = resolved_or_none!(unique_profile_line_angle_entity(ctx,
                         )
                 }) {
                 Some(super::transforms::copy_sketch_entity_identity(ctx, entity.id(), "retain SLDPRT dimensional circle identity")?)
-            } else {
-                    marker(0).and_then(|marker| {
-                        marker_center_dimensioned_entity(marker, sketch, sketch_entities, parameter)
-                            .or_else(|| {
-                                if sketch_entities.is_empty() {
-                                    single_marker_entity(marker, markers_by_id, loci_by_marker)
-                                } else {
-                                    single_marker_circular_entity(
-                                        marker,
-                                        markers_by_id,
-                                        loci_by_marker,
-                                        sketch_entities,
-                                    )
-                                }
-                            })
-                    })
-            };
+            } else if let Some(marker) = marker(0) {
+                match marker_center_dimensioned_entity(ctx, marker, sketch, sketch_entities, parameter)? {
+                    Some(entity) => Some(entity),
+                    None => if sketch_entities.is_empty() {
+                        single_marker_entity(marker, markers_by_id, loci_by_marker)
+                    } else {
+                        single_marker_circular_entity(marker, markers_by_id, loci_by_marker, sketch_entities)
+                    },
+                }
+            } else { None };
             let authoritative = resolved_entity.is_some();
-            let entity = resolved_or_none!(resolved_entity
-                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)));
+            let entity = resolved_or_none!(match resolved_entity {
+                Some(entity) => Some(entity),
+                None => unique_dimensioned_circle_entity(ctx, sketch, sketch_entities, parameter)?,
+            });
             if !sketch_entities.is_empty() {
                 let cadmpeg_ir::features::ParameterValue::Length(expected) =
                     resolved_or_none!(parameter.value.as_ref())
@@ -1311,55 +1306,60 @@ fn solver_line_entity(
 }
 
 fn repeated_dimensioned_circular_entities(
+    ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     parameter: &cadmpeg_ir::features::DesignParameter,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
-) -> Option<Vec<SketchEntityId>> {
-    // A reference parameter with a contiguous display-only scalar run carries
-    // one diameter value for several circular entities. Its scalar operands
-    // identify native indices, but the decoded profile is the authoritative
-    // neutral roster, so resolve the run by its unique radius population.
+) -> Result<Option<Vec<SketchEntityId>>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT repeated dimensioned circles";
+    for (key, value) in &parameter.properties {
+        charge_relation_identity_work(ctx, [key.as_str(), value.as_str()], 128, OPERATION)?;
+    }
+    charge_relation_identity_work(ctx, [relation.id.as_str(), relation.parameter_scalar_ref().unwrap_or(""),
+        parameter.native_ref.as_deref().unwrap_or("")], 16, OPERATION)?;
+    // Display-only scalar runs use the owner sketch's radius population.
     let repeated_display = relation.parameter_scalar_ref().is_none()
         && relation.scalar_refs().len() >= 2
         && relation.operands.len() == 1
         && parameter.native_ref.is_none()
         && super::relation_geometry::is_reference_relation_parameter(parameter)
-        && parameter
-            .properties
-            .get(super::relation_geometry::RELATION_PARAMETER_ID_PROPERTY)
-            == Some(&relation.id);
+        && parameter.properties.get(super::relation_geometry::RELATION_PARAMETER_ID_PROPERTY) == Some(&relation.id);
     let parameter_native_ref = parameter.native_ref.as_deref();
-    if !repeated_display && relation.parameter_scalar_ref() != parameter_native_ref {
-        return None;
-    }
-    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
-        return None;
-    };
+    if !repeated_display && relation.parameter_scalar_ref() != parameter_native_ref { return Ok(None); }
+    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else { return Ok(None); };
     let expected_radius = match parameter.display {
         Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
         Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
-        None => return None,
+        None => return Ok(None),
     };
-    if !(expected_radius.is_finite() && expected_radius > 0.0) {
-        return None;
+    if !(expected_radius.is_finite() && expected_radius > 0.0) { return Ok(None); }
+    let matches = |entity: &SketchEntity| -> Result<bool, cadmpeg_core::CodecError> {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str(),
+            entity.geometry_ref.as_deref().unwrap_or(""), parameter_native_ref.unwrap_or("")], 128, OPERATION)?;
+        if entity.sketch != *sketch || (!repeated_display && entity.geometry_ref.as_deref() != parameter_native_ref) { return Ok(false); }
+        let radius = match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { radius, .. }
+            | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
+            _ => return Ok(false),
+        };
+        Ok(same_dimension_length(radius, expected_radius))
+    };
+    let mut count = 0usize;
+    for entity in sketch_entities {
+        if matches(entity)? {
+            count = count.checked_add(1).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
     }
-    let entities = sketch_entities
-        .iter()
-        .filter(|entity| {
-            entity.sketch == *sketch
-                && (repeated_display || entity.geometry_ref.as_deref() == parameter_native_ref)
-        })
-        .filter_map(|entity| {
-            let radius = match *entity.geometry.definition() {
-                SketchGeometryDefinition::Circle { radius, .. }
-                | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
-                _ => return None,
-            };
-            same_dimension_length(radius, expected_radius).then(|| entity.id().clone())
-        })
-        .collect::<Vec<_>>();
-    (entities.len() >= 2 && entities.len() <= relation.scalar_refs().len()).then_some(entities)
+    if count < 2 || count > relation.scalar_refs().len() { return Ok(None); }
+    let mut entities = Vec::new();
+    ctx.reserve_collection_vec(&mut entities, count, OPERATION)?;
+    for entity in sketch_entities {
+        if matches(entity)? {
+            entities.push(super::transforms::copy_sketch_entity_identity(ctx, entity.id(), OPERATION)?);
+        }
+    }
+    Ok(Some(entities))
 }
 
 // Reduce a set of candidate locus pairs to the sole survivor: order the pairs
@@ -1760,6 +1760,7 @@ fn unique_profile_line_distance_entity(
 }
 
 fn unique_marker_line_distance_entity(
+    ctx: &DecodeContext<'_>,
     marker: &str,
     sketch: &SketchId,
     known: &SketchEntityId,
@@ -1767,31 +1768,19 @@ fn unique_marker_line_distance_entity(
     sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
-) -> Option<SketchEntityId> {
-    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
-        return None;
-    };
-    let marker_locus = marker_point_locus(marker, markers_by_id, loci_by_marker)?;
-    let marker_point = profile_locus_point(&marker_locus, sketch_entities)?;
-    let known = sketch_entities.iter().find(|entity| entity.id() == known)?;
-    sole_sorted(
-        sketch_entities
-            .iter()
-            .filter(|candidate| candidate.sketch == *sketch && candidate.id() != known.id())
-            .filter(|candidate| {
-                matches!(
-                    *candidate.geometry.definition(),
-                    SketchGeometryDefinition::Line { .. }
-                )
-            })
-            .filter(|candidate| sketch_entity_contains_point(candidate, marker_point))
-            .filter(|candidate| {
-                line_line_distance(known, candidate)
-                    .is_some_and(|measured| same_dimension_length(measured, distance.get()))
-            })
-            .map(|candidate| candidate.id().clone())
-            .collect(),
-    )
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref() else { return Ok(None); };
+    let Some(marker_locus) = marker_point_locus(marker, markers_by_id, loci_by_marker) else { return Ok(None); };
+    const OPERATION: &str = "locate SLDPRT dimensioned line marker";
+    for entity in sketch_entities {
+        charge_relation_identity_work(ctx, [entity.id().as_str(), locus_entity(&marker_locus).as_str()], 16, OPERATION)?;
+    }
+    let Some(marker_point) = profile_locus_point(&marker_locus, sketch_entities) else { return Ok(None); };
+    unique_profile_matched_entity(ctx, sketch, known, sketch_entities, |known, candidate| {
+        matches!(candidate.geometry.definition(), SketchGeometryDefinition::Line { .. })
+            && sketch_entity_contains_point(candidate, marker_point)
+            && line_line_distance(known, candidate).is_some_and(|measured| same_dimension_length(measured, distance.get()))
+    })
 }
 
 fn unique_profile_line_distance_pair(
@@ -3101,90 +3090,77 @@ fn relation_line_point_marker<'a>(
     Some(*marker)
 }
 
+fn unique_profile_entity<'a>(
+    ctx: &DecodeContext<'_>, sketch: &SketchId, entities: &'a [SketchEntity], operation: &'static str,
+    matches: impl Fn(&SketchEntity) -> Result<bool, cadmpeg_core::CodecError>,
+) -> Result<Option<&'a SketchEntity>, cadmpeg_core::CodecError> {
+    let mut selected = None;
+    for entity in entities {
+        charge_relation_identity_work(ctx, [entity.sketch.as_str(), sketch.as_str()], 128, operation)?;
+        if entity.sketch != *sketch || !matches(entity)? { continue; }
+        if selected.is_some() { return Ok(None); }
+        selected = Some(entity);
+    }
+    Ok(selected)
+}
+
 fn marker_center_dimensioned_entity(
+    ctx: &DecodeContext<'_>,
     marker_id: &str,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
     parameter: &cadmpeg_ir::features::DesignParameter,
-) -> Option<SketchEntityId> {
-    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
-        return None;
-    };
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else { return Ok(None); };
     let expected_radius = match parameter.display {
         Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
         Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
-        None => return None,
+        None => return Ok(None),
     };
-    let centers = sketch_entities
-        .iter()
-        .filter(|entity| {
-            entity.sketch == *sketch
-                && entity.native_ref.as_deref() == Some(marker_id)
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Point { .. }
-                )
-        })
-        .collect::<Vec<_>>();
-    let [center_entity] = centers.as_slice() else {
-        return None;
-    };
-    let SketchGeometryDefinition::Point { position: center } = *center_entity.geometry.definition()
-    else {
-        return None;
-    };
+    const OPERATION: &str = "select SLDPRT marker-centered dimensioned circle";
+    let center_entity = unique_profile_entity(ctx, sketch, sketch_entities, OPERATION, |entity| {
+        charge_relation_identity_work(ctx, [entity.native_ref.as_deref().unwrap_or(""), marker_id], 8, OPERATION)?;
+        Ok(entity.native_ref.as_deref() == Some(marker_id)
+            && matches!(entity.geometry.definition(), SketchGeometryDefinition::Point { .. }))
+    })?;
+    let Some(center_entity) = center_entity else { return Ok(None); };
+    let SketchGeometryDefinition::Point { position: center } = center_entity.geometry.definition() else { return Ok(None); };
     let center = center.get();
-    let candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .filter_map(|entity| {
-            let (candidate_center, radius) = match *entity.geometry.definition() {
-                SketchGeometryDefinition::Circle { center, radius }
-                | SketchGeometryDefinition::Arc { center, radius, .. } => {
-                    (center.get(), radius.get())
-                }
-                _ => return None,
-            };
-            (quantize(
-                candidate_center,
-                EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8,
-            ) == quantize(
-                center,
-                EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8,
-            ) && same_dimension_length(radius, expected_radius))
-            .then_some(entity.id().clone())
-        })
-        .collect::<Vec<_>>();
-    if candidates.len() != 1 { return None; }
-    candidates.into_iter().next()
+    let selected = unique_profile_entity(ctx, sketch, sketch_entities, OPERATION, |entity| {
+        let (candidate_center, radius) = match entity.geometry.definition() {
+            SketchGeometryDefinition::Circle { center, radius }
+            | SketchGeometryDefinition::Arc { center, radius, .. } => (center.get(), radius.get()),
+            _ => return Ok(false),
+        };
+        Ok(quantize(candidate_center, EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8)
+            == quantize(center, EPS_RELATION_LOCI_MARKER_CENTER_DIMENSIONED_ENTITY_E8)
+            && same_dimension_length(radius, expected_radius))
+    })?;
+    selected.map(|entity| super::transforms::copy_sketch_entity_identity(ctx, entity.id(), OPERATION)).transpose()
 }
 
 fn unique_dimensioned_circle_entity(
+    ctx: &DecodeContext<'_>,
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
     parameter: &cadmpeg_ir::features::DesignParameter,
-) -> Option<SketchEntityId> {
-    let cadmpeg_ir::features::ParameterValue::Length(value) = parameter.value.as_ref()? else {
-        return None;
-    };
+) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else { return Ok(None); };
     let expected_radius = match parameter.display {
         Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.get(),
         Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
-        None => return None,
+        None => return Ok(None),
     };
-    let mut matches = sketch_entities.iter().filter_map(|entity| {
-        if entity.sketch != *sketch {
-            return None;
-        }
+    const OPERATION: &str = "select SLDPRT dimensioned circle";
+    let selected = unique_profile_entity(ctx, sketch, sketch_entities, OPERATION, |entity| {
         let radius = match entity.geometry.definition() {
             SketchGeometryDefinition::Circle { radius, .. }
             | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
-            _ => return None,
+            _ => return Ok(false),
         };
-        same_dimension_length(radius, expected_radius).then_some(entity.id().clone())
-    });
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
+        Ok(same_dimension_length(radius, expected_radius))
+    })?;
+    selected.map(|entity| super::transforms::copy_sketch_entity_identity(ctx, entity.id(), OPERATION)).transpose()
 }
 
 pub(super) fn same_dimension_length(left: f64, right: f64) -> bool {
