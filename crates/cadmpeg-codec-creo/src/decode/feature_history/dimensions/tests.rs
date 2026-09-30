@@ -536,3 +536,26 @@ fn dimension_transfer_rejects_duplicate_owner_feature_ids() {
         .iter()
         .all(|feature| feature.source_content.is_empty()));
 }
+
+#[test]
+fn relation_coverage_refuses_rows_above_declared_empty_table() {
+    let table = crate::feature::definitions::FeatureRelationTable {
+        declared_count: 1,
+        entity_ref: None,
+        rows: vec![crate::feature::definitions::FeatureRelation {
+            relation_id: 1,
+            used: 1,
+            operands: Vec::new(),
+            operand_vectors: None,
+            sign: 0,
+            dimension_id: 0,
+            relation_type: 0,
+            body: Vec::new(),
+            offset: 0,
+        }],
+        skamps: None,
+        triples: None,
+        offset: 0,
+    };
+    assert!(matches!(super::feature_relation_table_missing_rows(&table), Err(cadmpeg_core::CodecError::Malformed(_))));
+}
