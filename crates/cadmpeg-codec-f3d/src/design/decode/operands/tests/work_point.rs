@@ -14,7 +14,7 @@ fn work_point_input_copy_refuses_collection_limit() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        crate::design::decode::operands::copy_work_point_inputs(&ctx, std::slice::from_ref(&input)),
+        &ctx.copy_slice(std::slice::from_ref(&input), "f3d WorkPoint input copy"),
         Err(cadmpeg_core::CodecError::ResourceLimit(failure))
             if failure.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
                 && failure.operation == "f3d WorkPoint input copy"

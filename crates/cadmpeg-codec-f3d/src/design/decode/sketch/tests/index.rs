@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::sketch::{
-    copy_entity_module_text, decode_headers_for_indices_from_stream, entity_meta_scope,
-    extend_sketch_stream, insert_charged_u32, insert_entity_module, insert_legacy_candidate,
-    native_scope_scoped, push_entity_header, wanted_record_indices, IndexedRecordOffsets,
+use crate::design::decode::sketch::{  decode_headers_for_indices_from_stream, entity_meta_scope,
+    extend_sketch_stream,  insert_entity_module, insert_legacy_candidate,
+    native_scope_scoped,  wanted_record_indices, IndexedRecordOffsets,
 };
 
 #[test]
@@ -289,8 +288,7 @@ fn entity_header_existing_index_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut indices = std::collections::HashSet::new();
     assert!(matches!(
-        insert_charged_u32(&ctx, &mut indices, 7,
-            "f3d existing entity index", "f3d existing entity index allocation"),
+        &ctx.insert_hash_set(&mut indices, 7, "f3d existing entity index").map(|_| ()),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d existing entity index"
@@ -318,7 +316,7 @@ fn entity_header_meta_scope_and_module_refuse_byte_limits() {
     policy.limits.max_retained_bytes = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        copy_entity_module_text(&ctx, "Mα"),
+        &ctx.copy_retained_text("Mα", "f3d entity module text"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
     ));
@@ -347,7 +345,7 @@ fn entity_header_output_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut out = Vec::new();
     assert!(matches!(
-        push_entity_header(&ctx, &mut out, header),
+        ctx.push_vec(&mut out, header, "f3d entity header output"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "f3d entity header output"

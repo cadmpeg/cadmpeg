@@ -827,7 +827,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 }
 
 #[test]
-fn extrude_selection_group_and_members_have_exact_counted_frames() {
+fn extrude_selection_group_and_members_have_exact_counted_frames() { crate::test_support::with_decode_context(|decode_ctx| {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::default();
     let (ctx, _) =
@@ -1243,7 +1243,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-                ctx: None,
+                ctx: decode_ctx,
             }
             .scoped(&[]),
             None,
@@ -1317,7 +1317,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-                ctx: None,
+                ctx: decode_ctx,
             }
             .scoped(&[]),
             None,
@@ -1344,7 +1344,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-                ctx: None,
+                ctx: decode_ctx,
             }
             .scoped(&[]),
             None,
@@ -1375,7 +1375,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 linear_tolerance: 1.0e-6,
                 angular_tolerance: 1.0e-9,
                 arrangement_budget: &arrangement_budget,
-                ctx: None,
+                ctx: decode_ctx,
             }
             .scoped(&[]),
             None,
@@ -1386,7 +1386,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             ref profiles,
         }) if actual_sketch == &sketch_id && profiles.as_slice() == [0]
     ));
-}
+}) }
 
 #[test]
 fn edge_identity_text_refuses_retained_limit() {

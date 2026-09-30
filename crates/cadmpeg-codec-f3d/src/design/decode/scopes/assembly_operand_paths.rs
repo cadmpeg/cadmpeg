@@ -187,23 +187,11 @@ fn exact_assembly_operand_path_envelope(
         }
         let span_count =
             usize::try_from(wrapper_record_index.checked_sub(path_record_index)?).ok()?;
-        let Ok(span_count_u64) = u64::try_from(span_count) else {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d assembly path span count",
-                0,
-                1,
-            )));
-        };
-        if let Err(error) = ctx.charge_collection_items(span_count_u64, "f3d assembly path spans") {
-            return Some(Err(error));
-        }
+        
+
         let mut path_spans = Vec::new();
-        if path_spans.try_reserve(span_count).is_err() {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d assembly path spans allocation",
-                0,
-                1,
-            )));
+        if let Err(error) = ctx.reserve_vec(&mut path_spans, span_count, "f3d assembly path spans") {
+            return Some(Err(error));
         }
         let mut record_index = path_record_index;
         let mut record_at = path_at;
@@ -376,24 +364,10 @@ fn exact_assembly_operand_path(
                 if !(1..=64).contains(&count) {
                     return None;
                 }
-                let Ok(count_u64) = u64::try_from(count) else {
-                    return Some(Err(ctx.refuse_codec_limit(
-                        "f3d assembly path occurrence count",
-                        0,
-                        1,
-                    )));
-                };
-                if let Err(error) =
-                    ctx.charge_collection_items(count_u64, "f3d assembly path occurrences")
-                {
+                
+
+                if let Err(error) = ctx.reserve_vec(&mut occurrence_guids, count, "f3d assembly path occurrences") {
                     return Some(Err(error));
-                }
-                if occurrence_guids.try_reserve(count).is_err() {
-                    return Some(Err(ctx.refuse_codec_limit(
-                        "f3d assembly path occurrences allocation",
-                        0,
-                        1,
-                    )));
                 }
                 let mut position = after_tag + 18;
                 for _ in 0..count {

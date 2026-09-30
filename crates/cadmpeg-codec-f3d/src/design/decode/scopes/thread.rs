@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact thread construction scopes and thread payloads.
 
-use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::text::lp_utf16_bounded_charged;
 use crate::layout::thread_compact_construction_tail as thread_compact_tail;
@@ -43,11 +42,9 @@ pub(super) fn exact_thread_construction(
         ThreadPrefix::Standard => 1,
         ThreadPrefix::Compact => scope.reference_members().len() / 2,
     };
-    ctx.charge_collection_items(u64_from_index(count), "f3d Thread face groups")?;
+
     let mut face_group_record_indices = Vec::new();
-    face_group_record_indices
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d Thread face groups allocation", 0, 1))?;
+    ctx.reserve_vec(&mut face_group_record_indices, count, "f3d Thread face groups")?;
     match prefix_form {
         ThreadPrefix::Standard => {
             let Some(first) = scope.reference_members().values().next() else {

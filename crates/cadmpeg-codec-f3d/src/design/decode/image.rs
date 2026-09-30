@@ -10,17 +10,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 use std::fmt::Write;
 
-pub(super) fn copy_asset_id_charged(
-    ctx: &DecodeContext<'_>,
-    id: &cadmpeg_ir::assets::AssetId,
-) -> Result<cadmpeg_ir::assets::AssetId, CodecError> {
-    let copied = String::from_utf8(
-        ctx.copy_retained(id.as_str().as_bytes(), "f3d image feature asset identifier")?,
-    )
-    .map_err(|_| CodecError::malformed("F3D asset identifier must be UTF-8"))?;
-    cadmpeg_ir::assets::AssetId::mint(copied)
-        .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))
-}
+
 
 pub(super) fn neutral_asset_id_charged(
     ctx: &DecodeContext<'_>,
@@ -53,14 +43,8 @@ pub(super) fn neutral_asset_id_charged(
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(encoded_len))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?;
-    ctx.charge_retained(
-        u64::try_from(capacity)
-            .map_err(|_| ctx.refuse_codec_limit("f3d asset identifier length", 0, 1))?,
-        "f3d asset identifier",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(capacity)
-        .map_err(|_| ctx.refuse_codec_limit("f3d asset identifier allocation", 0, 1))?;
+
+    let mut id = ctx.retained_string(capacity, "f3d asset identifier")?;
     id.push_str(PREFIX);
     write!(&mut id, "{encoded_len}:")
         .map_err(|_| CodecError::malformed("F3D asset identifier formatting failed"))?;
@@ -77,7 +61,7 @@ pub(super) fn neutral_asset_id_charged(
         }
     }
     cadmpeg_ir::assets::AssetId::mint(id)
-        .map_err(|error| crate::design::text::malformed_design(Some(ctx), format_args!("{error}")))
+        .map_err(|error| crate::design::text::malformed_design(ctx, format_args!("{error}")))
 }
 
 pub(super) fn embedded_image_asset(
@@ -152,15 +136,13 @@ pub(super) fn decode_scoped_images<T>(
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
         }) {
             if let Some(image) = parse(ctx, bytes, &entry.name, scope)? {
-                ctx.charge_collection_items(1, "f3d scoped image records")?;
-                images.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d scoped image records allocation", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut images, 1, "f3d scoped image records")?;
                 images.push(image);
             }
         }
     }
-    crate::design::sort::sort_by(Some(ctx), &mut images[..], |a, b| id(a).cmp(id(b)))?;
+    crate::design::sort::sort_by(ctx, &mut images[..], |a, b| id(a).cmp(id(b)))?;
     images.dedup_by(|a, b| id(a) == id(b));
     Ok(images)
 }

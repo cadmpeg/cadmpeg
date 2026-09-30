@@ -91,32 +91,23 @@ pub(super) fn browser_node_records(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BROWSER_NODE_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design browser-node entity {} has incompatible registration metadata",
                     frame.entity_id
-                ),
-            ));
+                )));
         }
         let record = &bytes[frame.start..frame.end];
         let record_index = View::u32_le_at(record, 7).ok_or_else(|| {
-            crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design browser-node entity {} has a truncated record index",
                     frame.entity_id
-                ),
-            )
+                ))
         })?;
         if u64::from(record_index) != frame.entity_id || record.get(11..21) != Some(&[0; 10]) {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design browser-node entity {} has an invalid header",
                     frame.entity_id
-                ),
-            ));
+                )));
         }
         let Some((guid, after_guid)) =
             lp_utf16_bounded_charged(ctx, record, 21, GUID_LEN..=GUID_LEN)?.filter(
@@ -135,20 +126,16 @@ pub(super) fn browser_node_records(
             CodecError::Malformed("F3D Design browser-node flag is truncated".into())
         })?
         else {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design browser-node entity {} has an invalid hidden flag",
                     frame.entity_id
-                ),
-            ));
+                )));
         };
         let entity_suffix = View::u64_le_at(record, after_guid + 3).ok_or_else(|| {
             CodecError::Malformed("F3D Design browser-node suffix is truncated".into())
         })?;
-        ctx.charge_collection_items(1, "f3d browser node records")?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d browser node records allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d browser node records")?;
         out.push(BrowserNodeRecord {
             record_index,
             guid,
@@ -188,13 +175,10 @@ pub(crate) fn body_presentations(
                 .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
                 .is_some_and(|base| base.eq_ignore_ascii_case(BODY_PRESENTATION_BASE_TYPE_GUID))
         {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design body-presentation entity {} has incompatible registration metadata",
                     frame.entity_id
-                ),
-            ));
+                )));
         }
         let framed_bytes = &bytes[..frame.end];
         let named_header = match parse_settled_entity_header(ctx, framed_bytes, frame.start)? {
@@ -210,7 +194,7 @@ pub(crate) fn body_presentations(
         {
             let entity_suffix = entity_id.suffix();
             if entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(Some(ctx), format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design body-presentation entity {} disagrees with its named header entity {entity_suffix}",
                     frame.entity_id
                 )));
@@ -233,22 +217,16 @@ pub(crate) fn body_presentations(
         } else {
             let entity_suffix =
                 View::u64_le_at(framed_bytes, frame.start + 7).ok_or_else(|| {
-                    crate::design::text::malformed_design(
-                        Some(ctx),
-                        format_args!(
+                    crate::design::text::malformed_design(ctx, format_args!(
                             "F3D Design bare body-presentation entity {} has a truncated head",
                             frame.entity_id
-                        ),
-                    )
+                        ))
                 })?;
             if entity_suffix == 0 || entity_suffix != frame.entity_id {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!(
+                return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "F3D Design bare body-presentation entity {} has head entity {entity_suffix}",
                     frame.entity_id
-                ),
-                ));
+                )));
             }
             let Some(material) = bare_presentation_material(
                 ctx,
@@ -274,10 +252,8 @@ pub(crate) fn body_presentations(
         } else {
             None
         };
-        ctx.charge_collection_items(1, "f3d body presentation records")?;
-        out.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d body presentation records allocation", 0, 1)
-        })?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d body presentation records")?;
         out.push(BodyPresentation {
             byte_offset: u64_from_index(frame.start),
             entity_suffix,
@@ -315,15 +291,10 @@ fn entity_types<'a>(
     for design_type in &meta.types {
         for &entity_id in design_type.entities.values() {
             if out.contains_key(&entity_id) {
-                return Err(crate::design::text::malformed_design(
-                    Some(ctx),
-                    format_args!("F3D Design entity {entity_id} has multiple registered types"),
-                ));
+                return Err(crate::design::text::malformed_design(ctx, format_args!("F3D Design entity {entity_id} has multiple registered types")));
             }
-            ctx.charge_collection_items(1, "f3d presentation entity types")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d presentation entity types allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut out, 1, "f3d presentation entity types")?;
             out.insert(
                 entity_id,
                 (design_type.type_guid.as_str(), design_type.version),

@@ -144,23 +144,16 @@ fn exact_surface_trim_operation(
         primary,
         paired,
     ) = parsed_prefix?;
-    let count = u64::try_from(cell_count_usize)
-        .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim cell count", 0, 1))?;
-    ctx.charge_collection_items(count, "f3d surface-trim cell entries")?;
+    
+
     let mut cell_entries = Vec::new();
-    cell_entries
-        .try_reserve_exact(cell_count_usize)
-        .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim cell entry allocation", 0, 1))?;
-    ctx.charge_collection_items(count, "f3d surface-trim cell record indices")?;
+    ctx.reserve_vec(&mut cell_entries, cell_count_usize, "f3d surface-trim cell entries")?;
+
     let mut cell_record_indices = HashSet::new();
-    cell_record_indices
-        .try_reserve(cell_count_usize)
-        .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim record index allocation", 0, 1))?;
-    ctx.charge_collection_items(count, "f3d surface-trim cell ordinals")?;
+    ctx.reserve_set(&mut cell_record_indices, cell_count_usize, "f3d surface-trim cell record indices")?;
+
     let mut cell_ordinals = HashSet::new();
-    cell_ordinals
-        .try_reserve(cell_count_usize)
-        .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim ordinal allocation", 0, 1))?;
+    ctx.reserve_set(&mut cell_ordinals, cell_count_usize, "f3d surface-trim cell ordinals")?;
     let parsed = (|| {
         for ordinal in 0..cell_count_usize {
             let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
@@ -237,20 +230,12 @@ pub(crate) fn decode_surface_trim_operations(
         let Some(mut operation) = exact_surface_trim_operation(ctx, bytes, records, scope)? else {
             continue;
         };
-        operation.id = design_record_id_charged(
-            ctx,
-            &entry.name,
-            ":design-surface-trim-operation#",
-            scope.byte_offset(),
-            "f3d surface-trim operation identifier",
-            "f3d surface-trim operation identifier allocation",
-        )?;
-        ctx.charge_collection_items(1, "f3d surface-trim operations")?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d surface-trim operations allocation", 0, 1))?;
+        operation.id = design_record_id_charged(ctx, &entry.name, ":design-surface-trim-operation#", scope.byte_offset(), "f3d surface-trim operation identifier")?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d surface-trim operations")?;
         out.push(operation);
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |left, right| {
+    crate::design::sort::sort_by(ctx, &mut out[..], |left, right| {
         left.id.cmp(&right.id)
     })?;
     Ok(out)

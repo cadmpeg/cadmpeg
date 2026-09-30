@@ -955,15 +955,7 @@ fn fixed_kind_edge_and_revolve_operations(
             DesignOperandRole::ROLE_0X21,
         );
     assert_eq!(
-        crate::design::feature_project::project_fixed_revolve_with_entities(
-            None,
-            &revolve_scope,
-            &[revolve_profile, revolve_axis],
-            &[],
-            &[],
-            &[],
-            (&[], &[]),
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_revolve_with_entities(decode_ctx, &revolve_scope, &[revolve_profile, revolve_axis], &[], &[], &[], (&[], &[])))
         .unwrap(),
         None
     );
@@ -1085,19 +1077,11 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
         ),
     };
-    let projected = crate::design::feature_project::project_fixed_revolve_with_entities(
-        None,
-        &indexed_revolve_scope,
-        &[
+    let projected = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_revolve_with_entities(decode_ctx, &indexed_revolve_scope, &[
             indexed_profile.clone(),
             indexed_axis.clone(),
             indexed_bodies.clone(),
-        ],
-        &[],
-        std::slice::from_ref(&axis_selection),
-        &[],
-        (&[axis_placement], &[axis_curve]),
-    )
+        ], &[], std::slice::from_ref(&axis_selection), &[], (&[axis_placement], &[axis_curve])))
     .unwrap();
     assert!(matches!(
         projected,
@@ -1127,19 +1111,11 @@ fn fixed_kind_edge_and_revolve_operations(
         },
     ];
     let historical_definition =
-        crate::design::feature_project::project_fixed_revolve_with_entities(
-            None,
-            &indexed_revolve_scope,
-            &[
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_revolve_with_entities(decode_ctx, &indexed_revolve_scope, &[
                 indexed_profile.clone(),
                 indexed_axis.clone(),
                 indexed_bodies.clone(),
-            ],
-            &[],
-            std::slice::from_ref(&axis_selection),
-            &[],
-            (&[], &[]),
-        )
+            ], &[], std::slice::from_ref(&axis_selection), &[], (&[], &[])))
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -1248,19 +1224,11 @@ fn fixed_kind_edge_and_revolve_operations(
             next_byte_offset: 200,
         })
         .unwrap();
-    let face_axis_definition = crate::design::feature_project::project_fixed_revolve_with_entities(
-        None,
-        &indexed_revolve_scope,
-        &[
+    let face_axis_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fixed_revolve_with_entities(decode_ctx, &indexed_revolve_scope, &[
             indexed_profile.clone(),
             indexed_axis.clone(),
             indexed_bodies,
-        ],
-        &[],
-        &[],
-        std::slice::from_ref(&face_axis_operand),
-        (&[], &[]),
-    )
+        ], &[], &[], std::slice::from_ref(&face_axis_operand), (&[], &[])))
     .unwrap()
     .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {

@@ -296,17 +296,9 @@ pub(super) fn exact_component_insert_construction(
                     }
                     for transform_at in carrier_at + 11..at {
                         if rigid_transform_at(bytes, transform_at) == Some(transform) {
-                            if let Err(error) =
-                                ctx.charge_collection_items(1, "f3d component insert placements")
-                            {
+
+                            if let Err(error) = ctx.reserve_vec(&mut placements, 1, "f3d component insert placements") {
                                 return Some(Err(error));
-                            }
-                            if placements.try_reserve(1).is_err() {
-                                return Some(Err(ctx.refuse_codec_limit(
-                                    "f3d component insert placements allocation",
-                                    0,
-                                    1,
-                                )));
                             }
                             placements.push((role.clone(), at + 4, Some(transform_at)));
                         }
@@ -410,17 +402,9 @@ pub(super) fn exact_component_insert_construction(
                             Ok(None) => return None,
                             Err(error) => return Some(Err(error)),
                         };
-                        if let Err(error) =
-                            ctx.charge_collection_items(1, "f3d component insert placements")
-                        {
+
+                        if let Err(error) = ctx.reserve_vec(&mut placements, 1, "f3d component insert placements") {
                             return Some(Err(error));
-                        }
-                        if placements.try_reserve(1).is_err() {
-                            return Some(Err(ctx.refuse_codec_limit(
-                                "f3d component insert placements allocation",
-                                0,
-                                1,
-                            )));
                         }
                         placements.push((role, at + 4, Some(transform_at)));
                     }
@@ -437,18 +421,9 @@ pub(super) fn exact_component_insert_construction(
                         Ok(value) => value,
                         Err(error) => return Some(Err(error)),
                     };
-                    if let Err(error) = ctx.charge_collection_items(
-                        u64_from_index(legacy.len()),
-                        "f3d component insert merged placements",
-                    ) {
+
+                    if let Err(error) = ctx.reserve_vec(&mut placements, legacy.len(), "f3d component insert merged placements") {
                         return Some(Err(error));
-                    }
-                    if placements.try_reserve(legacy.len()).is_err() {
-                        return Some(Err(ctx.refuse_codec_limit(
-                            "f3d component insert merged placements allocation",
-                            0,
-                            1,
-                        )));
                     }
                     placements.extend(legacy);
                 }
@@ -670,10 +645,8 @@ fn direct_utf16_role_until_tail(
         return Ok(None);
     };
     let count = (end - start) / 2;
-    ctx.charge_retained(u64_from_index(count), "f3d component carrier role text")?;
-    let mut role = String::new();
-    role.try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d component carrier role allocation", 0, 1))?;
+
+    let mut role = ctx.retained_string(count, "f3d component carrier role text")?;
     for at in (start..end).step_by(2) {
         let Some(unit) = View::u16_le_at(bytes, at) else {
             return Ok(None);
@@ -970,10 +943,8 @@ fn legacy_component_insert_placements(
             && bytes.get(after_repeated_identity..relation_at)
                 == Some(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         {
-            ctx.charge_collection_items(1, "f3d legacy component insert placements")?;
-            placements.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d legacy component insert placements allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut placements, 1, "f3d legacy component insert placements")?;
             placements.push((role, role_at + 4, Some(carrier_transform_at)));
         }
     }
@@ -1099,10 +1070,8 @@ pub(super) fn bind_component_pattern_occurrences(
         } else {
             component_guid = Some(candidate.component_guid.as_str());
         }
-        ctx.charge_collection_items(1, "f3d component pattern generated instances")?;
-        generated.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d component pattern generated instances allocation", 0, 1)
-        })?;
+
+        ctx.reserve_vec(&mut generated, 1, "f3d component pattern generated instances")?;
         generated.push(patterns::DesignPatternComponentInstance {
             instance: *frame,
             occurrence_guid: candidate.occurrence_guid.clone(),

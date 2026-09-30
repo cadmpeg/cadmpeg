@@ -257,10 +257,8 @@ pub(crate) fn bind_mirror_constructions(
         };
         let key = (stream, header.record_index);
         if !headers_by_record.contains_key(&key) {
-            ctx.charge_collection_items(1, "f3d Mirror record headers")?;
-            headers_by_record.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d Mirror record headers allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut headers_by_record, 1, "f3d Mirror record headers")?;
         }
         headers_by_record.insert(key, header);
     }

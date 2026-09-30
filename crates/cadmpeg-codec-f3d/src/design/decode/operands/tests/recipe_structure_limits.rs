@@ -31,7 +31,7 @@ fn edge_recipe_structure_refuses_each_collection_growth() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = edge_recipe_structure_with_context(Some(&ctx), &EDGE_RECIPE);
+        let result = edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE);
         assert!(
             matches!(result,
                 Err(CodecError::ResourceLimit(failure))
@@ -50,7 +50,7 @@ fn edge_recipe_structure_refuses_recursion_limit() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        edge_recipe_structure_with_context(Some(&ctx), &EDGE_RECIPE),
+        edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RecursionDepth
                 && failure.operation == "f3d recipe side recursion"
@@ -64,7 +64,7 @@ fn edge_recipe_structure_refuses_candidate_work_limit() {
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        edge_recipe_structure_with_context(Some(&ctx), &EDGE_RECIPE),
+        edge_recipe_structure_with_context(&ctx, &EDGE_RECIPE),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::WorkUnits
                 && failure.operation == "f3d recipe payload candidates"
@@ -79,7 +79,7 @@ fn edge_recipe_topology_references_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        edge_recipe_local_topology_references_with_context(Some(&ctx), &structure, 1),
+        edge_recipe_local_topology_references_with_context(&ctx, &structure, 1),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology reference"
@@ -93,7 +93,7 @@ fn edge_recipe_entries_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        edge_recipe_entries_with_context(Some(&ctx), &[1, 4, 1, 1, 1, 4, 4, 4]),
+        edge_recipe_entries_with_context(&ctx, &[1, 4, 1, 1, 1, 4, 4, 4]),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology entry"
@@ -111,7 +111,7 @@ fn face_recipe_structure_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        face_recipe_structure_with_context(Some(&ctx), &program),
+        face_recipe_structure_with_context(&ctx, &program),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe scalars"
@@ -129,7 +129,7 @@ fn surface_patch_recipe_entries_refuse_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        surface_patch_recipe_structure_with_context(Some(&ctx), &program, 4),
+        surface_patch_recipe_structure_with_context(&ctx, &program, 4),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
                 && failure.operation == "f3d recipe topology entry"

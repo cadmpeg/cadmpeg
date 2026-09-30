@@ -158,17 +158,9 @@ fn exact_surface_offset_face_groups(
             {
                 return None;
             }
-            if let Err(error) =
-                ctx.charge_collection_items(1, "f3d surface offset covered reference")
-            {
+
+            if let Err(error) = ctx.reserve_set(&mut covered_references, 1, "f3d surface offset covered reference") {
                 return Some(Err(error));
-            }
-            if covered_references.try_reserve(1).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d surface offset covered reference allocation",
-                    0,
-                    1,
-                )));
             }
             covered_references.insert(group.record_index);
             for member in group.members().iter().map(|member| &member.value) {
@@ -182,29 +174,15 @@ fn exact_surface_offset_face_groups(
                 {
                     return None;
                 }
-                if let Err(error) =
-                    ctx.charge_collection_items(1, "f3d surface offset covered reference")
-                {
+
+                if let Err(error) = ctx.reserve_set(&mut covered_references, 1, "f3d surface offset covered reference") {
                     return Some(Err(error));
-                }
-                if covered_references.try_reserve(1).is_err() {
-                    return Some(Err(ctx.refuse_codec_limit(
-                        "f3d surface offset covered reference allocation",
-                        0,
-                        1,
-                    )));
                 }
                 covered_references.insert(*member);
             }
-            if let Err(error) = ctx.charge_collection_items(1, "f3d surface offset face group") {
+
+            if let Err(error) = ctx.reserve_vec(&mut group_record_indices, 1, "f3d surface offset face group") {
                 return Some(Err(error));
-            }
-            if group_record_indices.try_reserve(1).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d surface offset face group allocation",
-                    0,
-                    1,
-                )));
             }
             group_record_indices.push(group.record_index);
         }
@@ -425,14 +403,9 @@ fn exact_surface_boundary_operation(
     else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        u64_from_index(edge_record_indices.len()),
-        "f3d surface boundary edges",
-    )?;
+
     let mut edges = Vec::new();
-    edges
-        .try_reserve(edge_record_indices.len())
-        .map_err(|_| ctx.refuse_codec_limit("f3d surface boundary edges allocation", 0, 1))?;
+    ctx.reserve_vec(&mut edges, edge_record_indices.len(), "f3d surface boundary edges")?;
     edges.extend(edge_record_indices.copied());
     Ok(Some(ExactSurfaceBoundaryOperation {
         distance: scalar.value,
@@ -520,18 +493,10 @@ pub(super) fn exact_ruled_surface_operation(
                 return None;
             }
             cursor = cursor.checked_add(4)?;
-            if let Err(error) =
-                ctx.charge_collection_items(u64_from_index(count), "f3d ruled surface references")
-            {
-                return Some(Err(error));
-            }
+
             let mut records = Vec::new();
-            if records.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d ruled surface references allocation",
-                    0,
-                    1,
-                )));
+            if let Err(error) = ctx.reserve_vec(&mut records, count, "f3d ruled surface references") {
+                return Some(Err(error));
             }
             for _ in 0..count {
                 records.push(match fixed_reference(cursor) {
@@ -565,21 +530,9 @@ pub(super) fn exact_ruled_surface_operation(
             Err(error) => return Some(Err(error)),
         };
         cursor = next;
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(trailing_edge_groups.len()),
-            "f3d ruled surface merged edge groups",
-        ) {
+
+        if let Err(error) = ctx.reserve_vec(&mut edge_group_record_indices, trailing_edge_groups.len(), "f3d ruled surface merged edge groups") {
             return Some(Err(error));
-        }
-        if edge_group_record_indices
-            .try_reserve(trailing_edge_groups.len())
-            .is_err()
-        {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d ruled surface merged edge groups allocation",
-                0,
-                1,
-            )));
         }
         edge_group_record_indices.extend(trailing_edge_groups);
         let (direction_entity_id, direction_end) = fixed_relaxed_guid_text(bytes, cursor)?;

@@ -101,14 +101,7 @@ pub(crate) fn decode_parameter_scopes(
             else {
                 continue;
             };
-            scope.id = design_record_id_charged(
-                ctx,
-                &entry.name,
-                ":design-parameter-scope#",
-                scope.byte_offset(),
-                "f3d Design parameter scope ID",
-                "f3d Design parameter scope ID allocation",
-            )?;
+            scope.id = design_record_id_charged(ctx, &entry.name, ":design-parameter-scope#", scope.byte_offset(), "f3d Design parameter scope ID")?;
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -496,16 +489,14 @@ pub(crate) fn decode_parameter_scopes(
                     *slot = construction;
                 }
             }
-            ctx.charge_collection_items(1, "f3d Design parameter scopes")?;
-            out.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d Design parameter scopes allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut out, 1, "f3d Design parameter scopes")?;
             out.push(scope);
         }
         bind_joint_origin_frames_from_assemblies(ctx, bytes, &mut out[stream_scope_start..])?;
         bind_axial_assembly_operand_targets(ctx, bytes, &records, &mut out[stream_scope_start..])?;
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
     out.dedup_by(|a, b| a.id == b.id);
     Ok(out)
 }
@@ -519,14 +510,8 @@ fn first_marked_reference_offsets(
         if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
             if let Some(suffix) = View::u32_le_at(frame, at + 1) {
                 if !first_at.contains_key(&suffix) {
-                    ctx.charge_collection_items(1, "f3d Sketch scope reference offsets")?;
-                    first_at.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(
-                            "f3d Sketch scope reference offsets allocation",
-                            0,
-                            1,
-                        )
-                    })?;
+
+                    ctx.reserve_map(&mut first_at, 1, "f3d Sketch scope reference offsets")?;
                     first_at.insert(suffix, at);
                 }
             }
@@ -563,16 +548,11 @@ pub(crate) fn admit_history_bound_scope_variants(
         let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
         let key = (stream, scope.record_index);
         if !groups.contains_key(&key) {
-            ctx.charge_collection_items(1, "f3d scope admission groups")?;
-            groups.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d scope admission groups allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut groups, 1, "f3d scope admission groups")?;
         }
         let indices = groups.entry(key).or_default();
-        ctx.charge_collection_items(1, "f3d scope admission group indices")?;
-        indices.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d scope admission group indices allocation", 0, 1)
-        })?;
+        ctx.reserve_vec(indices, 1, "f3d scope admission group indices")?;
         indices.push(index);
     }
 
@@ -636,14 +616,9 @@ pub(crate) fn admit_history_bound_scope_variants(
 
     drop(groups);
     let retained_count = admitted.iter().filter(|selected| **selected).count();
-    ctx.charge_collection_items(
-        u64_from_index(retained_count),
-        "f3d scope admission retained output",
-    )?;
+
     let mut retained = Vec::new();
-    retained.try_reserve(retained_count).map_err(|_| {
-        ctx.refuse_codec_limit("f3d scope admission retained output allocation", 0, 1)
-    })?;
+    ctx.reserve_vec(&mut retained, retained_count, "f3d scope admission retained output")?;
     for (index, scope) in std::mem::take(scopes).into_iter().enumerate() {
         if admitted[index] {
             retained.push(scope);
@@ -745,10 +720,7 @@ fn scope_variant_json(
 ) -> Result<Option<serde_json::Value>, CodecError> {
     use serde::de::DeserializeSeed;
 
-    let mut bytes = Vec::new();
-    bytes
-        .try_reserve_exact(serialized_length)
-        .map_err(|_| ctx.refuse_codec_limit("f3d scope variant JSON", 0, 1))?;
+    let bytes = cadmpeg_core::decode::DecodeContext::admitted_vec(serialized_length, "f3d scope variant JSON")?;
     let mut writer = ScopeJsonWriter {
         bytes,
         limit: serialized_length,
@@ -886,10 +858,8 @@ pub(super) fn parameter_scope_candidate_headers(
             };
             let byte_offset = u64::try_from(*at)
                 .map_err(|_| ctx.refuse_codec_limit("f3d Design scope header offset", 0, 1))?;
-            ctx.charge_collection_items(1, "f3d Design scope candidate headers")?;
-            headers.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d Design scope candidate headers allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut headers, 1, "f3d Design scope candidate headers")?;
             headers.push(RecordFrame {
                 record_index,
                 class_tag,
@@ -1079,33 +1049,15 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 continue;
             }
             let first = count_at.checked_add(4)?;
-            if let Err(error) = ctx.charge_collection_items(
-                u64_from_index(count),
-                "f3d Design scope reference members",
-            ) {
-                return Some(Err(error));
-            }
+
             let mut members = Vec::new();
-            if members.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d Design scope reference members allocation",
-                    0,
-                    1,
-                )));
-            }
-            if let Err(error) = ctx.charge_collection_items(
-                u64_from_index(count),
-                "f3d Design scope reference offsets",
-            ) {
+            if let Err(error) = ctx.reserve_vec(&mut members, count, "f3d Design scope reference members") {
                 return Some(Err(error));
             }
+
             let mut offsets = Vec::new();
-            if offsets.try_reserve(count).is_err() {
-                return Some(Err(ctx.refuse_codec_limit(
-                    "f3d Design scope reference offsets allocation",
-                    0,
-                    1,
-                )));
+            if let Err(error) = ctx.reserve_vec(&mut offsets, count, "f3d Design scope reference offsets") {
+                return Some(Err(error));
             }
             for ordinal in 0..count {
                 let marker = first.checked_add(ordinal.checked_mul(11)?)?;
@@ -1263,22 +1215,10 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         } else {
             None
         };
-        if let Err(error) = ctx.charge_collection_items(
-            u64_from_index(reference_members.len()),
-            "f3d Design scope located references",
-        ) {
-            return Some(Err(error));
-        }
+
         let mut located_references = Vec::new();
-        if located_references
-            .try_reserve(reference_members.len())
-            .is_err()
-        {
-            return Some(Err(ctx.refuse_codec_limit(
-                "f3d Design scope located references allocation",
-                0,
-                1,
-            )));
+        if let Err(error) = ctx.reserve_vec(&mut located_references, reference_members.len(), "f3d Design scope located references") {
+            return Some(Err(error));
         }
         located_references.extend(
             reference_members

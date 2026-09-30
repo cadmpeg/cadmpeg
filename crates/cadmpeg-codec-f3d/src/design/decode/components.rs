@@ -32,7 +32,7 @@ pub(crate) fn decode_component_occurrences(
         let mut at = 0;
         while let Some(start) = next_indexed_record_offset(bytes, at) {
             if let Some(occurrence) = exact_component_occurrence(ctx, bytes, start, &scope)? {
-                push_decoded_occurrence(ctx, &mut occurrences, occurrence)?;
+                ctx.push_vec(&mut occurrences, occurrence, "f3d decoded component occurrence")?;
             }
             let Some(next_at) = start.checked_add(1) else {
                 break;
@@ -40,22 +40,9 @@ pub(crate) fn decode_component_occurrences(
             at = next_at;
         }
     }
-    crate::design::sort::sort_by(Some(ctx), &mut occurrences[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut occurrences[..], |a, b| a.id.cmp(&b.id))?;
     occurrences.dedup_by(|left, right| left.id == right.id);
     Ok(occurrences)
-}
-
-fn push_decoded_occurrence(
-    ctx: &DecodeContext<'_>,
-    occurrences: &mut Vec<DesignComponentOccurrence>,
-    occurrence: DesignComponentOccurrence,
-) -> Result<(), CodecError> {
-    ctx.charge_collection_items(1, "f3d decoded component occurrence")?;
-    occurrences
-        .try_reserve(1)
-        .map_err(|_| ctx.refuse_codec_limit("f3d decoded component occurrence allocation", 0, 1))?;
-    occurrences.push(occurrence);
-    Ok(())
 }
 
 /// Decode one fixed component-occurrence carrier. The class tag is a per-file
@@ -176,14 +163,8 @@ fn exact_component_occurrence(
         .checked_add(SUFFIX.len())
         .and_then(|length| length.checked_add(digits))
         .ok_or_else(|| ctx.refuse_codec_limit("f3d component occurrence id length", 0, 1))?;
-    ctx.charge_retained(
-        u64::try_from(id_bytes)
-            .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id length", 0, 1))?,
-        "f3d component occurrence id",
-    )?;
-    let mut id = String::new();
-    id.try_reserve_exact(id_bytes)
-        .map_err(|_| ctx.refuse_codec_limit("f3d component occurrence id allocation", 0, 1))?;
+
+    let mut id = ctx.retained_string(id_bytes, "f3d component occurrence id")?;
     id.push_str(stream);
     id.push_str(SUFFIX);
     write!(&mut id, "{start}")
@@ -398,7 +379,7 @@ mod tests {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::push_decoded_occurrence(&ctx, &mut Vec::new(), occurrence)
+        let error = ctx.push_vec(&mut Vec::new(), occurrence, "f3d decoded component occurrence")
             .expect_err("one decoded occurrence needs one collection item");
         assert!(
             matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

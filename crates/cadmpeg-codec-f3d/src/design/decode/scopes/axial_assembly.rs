@@ -40,10 +40,8 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             .and_then(assembly::DesignAssemblyAlignment::operand_frames)
         {
             for frame in frames {
-                ctx.charge_collection_items(1, "f3d joint-origin frame candidates")?;
-                candidates.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d joint-origin frame candidates allocation", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut candidates, 1, "f3d joint-origin frame candidates")?;
                 candidates.push((
                     frame.reference_record_index,
                     frame.transform,
@@ -53,15 +51,11 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             }
         }
         if let Some((joint_origin, frame)) = exact_single_joint_origin_frame(bytes, scope) {
-            ctx.charge_collection_items(1, "f3d joint-origin assembly envelopes")?;
-            envelopes.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d joint-origin assembly envelopes allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut envelopes, 1, "f3d joint-origin assembly envelopes")?;
             envelopes.push((scope.record_index, joint_origin, frame.transform));
-            ctx.charge_collection_items(1, "f3d joint-origin frame candidates")?;
-            candidates.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d joint-origin frame candidates allocation", 0, 1)
-            })?;
+
+            ctx.reserve_vec(&mut candidates, 1, "f3d joint-origin frame candidates")?;
             candidates.push((
                 joint_origin,
                 frame.transform,
@@ -112,10 +106,8 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             continue;
         };
         if !resolved_origins.contains_key(&scope.record_index) {
-            ctx.charge_collection_items(1, "f3d resolved joint origins")?;
-            resolved_origins.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d resolved joint origins allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut resolved_origins, 1, "f3d resolved joint origins")?;
         }
         resolved_origins.insert(scope.record_index, transform);
     }
@@ -173,10 +165,8 @@ pub(super) fn bind_axial_assembly_operand_targets(
         else {
             continue;
         };
-        ctx.charge_collection_items(1, "f3d axial assembly bindings")?;
-        bindings
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d axial assembly bindings allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut bindings, 1, "f3d axial assembly bindings")?;
         bindings.push((
             ordinal,
             assembly::DesignAssemblyAlignmentForm::qualified(

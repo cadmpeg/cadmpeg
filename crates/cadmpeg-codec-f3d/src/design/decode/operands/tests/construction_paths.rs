@@ -7,7 +7,6 @@ use crate::design::decode::operands::parse_construction_operand_path;
 use crate::design::decode::operands::parse_construction_operand_transform;
 use crate::design::decode::operands::parse_construction_tracking_path;
 use crate::design::decode::operands::parse_loft_legacy_body_carrier;
-use crate::design::decode::operands::push_construction_operand_record;
 use crate::design::decode::operands::push_loft_legacy_body_carrier;
 
 #[test]
@@ -26,7 +25,7 @@ fn construction_operand_typed_runs_refuse_collection_limit() {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut records = Vec::new();
         assert!(matches!(
-            push_construction_operand_record(&ctx, &mut records, 1u8, operation),
+            ctx.push_vec(&mut records, 1u8, operation),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::CollectionItems
                     && failure.operation == operation

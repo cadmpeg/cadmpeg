@@ -355,17 +355,9 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     // The `EntityGenesis`-flavor frame stores its origin in centimetres
     // while the sketch records carry ten-times-centimetre values; the
     // projected sketch origin scales by ten to stay commensurate.
-    let (sketches, entities) = project_sketch_design(
-        None,
-        &[placement(
+    let (sketches, entities) = crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement(
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeGenesisExplicit,
-        )],
-        &[point.clone(), identityless_point],
-        &[],
-        &[],
-        &[],
-        1.0e-6,
-    )
+        )], &[point.clone(), identityless_point], &[], &[], &[], 1.0e-6))
     .expect("sketch lanes pair");
     assert_eq!(sketches.len(), 1);
     assert_eq!(
@@ -388,17 +380,9 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
     );
 
     // The settled explicit frame keeps its stored origin unscaled.
-    let (sketches, _) = project_sketch_design(
-        None,
-        &[placement(
+    let (sketches, _) = crate::test_support::with_decode_context(|decode_ctx| project_sketch_design(decode_ctx, &[placement(
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeExplicit,
-        )],
-        &[point],
-        &[],
-        &[],
-        &[],
-        1.0e-6,
-    )
+        )], &[point], &[], &[], &[], 1.0e-6))
     .expect("sketch lanes pair");
     assert_eq!(
         sketches[0]

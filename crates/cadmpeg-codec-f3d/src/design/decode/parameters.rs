@@ -87,15 +87,11 @@ pub(crate) fn decode_parameters(
                     position = end;
                     continue;
                 }
-                ctx.charge_collection_items(1, "f3d parameter record index")?;
-                emitted_record_indices.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d parameter record index allocation", 0, 1)
-                })?;
+
+                ctx.reserve_set(&mut emitted_record_indices, 1, "f3d parameter record index")?;
                 emitted_record_indices.insert(parsed.record_index);
-                ctx.charge_collection_items(1, "f3d decoded parameter records")?;
-                out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("f3d decoded parameter records allocation", 0, 1)
-                })?;
+
+                ctx.reserve_vec(&mut out, 1, "f3d decoded parameter records")?;
                 out.push(locate_design_parameter(parsed, &entry.name, at)?);
                 position = end;
             } else {
@@ -103,7 +99,7 @@ pub(crate) fn decode_parameters(
             }
         }
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id.cmp(&b.id))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id.cmp(&b.id))?;
     Ok(out)
 }
 
@@ -567,26 +563,18 @@ pub(crate) fn decode_parameter_owners(
             continue;
         };
         if !headers_by_stream.contains_key(stream) {
-            ctx.charge_collection_items(1, "f3d owner header stream")?;
-            headers_by_stream
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d owner header stream allocation", 0, 1))?;
+
+            ctx.reserve_map(&mut headers_by_stream, 1, "f3d owner header stream")?;
         }
         let stream_headers = headers_by_stream.entry(stream).or_default();
         if !stream_headers.contains_key(&header.record_index) {
-            ctx.charge_collection_items(1, "f3d owner header index")?;
-            stream_headers
-                .try_reserve(1)
-                .map_err(|_| ctx.refuse_codec_limit("f3d owner header index allocation", 0, 1))?;
+            ctx.reserve_map(stream_headers, 1, "f3d owner header index")?;
         }
         if stream_headers.insert(header.record_index, header).is_some() {
-            return Err(crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            return Err(crate::design::text::malformed_design(ctx, format_args!(
                     "Fusion Design stream has duplicate primary headers for record {}",
                     header.record_index
-                ),
-            ));
+                )));
         }
     }
     let mut streams = HashMap::new();
@@ -602,10 +590,8 @@ pub(crate) fn decode_parameter_owners(
                 "F3D contains duplicate Design BulkStream identities".into(),
             ));
         }
-        ctx.charge_collection_items(1, "f3d owner stream index")?;
-        streams
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d owner stream index allocation", 0, 1))?;
+
+        ctx.reserve_map(&mut streams, 1, "f3d owner stream index")?;
         streams
             .entry(stream)
             .or_insert((entry, IndexedRecordOffsets::build(ctx, bytes)?));
@@ -616,13 +602,10 @@ pub(crate) fn decode_parameter_owners(
             continue;
         };
         let malformed = |invariant: &str| {
-            crate::design::text::malformed_design(
-                Some(ctx),
-                format_args!(
+            crate::design::text::malformed_design(ctx, format_args!(
                     "Fusion Design parameter {} owner {} {invariant}",
                     parameter.record_index, owner_index
-                ),
-            )
+                ))
         };
         let scope = native_stream(&parameter.id)
             .ok_or_else(|| malformed("has no Design stream identity"))?;
@@ -664,12 +647,11 @@ pub(crate) fn decode_parameter_owners(
         {
             return Err(malformed("does not link back to its referencing parameter"));
         }
-        ctx.charge_collection_items(1, "f3d parameter owner")?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d parameter owner allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d parameter owner")?;
         out.push(owner);
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id().cmp(b.id()))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id().cmp(b.id()))?;
     Ok(out)
 }
 
@@ -972,10 +954,8 @@ pub(crate) fn decode_parameter_companions(
         };
         let key = (stream, header.record_index);
         if !headers_by_record.contains_key(&key) {
-            ctx.charge_collection_items(1, "f3d parameter companion headers")?;
-            headers_by_record.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("f3d parameter companion headers allocation", 0, 1)
-            })?;
+
+            ctx.reserve_map(&mut headers_by_record, 1, "f3d parameter companion headers")?;
         }
         headers_by_record.insert(key, header);
     }
@@ -1005,12 +985,11 @@ pub(crate) fn decode_parameter_companions(
         let Some(companion) = parsed.into_record(ctx, &entry.name, header.byte_offset)? else {
             continue;
         };
-        ctx.charge_collection_items(1, "f3d parameter companions")?;
-        out.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d parameter companions allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut out, 1, "f3d parameter companions")?;
         out.push(companion);
     }
-    crate::design::sort::sort_by(Some(ctx), &mut out[..], |a, b| a.id().cmp(b.id()))?;
+    crate::design::sort::sort_by(ctx, &mut out[..], |a, b| a.id().cmp(b.id()))?;
     Ok(out)
 }
 
@@ -1036,14 +1015,7 @@ impl ParsedParameterCompanion {
         let Some(timestamp_offset) = self.timestamp_micros_offset.absolute(frame_start) else {
             return Ok(None);
         };
-        let id = design_record_id_charged(
-            ctx,
-            stream,
-            ":design-parameter-companion#",
-            frame_start,
-            "f3d parameter companion identifier",
-            "f3d parameter companion identifier allocation",
-        )?;
+        let id = design_record_id_charged(ctx, stream, ":design-parameter-companion#", frame_start, "f3d parameter companion identifier")?;
         Ok(Some(DesignParameterCompanion::unbound(
             id,
             frame_start,
@@ -1109,14 +1081,9 @@ pub(crate) fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
     companions: Vec<DesignParameterCompanion>,
     inputs: &ParameterCompanionInputs<'_, S>,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
-    ctx.charge_collection_items(
-        u64_from_index(companions.len()),
-        "f3d bound parameter companions",
-    )?;
+
     let mut bound = Vec::new();
-    bound
-        .try_reserve(companions.len())
-        .map_err(|_| ctx.refuse_codec_limit("f3d bound parameter companions allocation", 0, 1))?;
+    ctx.reserve_vec(&mut bound, companions.len(), "f3d bound parameter companions")?;
     for companion in companions {
         bound.push(match companion_payload(ctx, &companion, inputs)? {
             Some(payload) => companion.bound(payload),
@@ -1202,13 +1169,11 @@ fn companion_payload<S: std::hash::BuildHasher>(
             && recipe.byte_offset >= u64_from_index(start)
             && recipe.byte_offset < u64_from_index(end)
     }) {
-        ctx.charge_collection_items(1, "f3d companion owned recipes")?;
-        owned
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d companion owned recipes allocation", 0, 1))?;
+
+        ctx.reserve_vec(&mut owned, 1, "f3d companion owned recipes")?;
         owned.push(recipe);
     }
-    crate::design::sort::sort_by_key(Some(ctx), &mut owned[..], |recipe| recipe.byte_offset)?;
+    crate::design::sort::sort_by_key(ctx, &mut owned[..], |recipe| recipe.byte_offset)?;
     let mut owned_ids = Vec::new();
     for recipe in owned {
         let id = String::from_utf8(ctx.copy_retained(
@@ -1216,10 +1181,8 @@ fn companion_payload<S: std::hash::BuildHasher>(
             "f3d companion owned recipe identifier",
         )?)
         .map_err(|_| CodecError::malformed("F3D companion recipe ID must be UTF-8"))?;
-        ctx.charge_collection_items(1, "f3d companion owned recipe identifiers")?;
-        owned_ids.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("f3d companion owned recipe identifiers allocation", 0, 1)
-        })?;
+
+        ctx.reserve_vec(&mut owned_ids, 1, "f3d companion owned recipe identifiers")?;
         owned_ids.push(id);
     }
     Ok(Some(

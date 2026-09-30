@@ -460,7 +460,7 @@ fn exact_coil_face_selection(
             Ok(prefix) => prefix,
             Err(error) => return Some(Err(error)),
         };
-        let id = match copy_coil_text(ctx, &scope.id, "f3d Coil selection header ID") {
+        let id = match ctx.copy_retained_text(&scope.id, "f3d Coil selection header ID") {
             Ok(id) => id,
             Err(error) => return Some(Err(error)),
         };
@@ -489,7 +489,7 @@ fn exact_coil_face_selection(
             return None;
         }
         let recipe = recipes.iter().find(|recipe| recipe.id == face.recipe_id)?;
-        let recipe_id = match copy_coil_text(ctx, &recipe.id, "f3d Coil face recipe ID") {
+        let recipe_id = match ctx.copy_retained_text(&recipe.id, "f3d Coil face recipe ID") {
             Ok(id) => id,
             Err(error) => return Some(Err(error)),
         };
@@ -511,14 +511,7 @@ fn exact_coil_face_selection(
     .transpose()
 }
 
-fn copy_coil_text(
-    ctx: &DecodeContext<'_>,
-    text: &str,
-    operation: &'static str,
-) -> Result<String, CodecError> {
-    String::from_utf8(ctx.copy_retained(text.as_bytes(), operation)?)
-        .map_err(|_| CodecError::malformed("F3D Coil text must be UTF-8"))
-}
+
 
 fn valid_right_handed_coil_transform(
     transform: &crate::records::sketch_placement::SketchPlacementMatrix,
