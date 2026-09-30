@@ -1278,116 +1278,161 @@ fn radial_dimension_radius(parameter: &cadmpeg_ir::features::DesignParameter) ->
 /// to the relation. This keeps unresolved, indirect, and non-circular markers
 /// native.
 fn reconcile_direct_circle_dimension_carriers(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &mut [Sketch],
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     feature: &str,
     lanes: &[FeatureInputLane],
-) {
-    let replacements = lanes
-        .iter()
-        .flat_map(|lane| &lane.relation_instances)
-        .filter(|relation| {
-            relation.feature_ref == feature
-                && relation.family == FeatureInputRelationFamily::CircleDiameter
-        })
-        .filter_map(|relation| {
-            let ([operand] | [_, operand]) = relation.operands.as_slice() else {
-                return None;
-            };
-            let marker_id = operand.entity_ref.as_deref()?;
-            let markers = lanes
-                .iter()
-                .flat_map(|lane| &lane.sketch_entities)
-                .filter(|marker| {
-                    marker.id() == marker_id && marker.feature_ref.as_deref() == Some(feature)
-                })
-                .collect::<Vec<_>>();
-            let [marker] = markers.as_slice() else {
-                return None;
-            };
-            if !matches!(marker.kind(), SketchInputKind::LineOrCircle)
-                || marker.coordinates_m.is_none()
-            {
-                return None;
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "reconcile SLDPRT direct circle carriers";
+    let mut replacements = HashMap::<&str, &SketchEntityId>::new();
+    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
+        let work = relation.feature_ref.len().checked_add(feature.len()).and_then(|len| len.checked_add(64))
+            .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        if relation.feature_ref != feature || relation.family != FeatureInputRelationFamily::CircleDiameter { continue; }
+        let ([operand] | [_, operand]) = relation.operands.as_slice() else { continue; };
+        let Some(marker_id) = operand.entity_ref.as_deref() else { continue; };
+        let mut candidate = None;
+        let mut ambiguous = false;
+        for marker in lanes.iter().flat_map(|lane| &lane.sketch_entities) {
+            let work = marker.id().len().checked_add(marker_id.len())
+                .and_then(|len| len.checked_add(marker.feature_ref.as_deref().map_or(0, str::len)))
+                .and_then(|len| len.checked_add(feature.len())).and_then(|len| len.checked_add(1))
+                .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if marker.id() != marker_id || marker.feature_ref.as_deref() != Some(feature) { continue; }
+            if candidate.is_some() { ambiguous = true; break; }
+            candidate = Some(marker);
+        }
+        let Some(marker) = candidate.filter(|_| !ambiguous) else { continue; };
+        if marker.kind() != SketchInputKind::LineOrCircle || marker.coordinates_m.is_none() { continue; }
+        let mut typed_candidate = None;
+        let mut ambiguous = false;
+        for entity in &*entities {
+            let work = entity.sketch.as_str().len().checked_add(sketch_id.as_str().len())
+                .and_then(|len| len.checked_add(entity.native_ref.as_deref().map_or(0, str::len)))
+                .and_then(|len| len.checked_add(marker.id().len()))
+                .and_then(|len| len.checked_add(entity.geometry_ref.as_deref().map_or(0, str::len)))
+                .and_then(|len| len.checked_add(relation.id.len())).and_then(|len| len.checked_add(64))
+                .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if entity.sketch != *sketch_id || entity.native_ref.as_deref() != Some(marker.id())
+                || entity.geometry_ref.as_deref() != Some(relation.id.as_str())
+                || !matches!(*entity.geometry.definition(), SketchGeometryDefinition::Circle { .. }) { continue; }
+            if typed_candidate.is_some() { ambiguous = true; break; }
+            typed_candidate = Some(entity);
+        }
+        let Some(typed_entity) = typed_candidate.filter(|_| !ambiguous) else { continue; };
+        ctx.charge_work(u64::try_from(marker.id().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if !replacements.contains_key(marker.id()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            if replacements.len() == replacements.capacity() {
+                for key in replacements.keys() {
+                    ctx.charge_work(u64::try_from(key.len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
             }
-            let typed_entities = entities
-                .iter()
-                .filter(|entity| {
-                    entity.sketch == *sketch_id
-                        && entity.native_ref.as_deref() == Some(marker.id())
-                        && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
-                        && matches!(
-                            *entity.geometry.definition(),
-                            SketchGeometryDefinition::Circle { .. }
-                        )
-                })
-                .collect::<Vec<_>>();
-            let [typed_entity] = typed_entities.as_slice() else {
-                return None;
-            };
-            Some((marker.id(), typed_entity.id().clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    if replacements.is_empty() {
-        return;
+            replacements.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        replacements.insert(marker.id(), typed_entity.id());
     }
-    let removed = entities
-        .iter()
-        .filter(|entity| {
-            entity.sketch == *sketch_id
-                && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Native { .. }
-                )
-                && entity
-                    .native_ref
-                    .as_deref()
-                    .and_then(|native_ref| replacements.get(native_ref))
-                    .is_some()
-        })
-        .filter_map(|entity| {
-            let native_ref = entity.native_ref.as_deref()?;
-            Some((entity.id().clone(), replacements.get(native_ref)?.clone()))
-        })
-        .collect::<HashMap<_, _>>();
-    if removed.is_empty() {
-        return;
+    if replacements.is_empty() { return Ok(()); }
+    let mut removed = HashMap::<SketchEntityId, SketchEntityId>::new();
+    for entity in &*entities {
+        let work = entity.sketch.as_str().len().checked_add(sketch_id.as_str().len())
+            .and_then(|len| len.checked_add(entity.native_ref.as_deref().map_or(0, str::len)))
+            .and_then(|len| len.checked_add(entity.id().as_str().len())).and_then(|len| len.checked_add(64))
+            .and_then(|len| u64::try_from(len).ok()).and_then(|work| work.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
+        if entity.sketch != *sketch_id || !matches!(*entity.geometry.definition(), SketchGeometryDefinition::Native { .. }) { continue; }
+        let Some(replacement) = entity.native_ref.as_deref().and_then(|native| replacements.get(native)) else { continue; };
+        if !removed.contains_key(entity.id()) {
+            ctx.charge_collection_items(1, OPERATION)?;
+            if removed.len() == removed.capacity() {
+                for key in removed.keys() {
+                    ctx.charge_work(u64::try_from(key.as_str().len()).ok().and_then(|len| len.checked_add(1))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                }
+            }
+            removed.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        }
+        removed.insert(copy_circle_carrier_entity_id(ctx, entity.id())?, copy_circle_carrier_entity_id(ctx, replacement)?);
+    }
+    if removed.is_empty() { return Ok(()); }
+    for sketch in &*sketches {
+        let work = sketch.id.as_str().len().checked_add(sketch_id.as_str().len()).and_then(|len| len.checked_add(1))
+            .and_then(|len| u64::try_from(len).ok()).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, OPERATION)?;
     }
     if let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) {
-        if sketch
-            .profiles
-            .edit(|profiles| {
-                for profile in profiles.iter_mut() {
-                    let usages = std::mem::take(profile);
-                    let mut present = usages
-                        .iter()
-                        .filter(|usage| !removed.contains_key(&usage.entity))
-                        .map(|usage| usage.entity.clone())
-                        .collect::<HashSet<_>>();
-                    let mut updated = Vec::with_capacity(usages.len());
-                    for usage in usages {
-                        let Some(replacement) = removed.get(&usage.entity) else {
-                            updated.push(usage);
-                            continue;
-                        };
-                        if present.insert(replacement.clone()) {
-                            updated.push(SketchEntityUse {
-                                entity: replacement.clone(),
-                                reversed: usage.reversed,
-                            });
+        let mut profiles = Vec::new();
+        for profile in &sketch.profiles {
+            let mut present = HashSet::<&SketchEntityId>::new();
+            for usage in profile {
+                ctx.charge_work(u64::try_from(usage.entity.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                if removed.contains_key(&usage.entity) || present.contains(&usage.entity) { continue; }
+                ctx.charge_collection_items(1, OPERATION)?;
+                if present.len() == present.capacity() {
+                    for key in &present {
+                        ctx.charge_work(u64::try_from(key.as_str().len()).ok().and_then(|len| len.checked_add(1))
+                            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                    }
+                }
+                present.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                present.insert(&usage.entity);
+            }
+            let mut updated = Vec::new();
+            for usage in profile {
+                ctx.charge_work(u64::try_from(usage.entity.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                let id = if let Some(replacement) = removed.get(&usage.entity) {
+                    ctx.charge_work(u64::try_from(replacement.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+                    if present.contains(replacement) { continue; }
+                    ctx.charge_collection_items(1, OPERATION)?;
+                    if present.len() == present.capacity() {
+                        for key in &present {
+                            ctx.charge_work(u64::try_from(key.as_str().len()).ok().and_then(|len| len.checked_add(1))
+                                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
                         }
                     }
-                    *profile = updated;
-                }
-                profiles.retain(|profile| !profile.is_empty());
-            })
-            .is_err()
-        {
-            return;
+                    present.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                    present.insert(replacement);
+                    replacement
+                } else { &usage.entity };
+                ctx.reserve_collection_vec(&mut updated, 1, OPERATION)?;
+                updated.push(SketchEntityUse { entity: copy_circle_carrier_entity_id(ctx, id)?, reversed: usage.reversed });
+            }
+            if !updated.is_empty() {
+                ctx.reserve_collection_vec(&mut profiles, 1, OPERATION)?;
+                profiles.push(updated);
+            }
         }
+        let Ok(profiles) = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles) else { return Ok(()); };
+        sketch.profiles = profiles;
+    }
+    for entity in &*entities {
+        ctx.charge_work(u64::try_from(entity.id().as_str().len()).ok().and_then(|len| len.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     }
     entities.retain(|entity| !removed.contains_key(entity.id()));
+    Ok(())
+}
+
+fn copy_circle_carrier_entity_id(
+    ctx: &DecodeContext<'_>,
+    id: &SketchEntityId,
+) -> Result<SketchEntityId, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "copy SLDPRT circle carrier entity identity";
+    ctx.charge_work(u64::try_from(id.as_str().len()).ok().and_then(|len| len.checked_add(1)).and_then(|work| work.checked_mul(4))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    let text = ctx.format_retained(format_args!("{}", id.as_str()), OPERATION)?;
+    SketchEntityId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT circle carrier entity identity"))
 }
 
 /// Materialize marker-only circles whose radial witnesses have exact radial
@@ -1427,8 +1472,8 @@ pub(crate) fn project_marker_dimensioned_circles(
             continue;
         };
         reconcile_direct_circle_dimension_carriers(
-            entities, sketches, sketch_id, native_ref, lanes,
-        );
+            ctx, entities, sketches, sketch_id, native_ref, lanes,
+        )?;
         let radial_dimensions = parameters
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
