@@ -195,10 +195,11 @@ impl SketchRelationMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(
         ctx: &DecodeContext<'_>,
-        rows: impl IntoIterator<Item = (u32, u32, u32)>,
+        rows: impl IntoIterator<Item = (u32, usize, u32)>,
     ) -> Result<Self, CodecError> {
         let mut members = Vec::new();
         for (record_index, offset, relation_ordinal) in rows {
+            let offset = u32::try_from(offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation member offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(offset)))?;
             ctx.charge_collection_items(1, "admit F3D sketch relation members")?;
             members
                 .try_reserve(1)
@@ -272,10 +273,11 @@ impl SketchRelationReturnMembers {
     /// Construct the unresolved source run with its member locations.
     pub(crate) fn from_indices(
         ctx: &DecodeContext<'_>,
-        rows: impl IntoIterator<Item = (u32, u32)>,
+        rows: impl IntoIterator<Item = (u32, usize)>,
     ) -> Result<Self, CodecError> {
         let mut members = Vec::new();
         for (record_index, offset) in rows {
+            let offset = u32::try_from(offset).map_err(|_| ctx.refuse_codec_limit("f3d sketch relation return offset", u64::from(u32::MAX), cadmpeg_core::decode::u64_from_index(offset)))?;
             ctx.charge_collection_items(1, "admit F3D sketch relation return members")?;
             members.try_reserve(1).map_err(|_| {
                 ctx.refuse_codec_limit("admit F3D sketch relation return members", 0, 1)

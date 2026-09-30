@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod cast_limits;
+
 use crate::design::decode::sketch::{
     admit_sketch_relation, decode_pattern_definition, parse_classed_sketch_relation,
     relation_mask_width, SketchRelationClass, SketchRelationMaskWidth,

@@ -1651,7 +1651,7 @@ mod tests {
         out.extend_from_slice(class_tag.as_bytes());
         out.extend_from_slice(&entity.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
-        out.extend(lp_utf16_bytes(&format!("0_{entity}")));
+        out.extend(lp_utf16_bytes(&format!("0_{entity}")).expect("fixture UTF-16 code-unit count fits u32"));
     }
 
     fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
@@ -1669,7 +1669,7 @@ mod tests {
             ""
         } else {
             "BREP.synthetic.smbh"
-        }));
+        }).expect("fixture UTF-16 code-unit count fits u32"));
         out
     }
 
@@ -1689,7 +1689,7 @@ mod tests {
             1,
         );
         out.push(0);
-        out.extend(lp_utf16_bytes("BREP.synthetic.smbh"));
+        out.extend(lp_utf16_bytes("BREP.synthetic.smbh").expect("fixture UTF-16 code-unit count fits u32"));
         out
     }
 
@@ -1787,7 +1787,7 @@ mod tests {
         } else {
             out.push(0);
         }
-        out.extend(lp_utf16_bytes(blob_name));
+        out.extend(lp_utf16_bytes(blob_name).expect("fixture UTF-16 code-unit count fits u32"));
         out
     }
 
@@ -2385,7 +2385,7 @@ mod tests {
     ) -> u64 {
         indexed_header(out, *b"257", record_index);
         out.extend_from_slice(&[0; 10]);
-        out.extend(lp_utf16_bytes(guid));
+        out.extend(lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32"));
         let hidden_offset = out.len() as u64;
         out.push(u8::from(hidden));
         out.extend_from_slice(&[1, 1]);
@@ -2400,19 +2400,19 @@ mod tests {
         let competing_guid = "AAAAAAAA-BBBB-8CCC-9DDD-EEEEEEEEEEEE";
         let mut bytes = Vec::new();
         push_entity_header(&mut bytes, "256", entity);
-        bytes.extend(lp_utf16_bytes(selected_guid));
+        bytes.extend(lp_utf16_bytes(selected_guid).expect("fixture UTF-16 code-unit count fits u32"));
         bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555"));
-        bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID));
-        bytes.extend(lp_utf16_bytes("PrismMaterial-001"));
+        bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555").expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_bytes("PrismMaterial-001").expect("fixture UTF-16 code-unit count fits u32"));
         push_reference_u64(&mut bytes, 7);
         bytes.push(0);
         push_reference_u64(&mut bytes, entity + 1);
-        bytes.extend(lp_utf16_bytes("Body"));
+        bytes.extend(lp_utf16_bytes("Body").expect("fixture UTF-16 code-unit count fits u32"));
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
-        bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC"));
-        bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID));
+        bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC").expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID).expect("fixture UTF-16 code-unit count fits u32"));
         let selected_start = bytes.len();
         let selected_offset = push_browser_node(&mut bytes, 100, selected_guid, false, entity);
         let competing_start = bytes.len();

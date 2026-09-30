@@ -600,7 +600,7 @@ pub(crate) fn write_semantic(
             })?;
             continue;
         }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        let mut bytes = Vec::with_capacity(usize::try_from(entry.size()).map_err(|_| cadmpeg_core::decode::refuse_local_limit("f3d patch ZIP entry size", cadmpeg_core::decode::u64_from_index(usize::MAX), entry.size()))?);
         let mut chunk = [0_u8; 16 * 1024];
         loop {
             let read = entry.read(&mut chunk)?;

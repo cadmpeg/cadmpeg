@@ -51,7 +51,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         if [u_count, v_count, u_extent, v_extent]
             .iter()
             .enumerate()
-            .any(|(ordinal, owner)| owner.local_ordinal() != ordinal as u32)
+            .any(|(ordinal, owner)| u32::try_from(ordinal) != Ok(owner.local_ordinal()))
         {
             return None;
         }
