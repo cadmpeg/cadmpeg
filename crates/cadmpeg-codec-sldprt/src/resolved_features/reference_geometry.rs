@@ -263,7 +263,7 @@ pub(crate) fn enrich_history_reference_planes(
                     )?;
                 }
             }
-            if let Some((relative_offset, components)) = component_face_reference_in_record(bytes) {
+            if let Some((relative_offset, components)) = component_face_reference_in_record(ctx, bytes)? {
                 let mut native = ctx.format_retained(
                     format_args!(
                         "sldprt:feature-input:surface-component-ids#{}:{}:",
