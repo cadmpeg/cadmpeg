@@ -133,24 +133,23 @@ pub(crate) fn scan(
     value_index(ctx, &persistence.integer_values.rows, &mut integer_fields)?;
     let mut real_fields = BTreeMap::new();
     value_index(ctx, &persistence.real_values.rows, &mut real_fields)?;
+    let index = LegacyGeometryIndex {
+        objects: &persistence.objects,
+        object_ids: &object_ids,
+        children: &children,
+        integer_fields: &integer_fields,
+        real_fields: &real_fields,
+    };
     let (rows, mut carriers) = namespace(
         ctx,
-        &persistence.objects,
-        &object_ids,
-        &children,
-        &integer_fields,
-        &real_fields,
+        &index,
         "Sld_VisGeom",
         "active_geom",
         LegacySurfaceNamespace::Visible,
     )?;
     let (nonvisible_rows, mut nonvisible_carriers) = namespace(
         ctx,
-        &persistence.objects,
-        &object_ids,
-        &children,
-        &integer_fields,
-        &real_fields,
+        &index,
         "Sld_NonVisGeom",
         "inactive_geom",
         LegacySurfaceNamespace::NonVisible,
@@ -399,22 +398,26 @@ fn legacy_direction(value: i32) -> Option<u8> {
     }
 }
 
-#[expect(clippy::too_many_arguments)]
+/// Object and scalar indexes for a legacy geometry graph.
+struct LegacyGeometryIndex<'a> {
+    objects: &'a [ObjectRecord],
+    object_ids: &'a ObjectIdIndex<'a>,
+    children: &'a ChildIndex<'a>,
+    integer_fields: &'a IntegerFieldIndex<'a>,
+    real_fields: &'a RealFieldIndex<'a>,
+}
+
 fn namespace(
     ctx: &DecodeContext<'_>,
-    objects: &[ObjectRecord],
-    object_ids: &ObjectIdIndex<'_>,
-    children: &ChildIndex<'_>,
-    integer_fields: &IntegerFieldIndex<'_>,
-    real_fields: &RealFieldIndex<'_>,
+    index: &LegacyGeometryIndex<'_>,
     root_name: &str,
     branch_name: &str,
     namespace: LegacySurfaceNamespace,
 ) -> Result<(Vec<SurfaceRow>, Vec<LegacySurfaceCarrier>), CodecError> {
     let Some(elements) = geometry_array_elements(
         ctx,
-        objects,
-        object_ids,
+        index.objects,
+        index.object_ids,
         root_name,
         branch_name,
         "srf_array",
@@ -426,13 +429,13 @@ fn namespace(
     let mut rows = Vec::new();
     let mut carriers = Vec::new();
     for row_object in elements {
-        let Some(row) = surface_row(row_object, integer_fields) else {
+        let Some(row) = surface_row(row_object, index.integer_fields) else {
             continue;
         };
         let carrier = if row.kind == SurfaceKind::Spline {
-            spline_surface_carrier(ctx, row_object, &row, children, real_fields, namespace)?
+            spline_surface_carrier(ctx, row_object, &row, index.children, index.real_fields, namespace)?
         } else {
-            surface_carrier(row_object, &row, children, real_fields, namespace)
+            surface_carrier(row_object, &row, index.children, index.real_fields, namespace)
         };
         if let Some(carrier) = carrier {
             ctx.reserve_vec(&mut carriers, 1, "creo legacy surface carriers")?;

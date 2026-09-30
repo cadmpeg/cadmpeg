@@ -28,6 +28,7 @@ macro_rules! loss_codes {
 
         impl $name {
             /// Every code, in declaration order.
+            #[cfg(test)]
             const ALL: &'static [Self] = &[$(Self::$variant),*];
         }
     };
