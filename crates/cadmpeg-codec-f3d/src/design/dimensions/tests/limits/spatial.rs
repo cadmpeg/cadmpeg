@@ -14,13 +14,7 @@ fn assert_spatial_index_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_spatial_dimension_constraints(
-            Some(&ctx),
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        ) {
+        match project_spatial_dimension_constraints(&ctx, &fixture.inputs(), std::slice::from_ref(&fixture.spatial), &[], EPS_SPATIAL_DIMENSION_LINEAR) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension == ResourceDimension::CollectionItems =>
@@ -59,13 +53,7 @@ fn spatial_projected_record_index_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &fixture.inputs(),
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &fixture.inputs(), std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial projected record index"
@@ -102,13 +90,7 @@ fn spatial_parameter_count_index_refuses_collection_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &inputs, std::slice::from_ref(&fixture.spatial), &[], EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial parameter count index"
@@ -139,13 +121,7 @@ fn spatial_scope_sketch_id_refuses_retained_limit() {
     )
     .unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = project_spatial_dimension_constraints(
-        Some(&ctx),
-        &fixture.inputs(),
-        std::slice::from_ref(&fixture.spatial),
-        &[],
-        EPS_SPATIAL_DIMENSION_LINEAR,
-    );
+    let result = project_spatial_dimension_constraints(&ctx, &fixture.inputs(), std::slice::from_ref(&fixture.spatial), &[], EPS_SPATIAL_DIMENSION_LINEAR);
     assert!(matches!(result, Err(CodecError::ResourceLimit(failure))
         if failure.operation == "f3d spatial scope sketch id"
             && failure.dimension == ResourceDimension::RetainedBytes));
@@ -162,13 +138,7 @@ fn spatial_parameter_count_id_refuses_retained_limit() {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &inputs, std::slice::from_ref(&fixture.spatial), &[], EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == "f3d spatial parameter count id"
@@ -201,13 +171,7 @@ fn assert_spatial_companion_collection_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &inputs, std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -260,13 +224,7 @@ fn assert_spatial_companion_retained_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            std::slice::from_ref(&entity),
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &inputs, std::slice::from_ref(&fixture.spatial), std::slice::from_ref(&entity), EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -321,13 +279,7 @@ fn assert_missing_spatial_refusal(operation: &'static str, dimension: ResourceDi
             _ => panic!("unsupported dimension"),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_spatial_dimension_constraints(
-            Some(&ctx),
-            &inputs,
-            std::slice::from_ref(&fixture.spatial),
-            &[],
-            EPS_SPATIAL_DIMENSION_LINEAR,
-        );
+        let result = project_spatial_dimension_constraints(&ctx, &inputs, std::slice::from_ref(&fixture.spatial), &[], EPS_SPATIAL_DIMENSION_LINEAR);
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>

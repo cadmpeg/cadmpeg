@@ -115,7 +115,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ]);
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        exact_offset_constraint(Some(ctx), &relation, "native", &projected)
+        exact_offset_constraint(ctx, &relation, "native", &projected)
             .transpose()
             .map(|_| ())
     });

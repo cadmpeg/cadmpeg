@@ -99,15 +99,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ParameterId::mint("synthetic:test:parameter#angle").expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        preceding_incident_angular_dimension_definition(
-            Some(ctx),
-            stream,
-            &points,
-            &curves,
-            &projected,
-            &sketch,
-            (&parameter, &parameter_id),
-        )
+        preceding_incident_angular_dimension_definition(ctx, stream, &points, &curves, &projected, &sketch, (&parameter, &parameter_id))
         .transpose()
         .map(|_| ())
     });

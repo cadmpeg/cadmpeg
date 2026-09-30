@@ -49,7 +49,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![&horizontal, &vertical]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        exact_counted_dimension_relation(Some(ctx), &selected).map(|_| ())
+        exact_counted_dimension_relation(ctx, &selected).map(|_| ())
     });
 }
 

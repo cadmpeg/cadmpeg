@@ -43,14 +43,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![lower, lower_duplicate, upper]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        unique_point_class_dimension_definition(
-            Some(ctx),
-            &selected,
-            &sketch,
-            &parameter,
-            &parameter_id,
-            EPS_REFUSAL_LINEAR,
-        )
+        unique_point_class_dimension_definition(ctx, &selected, &sketch, &parameter, &parameter_id, EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

@@ -142,15 +142,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let parameter_id =
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter:d4").unwrap();
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::presentation_dimension_definition(
-            Some(ctx),
-            "stream",
-            &frame,
-            &projected,
-            &parameter,
-            &parameter_id,
-            EPS_REFUSAL_LINEAR,
-        )
+        crate::design::dimensions::presentation_dimension_definition(ctx, "stream", &frame, &projected, &parameter, &parameter_id, EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

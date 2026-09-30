@@ -32,7 +32,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         vec![horizontal("a", "b"), horizontal("c", "d")]
     };
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        repeated_linear_dimension(Some(ctx), &candidates, parameter.clone())
+        repeated_linear_dimension(ctx, &candidates, parameter.clone())
             .transpose()
             .map(|_| ())
     });

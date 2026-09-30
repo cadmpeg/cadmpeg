@@ -168,14 +168,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     let parameter = ParameterId::mint("synthetic:test:parameter#offset").expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        spatial_counted_offset_dimension_definition(
-            Some(ctx),
-            ("Linear Dimension-1", Some(0x20), &operands),
-            (&parameter, 3.0, -3.0),
-            &sketch_id,
-            std::slice::from_ref(&sketch),
-            &by_record,
-        )
+        spatial_counted_offset_dimension_definition(ctx, ("Linear Dimension-1", Some(0x20), &operands), (&parameter, 3.0, -3.0), &sketch_id, std::slice::from_ref(&sketch), &by_record)
         .transpose()
         .map(|_| ())
     });

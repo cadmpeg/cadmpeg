@@ -71,14 +71,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     }];
 
     super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::owner_scoped_spatial_repeated_profile_line_distance_definition(
-            Some(ctx),
-            &entities,
-            &sketches,
-            &sketch,
-            &parameter,
-            &parameter_id,
-        )
+        crate::design::dimensions::owner_scoped_spatial_repeated_profile_line_distance_definition(ctx, &entities, &sketches, &sketch, &parameter, &parameter_id)
         .transpose()
         .map(|_| ())
     });

@@ -72,7 +72,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Concentric,
         SketchConstraintKind::Symmetry,
     ] {
-        let definition = exact_atomic_constraint(kind, &[&first, &axis_entity, &second], None)
+        let definition = crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[&first, &axis_entity, &second], decode_ctx))
             .unwrap()
             .unwrap();
         assert!(matches!(
@@ -95,11 +95,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         })
         .unwrap(),
     );
-    assert!(exact_atomic_constraint(
-        SketchConstraintKind::Concentric,
-        &[&first, &off_axis, &second],
-        None,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Concentric, &[&first, &off_axis, &second], decode_ctx))
     .unwrap()
     .is_none());
     let on_axis = entity(
@@ -114,7 +110,7 @@ fn three_member_symmetry_states_project_unique_reflection_axis() {
         SketchConstraintKind::Symmetry,
     ] {
         assert!(
-            exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis], None)
+            crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(kind, &[&on_axis, &axis_entity, &on_axis], decode_ctx))
                 .unwrap()
                 .is_none()
         );
@@ -156,7 +152,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(None, &[&first, &axis, &second]).expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &second])).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -171,7 +167,7 @@ fn counted_dimension_groups_resolve_full_circle_symmetry() {
     })
     .unwrap();
     assert!(
-        exact_counted_dimension_relation(None, &[&first, &axis, &mismatched])
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched]))
             .expect("resource allocation did not fail")
             .is_none()
     );
@@ -216,7 +212,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     );
 
     assert!(matches!(
-        exact_counted_dimension_relation(None, &[&first, &axis, &second]).expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &second])).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Symmetric {
             first: SketchLocus::Entity(ref first_id),
             second: SketchLocus::Entity(ref second_id),
@@ -233,7 +229,7 @@ fn counted_dimension_groups_resolve_bounded_arc_symmetry() {
     })
     .unwrap();
     assert!(
-        exact_counted_dimension_relation(None, &[&first, &axis, &mismatched])
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&first, &axis, &mismatched]))
             .expect("resource allocation did not fail")
             .is_none()
     );
@@ -267,7 +263,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(None, &[&circle, &arc]).expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &arc])).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == arc.id().clone()
     ));
@@ -281,7 +277,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(None, &[&circle, &coradial]).expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &coradial])).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Coradial { first, second })
             if first == circle.id().clone() && second == coradial.id().clone()
     ));
@@ -300,7 +296,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
         .unwrap(),
     );
     assert!(matches!(
-        exact_counted_dimension_relation(None, &[&circle, &ellipse]).expect("resource allocation did not fail"),
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &ellipse])).expect("resource allocation did not fail"),
         Some(SketchConstraintDefinitionInput::Concentric { first, second })
             if first == circle.id().clone() && second == ellipse.id().clone()
     ));
@@ -314,7 +310,7 @@ fn counted_dimension_groups_resolve_centered_entities() {
     })
     .unwrap();
     assert!(
-        exact_counted_dimension_relation(None, &[&circle, &displaced])
+        crate::test_support::with_decode_context(|decode_ctx| exact_counted_dimension_relation(decode_ctx, &[&circle, &displaced]))
             .expect("resource allocation did not fail")
             .is_none()
     );
@@ -345,7 +341,7 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         .unwrap(),
     );
     assert_eq!(
-        crate::design::dimensions::exact_coincident_loci(&[&line, &point], None).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&line, &point], decode_ctx)).unwrap(),
         Some(SketchConstraintDefinitionInput::CoincidentLoci {
             loci: vec![
                 cadmpeg_ir::sketches::SketchLocus::Start(line.id().clone()),
@@ -363,17 +359,17 @@ fn coincident_relation_projects_one_unique_shared_locus_per_member() {
         .unwrap(),
     );
     assert!(
-        crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&degenerate, &point], decode_ctx))
             .unwrap()
             .is_none()
     );
     assert!(
-        crate::design::dimensions::exact_coincident_loci(&[&line, &line], None)
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::exact_coincident_loci(&[&line, &line], decode_ctx))
             .unwrap()
             .is_none()
     );
     assert!(
-        exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line], None)
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Coincident, &[&line, &line], decode_ctx))
             .unwrap()
             .is_none()
     );
@@ -420,10 +416,7 @@ fn assert_coincident_limit(
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match crate::design::dimensions::exact_coincident_loci(
-            &[&entities[0], &entities[1]],
-            Some(&ctx),
-        ) {
+        match crate::design::dimensions::exact_coincident_loci(&[&entities[0], &entities[1]], &ctx) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>
             {
@@ -509,11 +502,7 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
     let second = entity("generated:test:point#1");
     let third = entity("generated:test:point#2");
     assert_eq!(
-        exact_atomic_constraint(
-            SketchConstraintKind::Polygon,
-            &[&first, &second, &third],
-            None
-        )
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &third], decode_ctx))
         .unwrap(),
         Some(SketchConstraintDefinitionInput::Polygon {
             polygon: cadmpeg_ir::sketches::SketchPolygon::try_new(vec![
@@ -525,15 +514,11 @@ fn polygon_constraint_requires_three_distinct_resolved_members() {
         })
     );
     assert!(
-        exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second], None)
+        crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second], decode_ctx))
             .unwrap()
             .is_none()
     );
-    assert!(exact_atomic_constraint(
-        SketchConstraintKind::Polygon,
-        &[&first, &second, &first],
-        None
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| exact_atomic_constraint(SketchConstraintKind::Polygon, &[&first, &second, &first], decode_ctx))
     .unwrap()
     .is_none());
 }
@@ -648,7 +633,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         (("native", 4), &result_vertical),
     ]);
 
-    let definition = exact_offset_constraint(None, &relation, "native", &projected)
+    let definition = crate::test_support::with_decode_context(|decode_ctx| exact_offset_constraint(decode_ctx, &relation, "native", &projected))
         .transpose()
         .unwrap()
         .unwrap();
@@ -692,7 +677,7 @@ fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         })
         .unwrap();
     assert!(
-        exact_offset_constraint(None, &repeated_pair, "native", &projected)
+        crate::test_support::with_decode_context(|decode_ctx| exact_offset_constraint(decode_ctx, &repeated_pair, "native", &projected))
             .transpose()
             .unwrap()
             .is_none()
@@ -816,15 +801,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         ParameterId::mint("generated:test:parameter#offset").expect("identity grammar");
     let projected = HashMap::from([((stream, 10), &source), ((stream, 11), &result)]);
 
-    let definition = crate::design::dimensions::annotation_offset_dimension_definition(
-        None,
-        &frame,
-        (&parameter, &parameter_id),
-        stream,
-        &[source_curve.clone(), result_curve.clone()],
-        &projected,
-        1.0e-6,
-    )
+    let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &frame, (&parameter, &parameter_id), stream, &[source_curve.clone(), result_curve.clone()], &projected, 1.0e-6))
     .transpose()
     .unwrap()
     .expect("single-curve annotation offset");
@@ -881,15 +858,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
             ..frame.clone().into_draft()
         }))
     .unwrap();
-    let explicit_definition = crate::design::dimensions::annotation_offset_dimension_definition(
-        None,
-        &explicit_frame,
-        (&parameter, &parameter_id),
-        stream,
-        &[source_curve.clone(), result_curve.clone()],
-        &projected,
-        1.0e-6,
-    )
+    let explicit_definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &explicit_frame, (&parameter, &parameter_id), stream, &[source_curve.clone(), result_curve.clone()], &projected, 1.0e-6))
     .transpose()
     .unwrap()
     .expect("explicit two-curve annotation offset");
@@ -923,19 +892,11 @@ fn single_curve_annotation_projects_parameterized_offset() {
         ((stream, 12), &duplicate),
     ]);
     assert!(
-        crate::design::dimensions::annotation_offset_dimension_definition(
-            None,
-            &frame,
-            (&parameter, &parameter_id),
-            stream,
-            &[
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::annotation_offset_dimension_definition(decode_ctx, &frame, (&parameter, &parameter_id), stream, &[
                 curve(format!("{stream}:sketch-curve#10"), 10, 20, 0),
                 curve(format!("{stream}:sketch-curve#11"), 11, 21, 7),
                 duplicate_curve
-            ],
-            &projected_with_duplicate,
-            1.0e-6,
-        )
+            ], &projected_with_duplicate, 1.0e-6))
         .transpose()
         .unwrap()
         .is_none()
@@ -1028,23 +989,11 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
     ]);
 
-    let lines = indirect_angular_lines(
-        None,
-        "native",
-        &[&point, &explicit],
-        std::f64::consts::FRAC_PI_4,
-        &projected,
-    )
+    let lines = crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], std::f64::consts::FRAC_PI_4, &projected))
     .unwrap()
     .unwrap();
     assert_eq!(lines, (diagonal.id().clone(), explicit.id().clone()));
-    let supplementary = indirect_angular_lines(
-        None,
-        "native",
-        &[&point, &explicit],
-        3.0 * std::f64::consts::FRAC_PI_4,
-        &projected,
-    )
+    let supplementary = crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], 3.0 * std::f64::consts::FRAC_PI_4, &projected))
     .unwrap()
     .unwrap();
     assert_eq!(supplementary, lines);
@@ -1063,13 +1012,7 @@ fn angular_point_operand_selects_unique_incident_line_by_value() {
         (("native", 4), &horizontal),
         (("native", 5), &duplicate_diagonal),
     ]);
-    assert!(indirect_angular_lines(
-        None,
-        "native",
-        &[&point, &explicit],
-        std::f64::consts::FRAC_PI_4,
-        &projected_with_duplicate,
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| indirect_angular_lines(decode_ctx, "native", &[&point, &explicit], std::f64::consts::FRAC_PI_4, &projected_with_duplicate))
     .unwrap()
     .is_none());
 }
@@ -1343,11 +1286,7 @@ fn parallel_group_binds_one_common_axis_angle() {
         ParameterId::mint("generated:test:parameter#axis-angle").expect("identity grammar");
 
     assert!(matches!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(None,
-            &[&first, &second],
-            &parameter,
-            &parameter_id,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::parallel_group_axis_angle_definition(decode_ctx, &[&first, &second], &parameter, &parameter_id)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::AngleToAxis {
             entity,
             axis: SketchAxis::Horizontal,
@@ -1355,23 +1294,13 @@ fn parallel_group_binds_one_common_axis_angle() {
         }) if entity == first.id().clone() && parameter == parameter_id
     ));
     assert!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(
-            None,
-            &[&first, &mismatch],
-            &parameter,
-            &parameter_id,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::parallel_group_axis_angle_definition(decode_ctx, &[&first, &mismatch], &parameter, &parameter_id))
         .transpose()
         .unwrap()
         .is_none()
     );
     assert!(
-        crate::design::dimensions::parallel_group_axis_angle_definition(
-            None,
-            &[&first, &crossed],
-            &parameter,
-            &parameter_id,
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::parallel_group_axis_angle_definition(decode_ctx, &[&first, &crossed], &parameter, &parameter_id))
         .transpose()
         .unwrap()
         .is_none()

@@ -33,13 +33,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         ),
     ];
     assert!(matches!(
-        crate::design::dimensions::recipe_linear_dimension_candidates(None,
-            &entities,
-            &sketch,
-            2.0,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
-            0.0,
-        ).unwrap().as_slice(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities, &sketch, 2.0, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"), 0.0)).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
@@ -58,13 +52,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         point("synthetic:test:id#second-end", Point2::new(5.0, 2.0)),
     ]);
     assert!(matches!(
-        crate::design::dimensions::recipe_linear_dimension_candidates(None,
-            &entities_with_endpoints,
-            &sketch,
-            2.0,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
-            0.0,
-        ).unwrap().as_slice(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::recipe_linear_dimension_candidates(decode_ctx, &entities_with_endpoints, &sketch, 2.0, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"), 0.0)).unwrap().as_slice(),
         [SketchConstraintDefinitionInput::Distance { entities, .. }]
             if entities.as_slice() == [SketchEntityId::mint("synthetic:test:id#first").unwrap(), SketchEntityId::mint("synthetic:test:id#second").unwrap()]
     ));
@@ -102,13 +90,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     )
     .unwrap();
     assert!(matches!(
-        crate::design::dimensions::unique_parallel_line_dimension_definition(None,
-            &entities,
-            &sketch,
-            &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
-            0.0,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::dimensions::unique_parallel_line_dimension_definition(decode_ctx, &entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"), 0.0)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Distance {
             entities,
             ..
@@ -134,15 +116,8 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         Point2::new(22.0, 4.0),
     ));
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(
-            Some(ctx),
-            &fragmented_entities,
-            &sketch,
-            &parameter,
-            &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
-                .expect("identity grammar"),
-            EPS_REFUSAL_LINEAR,
-        )
+        crate::design::dimensions::owner_scoped_parallel_line_set_dimension_definition(ctx, &fragmented_entities, &sketch, &parameter, &cadmpeg_ir::features::ParameterId::mint("synthetic:test:id#parameter")
+                .expect("identity grammar"), EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

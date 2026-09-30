@@ -34,13 +34,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         .expect("identity grammar");
 
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        owner_scoped_angular_dimension_definition(
-            Some(ctx),
-            &[horizontal.clone(), sloped.clone(), vertical.clone()],
-            &sketch,
-            &parameter,
-            &parameter_id,
-        )
+        owner_scoped_angular_dimension_definition(ctx, &[horizontal.clone(), sloped.clone(), vertical.clone()], &sketch, &parameter, &parameter_id)
         .transpose()
         .map(|_| ())
     });

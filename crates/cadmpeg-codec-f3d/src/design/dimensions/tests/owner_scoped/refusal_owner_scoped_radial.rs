@@ -22,22 +22,12 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#radius")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(None,
-            &entity,
-            "Radius Dimension-2",
-            0.5,
-            radius_parameter.clone(),
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radius Dimension-2", 0.5, radius_parameter.clone())).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &radius_parameter
     ));
     assert!(matches!(
-        radial_dimension_definition(None,
-            &entity,
-            "Radial Dimension-3",
-            0.5,
-            radius_parameter.clone(),
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Radial Dimension-3", 0.5, radius_parameter.clone())).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity: ref actual, .. })
             if actual == entity.id()
     ));
@@ -45,22 +35,11 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
         cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#diameter")
             .expect("identity grammar");
     assert!(matches!(
-        radial_dimension_definition(None,
-            &entity,
-            "Diameter Dimension-2",
-            1.0,
-            diameter_parameter.clone(),
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 1.0, diameter_parameter.clone())).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { entity: ref actual, parameter: ref p })
             if actual == entity.id() && p == &diameter_parameter
     ));
-    assert!(radial_dimension_definition(
-        None,
-        &entity,
-        "Diameter Dimension-2",
-        0.5,
-        diameter_parameter.clone(),
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| radial_dimension_definition(decode_ctx, &entity, "Diameter Dimension-2", 0.5, diameter_parameter.clone()))
     .transpose()
     .unwrap()
     .is_none());
@@ -74,13 +53,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     ))
     .expect("diameter parameter");
     assert!(matches!(
-        owner_scoped_radial_dimension_definition(None,
-            std::slice::from_ref(&entity),
-            &entity.sketch,
-            &parameter,
-            &diameter_parameter,
-            EPS_REFUSAL_LINEAR,
-        ).transpose().unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| owner_scoped_radial_dimension_definition(decode_ctx, std::slice::from_ref(&entity), &entity.sketch, &parameter, &diameter_parameter, EPS_REFUSAL_LINEAR)).transpose().unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter {
             entity: ref actual,
             ..
@@ -111,14 +84,7 @@ fn fixture(operation: &'static str, dimension: ResourceDimension) {
     })
     .unwrap();
     super::super::assert_dimension_refusal(operation, dimension, |ctx| {
-        owner_scoped_radial_dimension_definition(
-            Some(ctx),
-            &[entity.clone(), duplicate.clone()],
-            &entity.sketch,
-            &parameter,
-            &diameter_parameter,
-            EPS_REFUSAL_LINEAR,
-        )
+        owner_scoped_radial_dimension_definition(ctx, &[entity.clone(), duplicate.clone()], &entity.sketch, &parameter, &diameter_parameter, EPS_REFUSAL_LINEAR)
         .transpose()
         .map(|_| ())
     });

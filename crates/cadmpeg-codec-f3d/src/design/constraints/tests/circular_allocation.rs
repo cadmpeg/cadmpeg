@@ -109,7 +109,7 @@ fn assert_circular_refusal(dimension: Limit, operation: &'static str) {
             Limit::Retained => policy.limits.max_retained_bytes = limit,
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match exact_circular_pattern(&relation, "native", &[], &members, &returned, Some(&ctx)) {
+        match exact_circular_pattern(&relation, "native", &[], &members, &returned, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected refusal at {operation}: {other:?}"),
