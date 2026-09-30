@@ -597,7 +597,7 @@ pub(in super::super) fn reconcile_feature_links(
     }
     ordered.extend(remaining);
     for (ordinal, index) in ordered.into_iter().enumerate() {
-        ir.model.features[index].ordinal = ordinal as u64;
+        ir.model.features[index].ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
     }
     Ok(())
 }

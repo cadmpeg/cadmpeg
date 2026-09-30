@@ -121,7 +121,7 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
                 annotations,
                 &id,
                 section.name(),
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 "paired_type26_sphere_envelope",
                 Exactness::Derived,
             )?;
@@ -253,7 +253,7 @@ pub(in super::super) fn transfer_positional_tori(
             annotations,
             &id,
             section.name(),
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             "positional_torus_frame",
             Exactness::Derived,
         )?;
@@ -367,7 +367,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             annotations,
             &curve_id,
             "VisibGeom",
-            record.body_offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.body_offset),
             "positional_line_extrusion_directrix",
             Exactness::Derived,
         )?;
@@ -376,7 +376,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             annotations,
             &surface_id,
             "VisibGeom",
-            record.body_offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.body_offset),
             "positional_line_extrusion_plane",
             Exactness::Derived,
         )?;
@@ -385,7 +385,7 @@ pub(in super::super) fn transfer_positional_line_extrusion_planes(
             annotations,
             &procedural_id,
             "VisibGeom",
-            record.body_offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.body_offset),
             "positional_line_extrusion_construction",
             Exactness::Derived,
         )?;
@@ -620,7 +620,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             annotations,
             &curve_id,
             "VisibGeom",
-            replay.offset as u64,
+            cadmpeg_core::decode::u64_from_index(replay.offset),
             "tabulated_cylinder_directrix",
             Exactness::Derived,
         )?;
@@ -629,7 +629,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             annotations,
             &surface_id,
             "VisibGeom",
-            replay.surface_row_offset as u64,
+            cadmpeg_core::decode::u64_from_index(replay.surface_row_offset),
             "tabulated_cylinder_surface",
             Exactness::Derived,
         )?;
@@ -638,7 +638,7 @@ pub(in super::super) fn transfer_tabulated_cylinder_spline_extrusions(
             annotations,
             &procedural_id,
             "VisibGeom",
-            replay.surface_row_offset as u64,
+            cadmpeg_core::decode::u64_from_index(replay.surface_row_offset),
             "tabulated_cylinder_extrusion",
             Exactness::Derived,
         )?;

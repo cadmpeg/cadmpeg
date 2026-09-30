@@ -173,7 +173,7 @@ pub(in super::super) fn transfer_carrier_intersection_curves(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             tag,
             Exactness::Derived,
         )?;
@@ -421,7 +421,7 @@ pub(in super::super) fn transfer_nurbs_boundary_curves(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             match kind {
                 NurbsBoundaryKind::ExtrusionPlane => "extrusion_plane_nurbs_boundary",
                 NurbsBoundaryKind::ExtrusionPlaneSectionGenerator => {

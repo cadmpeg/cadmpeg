@@ -259,7 +259,7 @@ fn transfer_reference_lines(
             annotations,
             &id,
             "MdlRefInfo",
-            line.offset as u64,
+            cadmpeg_core::decode::u64_from_index(line.offset),
             "reference_line",
             Exactness::Derived,
         )?;
@@ -342,7 +342,7 @@ fn transfer_reference_circles(
             annotations,
             &id,
             "MdlRefInfo",
-            circle.offset as u64,
+            cadmpeg_core::decode::u64_from_index(circle.offset),
             "reference_circle",
             Exactness::Derived,
         )?;
@@ -434,7 +434,7 @@ fn transfer_reference_ellipses(
             annotations,
             &id,
             "MdlRefInfo",
-            ellipse.offset as u64,
+            cadmpeg_core::decode::u64_from_index(ellipse.offset),
             "reference_ellipse",
             Exactness::Derived,
         )?;
@@ -548,7 +548,7 @@ fn transfer_display_tessellations(
             annotations,
             id.as_str(),
             "SolidPrimdata",
-            strip.offset as u64,
+            cadmpeg_core::decode::u64_from_index(strip.offset),
             "display_triangle_strip",
             Exactness::Derived,
         )?;
@@ -664,7 +664,7 @@ fn transfer_datum_plane_surfaces(
             annotations,
             &id,
             "ActDatums",
-            plane.offset_in_payload as u64,
+            cadmpeg_core::decode::u64_from_index(plane.offset_in_payload),
             "datum_plane_outline",
             Exactness::Derived,
         )?;
@@ -760,7 +760,7 @@ fn transfer_placed_plane_surfaces_into_ir(
             annotations,
             &id,
             "VisibGeom",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             tag,
             Exactness::Derived,
         )?;

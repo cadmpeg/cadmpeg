@@ -2522,7 +2522,7 @@ pub(in super::super) fn transfer_native_brep(
             annotations,
             &id,
             "VisibGeom",
-            row_offsets.get(curve_id).copied().unwrap_or(0) as u64,
+            cadmpeg_core::decode::u64_from_index(row_offsets.get(curve_id).copied().unwrap_or(0)),
             "curve_topology_edge",
             Exactness::Derived,
         )?;
@@ -2563,7 +2563,7 @@ pub(in super::super) fn transfer_native_brep(
                 annotations,
                 &curve,
                 "VisibGeom",
-                offset as u64,
+                cadmpeg_core::decode::u64_from_index(offset),
                 "opaque_native_curve_carrier",
                 Exactness::Unknown,
             )?;
@@ -2794,7 +2794,7 @@ pub(in super::super) fn transfer_native_brep(
                     annotations,
                     &surface,
                     face_source_namespace,
-                    face_offset as u64,
+                    cadmpeg_core::decode::u64_from_index(face_offset),
                     "opaque_native_surface_carrier",
                     Exactness::Unknown,
                 )?;
@@ -2843,7 +2843,7 @@ pub(in super::super) fn transfer_native_brep(
                 annotations,
                 &face,
                 "VisibGeom",
-                face_offset as u64,
+                cadmpeg_core::decode::u64_from_index(face_offset),
                 "native_face",
                 Exactness::Derived,
             )?;
@@ -2853,7 +2853,7 @@ pub(in super::super) fn transfer_native_brep(
                     annotations,
                     loop_id,
                     "VisibGeom",
-                    face_offset as u64,
+                    cadmpeg_core::decode::u64_from_index(face_offset),
                     "native_face_loop",
                     Exactness::Derived,
                 )?;
@@ -2924,7 +2924,7 @@ pub(in super::super) fn transfer_native_brep(
                         annotations,
                         &id,
                         "VisibGeom",
-                        row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0) as u64,
+                        cadmpeg_core::decode::u64_from_index(row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0)),
                         "native_half_edge",
                         Exactness::Derived,
                     )?;
@@ -3080,7 +3080,7 @@ pub(in super::super) fn transfer_native_brep(
                                     annotations,
                                     &pcurve,
                                     "VisibGeom",
-                                    offset as u64,
+                                    cadmpeg_core::decode::u64_from_index(offset),
                                     tag,
                                     Exactness::Derived,
                                 )?;
@@ -3179,7 +3179,7 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
             annotations,
             &id,
             "VisibGeom",
-            pair.offset as u64,
+            cadmpeg_core::decode::u64_from_index(pair.offset),
             "fc05_cap_pair_cylinder",
             Exactness::Derived,
         )?;
@@ -3251,11 +3251,11 @@ pub(in super::super) fn transfer_cap_pair_cylinders(
                 annotations,
                 &id,
                 "VisibGeom",
-                scan.curves
+                cadmpeg_core::decode::u64_from_index(scan.curves
                     .fc05_circles
                     .iter()
                     .find(|circle| circle.curve_id == *curve_id)
-                    .map_or(pair.offset, |circle| circle.offset) as u64,
+                    .map_or(pair.offset, |circle| circle.offset)),
                 "fc05_cap_circle",
                 Exactness::Derived,
             )?;

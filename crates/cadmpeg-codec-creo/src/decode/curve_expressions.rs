@@ -416,7 +416,7 @@ fn joined_dependency_names(
         if include(name)? {
             bytes = bytes
                 .checked_add(name.len())
-                .ok_or_else(|| ctx.refuse_codec_limit(operation, usize::MAX as u64, u64::MAX))?;
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, cadmpeg_core::decode::u64_from_index(usize::MAX), u64::MAX))?;
             count += 1;
         }
     }
@@ -425,7 +425,7 @@ fn joined_dependency_names(
     }
     bytes = bytes
         .checked_add(count - 1)
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, usize::MAX as u64, u64::MAX))?;
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, cadmpeg_core::decode::u64_from_index(usize::MAX), u64::MAX))?;
     let mut joined = String::new();
     ctx.try_reserve_retained_text(&mut joined, bytes, operation)?;
     let mut emitted = false;
@@ -464,7 +464,7 @@ fn join_cyclic_dependency_names(
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "creo curve-expression cyclic dependency text",
-                usize::MAX as u64,
+                cadmpeg_core::decode::u64_from_index(usize::MAX),
                 u64::MAX,
             )
         })?;
@@ -494,7 +494,7 @@ fn curve_expression_source_text(
         .ok_or_else(|| {
             ctx.refuse_codec_limit(
                 "creo curve-expression feature source text",
-                usize::MAX as u64,
+                cadmpeg_core::decode::u64_from_index(usize::MAX),
                 u64::MAX,
             )
         })?;
@@ -803,7 +803,7 @@ pub(super) fn transfer_curve_expression_features(
         .enumerate()
     {
         let source_section = source_section(ctx, scan, record.offset)?;
-        let ordinal = ordinal_base + expression_ordinal as u64;
+        let ordinal = ordinal_base + cadmpeg_core::decode::u64_from_index(expression_ordinal);
         let feature_id = crate::identity::compose_checked::<IrFeatureId>(
             ctx,
             &crate::identity::DEPDB_CURVE_EXPRESSION_FEATURE,
@@ -872,14 +872,14 @@ pub(super) fn transfer_curve_expression_features(
                 annotations,
                 parameter_id.as_str(),
                 &source_section,
-                assignment.offset as u64,
+                cadmpeg_core::decode::u64_from_index(assignment.offset),
                 "curve_expression_assignment",
                 Exactness::Derived,
             )?;
             ctx.charge_entities(1, "admit Creo model parameters")?;
             for prior_members in 0..dependencies.len() {
                 ctx.charge_work(
-                    prior_members as u64,
+                    cadmpeg_core::decode::u64_from_index(prior_members),
                     "validate Creo curve-expression dependency uniqueness",
                 )?;
             }
@@ -1001,7 +1001,7 @@ pub(super) fn transfer_curve_expression_features(
                 annotations,
                 curve_id.as_str(),
                 &source_section,
-                record.offset as u64,
+                cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_carrier",
                 Exactness::Unknown,
             )?;
@@ -1010,7 +1010,7 @@ pub(super) fn transfer_curve_expression_features(
                 annotations,
                 procedural_id.as_str(),
                 &source_section,
-                record.offset as u64,
+                cadmpeg_core::decode::u64_from_index(record.offset),
                 "curve_expression_helix",
                 Exactness::Derived,
             )?;
@@ -1064,7 +1064,7 @@ pub(super) fn transfer_curve_expression_features(
             annotations,
             feature_id.as_str(),
             &source_section,
-            record.expression_offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.expression_offset),
             "curve_expression_feature",
             Exactness::Derived,
         )?;

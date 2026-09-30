@@ -376,7 +376,7 @@ pub(super) fn transfer_part_product(
         annotations,
         &product_id,
         "archive_header",
-        model_name_offset as u64,
+        cadmpeg_core::decode::u64_from_index(model_name_offset),
         "part_product",
         Exactness::Derived,
     )?;
@@ -385,7 +385,7 @@ pub(super) fn transfer_part_product(
         annotations,
         &occurrence_id,
         "archive_header",
-        model_name_offset as u64,
+        cadmpeg_core::decode::u64_from_index(model_name_offset),
         "part_product_occurrence",
         Exactness::Derived,
     )?;
@@ -675,7 +675,7 @@ pub(super) fn transfer_fc05_cap_circles(
                 annotations,
                 &id,
                 "VisibGeom",
-                circle.offset as u64,
+                cadmpeg_core::decode::u64_from_index(circle.offset),
                 "fc05_cap_circle",
                 Exactness::Derived,
             )?;
@@ -733,7 +733,7 @@ pub(super) fn transfer_fc05_cap_circles(
             annotations,
             &surface_id,
             "VisibGeom",
-            circle.offset as u64,
+            cadmpeg_core::decode::u64_from_index(circle.offset),
             "fc05_axis_cylinder",
             Exactness::Derived,
         )?;
