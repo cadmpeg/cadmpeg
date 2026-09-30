@@ -1930,18 +1930,14 @@ fn component_path_continues(payload: &[u8], end: usize, root_separators: bool) -
                 && gap == 10
                 && payload.get(end..end + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
             (compact_component_separator(payload, end, gap) || root_separator)
-                && (compact_heterogeneous_component_path(payload, end + gap, 1).is_some()
-                    || compact_mixed_component_path(payload, end + gap, 1, root_separators)
-                        .is_some())
+                && (compact_component_entry_at(payload, end + gap, false).is_some()
+                    || compact_mixed_component_at(payload, end + gap, 1).is_some())
         })
 }
 
-pub(super) fn compact_mixed_component_path(
-    payload: &[u8],
-    mut cursor: usize,
-    count: usize,
-    root_separators: bool,
-) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
+fn compact_mixed_component_at(
+    payload: &[u8], offset: usize, remaining: usize,
+) -> Option<(FeatureInputComponentPathEntry, usize)> {
     let signature_at = |offset: usize| -> Option<[u8; 12]> {
         let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
         let type_family = View::u16_le_at(&signature, 0)?;
@@ -1951,52 +1947,56 @@ pub(super) fn compact_mixed_component_path(
         (is_class_token(type_family) && type_variant != 0 && source != 0 && identity != 0)
             .then_some(signature)
     };
-    let node_at =
-        |offset: usize, remaining: usize| -> Option<(FeatureInputComponentPathEntry, usize)> {
-            let tagged = payload
-                .get(offset..offset + 4)
-                .is_some_and(|bytes| {
-                    View::u16_le_at(bytes, 0).is_some_and(is_class_token) && bytes[2..4] == [0, 0]
-                })
-                .then(|| {
-                    let instance = View::u16_le_at(payload, offset)?;
-                    let type_signature = signature_at(offset + 4)?;
-                    let next_is_tagged = remaining > 1
-                        && payload.get(offset + 16..offset + 20).is_some_and(|bytes| {
-                            View::u16_le_at(bytes, 0).is_some_and(is_class_token)
-                                && bytes[2..4] == [0, 0]
-                                && signature_at(offset + 20).is_some()
-                        });
-                    let local_id = if next_is_tagged {
-                        None
-                    } else {
-                        Some(View::u32_le_at(payload, offset + 16)?)
-                    };
-                    Some((
-                        FeatureInputComponentPathEntry {
-                            instance: Some(instance),
-                            type_signature,
-                            local_id,
-                        },
-                        if next_is_tagged { 16 } else { 20 },
-                    ))
-                })
-                .flatten();
-            tagged.or_else(|| {
-                Some((
-                    FeatureInputComponentPathEntry {
-                        instance: None,
-                        type_signature: signature_at(offset)?,
-                        local_id: Some(View::u32_le_at(payload, offset + 12)?),
-                    },
-                    16,
-                ))
-            })
-        };
+    let tagged = payload
+        .get(offset..offset + 4)
+        .is_some_and(|bytes| {
+            View::u16_le_at(bytes, 0).is_some_and(is_class_token) && bytes[2..4] == [0, 0]
+        })
+        .then(|| {
+            let instance = View::u16_le_at(payload, offset)?;
+            let type_signature = signature_at(offset + 4)?;
+            let next_is_tagged = remaining > 1
+                && payload.get(offset + 16..offset + 20).is_some_and(|bytes| {
+                    View::u16_le_at(bytes, 0).is_some_and(is_class_token)
+                        && bytes[2..4] == [0, 0]
+                        && signature_at(offset + 20).is_some()
+                });
+            let local_id = if next_is_tagged {
+                None
+            } else {
+                Some(View::u32_le_at(payload, offset + 16)?)
+            };
+            Some((
+                FeatureInputComponentPathEntry {
+                    instance: Some(instance),
+                    type_signature,
+                    local_id,
+                },
+                if next_is_tagged { 16 } else { 20 },
+            ))
+        })
+        .flatten();
+    tagged.or_else(|| {
+        Some((
+            FeatureInputComponentPathEntry {
+                instance: None,
+                type_signature: signature_at(offset)?,
+                local_id: Some(View::u32_le_at(payload, offset + 12)?),
+            },
+            16,
+        ))
+    })
+}
 
+pub(super) fn compact_mixed_component_path(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+    root_separators: bool,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
     let mut components = Vec::with_capacity(count);
     for index in 0..count {
-        let (component, len) = node_at(cursor, count - index)?;
+        let (component, len) = compact_mixed_component_at(payload, cursor, count - index)?;
         components.push(component);
         cursor += len;
         if index + 1 == count {
@@ -2010,7 +2010,7 @@ pub(super) fn compact_mixed_component_path(
                     && *gap == 10
                     && payload.get(cursor..cursor + 10) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
                 (compact_component_separator(payload, cursor, *gap) || root_separator)
-                    && node_at(cursor + *gap, count - index - 1).is_some()
+                    && compact_mixed_component_at(payload, cursor + *gap, count - index - 1).is_some()
             })?;
         cursor += gap;
     }
@@ -2929,6 +2929,22 @@ fn compact_wide_component_path(
     compact_component_path_with_layout(payload, cursor, count, true)
 }
 
+fn compact_component_entry_at(payload: &[u8], offset: usize, wide: bool) -> Option<()> {
+    let entry_length = if wide { 24 } else { 20 };
+    let local_id_offset = if wide { 20 } else { 16 };
+
+    let instance = payload.get(offset..offset + 4)?;
+    let token = View::u16_le_at(instance, 0)?;
+    (is_class_token(token)
+        && instance[2..4] == [0, 0]
+        && payload.get(offset + 4..offset + 6)? != [0, 0]
+        && (!wide || payload.get(offset + 16..offset + 20)? == [0; 4])
+        && payload
+            .get(offset + local_id_offset..offset + entry_length)
+            .is_some())
+    .then_some(())
+}
+
 fn compact_component_path_with_layout(
     payload: &[u8],
     mut cursor: usize,
@@ -2937,18 +2953,7 @@ fn compact_component_path_with_layout(
 ) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
     let entry_length = if wide { 24 } else { 20 };
     let local_id_offset = if wide { 20 } else { 16 };
-    let entry_at = |offset: usize| {
-        let instance = payload.get(offset..offset + 4)?;
-        let token = View::u16_le_at(instance, 0)?;
-        (is_class_token(token)
-            && instance[2..4] == [0, 0]
-            && payload.get(offset + 4..offset + 6)? != [0, 0]
-            && (!wide || payload.get(offset + 16..offset + 20)? == [0; 4])
-            && payload
-                .get(offset + local_id_offset..offset + entry_length)
-                .is_some())
-        .then_some(())
-    };
+
     bounded_len(
         count as u64,
         entry_length,
@@ -2956,7 +2961,7 @@ fn compact_component_path_with_layout(
     )?;
     let mut entries = Vec::with_capacity(count);
     for index in 0..count {
-        entry_at(cursor)?;
+        compact_component_entry_at(payload, cursor, wide)?;
         entries.push(FeatureInputComponentPathEntry {
             instance: Some(View::u16_le_at(payload, cursor)?),
             type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
@@ -2967,7 +2972,7 @@ fn compact_component_path_with_layout(
             continue;
         }
         let gap = COMPACT_COMPONENT_PATH_GAPS.iter().copied().find(|gap| {
-            compact_component_separator(payload, cursor, *gap) && entry_at(cursor + *gap).is_some()
+            compact_component_separator(payload, cursor, *gap) && compact_component_entry_at(payload, cursor + *gap, wide).is_some()
         })?;
         cursor += gap;
     }
