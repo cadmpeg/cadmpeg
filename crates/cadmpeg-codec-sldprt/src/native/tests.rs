@@ -461,6 +461,10 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
 
 #[test]
 fn native_edge_validation_collection_limit_refuses_before_candidates() {
+    let reference_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut lane = emitter_models()
@@ -486,10 +490,10 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     let mut record = lane.edge_selections[0].clone();
     record.offset = u64::try_from(marker).unwrap();
     record.local_edge_ids = vec![7];
-    record.components = crate::resolved_features::selections::compact_edge_component_path_at(
+    record.components = crate::resolved_features::selections::compact_edge_component_path_at(&reference_ctx, 
         &lane.native_payload,
         marker,
-    )
+    ).unwrap()
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

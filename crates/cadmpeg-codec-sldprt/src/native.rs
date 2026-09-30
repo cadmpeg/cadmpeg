@@ -900,22 +900,18 @@ impl SldprtNative {
                     selection_payload_span(lane, record.offset),
                     "validate SLDPRT edge reference candidates",
                 )?;
-                let disagreement = usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            let feature_kind = edge_features
-                                .iter()
-                                .find(|feature| feature.id == record.feature_ref)
-                                .map(|feature| feature.kind.as_str())
-                                .unwrap_or_default();
-                            crate::resolved_features::selections::compact_edge_reference_list_for_feature(
-                                &lane.native_payload,
-                                offset,
-                                feature_kind,
-                            )
-                        })
-                        .unwrap_or_default()
-                        != record.references;
+                let references = match usize::try_from(record.offset) {
+                    Ok(offset) => {
+                        let feature_kind = edge_features.iter()
+                            .find(|feature| feature.id == record.feature_ref)
+                            .map(|feature| feature.kind.as_str()).unwrap_or_default();
+                        crate::resolved_features::selections::compact_edge_reference_list_for_feature(
+                            ctx, &lane.native_payload, offset, feature_kind,
+                        )?
+                    }
+                    Err(_) => None,
+                };
+                let disagreement = references.unwrap_or_default() != record.references;
                 if disagreement {
                     return Err(invalid_owner(
                 ctx,
@@ -1526,15 +1522,12 @@ fn edge_selection_disagrees_with_payload(
     }
         .as_ref()
         != Some(&record.local_edge_ids)
-        || usize::try_from(record.offset)
-            .ok()
-            .and_then(|offset| {
-                crate::resolved_features::selections::compact_edge_component_path_at(
-                    &lane.native_payload,
-                    offset,
-                )
-            })
-            .unwrap_or_default()
+        || match usize::try_from(record.offset) {
+            Ok(offset) => crate::resolved_features::selections::compact_edge_component_path_at(
+                ctx, &lane.native_payload, offset,
+            )?,
+            Err(_) => None,
+        }.unwrap_or_default()
             != record.components
         || match usize::try_from(record.offset) {
             Ok(offset) => crate::resolved_features::selections::compact_edge_producer_features_at(
