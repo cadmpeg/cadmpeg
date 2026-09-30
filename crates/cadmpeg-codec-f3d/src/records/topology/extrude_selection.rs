@@ -5,13 +5,13 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;
+use crate::records::admission::RecordAdmission;
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use crate::records::sketch_relations::SketchRelationOperand;
 use cadmpeg_core::decode::DecodeContext;
-use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
 use serde::Serialize;
@@ -195,7 +195,8 @@ impl DesignExtrudeSelectionGroup {
             }
             {
                 let operation = "index F3D extrude selection members";
-                admission.reserve_set(&mut unique, 1, operation)
+                admission
+                    .reserve_set(&mut unique, 1, operation)
                     .map_err(ExtrudeSelectionWireError::Resource)?;
             }
             unique.insert(member);
@@ -251,7 +252,7 @@ impl TryFrom<DesignExtrudeSelectionGroupWire> for DesignExtrudeSelectionGroup {
     type Error = String;
 
     fn try_from(wire: DesignExtrudeSelectionGroupWire) -> Result<Self, Self::Error> {
-Self::from_wire_inner(RecordAdmission::Admitted, wire).map_err(|error| match error {
+        Self::from_wire_inner(RecordAdmission::Admitted, wire).map_err(|error| match error {
             ExtrudeSelectionWireError::Payload(message) => message,
             ExtrudeSelectionWireError::Resource(error) => error.to_string(),
         })

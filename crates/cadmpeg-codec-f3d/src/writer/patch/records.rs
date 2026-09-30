@@ -14,8 +14,8 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
 use super::edits::{
-    BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit, HistoryEdits,
-    PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
+    BodyMemberEdit, ByteEdit, ConstructionRecipeEdit, DesignTypeEdit, EntityHeaderEdit,
+    HistoryEdits, PersistentReferenceEdit, SketchCurveEdit, SketchPointEdit,
 };
 use cadmpeg_asm::edit::AsmEditSet;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;

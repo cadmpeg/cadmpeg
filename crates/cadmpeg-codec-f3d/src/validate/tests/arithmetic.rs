@@ -244,14 +244,20 @@ fn companion_findings(
 fn companion_rejects_overflowed_timestamp_origin() {
     let findings = companion_findings(u64::MAX - 41, u64::MAX, None);
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "Fusion Design parameter companion has an invalid prefix or owner link");
+    assert_eq!(
+        findings[0].message,
+        "Fusion Design parameter companion has an invalid prefix or owner link"
+    );
 }
 
 #[test]
 fn companion_rejects_overflowed_payload_origin() {
     let findings = companion_findings(u64::MAX - 57, u64::MAX - 15, Some(u64::MAX));
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "Fusion Design parameter companion has an invalid prefix or owner link");
+    assert_eq!(
+        findings[0].message,
+        "Fusion Design parameter companion has an invalid prefix or owner link"
+    );
 }
 
 #[test]
@@ -311,7 +317,12 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
             6,
             std::num::NonZeroU64::new(1).unwrap(),
             42,
-        ).bound(crate::records::parameters::DesignCompanionPayload::new(58, payload_length, Vec::new()));
+        )
+        .bound(crate::records::parameters::DesignCompanionPayload::new(
+            58,
+            payload_length,
+            Vec::new(),
+        ));
         let entity = DesignEntityHeader {
             id: "f3d:Design/BulkStream.dat:entity#4".into(),
             byte_offset: 0,
@@ -337,28 +348,39 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
                 class_tag: "256".to_owned().try_into().unwrap(),
                 record_index: 9,
                 frame_length: 300,
-                operands: [0, 10, 11, 10].into_iter().enumerate().map(|(ordinal, index)| {
-                    crate::records::dimensions::DesignDimensionAnnotationOperand {
-                        geometry_record_index: std::num::NonZeroU32::new(index),
-                        geometry_reference_offset: 125 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                        role: 1,
-                        role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                    }
-                }).collect(),
+                operands: [0, 10, 11, 10]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, index)| {
+                        crate::records::dimensions::DesignDimensionAnnotationOperand {
+                            geometry_record_index: std::num::NonZeroU32::new(index),
+                            geometry_reference_offset: 125
+                                + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                            role: 1,
+                            role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                        }
+                    })
+                    .collect(),
                 entity_genesis: 0,
                 annotation_bytes: vec![7, 8],
                 annotation_byte_offset: 241,
                 governing_owner_record_index: 6,
                 governing_owner_reference_offset: 244,
-                return_members: [10, 10, 11].into_iter().enumerate().map(|(ordinal, index)| {
-                    Located { value: std::num::NonZeroU32::new(index).unwrap(), offset: 259 + cadmpeg_core::decode::u64_from_index(ordinal) * 11 }
-                }).collect(),
+                return_members: [10, 10, 11]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, index)| Located {
+                        value: std::num::NonZeroU32::new(index).unwrap(),
+                        offset: 259 + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
+                    })
+                    .collect(),
                 paired_class_tag: "259".to_owned().try_into().unwrap(),
                 paired_byte_offset: 400,
                 owner_reference: 4,
                 owner_reference_offset: 420,
             },
-        ).unwrap();
+        )
+        .unwrap();
         native.design_dimension_annotation_frames.push(frame);
         let mut ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
         let stream = super::super::design_stream(&native.design_dimension_annotation_frames[0].id);
@@ -366,7 +388,8 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         ctx.owners_by_index.insert((stream, 6), &owner);
         ctx.companions_by_index.insert((stream, 8), &companion);
         ctx.entities_by_suffix.insert((stream, 4), &entity);
-        ctx.sketch_geometry_indices.extend([(stream, 10), (stream, 11)]);
+        ctx.sketch_geometry_indices
+            .extend([(stream, 10), (stream, 11)]);
         let mut findings = Vec::new();
         super::super::validate_dimension_annotation_frames(&ctx, &mut findings).unwrap();
         findings
@@ -377,7 +400,10 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
 fn annotation_rejects_overflowed_companion_extent() {
     let findings = annotation_findings(u64::MAX - 57);
     assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "Fusion Design dimension annotation frame has invalid links or offsets");
+    assert_eq!(
+        findings[0].message,
+        "Fusion Design dimension annotation frame has invalid links or offsets"
+    );
 }
 
 #[test]

@@ -364,7 +364,12 @@ fn parse_asset_tail(
     start: usize,
 ) -> Result<Vec<String>, CodecError> {
     let mut selected = None;
-    for at in bytes.len().checked_sub(3).into_iter().flat_map(|last| start..last) {
+    for at in bytes
+        .len()
+        .checked_sub(3)
+        .into_iter()
+        .flat_map(|last| start..last)
+    {
         ctx.charge_work(1, "search F3D manifest asset tail")?;
         if bytes.get(at..at + 4) != Some(36_u32.to_le_bytes().as_slice()) {
             continue;

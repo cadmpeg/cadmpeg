@@ -287,7 +287,11 @@ fn decode_standard_recipe_references(
     }
     let mut references = Vec::new();
     let mut at = 22usize;
-    while prefix.len().checked_sub(at).is_some_and(|remaining| remaining > 4) {
+    while prefix
+        .len()
+        .checked_sub(at)
+        .is_some_and(|remaining| remaining > 4)
+    {
         if recipe_reference_suffix(&prefix[at..]) {
             return Ok(references);
         }
@@ -326,7 +330,12 @@ fn decode_paired_recipe_references(
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
         return Ok(Vec::new());
     };
-    if pair_count == 0 || prefix.len().checked_sub(22).is_none_or(|remaining| pair_count > remaining / MINIMUM_PAIR_SIZE) {
+    if pair_count == 0
+        || prefix
+            .len()
+            .checked_sub(22)
+            .is_none_or(|remaining| pair_count > remaining / MINIMUM_PAIR_SIZE)
+    {
         return Ok(Vec::new());
     }
     if pair_count.checked_mul(2).is_none() {
@@ -421,7 +430,10 @@ fn decode_grouped_recipe_references(
         };
         at = next;
         if operand_count == 0
-            || prefix.len().checked_sub(at).is_none_or(|remaining| operand_count > remaining / MINIMUM_PACKED_OPERAND_SIZE)
+            || prefix
+                .len()
+                .checked_sub(at)
+                .is_none_or(|remaining| operand_count > remaining / MINIMUM_PACKED_OPERAND_SIZE)
         {
             return Ok(Vec::new());
         }
@@ -461,7 +473,12 @@ pub(in crate::design) fn is_paired_recipe_reference_frame(prefix: &[u8]) -> bool
     let Some(pair_count) = View::u32_le_at(prefix, 18).map(index_from_u32) else {
         return false;
     };
-    if pair_count == 0 || prefix.len().checked_sub(22).is_none_or(|remaining| pair_count > remaining / 42) {
+    if pair_count == 0
+        || prefix
+            .len()
+            .checked_sub(22)
+            .is_none_or(|remaining| pair_count > remaining / 42)
+    {
         return false;
     }
     let mut at = 22usize;
@@ -521,7 +538,12 @@ pub(crate) fn is_grouped_recipe_reference_frame(prefix: &[u8]) -> bool {
             return false;
         };
         at = next;
-        if operand_count == 0 || prefix.len().checked_sub(at).is_none_or(|remaining| operand_count > remaining / 17) {
+        if operand_count == 0
+            || prefix
+                .len()
+                .checked_sub(at)
+                .is_none_or(|remaining| operand_count > remaining / 17)
+        {
             return false;
         }
         for _ in 0..operand_count {
@@ -1465,7 +1487,9 @@ pub(crate) fn decode_dimension_annotation_frames(
                         "f3d dimension annotation frame ID",
                     )?;
                     let Ok(paired_at) = usize::try_from(frame.paired_byte_offset()) else {
-                        return Err(CodecError::Malformed("F3D annotation paired offset is not representable".into()));
+                        return Err(CodecError::Malformed(
+                            "F3D annotation paired offset is not representable".into(),
+                        ));
                     };
                     position = paired_at + 1;
                     let key = (stream, frame.byte_offset());
@@ -1559,7 +1583,11 @@ fn parse_dimension_annotation_frame(
         paired_search = at.checked_add(1)?;
     };
     let mut matched_tail = None;
-    for tail in paired_byte_offset.checked_sub(15).into_iter().flat_map(|last| annotation_byte_offset..last) {
+    for tail in paired_byte_offset
+        .checked_sub(15)
+        .into_iter()
+        .flat_map(|last| annotation_byte_offset..last)
+    {
         if let Err(error) = ctx.charge_work(1, "f3d dimension annotation tail scan") {
             return Some(Err(error));
         }

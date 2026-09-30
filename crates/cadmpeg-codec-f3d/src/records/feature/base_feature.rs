@@ -805,7 +805,11 @@ impl TryFrom<DesignBaseFeatureConstructionWire> for DesignBaseFeatureConstructio
                         "tag_body_based_on_faces must be true for LegacyBodyBasedOnFaces".into(),
                     );
                 }
-                let mut bodies = cadmpeg_core::decode::DecodeContext::admitted_vec(count, "reconstruct F3D base feature bodies").map_err(|error| error.to_string())?;
+                let mut bodies = cadmpeg_core::decode::DecodeContext::admitted_vec(
+                    count,
+                    "reconstruct F3D base feature bodies",
+                )
+                .map_err(|error| error.to_string())?;
                 for index in 0..count {
                     if body_entity_suffixes[index] != u64::from(body_reference_records[index])
                         || body_entity_suffix_offsets[index] != body_reference_record_offsets[index]

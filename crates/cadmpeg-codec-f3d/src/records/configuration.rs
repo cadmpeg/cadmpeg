@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Admitted configuration documents and their authored variant order.
 
-use cadmpeg_core::decode::DecodeContext;
 use crate::records::admission::RecordAdmission;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize, Serializer};
@@ -448,7 +448,13 @@ impl DesignConfiguration {
         variant_order: Vec<String>,
         payload: Map<String, Value>,
     ) -> Result<Self, CodecError> {
-        Self::try_new_with_admission(RecordAdmission::Charged(ctx), entry_name, kind, variant_order, payload)
+        Self::try_new_with_admission(
+            RecordAdmission::Charged(ctx),
+            entry_name,
+            kind,
+            variant_order,
+            payload,
+        )
     }
 
     fn try_new_with_admission(
@@ -530,7 +536,11 @@ impl DesignConfiguration {
                     let mut entries = Vec::new();
                     for variant in variants {
                         {
-                            admission.reserve_vec(&mut entries, 1, "order configuration variants")?;
+                            admission.reserve_vec(
+                                &mut entries,
+                                1,
+                                "order configuration variants",
+                            )?;
                         }
                         entries.push(variant);
                     }
@@ -540,7 +550,11 @@ impl DesignConfiguration {
                     for name in variant_order {
                         let variant = variants.remove_entry(&name).ok_or_else(&invalid_order)?;
                         {
-                            admission.reserve_vec(&mut entries, 1, "order configuration variants")?;
+                            admission.reserve_vec(
+                                &mut entries,
+                                1,
+                                "order configuration variants",
+                            )?;
                         }
                         entries.push(variant);
                     }
@@ -693,8 +707,14 @@ impl TryFrom<DesignConfigurationWire> for DesignConfiguration {
         let Value::Object(payload) = wire.payload else {
             return Err("payload must be an object".into());
         };
-        let mut record = Self::try_new_with_admission(RecordAdmission::Admitted, wire.entry_name, wire.kind, wire.variant_order, payload)
-            .map_err(|error| error.to_string())?;
+        let mut record = Self::try_new_with_admission(
+            RecordAdmission::Admitted,
+            wire.entry_name,
+            wire.kind,
+            wire.variant_order,
+            payload,
+        )
+        .map_err(|error| error.to_string())?;
         record.identity_scope = scope;
         Ok(record)
     }

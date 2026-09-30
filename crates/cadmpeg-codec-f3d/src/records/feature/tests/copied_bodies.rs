@@ -16,7 +16,22 @@ fn copied_wire() -> serde_json::Value {
 fn copied_bodies_reject_empty_aliased_and_misaligned_rows() {
     let admitted: DesignCopyPasteBodiesOperation = serde_json::from_value(copied_wire()).unwrap();
     let construct = |bodies| {
-        crate::test_support::with_decode_context(|ctx| DesignCopyPasteBodiesOperation::try_new_charged(ctx, bodies, crate::records::feature::body_ops::CopyPasteRecordLocation { record_index: 501, class_tag: "264".to_owned().try_into().unwrap(), byte_offset: 100 }, crate::records::feature::body_ops::CopyPasteRecordLocation { record_index: 503, class_tag: "264".to_owned().try_into().unwrap(), byte_offset: 200 }))
+        crate::test_support::with_decode_context(|ctx| {
+            DesignCopyPasteBodiesOperation::try_new_charged(
+                ctx,
+                bodies,
+                crate::records::feature::body_ops::CopyPasteRecordLocation {
+                    record_index: 501,
+                    class_tag: "264".to_owned().try_into().unwrap(),
+                    byte_offset: 100,
+                },
+                crate::records::feature::body_ops::CopyPasteRecordLocation {
+                    record_index: 503,
+                    class_tag: "264".to_owned().try_into().unwrap(),
+                    byte_offset: 200,
+                },
+            )
+        })
     };
     assert!(construct(Vec::new()).is_err());
     for lane in 0..5 {

@@ -291,6 +291,8 @@ fn face_operand_invalid_entity_refuses_retained_limit() {
 #[test]
 fn face_operand_rejects_overflowed_node_offset() {
     let error = face_error(Case::OverflowNodeOffset, u64::MAX, u64::MAX);
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
-        if message == "F3D face recipe node offset overflows"));
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
+        if message == "F3D face recipe node offset overflows")
+    );
 }

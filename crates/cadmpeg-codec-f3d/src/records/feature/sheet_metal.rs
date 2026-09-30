@@ -147,12 +147,28 @@ struct FlangeOwnerColumns<'a> {
 
 impl DesignEdgeFlangeShape {
     pub(crate) fn edges(&self) -> impl Iterator<Item = &DesignEdgeFlangeEdge> {
-        let FlangeEdgeColumns { shared, symmetric, two_sided } = match self {
+        let FlangeEdgeColumns {
+            shared,
+            symmetric,
+            two_sided,
+        } = match self {
             Self::FullEdge { edges, .. }
             | Self::Symmetric { edges, .. }
-            | Self::TwoSides { edges, .. } => FlangeEdgeColumns { shared: edges, symmetric: &[], two_sided: &[] },
-            Self::SymmetricPerEdge(edges) => FlangeEdgeColumns { shared: &[], symmetric: edges, two_sided: &[] },
-            Self::TwoSidesPerEdge { edges, .. } => FlangeEdgeColumns { shared: &[], symmetric: &[], two_sided: edges },
+            | Self::TwoSides { edges, .. } => FlangeEdgeColumns {
+                shared: edges,
+                symmetric: &[],
+                two_sided: &[],
+            },
+            Self::SymmetricPerEdge(edges) => FlangeEdgeColumns {
+                shared: &[],
+                symmetric: edges,
+                two_sided: &[],
+            },
+            Self::TwoSidesPerEdge { edges, .. } => FlangeEdgeColumns {
+                shared: &[],
+                symmetric: &[],
+                two_sided: edges,
+            },
         };
         shared
             .iter()
@@ -185,12 +201,36 @@ impl DesignEdgeFlangeShape {
     }
 
     pub(crate) fn owner_indices(&self) -> impl Iterator<Item = &u32> {
-        let FlangeOwnerColumns { shared, symmetric, two_sided } = match self {
-            Self::FullEdge { .. } => FlangeOwnerColumns { shared: &[], symmetric: &[], two_sided: &[] },
-            Self::Symmetric { owner, .. } => FlangeOwnerColumns { shared: std::slice::from_ref(owner), symmetric: &[], two_sided: &[] },
-            Self::TwoSides { owners, .. } => FlangeOwnerColumns { shared: owners, symmetric: &[], two_sided: &[] },
-            Self::SymmetricPerEdge(edges) => FlangeOwnerColumns { shared: &[], symmetric: edges, two_sided: &[] },
-            Self::TwoSidesPerEdge { edges, .. } => FlangeOwnerColumns { shared: &[], symmetric: &[], two_sided: edges },
+        let FlangeOwnerColumns {
+            shared,
+            symmetric,
+            two_sided,
+        } = match self {
+            Self::FullEdge { .. } => FlangeOwnerColumns {
+                shared: &[],
+                symmetric: &[],
+                two_sided: &[],
+            },
+            Self::Symmetric { owner, .. } => FlangeOwnerColumns {
+                shared: std::slice::from_ref(owner),
+                symmetric: &[],
+                two_sided: &[],
+            },
+            Self::TwoSides { owners, .. } => FlangeOwnerColumns {
+                shared: owners,
+                symmetric: &[],
+                two_sided: &[],
+            },
+            Self::SymmetricPerEdge(edges) => FlangeOwnerColumns {
+                shared: &[],
+                symmetric: edges,
+                two_sided: &[],
+            },
+            Self::TwoSidesPerEdge { edges, .. } => FlangeOwnerColumns {
+                shared: &[],
+                symmetric: &[],
+                two_sided: edges,
+            },
         };
         shared
             .iter()

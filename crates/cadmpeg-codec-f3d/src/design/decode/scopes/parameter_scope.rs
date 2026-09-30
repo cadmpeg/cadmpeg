@@ -142,7 +142,10 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
                 {
-                    let Some(entity_reference_offset) = scope.byte_offset().checked_add(u64_from_index(relative_offset)) else {
+                    let Some(entity_reference_offset) = scope
+                        .byte_offset()
+                        .checked_add(u64_from_index(relative_offset))
+                    else {
                         continue;
                     };
                     if let scope::DesignScopePayloadMut::Sketch(slot)
@@ -950,7 +953,12 @@ pub(in crate::design::decode) fn parse_parameter_scope(
         let mut named_candidate = None;
         let mut named_ambiguous = false;
         let kind_scan_end = paired_at.checked_sub(72)?;
-        for at in (start.checked_add(11)?..paired_at).rev().take(590 + 4 + 2 * 256).rev().take_while(|at| *at < kind_scan_end) {
+        for at in (start.checked_add(11)?..paired_at)
+            .rev()
+            .take(590 + 4 + 2 * 256)
+            .rev()
+            .take_while(|at| *at < kind_scan_end)
+        {
             let (kind, kind_end, _reservation) =
                 match lp_utf16_bounded_scoped(ctx, bytes, at, 1..=256) {
                     Ok(Some(decoded)) => decoded,
@@ -1187,8 +1195,9 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                 extent: coil_discriminators
                     .as_ref()
                     .and_then(|fields| fields.extent),
-                section: coil_discriminators.as_ref().map(|fields| {
-                    match fields.section_offset {
+                section: coil_discriminators
+                    .as_ref()
+                    .map(|fields| match fields.section_offset {
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(
                             crate::records::identity::RecordedValue {
                                 value: fields.section,
@@ -1198,8 +1207,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
                         None => {
                             crate::records::identity::MaybeRecordedValue::Unlocated(fields.section)
                         }
-                    }
-                }),
+                    }),
                 section_placement: coil_discriminators.as_ref().map(|fields| {
                     match fields.section_placement_offset {
                         Some(offset) => crate::records::identity::MaybeRecordedValue::Located(

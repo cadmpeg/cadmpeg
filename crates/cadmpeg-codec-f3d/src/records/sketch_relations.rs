@@ -7,9 +7,9 @@ use super::{
     identity::{Located, ReferenceRun},
     references::DesignClassTag,
 };
+use crate::records::admission::RecordAdmission;
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::decode::DecodeContext;
-use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{Deserialize, Serialize};
@@ -868,42 +868,45 @@ fn zip_relation_members(
     let offsets = pad_or_check(admission, "member_offsets", offsets, len)?;
     let resolved = pad_resolved(admission, "resolved_members", resolved, len)?;
     let ordinals = if ordinals.is_empty() {
-        admission.collect_vec((0..len).map(|_| None), "admit sketch relation ordinals")
+        admission
+            .collect_vec((0..len).map(|_| None), "admit sketch relation ordinals")
             .map_err(SketchRelationWireError::Resource)?
     } else if ordinals.len() == len {
-        admission.collect_vec(
-            ordinals.into_iter().map(Some),
-            "admit sketch relation ordinals",
-        )
-        .map_err(SketchRelationWireError::Resource)?
+        admission
+            .collect_vec(
+                ordinals.into_iter().map(Some),
+                "admit sketch relation ordinals",
+            )
+            .map_err(SketchRelationWireError::Resource)?
     } else {
         return Err(SketchRelationPayloadError(
             "sketch relation member_relation_ordinals length does not match members".into(),
         )
         .into());
     };
-    admission.try_collect_vec(
-        (members
-            .into_iter()
-            .zip(offsets)
-            .zip(ordinals)
-            .zip(resolved)
-            .map(|(((record_index, offset), relation_ordinal), resolved)| {
-                Ok(SketchRelationMember {
-                    reference: SketchRelationReference::from_wire(
-                        record_index,
-                        resolved,
-                        "resolved_members",
-                    )?,
-                    offset,
-                    relation_ordinal,
-                })
-            }))
-        .map(|item| item.map_err(SketchRelationWireError::Payload)),
-        "admit sketch relation members",
-    )?
-    .try_into()
-    .map_err(Into::into)
+    admission
+        .try_collect_vec(
+            (members
+                .into_iter()
+                .zip(offsets)
+                .zip(ordinals)
+                .zip(resolved)
+                .map(|(((record_index, offset), relation_ordinal), resolved)| {
+                    Ok(SketchRelationMember {
+                        reference: SketchRelationReference::from_wire(
+                            record_index,
+                            resolved,
+                            "resolved_members",
+                        )?,
+                        offset,
+                        relation_ordinal,
+                    })
+                }))
+            .map(|item| item.map_err(SketchRelationWireError::Payload)),
+            "admit sketch relation members",
+        )?
+        .try_into()
+        .map_err(Into::into)
 }
 
 fn zip_return_members(
@@ -915,24 +918,25 @@ fn zip_return_members(
     let len = members.len();
     let offsets = pad_or_check(admission, "return_member_offsets", offsets, len)?;
     let resolved = pad_resolved(admission, "resolved_return_members", resolved, len)?;
-    admission.try_collect_vec(
-        (members.into_iter().zip(offsets).zip(resolved).map(
-            |((record_index, offset), resolved)| {
-                Ok(SketchRelationReturnMember {
-                    reference: SketchRelationReference::from_wire(
-                        record_index,
-                        resolved,
-                        "resolved_return_members",
-                    )?,
-                    offset,
-                })
-            },
-        ))
-        .map(|item| item.map_err(SketchRelationWireError::Payload)),
-        "admit sketch relation return members",
-    )?
-    .try_into()
-    .map_err(Into::into)
+    admission
+        .try_collect_vec(
+            (members.into_iter().zip(offsets).zip(resolved).map(
+                |((record_index, offset), resolved)| {
+                    Ok(SketchRelationReturnMember {
+                        reference: SketchRelationReference::from_wire(
+                            record_index,
+                            resolved,
+                            "resolved_return_members",
+                        )?,
+                        offset,
+                    })
+                },
+            ))
+            .map(|item| item.map_err(SketchRelationWireError::Payload)),
+            "admit sketch relation return members",
+        )?
+        .try_into()
+        .map_err(Into::into)
 }
 
 fn pad_or_check(
@@ -942,7 +946,8 @@ fn pad_or_check(
     len: usize,
 ) -> Result<Vec<u32>, SketchRelationWireError> {
     if values.is_empty() {
-        admission.alloc_filled(len, 0, "pad sketch relation offsets")
+        admission
+            .alloc_filled(len, 0, "pad sketch relation offsets")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
         Ok(values)
@@ -962,14 +967,16 @@ fn pad_resolved(
     len: usize,
 ) -> Result<Vec<Option<SketchRelationOperand>>, SketchRelationWireError> {
     if values.is_empty() {
-        admission.alloc_filled(len, None, "pad sketch relation resolutions")
+        admission
+            .alloc_filled(len, None, "pad sketch relation resolutions")
             .map_err(SketchRelationWireError::Resource)
     } else if values.len() == len {
-        admission.collect_vec(
-            values.into_iter().map(Some),
-            "admit sketch relation resolutions",
-        )
-        .map_err(SketchRelationWireError::Resource)
+        admission
+            .collect_vec(
+                values.into_iter().map(Some),
+                "admit sketch relation resolutions",
+            )
+            .map_err(SketchRelationWireError::Resource)
     } else {
         Err(SketchRelationPayloadError(format!(
             "sketch relation {name} length {} does not match members {len}",
@@ -1031,7 +1038,8 @@ impl TryFrom<SketchRelationSerde> for SketchRelation {
     type Error = SketchRelationPayloadError;
 
     fn try_from(wire: SketchRelationSerde) -> Result<Self, Self::Error> {
-Self::from_wire_with_context(RecordAdmission::Admitted, wire).map_err(|error| match error {
+        Self::from_wire_with_admission(RecordAdmission::Admitted, wire).map_err(|error| match error
+        {
             SketchRelationWireError::Payload(error) => error,
             SketchRelationWireError::Resource(error) => {
                 SketchRelationPayloadError(error.to_string())
@@ -1045,13 +1053,15 @@ impl SketchRelation {
         ctx: &DecodeContext<'_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, CodecError> {
-        Self::from_wire_with_context(RecordAdmission::Charged(ctx), wire).map_err(|error| match error {
-            SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
-            SketchRelationWireError::Resource(error) => error,
+        Self::from_wire_with_admission(RecordAdmission::Charged(ctx), wire).map_err(|error| {
+            match error {
+                SketchRelationWireError::Payload(error) => CodecError::Malformed(error.0),
+                SketchRelationWireError::Resource(error) => error,
+            }
         })
     }
 
-    fn from_wire_with_context(
+    fn from_wire_with_admission(
         admission: RecordAdmission<'_, '_>,
         wire: SketchRelationSerde,
     ) -> Result<Self, SketchRelationWireError> {
@@ -1085,14 +1095,15 @@ impl SketchRelation {
             owner_reference: wire.owner_reference,
             owner_entity_id: cadmpeg_core::text::NonBlankString::new(wire.owner_entity_id),
             auxiliary_references: ReferenceRun::located(
-                admission.collect_vec(
-                    wire.auxiliary_references
-                        .into_iter()
-                        .zip(wire.auxiliary_reference_offsets)
-                        .map(|(value, offset)| Located { value, offset }),
-                    "admit sketch relation auxiliary references",
-                )
-                .map_err(SketchRelationWireError::Resource)?,
+                admission
+                    .collect_vec(
+                        wire.auxiliary_references
+                            .into_iter()
+                            .zip(wire.auxiliary_reference_offsets)
+                            .map(|(value, offset)| Located { value, offset }),
+                        "admit sketch relation auxiliary references",
+                    )
+                    .map_err(SketchRelationWireError::Resource)?,
             ),
             rectangular_counted_reference_count: wire.rectangular_counted_reference_count,
             members: zip_relation_members(

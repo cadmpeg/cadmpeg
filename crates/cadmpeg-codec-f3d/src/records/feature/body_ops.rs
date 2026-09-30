@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Whole-body operations: scale and copy-paste bodies.
 
+use crate::records::admission::RecordAdmission;
 use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use crate::records::serde_column::SliceColumn;
 use cadmpeg_core::decode::DecodeContext;
-use crate::records::admission::RecordAdmission;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
 use serde::{Deserialize, Serialize};
@@ -235,10 +235,12 @@ impl DesignCopyPasteBodiesOperation {
         body_group: CopyPasteRecordLocation,
         relation: CopyPasteRecordLocation,
     ) -> Result<Self, CodecError> {
-        Self::try_new_inner(RecordAdmission::Charged(ctx), bodies, body_group, relation).map_err(|error| match error {
-            CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
-            CopyPasteBodiesError::Resource(error) => error,
-        })
+        Self::try_new_inner(RecordAdmission::Charged(ctx), bodies, body_group, relation).map_err(
+            |error| match error {
+                CopyPasteBodiesError::Payload(message) => CodecError::Malformed(message),
+                CopyPasteBodiesError::Resource(error) => error,
+            },
+        )
     }
 
     fn try_new_inner(
@@ -263,15 +265,18 @@ impl DesignCopyPasteBodiesOperation {
         let mut suffixes = std::collections::HashSet::new();
         for (ordinal, body) in bodies.iter().enumerate() {
             let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
-            let operand_offset = ordinal.checked_mul(11)
+            let operand_offset = ordinal
+                .checked_mul(11)
                 .and_then(|delta| body_group_byte_offset.checked_add(delta))
                 .and_then(|offset| offset.checked_add(26))
                 .ok_or("body operand offsets overflow")?;
-            let source_offset = ordinal.checked_mul(30)
+            let source_offset = ordinal
+                .checked_mul(30)
                 .and_then(|delta| relation_byte_offset.checked_add(delta))
                 .and_then(|offset| offset.checked_add(25))
                 .ok_or("body source offsets overflow")?;
-            let copied_offset = source_offset.checked_add(15)
+            let copied_offset = source_offset
+                .checked_add(15)
                 .ok_or("body copied offsets overflow")?;
             for suffix in [body.source.value, body.copied.value] {
                 if suffixes.contains(&suffix) {
@@ -279,7 +284,8 @@ impl DesignCopyPasteBodiesOperation {
                 }
                 {
                     let operation = "index F3D copied body suffixes";
-                    admission.reserve_set(&mut suffixes, 1, operation)
+                    admission
+                        .reserve_set(&mut suffixes, 1, operation)
                         .map_err(CopyPasteBodiesError::Resource)?;
                 }
                 suffixes.insert(suffix);
@@ -344,38 +350,53 @@ impl TryFrom<DesignCopyPasteBodiesOperationWire> for DesignCopyPasteBodiesOperat
                 "copied_body_entity_suffix_offsets must match body_operand_record_indices".into(),
             );
         }
-        let mut bodies = DecodeContext::admitted_vec(count, "reconstruct F3D copied bodies").map_err(|error| error.to_string())?;
-        bodies.extend(wire
-            .body_operand_record_indices
-            .into_iter()
-            .zip(wire.body_operand_record_offsets)
-            .zip(
-                wire.source_body_entity_suffixes
-                    .into_iter()
-                    .zip(wire.source_body_entity_suffix_offsets),
-            )
-            .zip(
-                wire.copied_body_entity_suffixes
-                    .into_iter()
-                    .zip(wire.copied_body_entity_suffix_offsets),
-            )
-            .map(
-                |(((value, offset), (source, source_offset)), (copied, copied_offset))| {
-                    DesignCopiedBody {
-                        operand: Located { value, offset },
-                        source: Located {
-                            value: source,
-                            offset: source_offset,
-                        },
-                        copied: Located {
-                            value: copied,
-                            offset: copied_offset,
-                        },
-                    }
-                },
-            )
-            );
-        Self::try_new_inner(RecordAdmission::Admitted, bodies, CopyPasteRecordLocation { record_index: wire.body_group_record_index, class_tag: wire.body_group_class_tag.try_into()?, byte_offset: wire.body_group_byte_offset }, CopyPasteRecordLocation { record_index: wire.relation_record_index, class_tag: wire.relation_class_tag.try_into()?, byte_offset: wire.relation_byte_offset }).map_err(|error| match error {
+        let mut bodies = DecodeContext::admitted_vec(count, "reconstruct F3D copied bodies")
+            .map_err(|error| error.to_string())?;
+        bodies.extend(
+            wire.body_operand_record_indices
+                .into_iter()
+                .zip(wire.body_operand_record_offsets)
+                .zip(
+                    wire.source_body_entity_suffixes
+                        .into_iter()
+                        .zip(wire.source_body_entity_suffix_offsets),
+                )
+                .zip(
+                    wire.copied_body_entity_suffixes
+                        .into_iter()
+                        .zip(wire.copied_body_entity_suffix_offsets),
+                )
+                .map(
+                    |(((value, offset), (source, source_offset)), (copied, copied_offset))| {
+                        DesignCopiedBody {
+                            operand: Located { value, offset },
+                            source: Located {
+                                value: source,
+                                offset: source_offset,
+                            },
+                            copied: Located {
+                                value: copied,
+                                offset: copied_offset,
+                            },
+                        }
+                    },
+                ),
+        );
+        Self::try_new_inner(
+            RecordAdmission::Admitted,
+            bodies,
+            CopyPasteRecordLocation {
+                record_index: wire.body_group_record_index,
+                class_tag: wire.body_group_class_tag.try_into()?,
+                byte_offset: wire.body_group_byte_offset,
+            },
+            CopyPasteRecordLocation {
+                record_index: wire.relation_record_index,
+                class_tag: wire.relation_class_tag.try_into()?,
+                byte_offset: wire.relation_byte_offset,
+            },
+        )
+        .map_err(|error| match error {
             CopyPasteBodiesError::Payload(message) => message,
             CopyPasteBodiesError::Resource(error) => error.to_string(),
         })

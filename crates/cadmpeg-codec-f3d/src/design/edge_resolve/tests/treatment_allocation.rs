@@ -107,10 +107,19 @@ fn assert_treatment_refusal(operation: &'static str, retained: bool, valid_corne
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         match resolved_edge_treatment_group_with_corners(
-&selection_group,
-crate::design::edge_resolve::EdgeTreatmentInputs { groups: std::slice::from_ref(&selection_group), operands: std::slice::from_ref(&edge), identity_operands: &[], vertex_operands: std::slice::from_ref(&corner), histories: std::slice::from_ref(&history), previous_state_id: Some(7), feature_id: &feature_id, treatment_radius: None },
-&ctx,
-) {
+            &selection_group,
+            crate::design::edge_resolve::EdgeTreatmentInputs {
+                groups: std::slice::from_ref(&selection_group),
+                operands: std::slice::from_ref(&edge),
+                identity_operands: &[],
+                vertex_operands: std::slice::from_ref(&corner),
+                histories: std::slice::from_ref(&history),
+                previous_state_id: Some(7),
+                feature_id: &feature_id,
+                treatment_radius: None,
+            },
+            &ctx,
+        ) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected treatment refusal at {operation}: {other:?}"),

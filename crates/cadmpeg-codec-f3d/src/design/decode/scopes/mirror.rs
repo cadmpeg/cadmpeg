@@ -329,12 +329,18 @@ pub(crate) fn bind_mirror_constructions(
             let records =
                 cached_owned_record_offsets(ctx, &mut record_offset_index, &stream, bytes)?;
             parse_face_operand(
-ctx,
-bytes,
-records,
-crate::design::decode::operands::FaceOperandFrame { scope: &scopes[index], scope_reference_ordinal: plane_group.scope_reference_ordinal, group_ownership: Some((plane_group.record_index, 0)), next_byte_offset: None, header: plane_header },
-recipes,
-)
+                ctx,
+                bytes,
+                records,
+                crate::design::decode::operands::FaceOperandFrame {
+                    scope: &scopes[index],
+                    scope_reference_ordinal: plane_group.scope_reference_ordinal,
+                    group_ownership: Some((plane_group.record_index, 0)),
+                    next_byte_offset: None,
+                    header: plane_header,
+                },
+                recipes,
+            )
             .transpose()?
             .is_some()
         };

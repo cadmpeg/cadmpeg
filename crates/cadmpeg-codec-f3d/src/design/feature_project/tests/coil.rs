@@ -89,8 +89,7 @@ fn long_coil_fixture() -> (DesignParameterScope, [DesignParameter; 5]) {
         | crate::records::feature::scope::DesignScopePayloadMut::CoilPrimitive(slot) =
             scope.payload_mut()
         {
-            slot.get_or_insert_with(Default::default)
-                .section_placement =
+            slot.get_or_insert_with(Default::default).section_placement =
                 value.map(crate::records::identity::MaybeRecordedValue::Unlocated);
         }
     }

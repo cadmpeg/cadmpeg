@@ -1029,7 +1029,8 @@ fn arrangement_node(
 }
 
 fn arrangement_cycle_work(edge_count: usize, ctx: &DecodeContext<'_>) -> Result<usize, CodecError> {
-    edge_count.checked_mul(edge_count)
+    edge_count
+        .checked_mul(edge_count)
         .ok_or_else(|| ctx.refuse_codec_limit("F3D arrangement cycle work", 0, u64::MAX))
 }
 
@@ -3145,8 +3146,12 @@ pub(super) fn closed_sketch_profiles(
         let cell = (u, v);
         for u_offset in -1..=1 {
             for v_offset in -1..=1 {
-                let Some(adjacent_u) = cell.0.checked_add(u_offset) else { continue; };
-                let Some(adjacent_v) = cell.1.checked_add(v_offset) else { continue; };
+                let Some(adjacent_u) = cell.0.checked_add(u_offset) else {
+                    continue;
+                };
+                let Some(adjacent_v) = cell.1.checked_add(v_offset) else {
+                    continue;
+                };
                 let adjacent = (adjacent_u, adjacent_v);
                 for candidate in endpoint_cells.get(&adjacent).into_iter().flatten() {
                     if sketch_endpoints_close(point, endpoints[*candidate], linear_tolerance) {

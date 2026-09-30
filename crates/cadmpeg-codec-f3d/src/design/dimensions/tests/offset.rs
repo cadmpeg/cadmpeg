@@ -929,11 +929,18 @@ fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     bind_dimension_loci(
-&ctx,
-crate::design::dimensions::DimensionLocusInputs { placements: &[placement("A", 100), placement("B", 200)], owners: &[owner("A"), owner("B")], pairs: &[pair("A"), pair("B")], groups: &[], annotation_frames: &[], null_pairs: &[] },
-&mut points,
-&mut [],
-)
+        &ctx,
+        crate::design::dimensions::DimensionLocusInputs {
+            placements: &[placement("A", 100), placement("B", 200)],
+            owners: &[owner("A"), owner("B")],
+            pairs: &[pair("A"), pair("B")],
+            groups: &[],
+            annotation_frames: &[],
+            null_pairs: &[],
+        },
+        &mut points,
+        &mut [],
+    )
     .unwrap();
     assert_eq!(
         points
@@ -1008,16 +1015,16 @@ fn dimension_placement_scope_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        bind_dimension_loci(
-&ctx,
-crate::design::dimensions::DimensionLocusInputs { placements: &[placement], owners: &[], pairs: &[], groups: &[], annotation_frames: &[], null_pairs: &[] },
-&mut [],
-&mut [],
-),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension placement scope"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
+            bind_dimension_loci(
+    &ctx,
+    crate::design::dimensions::DimensionLocusInputs { placements: &[placement], owners: &[], pairs: &[], groups: &[], annotation_frames: &[], null_pairs: &[] },
+    &mut [],
+    &mut [],
+    ),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d dimension placement scope"
+                    && failure.dimension == ResourceDimension::CollectionItems
+        ));
 }
 
 #[test]
@@ -1048,16 +1055,16 @@ fn dimension_companion_scope_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(matches!(
-        bind_dimension_loci(
-&ctx,
-crate::design::dimensions::DimensionLocusInputs { placements: &[], owners: &[owner], pairs: &[], groups: &[], annotation_frames: &[], null_pairs: &[] },
-&mut [],
-&mut [],
-),
-        Err(CodecError::ResourceLimit(failure))
-            if failure.operation == "f3d dimension companion scope"
-                && failure.dimension == ResourceDimension::CollectionItems
-    ));
+            bind_dimension_loci(
+    &ctx,
+    crate::design::dimensions::DimensionLocusInputs { placements: &[], owners: &[owner], pairs: &[], groups: &[], annotation_frames: &[], null_pairs: &[] },
+    &mut [],
+    &mut [],
+    ),
+            Err(CodecError::ResourceLimit(failure))
+                if failure.operation == "f3d dimension companion scope"
+                    && failure.dimension == ResourceDimension::CollectionItems
+        ));
 }
 
 mod refusal_spatial_counted_offset;

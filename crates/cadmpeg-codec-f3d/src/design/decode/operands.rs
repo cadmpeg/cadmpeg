@@ -981,12 +981,18 @@ pub(crate) fn decode_face_operands(
                         .map(|header| header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
-ctx,
-bytes,
-records,
-crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal: group.scope_reference_ordinal, group_ownership: Some((group.record_index, group_member_ordinal)), next_byte_offset, header },
-recipes,
-) {
+                ctx,
+                bytes,
+                records,
+                crate::design::decode::operands::FaceOperandFrame {
+                    scope,
+                    scope_reference_ordinal: group.scope_reference_ordinal,
+                    group_ownership: Some((group.record_index, group_member_ordinal)),
+                    next_byte_offset,
+                    header,
+                },
+                recipes,
+            ) {
                 ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
@@ -1072,12 +1078,18 @@ recipes,
                 None
             };
             if let Some(operand) = parse_face_operand(
-ctx,
-bytes,
-records,
-crate::design::decode::operands::FaceOperandFrame { scope, scope_reference_ordinal, group_ownership: None, next_byte_offset, header },
-recipes,
-) {
+                ctx,
+                bytes,
+                records,
+                crate::design::decode::operands::FaceOperandFrame {
+                    scope,
+                    scope_reference_ordinal,
+                    group_ownership: None,
+                    next_byte_offset,
+                    header,
+                },
+                recipes,
+            ) {
                 ctx.reserve_vec(&mut out, 1, "f3d face operand output")?;
                 out.push(operand?);
             }
@@ -1266,7 +1278,8 @@ fn face_source_reference_headers<'a, 'r>(
         "f3d face source reference headers",
     )?;
     for record_index in references {
-        let header = scope_start.checked_add(indexed_header::LEN)
+        let header = scope_start
+            .checked_add(indexed_header::LEN)
             .and_then(|at| records.first_at_or_after(at, *record_index))
             .and_then(|byte_offset| {
                 lp_ascii_filtered_view(bytes, byte_offset, 3..=3, u8::is_ascii_digit).map(
@@ -2460,7 +2473,11 @@ pub(super) fn parse_construction_operand_group(
     cursor += 4;
     // A reference is at least one byte, so a count the remaining bytes cannot
     // supply is corrupt and must not reach the allocator.
-    if bytes.len().checked_sub(cursor).is_none_or(|remaining| index_from_u32(member_count) > remaining) {
+    if bytes
+        .len()
+        .checked_sub(cursor)
+        .is_none_or(|remaining| index_from_u32(member_count) > remaining)
+    {
         return NotAGroup;
     }
     let mut members = Vec::new();
@@ -2509,7 +2526,11 @@ pub(super) fn parse_construction_operand_group(
         return NotAGroup;
     };
     cursor += 4;
-    if bytes.len().checked_sub(cursor).is_none_or(|remaining| index_from_u32(trailing_count) > remaining) {
+    if bytes
+        .len()
+        .checked_sub(cursor)
+        .is_none_or(|remaining| index_from_u32(trailing_count) > remaining)
+    {
         return NotAGroup;
     }
     let mut trailing_records = Vec::new();
@@ -3461,16 +3482,26 @@ enum TrackingIdentityField {
 fn take_optional_tracking_identity(bytes: &[u8], cursor: &mut usize) -> TrackingIdentityField {
     match View::u32_le_at(bytes, *cursor) {
         Some(0) => {
-            let Some(next) = (*cursor).checked_add(4) else { return TrackingIdentityField::Invalid; };
+            let Some(next) = (*cursor).checked_add(4) else {
+                return TrackingIdentityField::Invalid;
+            };
             *cursor = next;
             TrackingIdentityField::Absent
         }
         Some(1) => {
-            let Some(value_at) = (*cursor).checked_add(4) else { return TrackingIdentityField::Invalid; };
-            let Some(value) = View::u64_le_at(bytes, value_at) else { return TrackingIdentityField::Invalid; };
-            let Some(next) = value_at.checked_add(8) else { return TrackingIdentityField::Invalid; };
+            let Some(value_at) = (*cursor).checked_add(4) else {
+                return TrackingIdentityField::Invalid;
+            };
+            let Some(value) = View::u64_le_at(bytes, value_at) else {
+                return TrackingIdentityField::Invalid;
+            };
+            let Some(next) = value_at.checked_add(8) else {
+                return TrackingIdentityField::Invalid;
+            };
             *cursor = next;
-            let Ok(offset) = u64::try_from(value_at) else { return TrackingIdentityField::Invalid; };
+            let Ok(offset) = u64::try_from(value_at) else {
+                return TrackingIdentityField::Invalid;
+            };
             TrackingIdentityField::Present(crate::records::identity::Located { value, offset })
         }
         _ => TrackingIdentityField::Invalid,
@@ -6219,7 +6250,13 @@ pub(super) fn parse_face_operand(
     input: FaceOperandFrame<'_>,
     recipes: &[ConstructionRecipe],
 ) -> Option<Result<DesignFaceOperand, CodecError>> {
-    let FaceOperandFrame { scope, scope_reference_ordinal, group_ownership, next_byte_offset, header } = input;
+    let FaceOperandFrame {
+        scope,
+        scope_reference_ordinal,
+        group_ownership,
+        next_byte_offset,
+        header,
+    } = input;
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = [0usize; 5];
     let mut position = start.checked_add(11)?;

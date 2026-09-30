@@ -1022,35 +1022,44 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
         if wire.return_members.len() != wire.return_member_offsets.len() {
             return Err("return_members and return_member_offsets must have equal lengths".into());
         }
-        Self::try_new_inner(RecordAdmission::Admitted,DesignDimensionAnnotationFrameDraft {
-            return_members: wire
-                .return_members
-                .into_iter()
-                .zip(wire.return_member_offsets)
-                .map(|(value, offset)| {
-                    let value = NonZeroU32::new(value)
-                        .ok_or("return_members must contain nonzero geometry indices")?;
-                    Ok(Located { value, offset })
-                })
-                .collect::<Result<_, Self::Error>>()?,
-            id: wire.id,
-            companion_record_index: wire.companion_record_index,
-            governing_companion_record_index: wire.governing_companion_record_index,
-            byte_offset: wire.byte_offset,
-            class_tag: wire.class_tag.try_into()?,
-            record_index: wire.record_index,
-            frame_length: wire.frame_length,
-            operands: wire.operands,
-            entity_genesis: wire.entity_genesis,
-            annotation_bytes: wire.annotation_bytes,
-            annotation_byte_offset: wire.annotation_byte_offset,
-            governing_owner_record_index: wire.governing_owner_record_index,
-            governing_owner_reference_offset: wire.governing_owner_reference_offset,
-            paired_class_tag: wire.paired_class_tag.try_into()?,
-            paired_byte_offset: wire.paired_byte_offset,
-            owner_reference: wire.owner_reference,
-            owner_reference_offset: wire.owner_reference_offset,
-        }).map_err(|error| match error {
+        let mut return_members = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.return_members.len(),
+            "reconstruct F3D annotation return members",
+        )
+        .map_err(|error| error.to_string())?;
+        for (value, offset) in wire
+            .return_members
+            .into_iter()
+            .zip(wire.return_member_offsets)
+        {
+            let value = NonZeroU32::new(value)
+                .ok_or("return_members must contain nonzero geometry indices")?;
+            return_members.push(Located { value, offset });
+        }
+        Self::try_new_inner(
+            RecordAdmission::Admitted,
+            DesignDimensionAnnotationFrameDraft {
+                return_members,
+                id: wire.id,
+                companion_record_index: wire.companion_record_index,
+                governing_companion_record_index: wire.governing_companion_record_index,
+                byte_offset: wire.byte_offset,
+                class_tag: wire.class_tag.try_into()?,
+                record_index: wire.record_index,
+                frame_length: wire.frame_length,
+                operands: wire.operands,
+                entity_genesis: wire.entity_genesis,
+                annotation_bytes: wire.annotation_bytes,
+                annotation_byte_offset: wire.annotation_byte_offset,
+                governing_owner_record_index: wire.governing_owner_record_index,
+                governing_owner_reference_offset: wire.governing_owner_reference_offset,
+                paired_class_tag: wire.paired_class_tag.try_into()?,
+                paired_byte_offset: wire.paired_byte_offset,
+                owner_reference: wire.owner_reference,
+                owner_reference_offset: wire.owner_reference_offset,
+            },
+        )
+        .map_err(|error| match error {
             AnnotationFrameBuildError::Invalid(message) => message,
             AnnotationFrameBuildError::Resource(error) => error.to_string(),
         })
@@ -1363,22 +1372,27 @@ impl TryFrom<DesignDimensionLocusGroupWire> for DesignDimensionLocusGroup {
         if u64::from(wire.unknown_constraint_bits) != unknown {
             return Err("unknown_constraint_bits must match state".into());
         }
-        let loci = wire
-            .loci
-            .into_iter()
-            .zip(
-                wire.return_members
-                    .into_iter()
-                    .zip(wire.return_member_offsets),
-            )
-            .map(|(locus, (value, offset))| DesignDimensionLocus {
-                geometry_record_index: locus.geometry_record_index,
-                geometry_reference_offset: locus.geometry_reference_offset,
-                role: locus.role,
-                role_offset: locus.role_offset,
-                returned: Located { value, offset },
-            })
-            .collect();
+        let mut loci = cadmpeg_core::decode::DecodeContext::admitted_vec(
+            wire.loci.len(),
+            "reconstruct F3D dimension loci",
+        )
+        .map_err(|error| error.to_string())?;
+        loci.extend(
+            wire.loci
+                .into_iter()
+                .zip(
+                    wire.return_members
+                        .into_iter()
+                        .zip(wire.return_member_offsets),
+                )
+                .map(|(locus, (value, offset))| DesignDimensionLocus {
+                    geometry_record_index: locus.geometry_record_index,
+                    geometry_reference_offset: locus.geometry_reference_offset,
+                    role: locus.role,
+                    role_offset: locus.role_offset,
+                    returned: Located { value, offset },
+                }),
+        );
         Ok(Self {
             loci,
             id: wire.id,
