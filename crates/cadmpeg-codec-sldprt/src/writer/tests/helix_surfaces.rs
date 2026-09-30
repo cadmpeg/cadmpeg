@@ -434,7 +434,9 @@ fn semantic_writer_round_trips_native_axis_helix() {
         loss.message
             == "1 typed feature(s) retain native or unresolved required operation operands."
     }));
-    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("resource allocation did not fail").findings;
+    let findings = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
+        .expect("resource allocation did not fail")
+        .findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
     {
@@ -538,8 +540,11 @@ fn semantic_writer_rejects_embedded_helix_geometry_edits() {
         let native = sldprt_native(&ir_edit);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         crate::resolved_features::holes::project_helix_axes(
             &ctx,
             &mut ir_edit.model.features,

@@ -48,11 +48,22 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     ]);
 
     assert_eq!(
-        relation_owner_markers(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap(),
+        relation_owner_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers
+        )
+        .unwrap(),
         vec![&owner, &point]
     );
     let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap()
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new(),
+        )
+        .unwrap()
     else {
         panic!("native relation");
     };
@@ -94,9 +105,20 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation)]);
 
-    assert!(!marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
+    assert!(!marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new()
+        )
+        .unwrap(),
         None
     );
 
@@ -121,9 +143,20 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     );
     let markers = HashMap::from([(relation.id(), &relation), (collision.id(), &collision)]);
 
-    assert!(!marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
+    assert!(!marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &HashMap::new()).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &HashMap::new()
+        )
+        .unwrap(),
         None
     );
 }
@@ -175,15 +208,22 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     .with_native_ref(Some(second.id().to_string()));
     let entities = vec![first_entity.clone(), second_entity.clone()];
 
-    assert!(marker_owns_constraint(&cadmpeg_test_support::service_decode_context(), &relation, &markers).unwrap());
+    assert!(marker_owns_constraint(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers
+    )
+    .unwrap());
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &sketch,
             &entities,
             &markers,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::SameCoordinate {
             relation: cadmpeg_ir::sketches::SketchSameCoordinate::try_new(
                 SketchLocus::Entity(first_entity.id().clone()),
@@ -220,7 +260,13 @@ fn object_index_collision_remains_a_forward_curve_operand() {
     )]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Horizontal {
             entity: SketchEntityId::mint("synthetic:test:id#line-entity").unwrap(),
         })
@@ -271,7 +317,13 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
     ]);
 
     assert_eq!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        typed_marker_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::ArcAngle {
             entity: SketchEntityId::mint("synthetic:test:id#operand-entity").unwrap(),
             angle: PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
@@ -334,7 +386,13 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
     ]);
 
     assert_eq!(
-        relation_operand_loci(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap(),
+        relation_operand_loci(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation,
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(vec![
             SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first-point").unwrap()),
             SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second-point").unwrap()),
@@ -384,7 +442,13 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
 
     let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
-    }) = typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &relation, &markers, &loci).unwrap()
+    }) = typed_marker_relation_definition(
+        &cadmpeg_test_support::service_decode_context(),
+        &relation,
+        &markers,
+        &loci,
+    )
+    .unwrap()
     else {
         panic!("native fallback");
     };
@@ -437,13 +501,15 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
     ];
 
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &entities,
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Vertical { entity: exact })
     );
 }
@@ -490,13 +556,15 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
     .with_native_ref(Some(point.id().to_string()));
 
     assert_eq!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Fixed {
             entity: point_id.clone(),
         })
@@ -535,13 +603,15 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
         ),
     ]);
     assert!(matches!(
-        typed_marker_relation_definition_in_sketch(&cadmpeg_test_support::service_decode_context(), 
+        typed_marker_relation_definition_in_sketch(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &[point_entity],
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::Native { .. })
     ));
 }
@@ -572,11 +642,13 @@ fn resolved_wrong_family_relation_is_inactive() {
         .unwrap(),
     )];
 
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &entities
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -607,16 +679,20 @@ fn geometrically_contradicted_point_coincidence_is_inactive() {
     let coincident = point(ids[1].clone(), Point2::new(1.0, 2.0));
     let distinct = point(ids[1].clone(), Point2::new(1.0, 3.0));
 
-    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &[first.clone(), coincident],
-    ).unwrap());
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    )
+    .unwrap());
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition,
         &[first, distinct],
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -655,17 +731,22 @@ fn horizontal_relation_requires_one_line_or_two_points() {
         .unwrap(),
     );
 
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![point.id().clone()]),
         std::slice::from_ref(&point),
-    ).unwrap());
-    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    )
+    .unwrap());
+    assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![line.id().clone()]),
         std::slice::from_ref(&line),
-    ).unwrap());
-    assert!(!marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    )
+    .unwrap());
+    assert!(!marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &definition(vec![
             point.id().clone(),
@@ -681,8 +762,10 @@ fn horizontal_relation_requires_one_line_or_two_points() {
                 .unwrap(),
             ),
         ],
-    ).unwrap());
-    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    )
+    .unwrap());
+    assert!(marker_relation_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         &relation,
         &SketchConstraintDefinitionInput::Native {
             native_kind: cadmpeg_core::text::NonBlankString::new("sldprt:marker-relation:4")
@@ -710,7 +793,8 @@ fn horizontal_relation_requires_one_line_or_two_points() {
             ],
         },
         &[],
-    ).unwrap());
+    )
+    .unwrap());
 }
 
 #[test]
@@ -778,7 +862,12 @@ fn driving_point_distances_resolve_omitted_solver_points() {
         };
 
         assert_eq!(
-            inferred_point_coordinates_by_index(&cadmpeg_test_support::service_decode_context(), &lane, "feature-native").unwrap(),
+            inferred_point_coordinates_by_index(
+                &cadmpeg_test_support::service_decode_context(),
+                &lane,
+                "feature-native"
+            )
+            .unwrap(),
             HashMap::from([
                 (3, [0.008, 0.0]),
                 (4, [0.0015, 0.0]),
@@ -833,7 +922,13 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
         sketch_entities: vec![first, second, third],
     };
 
-    assert!(inferred_point_coordinates_by_index(&cadmpeg_test_support::service_decode_context(), &lane, "feature-native").unwrap().is_empty());
+    assert!(inferred_point_coordinates_by_index(
+        &cadmpeg_test_support::service_decode_context(),
+        &lane,
+        "feature-native"
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]

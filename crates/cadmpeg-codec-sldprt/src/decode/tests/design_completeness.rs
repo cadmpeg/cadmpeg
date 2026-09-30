@@ -1320,8 +1320,8 @@ fn feature_name_index_refuses_caller_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
         .expect_err("feature identity and name require retained bytes");
@@ -1359,8 +1359,8 @@ fn evaluated_feature_states_refuse_caller_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 2;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
         .expect_err("the evaluated feature state consumes a third collection item");
@@ -1398,8 +1398,8 @@ fn global_parameter_owner_refuses_caller_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
         .expect_err("equations owner identity requires retained bytes");

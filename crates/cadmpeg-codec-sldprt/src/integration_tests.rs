@@ -50,9 +50,14 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 }
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
-    let native = crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), result.ir()).unwrap();
+    let native = crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        result.ir(),
+    )
+    .unwrap();
     assert!(native.is_empty(), "{native:#?}");
 }
 
@@ -237,7 +242,8 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let policy = cadmpeg_core::decode::DecodePolicy::service();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .expect("test context");
-    let _ = crate::tessellation::assign_unique_surface_owners(&ctx, &mut decoded.ir_mut().model).unwrap();
+    let _ = crate::tessellation::assign_unique_surface_owners(&ctx, &mut decoded.ir_mut().model)
+        .unwrap();
 
     assert!(decoded.ir().model.tessellations[0].body.is_none());
     assert!(decoded.ir().model.tessellations[0].faces.is_empty());

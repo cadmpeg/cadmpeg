@@ -536,10 +536,17 @@ fn extended_direct_object_line_uses_exact_point_identities() {
         .map(|marker| (marker.id(), *marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &linked_curve, &markers_by_id, &markers).unwrap()
-            .iter()
-            .map(|endpoint| endpoint.id())
-            .collect::<Vec<_>>(),
+        marker_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &linked_curve,
+            &markers_by_id,
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|endpoint| endpoint.id())
+        .collect::<Vec<_>>(),
         ["implicit", "explicit"]
     );
 
@@ -703,20 +710,32 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
     payload[17..21].copy_from_slice(&2u32.to_le_bytes());
     payload[27..29].copy_from_slice(&2u16.to_le_bytes());
     payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
@@ -729,7 +748,14 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         SketchInputKind::Point,
     );
     let ambiguous = [&entities[0], &entities[1], &entities[2], &duplicate];
-    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &ambiguous).unwrap().is_empty());
+    assert!(extended_compact_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[0],
+        &ambiguous
+    )
+    .unwrap()
+    .is_empty());
 
     payload.resize(96 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
     payload[60..64].copy_from_slice(&1u32.to_le_bytes());
@@ -740,14 +766,27 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[92..96].copy_from_slice(&1u32.to_le_bytes());
     payload[96..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
     payload[82..84].fill(0);
-    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap().is_empty());
+    assert!(extended_compact_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[0],
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 
     payload.resize(102, 0);
     payload[56..58].copy_from_slice(&14u16.to_le_bytes());
@@ -756,18 +795,30 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[72..102].fill(0);
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit-fourteen", "explicit"]
     );
     payload[17..21].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit-fourteen", "explicit"]
     );
     payload[17..21].copy_from_slice(&1u32.to_le_bytes());
@@ -779,10 +830,16 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     let markers = roster_indexed.iter().collect::<Vec<_>>();
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &roster_indexed[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &roster_indexed[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit", "explicit-fourteen"]
     );
 
@@ -793,10 +850,16 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[72..116].fill(0);
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &roster_indexed[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &roster_indexed[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
 }
@@ -849,22 +912,41 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
     payload[29..31].copy_from_slice(&[0; 2]);
     assert_eq!(
-        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        extended_compact_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["first", "second"]
     );
     payload[29..31].copy_from_slice(&2u16.to_le_bytes());
-    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap().is_empty());
+    assert!(extended_compact_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
+        &payload,
+        &entities[0],
+        &markers
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -908,12 +990,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
     );
 
@@ -921,12 +1009,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 92..curve_offset + 92 + SKETCH_MARKER.len()]
         .copy_from_slice(SKETCH_MARKER);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
     );
 
@@ -939,12 +1033,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         curve_offset
     ));
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
     );
 
@@ -967,12 +1067,14 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     centered_entities[2].coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]);
     let centered_markers = centered_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
+        coordinate_roster_arc_center(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &centered_entities[3],
             &centered_markers,
             [&centered_entities[1], &centered_entities[2]],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some([0.0, 0.0])
     );
     let mut hybrid_entities = centered_entities.clone();
@@ -988,12 +1090,14 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&1u16.to_le_bytes());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
+        coordinate_roster_arc_center(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &hybrid_entities[4],
             &hybrid_markers,
             [&hybrid_entities[3], &hybrid_entities[2]],
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
     hybrid_entities[0].coordinates_m = cadmpeg_ir::units::FiniteVector::new([4.0, 4.0]);
@@ -1002,12 +1106,14 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         hybrid_entities[1].with_test_identity(Some(0), hybrid_entities[1].local_id());
     let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        coordinate_roster_arc_center(&cadmpeg_test_support::service_decode_context(),
+        coordinate_roster_arc_center(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &hybrid_entities[4],
             &hybrid_markers,
             [&hybrid_entities[3], &hybrid_entities[2]],
-        ).unwrap(),
+        )
+        .unwrap(),
         Some([0.0, 0.0])
     );
     payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&0u16.to_le_bytes());
@@ -1020,12 +1126,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
     payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
     );
     payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
@@ -1036,12 +1148,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
     payload[curve_offset + 84..curve_offset + 84 + LEGACY_SKETCH_MARKER.len()]
         .copy_from_slice(LEGACY_SKETCH_MARKER);
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
     );
     assert!(legacy_undetailed_profile_line(&payload, curve_offset));
@@ -1055,12 +1173,18 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         Some([2, 3])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[3], &markers).unwrap()
-            .iter()
-            .map(|marker| marker
-                .coordinates_m
-                .map(cadmpeg_ir::units::FiniteVector::get))
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[3],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker
+            .coordinates_m
+            .map(cadmpeg_ir::units::FiniteVector::get))
+        .collect::<Vec<_>>(),
         vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
     );
 
@@ -1080,11 +1204,13 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         .reclassify(SketchInputKind::Relation(SketchRelationKind::Horizontal));
     let complete_roster_markers = complete_roster_entities.iter().collect::<Vec<_>>();
     assert_eq!(
-        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
             &payload,
             &complete_roster_entities[3],
             &complete_roster_markers,
-        ).unwrap()
+        )
+        .unwrap()
         .iter()
         .map(|marker| marker
             .coordinates_m
@@ -1093,11 +1219,13 @@ fn wide_profile_curves_index_the_coordinate_roster() {
         vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
     );
     payload[curve_offset + 56..curve_offset + 58].fill(0);
-    assert!(roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(),
+    assert!(roster_curve_endpoint_markers(
+        &cadmpeg_test_support::service_decode_context(),
         &payload,
         &complete_roster_entities[3],
         &complete_roster_markers,
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
 
@@ -1181,17 +1309,29 @@ fn extended_terminal_wide_profile_curve_uses_coordinate_roster() {
         Some([4, 2])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
     assert_eq!(
-        roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
 }
@@ -1276,10 +1416,16 @@ fn extended_wide_104_profile_curve_uses_coordinate_roster() {
         Some([4, 2])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[4],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["fourth", "second"]
     );
 
@@ -1367,10 +1513,16 @@ fn extended_terminal_164_wide_profile_curve_uses_coordinate_roster() {
         Some([6, 8])
     );
     assert_eq!(
-        coordinate_roster_curve_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[8], &markers).unwrap()
-            .iter()
-            .map(|marker| marker.id())
-            .collect::<Vec<_>>(),
+        coordinate_roster_curve_endpoint_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[8],
+            &markers
+        )
+        .unwrap()
+        .iter()
+        .map(|marker| marker.id())
+        .collect::<Vec<_>>(),
         ["point5", "point7"]
     );
     assert!(current_undetailed_bounded_curve_is_line(

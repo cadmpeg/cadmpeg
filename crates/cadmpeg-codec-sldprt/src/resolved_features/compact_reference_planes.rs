@@ -44,7 +44,9 @@ impl CompactReferencePlaneIndex {
             }
             if *byte == 0x3f {
                 if let Some(start) = offset.checked_sub(46) {
-                    if let Some(bytes) = payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN) {
+                    if let Some(bytes) =
+                        payload.get(start..start + COMPACT_REFERENCE_PLANE_RECORD_LEN)
+                    {
                         if let Some(source) = compact_declared_reference_plane_record(bytes) {
                             ctx.reserve_collection_vec(
                                 &mut declared,
@@ -57,11 +59,12 @@ impl CompactReferencePlaneIndex {
                 }
             }
             if *byte == 4
-                && payload.get(offset..offset + 8)
-                    == Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
+                && payload.get(offset..offset + 8) == Some(&[4, 0, 0, 0, 0xff, 0xff, 0xff, 0xff])
             {
                 if let Some(start) = offset.checked_sub(122) {
-                    if let Some(bytes) = payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN) {
+                    if let Some(bytes) =
+                        payload.get(start..start + COMPACT_COMPONENT_PLANE_RECORD_LEN)
+                    {
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
                             ctx.reserve_collection_vec(
                                 &mut components,
@@ -146,7 +149,9 @@ impl CompactReferencePlaneIndex {
 fn unique_reference_plane_source(sources: impl IntoIterator<Item = u32>) -> Option<u32> {
     let mut sources = sources.into_iter();
     let source = sources.next()?;
-    sources.all(|candidate| candidate == source).then_some(source)
+    sources
+        .all(|candidate| candidate == source)
+        .then_some(source)
 }
 
 fn compact_component_reference_plane_record(bytes: &[u8]) -> Option<u32> {
@@ -219,7 +224,8 @@ fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
         payload,
         &arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
-    ).ok()?;
+    )
+    .ok()?;
     CompactReferencePlaneIndex::new(&ctx, payload)
         .ok()?
         .reference_source(0, payload.len())
@@ -229,58 +235,56 @@ fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
     const RECORD_LEN: usize = 138;
     const NATIVE_TO_IR: f64 = 1000.0;
 
-    let mut frames = payload
-        .windows(RECORD_LEN)
-        .filter_map(|bytes| {
-            // Cheap byte-pattern guards run before any float is read; every
-            // guard is side-effect free, so rejecting early keeps the accept
-            // set identical while skipping the frame math at almost every
-            // window offset.
-            let source = View::u32_le_at(bytes, 0)?;
-            if source == 0
-                || bytes.get(8..14) != Some(&[0; 6])
-                || bytes.get(14) != Some(&1)
-                || bytes.get(119..122) != Some(&[0; 3])
-                || bytes.get(122..126) != Some(&4u32.to_le_bytes())
-                || bytes.get(126..130) != Some(&[0xff; 4])
-            {
-                return None;
-            }
-            let scalar = |index: usize| {
-                let offset = 15 + index * 8;
-                let value = View::f64_le_at(bytes, offset)?;
-                value.is_finite().then_some(value)
-            };
-            let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
-            let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
-            let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
-            let expected_normal = u_axis.cross(v_axis);
-            if (u_axis.dot(u_axis) - 1.0).abs()
+    let mut frames = payload.windows(RECORD_LEN).filter_map(|bytes| {
+        // Cheap byte-pattern guards run before any float is read; every
+        // guard is side-effect free, so rejecting early keeps the accept
+        // set identical while skipping the frame math at almost every
+        // window offset.
+        let source = View::u32_le_at(bytes, 0)?;
+        if source == 0
+            || bytes.get(8..14) != Some(&[0; 6])
+            || bytes.get(14) != Some(&1)
+            || bytes.get(119..122) != Some(&[0; 3])
+            || bytes.get(122..126) != Some(&4u32.to_le_bytes())
+            || bytes.get(126..130) != Some(&[0xff; 4])
+        {
+            return None;
+        }
+        let scalar = |index: usize| {
+            let offset = 15 + index * 8;
+            let value = View::f64_le_at(bytes, offset)?;
+            value.is_finite().then_some(value)
+        };
+        let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
+        let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
+        let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+        let expected_normal = u_axis.cross(v_axis);
+        if (u_axis.dot(u_axis) - 1.0).abs()
+            > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            || (v_axis.dot(v_axis) - 1.0).abs()
                 > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || (v_axis.dot(v_axis) - 1.0).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || (normal.dot(normal) - 1.0).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || (expected_normal.x - normal.x).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || (expected_normal.y - normal.y).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || (expected_normal.z - normal.z).abs()
-                    > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
-                || scalar(12)? != 1.0
-            {
-                return None;
-            }
-            Some((
-                Point3::new(
-                    scalar(9)? * NATIVE_TO_IR,
-                    scalar(10)? * NATIVE_TO_IR,
-                    scalar(11)? * NATIVE_TO_IR,
-                ),
-                normal,
-                u_axis,
-            ))
-        });
+            || (normal.dot(normal) - 1.0).abs()
+                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            || (expected_normal.x - normal.x).abs()
+                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            || (expected_normal.y - normal.y).abs()
+                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            || (expected_normal.z - normal.z).abs()
+                > EPS_COMPACT_REFERENCE_PLANES_COMPACT_COMPONENT_PLANE_FRAME_E9
+            || scalar(12)? != 1.0
+        {
+            return None;
+        }
+        Some((
+            Point3::new(
+                scalar(9)? * NATIVE_TO_IR,
+                scalar(10)? * NATIVE_TO_IR,
+                scalar(11)? * NATIVE_TO_IR,
+            ),
+            normal,
+            u_axis,
+        ))
+    });
     let frame = frames.next()?;
     frames.all(|candidate| candidate == frame).then_some(frame)
 }

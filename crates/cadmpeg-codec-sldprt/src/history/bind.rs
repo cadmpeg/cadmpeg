@@ -24,11 +24,23 @@ fn copy_binding_text(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     value: &str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT sketch binding identity", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "retain SLDPRT sketch binding identity",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT sketch binding identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut copy,
+        value.len(),
+        "retain SLDPRT sketch binding identity",
+    )?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -84,7 +96,11 @@ pub(crate) fn bind_unique_sketch_feature(
         if !native_features.contains_key(feature.id.as_str()) {
             ctx.charge_collection_items(1, "index SLDPRT native sketch features")?;
             native_features.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT native sketch features", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "index SLDPRT native sketch features",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
         }
         native_features.insert(feature.id.as_str(), feature);
@@ -111,7 +127,12 @@ pub(crate) fn bind_unique_sketch_feature(
             })?,
             "match SLDPRT sketch feature names",
         )?;
-        if feature_indices.iter().filter(|other| features[**other].name.as_deref() == Some(name)).count() != 1 {
+        if feature_indices
+            .iter()
+            .filter(|other| features[**other].name.as_deref() == Some(name))
+            .count()
+            != 1
+        {
             continue;
         }
         ctx.charge_work(
@@ -120,7 +141,9 @@ pub(crate) fn bind_unique_sketch_feature(
             })?,
             "match SLDPRT sketch names",
         )?;
-        let mut matches = sketches.iter().filter(|sketch| sketch.name.as_deref() == Some(name));
+        let mut matches = sketches
+            .iter()
+            .filter(|sketch| sketch.name.as_deref() == Some(name));
         let Some(sketch) = matches.next() else {
             continue;
         };
@@ -225,13 +248,11 @@ pub(crate) fn bind_unique_sketch_feature(
         };
         let native_ref = copy_binding_text(ctx, native_ref)?;
         if !features[*index].dependencies.contains(&base_dependency) {
-            features[*index]
-                .dependencies
-                .try_insert_charged(
-                    copy_binding_feature_id(ctx, &base_dependency)?,
-                    ctx,
-                    "bind SLDPRT sketch alias dependency",
-                )?;
+            features[*index].dependencies.try_insert_charged(
+                copy_binding_feature_id(ctx, &base_dependency)?,
+                ctx,
+                "bind SLDPRT sketch alias dependency",
+            )?;
         }
         ctx.charge_work(
             u64::try_from(bindings.len()).map_err(|_| {
@@ -239,10 +260,7 @@ pub(crate) fn bind_unique_sketch_feature(
             })?,
             "match SLDPRT bound sketch aliases",
         )?;
-        let Some(binding) = bindings
-            .iter()
-            .find(|binding| binding.index == base_index)
-        else {
+        let Some(binding) = bindings.iter().find(|binding| binding.index == base_index) else {
             continue;
         };
         let sketch = copy_binding_sketch_id(ctx, &binding.sketch)?;
@@ -322,7 +340,11 @@ fn add_regeneration_predecessor<'a>(
     if !predecessors.contains(predecessor) {
         ctx.charge_collection_items(1, "collect SLDPRT feature predecessors")?;
         predecessors.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit("collect SLDPRT feature predecessors", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "collect SLDPRT feature predecessors",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
     }
     predecessors.insert(predecessor);
@@ -356,7 +378,11 @@ fn regeneration_order(
             if !tree_parent_by_child.contains_key(child) {
                 ctx.charge_collection_items(1, "index SLDPRT feature tree parents")?;
                 tree_parent_by_child.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT feature tree parents", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT feature tree parents",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
             }
             tree_parent_by_child.insert(child, &feature.id);
@@ -368,7 +394,11 @@ fn regeneration_order(
         if !by_id.contains_key(&feature.id) {
             ctx.charge_collection_items(1, "index SLDPRT feature regeneration IDs")?;
             by_id.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT feature regeneration IDs", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "index SLDPRT feature regeneration IDs",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
         }
         by_id.insert(&feature.id, index);
@@ -422,7 +452,11 @@ fn regeneration_order(
         }
     }
     let mut order = Vec::new();
-    ctx.reserve_collection_vec(&mut order, features.len(), "collect SLDPRT feature regeneration order")?;
+    ctx.reserve_collection_vec(
+        &mut order,
+        features.len(),
+        "collect SLDPRT feature regeneration order",
+    )?;
     while let Some(item) = ready.pop_first() {
         ctx.charge_work(1, "sort SLDPRT feature regeneration order")?;
         let index = item.2;
@@ -449,7 +483,11 @@ fn assign_regeneration_ordinals(
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (ordinal, index) in order.into_iter().enumerate() {
         features[index].ordinal = u64::try_from(ordinal).map_err(|_| {
-            ctx.refuse_codec_limit("number SLDPRT feature regeneration order", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "number SLDPRT feature regeneration order",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?;
     }
     Ok(())
@@ -522,7 +560,12 @@ fn copy_output_body_id(
     id: &str,
 ) -> Result<BodyId, cadmpeg_core::CodecError> {
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut text, id.len(), "retain SLDPRT feature output body")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut text,
+        id.len(),
+        "retain SLDPRT feature output body",
+    )?;
     text.push_str(id);
     BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }
@@ -555,7 +598,11 @@ pub(crate) fn derive_feature_outputs(
         for record in &history.features {
             ctx.charge_work(
                 u64::try_from(history.features.len()).map_err(|_| {
-                    ctx.refuse_codec_limit("classify SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "classify SLDPRT body modifier ordinals",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?,
                 "classify SLDPRT body modifier ordinals",
             )?;
@@ -564,12 +611,20 @@ pub(crate) fn derive_feature_outputs(
             }
             ctx.charge_work(1, "index SLDPRT body modifier ordinals")?;
             ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                ctx.refuse_codec_limit("index SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "index SLDPRT body modifier ordinals",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
             if !feature_ids_by_ordinal.contains_key(&ordinal) {
                 ctx.charge_collection_items(1, "index SLDPRT body modifier ordinals")?;
                 feature_ids_by_ordinal.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("index SLDPRT body modifier ordinals", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT body modifier ordinals",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
             }
             match feature_ids_by_ordinal.entry(ordinal) {
@@ -603,9 +658,18 @@ pub(crate) fn derive_feature_outputs(
             };
             if !feature.evaluation.outputs().contains(&body) {
                 let mut outputs = Vec::new();
-                let count = feature.evaluation.outputs().len().checked_add(1).ok_or_else(|| {
-                    ctx.refuse_codec_limit("collect SLDPRT body modifier outputs", u64::MAX - 1, u64::MAX)
-                })?;
+                let count = feature
+                    .evaluation
+                    .outputs()
+                    .len()
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        ctx.refuse_codec_limit(
+                            "collect SLDPRT body modifier outputs",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
                 ctx.reserve_collection_vec(
                     &mut outputs,
                     count,
@@ -665,7 +729,11 @@ pub(crate) fn derive_feature_outputs(
         };
         if let Some(bodies) = produced.get(&source_id) {
             let mut outputs = Vec::new();
-            ctx.reserve_collection_vec(&mut outputs, bodies.len(), "collect SLDPRT feature outputs")?;
+            ctx.reserve_collection_vec(
+                &mut outputs,
+                bodies.len(),
+                "collect SLDPRT feature outputs",
+            )?;
             for body in bodies {
                 outputs.push(copy_output_body_id(ctx, body.as_str())?);
             }
@@ -691,7 +759,9 @@ pub(super) fn bind_definition_sketch(
                 || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(value)) if value == native_ref)
                 || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Feature(value)) if value == feature_ref))
         {
-            *profile = ProfileRef::Planar(PlanarProfileRef::Sketch(copy_binding_sketch_id(ctx, sketch)?));
+            *profile = ProfileRef::Planar(PlanarProfileRef::Sketch(copy_binding_sketch_id(
+                ctx, sketch,
+            )?));
             Ok(true)
         } else {
             Ok(false)
@@ -790,14 +860,16 @@ pub(super) fn bind_definition_sketch(
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration, order_model_features_for_regeneration};
+    use super::{
+        bind_unique_sketch_feature, derive_feature_outputs, order_features_for_regeneration,
+        order_model_features_for_regeneration,
+    };
+    use crate::records::FeatureHistory;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_ir::features::{
-        DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation,
+        DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
     };
     use cadmpeg_ir::scalar::Length;
-    use crate::records::FeatureHistory;
 
     fn ordering_feature() -> Feature {
         Feature {
@@ -869,8 +941,11 @@ mod tests {
             configurations: Vec::new(),
             features: vec![crate::history::tests::feature("native", Some("700"), 0)],
         }];
-        let mut projected = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories)
-            .unwrap_or_else(|error| panic!("test projection failed: {error}"));
+        let mut projected = crate::history::project::project_features(
+            &cadmpeg_test_support::service_decode_context(),
+            &histories,
+        )
+        .unwrap_or_else(|error| panic!("test projection failed: {error}"));
         let body_modifiers = [("sldprt:brep:body#333".to_owned(), 1)];
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::default();
@@ -929,11 +1004,11 @@ mod tests {
         let mut neutral = ordering_feature();
         neutral.name = Some("Sketch1".into());
         neutral.native_ref = Some("native".into());
-        neutral.evaluation.set_definition(FeatureDefinition::Operation(
-            FeatureOperation::Sketch {
+        neutral
+            .evaluation
+            .set_definition(FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(None),
-            },
-        ));
+            }));
         let mut features = [neutral];
         let sketches = [cadmpeg_ir::sketches::Sketch {
             id: cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch")

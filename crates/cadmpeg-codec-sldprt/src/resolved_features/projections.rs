@@ -22,8 +22,8 @@ use super::selections::{
 };
 use super::terminations::compact_surface_selection_value;
 use crate::records::{
-    FeatureInputEdgeSelection, FeatureInputLane,
-    FeatureInputRelationFamily, FeatureInputScalarRole, FeatureInputSurfaceSelection,
+    FeatureInputEdgeSelection, FeatureInputLane, FeatureInputRelationFamily,
+    FeatureInputScalarRole, FeatureInputSurfaceSelection,
 };
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
@@ -52,7 +52,11 @@ fn copy_projection_feature_id(
     source: &cadmpeg_ir::features::FeatureId,
     operation: &'static str,
 ) -> Result<cadmpeg_ir::features::FeatureId, cadmpeg_core::CodecError> {
-    let text = crate::text_admission::format_retained(ctx, format_args!("{}", source.as_str()), operation)?;
+    let text = crate::text_admission::format_retained(
+        ctx,
+        format_args!("{}", source.as_str()),
+        operation,
+    )?;
     cadmpeg_ir::features::FeatureId::mint(text)
         .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))
 }
@@ -64,19 +68,28 @@ fn scoped_reference_name<'a>(
     suffix: Option<u32>,
     operation: &'static str,
 ) -> Result<(String, cadmpeg_core::decode::ScopedReservation<'a>), cadmpeg_core::CodecError> {
-    let mut len = source_name.len().checked_add("@reference".len())
+    let mut len = source_name
+        .len()
+        .checked_add("@reference".len())
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     if let Some(offset) = offset {
-        let digits = offset.checked_ilog10().map_or(1, |digits| digits as usize + 1);
-        len = len.checked_add(1 + digits)
+        let digits = offset
+            .checked_ilog10()
+            .map_or(1, |digits| digits as usize + 1);
+        len = len
+            .checked_add(1 + digits)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
     if let Some(suffix) = suffix {
-        let digits = suffix.checked_ilog10().map_or(1, |digits| digits as usize + 1);
-        len = len.checked_add(1 + digits)
+        let digits = suffix
+            .checked_ilog10()
+            .map_or(1, |digits| digits as usize + 1);
+        len = len
+            .checked_add(1 + digits)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
-    let (mut name, reservation) = crate::text_admission::reserve_scoped_string(ctx, len, operation)?;
+    let (mut name, reservation) =
+        crate::text_admission::reserve_scoped_string(ctx, len, operation)?;
     name.push_str(source_name);
     name.push_str("@reference");
     if let Some(offset) = offset {
@@ -172,20 +185,23 @@ pub(super) fn bind_circular_profile_by_dimension(
         ctx.charge_work(1, OPERATION)?;
         if !feature_counts.contains_key(&feature_index) {
             ctx.charge_collection_items(1, OPERATION)?;
-            feature_counts.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            feature_counts
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         let count = feature_counts.entry(feature_index).or_default();
-        *count = count.checked_add(1)
+        *count = count
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     }
     for (sketch_index, feature_index) in proposals {
         if feature_counts.get(&feature_index) != Some(&1) {
             continue;
         }
-        let sketch_id_text = crate::text_admission::format_retained(ctx, 
-            format_args!("{}", sketches[sketch_index].id.as_str()), OPERATION,
+        let sketch_id_text = crate::text_admission::format_retained(
+            ctx,
+            format_args!("{}", sketches[sketch_index].id.as_str()),
+            OPERATION,
         )?;
         let sketch_id = cadmpeg_ir::sketches::SketchId::mint(sketch_id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT sketch ID"))?;
@@ -193,8 +209,9 @@ pub(super) fn bind_circular_profile_by_dimension(
         for feature in features.iter_mut() {
             ctx.charge_work(1, OPERATION)?;
             feature.evaluation.edit(|definition, _| {
-                let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: bound, .. }) =
-                    definition
+                let FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: bound, ..
+                }) = definition
                 else {
                     return;
                 };
@@ -203,11 +220,17 @@ pub(super) fn bind_circular_profile_by_dimension(
                 }
             });
         }
-        let name = features[feature_index].name.as_deref()
-            .map(|name| crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION))
+        let name = features[feature_index]
+            .name
+            .as_deref()
+            .map(|name| {
+                crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION)
+            })
             .transpose()?;
         features[feature_index].evaluation.edit(|definition, _| {
-            if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) = definition {
+            if let FeatureDefinition::Operation(FeatureOperation::Sketch { sketch, .. }) =
+                definition
+            {
                 *sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
             }
         });
@@ -235,9 +258,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
         };
         if !neutral_owners.contains_key(&feature.id) {
             ctx.charge_collection_items(1, OPERATION)?;
-            neutral_owners.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            neutral_owners
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         neutral_owners.insert(&feature.id, native_ref);
     }
@@ -246,9 +269,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
         ctx.charge_work(1, OPERATION)?;
         if !native_features.contains_key(feature.id.as_str()) {
             ctx.charge_collection_items(1, OPERATION)?;
-            native_features.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            native_features
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         native_features.insert(feature.id.as_str(), feature);
     }
@@ -269,9 +292,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
             };
             if !family.contains(id) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                family.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                family
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 family.insert(id);
             }
             let mut detached = false;
@@ -284,9 +307,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
             }
             if detached && !detached_scalars.contains(id) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                detached_scalars.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                detached_scalars
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 detached_scalars.insert(id);
             }
         }
@@ -295,9 +318,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
             ctx.charge_work(1, OPERATION)?;
             if !names_by_id.contains_key(name.id.as_str()) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                names_by_id.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                names_by_id
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             }
             names_by_id.insert(name.id.as_str(), name);
         }
@@ -309,7 +332,12 @@ pub(crate) fn bind_parameter_scalars<'a>(
             starts.push((start, feature));
         }
         ctx.charge_work(starts.len() as u64, OPERATION)?;
-        ctx.stable_sort_by(&mut starts, |left, right| left.0.cmp(&right.0), |_| 0, "sort SLDPRT feature starts")?;
+        ctx.stable_sort_by(
+            &mut starts,
+            |left, right| left.0.cmp(&right.0),
+            |_| 0,
+            "sort SLDPRT feature starts",
+        )?;
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
@@ -334,9 +362,9 @@ pub(crate) fn bind_parameter_scalars<'a>(
                         continue;
                     }
                     let name_matches = names_by_id.get(scalar.name.as_str()).is_some_and(|name| {
-                            name.value == parameter.name
-                                && value_only_scalar_offset(&lane.native_payload, name)
-                                    != usize::try_from(scalar.offset).ok()
+                        name.value == parameter.name
+                            && value_only_scalar_offset(&lane.native_payload, name)
+                                != usize::try_from(scalar.offset).ok()
                     });
                     if name_matches {
                         ctx.reserve_collection_vec(&mut scalars, 1, OPERATION)?;
@@ -399,8 +427,10 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     }
                 }
                 if let [scalar] = compatible.as_slice() {
-                    parameter.native_ref = Some(crate::text_admission::format_retained(ctx, 
-                        format_args!("{}", scalar.id), OPERATION,
+                    parameter.native_ref = Some(crate::text_admission::format_retained(
+                        ctx,
+                        format_args!("{}", scalar.id),
+                        OPERATION,
                     )?);
                     let scalar_is_detached = detached_scalars.contains(scalar.id.as_str());
                     let scalar_is_untyped_real = matches!(
@@ -498,9 +528,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         };
         if !features_by_native_ref.contains_key(native_ref) {
             ctx.charge_collection_items(1, OPERATION)?;
-            features_by_native_ref.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            features_by_native_ref
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         features_by_native_ref.insert(native_ref, feature);
     }
@@ -512,40 +542,50 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         ctx.charge_work(1, OPERATION)?;
         if let Some(relation_id) = parameter.properties.get(RELATION_PARAMETER_ID_PROPERTY) {
             if !relation_ids.contains(relation_id.as_str()) {
-                let id = crate::text_admission::format_retained(ctx, format_args!("{relation_id}"), OPERATION)?;
+                let id = crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{relation_id}"),
+                    OPERATION,
+                )?;
                 ctx.charge_collection_items(1, OPERATION)?;
-                relation_ids.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                relation_ids
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 relation_ids.insert(id);
             }
         }
         if !parameter_ids.contains(&parameter.id) {
-            let id_text = crate::text_admission::format_retained(ctx, 
-                format_args!("{}", parameter.id.as_str()), OPERATION,
+            let id_text = crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", parameter.id.as_str()),
+                OPERATION,
             )?;
-            let id = ParameterId::mint(id_text).map_err(|_| {
-                cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID")
-            })?;
+            let id = ParameterId::mint(id_text)
+                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID"))?;
             ctx.charge_collection_items(1, OPERATION)?;
-            parameter_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            parameter_ids
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             parameter_ids.insert(id);
         }
         let Some(owner) = parameter.owner.as_ref() else {
             continue;
         };
         ctx.charge_work(names_by_owner.len() as u64, OPERATION)?;
-        if !names_by_owner.iter().any(|(known_owner, known_name)| {
-            known_owner == owner && known_name == &parameter.name
-        }) {
+        if !names_by_owner
+            .iter()
+            .any(|(known_owner, known_name)| known_owner == owner && known_name == &parameter.name)
+        {
             let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
-            let name_copy = crate::text_admission::format_retained(ctx, format_args!("{}", parameter.name), OPERATION)?;
+            let name_copy = crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", parameter.name),
+                OPERATION,
+            )?;
             ctx.charge_collection_items(1, OPERATION)?;
-            names_by_owner.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            names_by_owner
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             names_by_owner.insert((owner_copy, name_copy));
         }
         let next = parameter.ordinal.checked_add(1).unwrap_or(u32::MAX);
@@ -554,9 +594,9 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
         } else {
             let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
             ctx.charge_collection_items(1, OPERATION)?;
-            next_ordinals.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            next_ordinals
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             next_ordinals.insert(owner_copy, next);
         }
     }
@@ -601,18 +641,23 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             } else {
                 let owner_copy = copy_projection_feature_id(ctx, owner, OPERATION)?;
                 ctx.charge_collection_items(1, OPERATION)?;
-                next_ordinals.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                next_ordinals
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 next_ordinals.insert(owner_copy, next_ordinal);
             }
             let mut candidate = scoped_reference_name(ctx, source_name, None, None, OPERATION)?;
             ctx.charge_work(names_by_owner.len() as u64, OPERATION)?;
-            if names_by_owner.iter().any(|(known_owner, known_name)| {
-                known_owner == owner && known_name == &candidate.0
-            }) {
+            if names_by_owner
+                .iter()
+                .any(|(known_owner, known_name)| known_owner == owner && known_name == &candidate.0)
+            {
                 candidate = scoped_reference_name(
-                    ctx, source_name, Some(relation.offset), None, OPERATION,
+                    ctx,
+                    source_name,
+                    Some(relation.offset),
+                    None,
+                    OPERATION,
                 )?;
                 let mut suffix = 0u32;
                 loop {
@@ -622,11 +667,15 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                     }) {
                         break;
                     }
-                    suffix = suffix.checked_add(1).ok_or_else(|| {
-                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                    })?;
+                    suffix = suffix
+                        .checked_add(1)
+                        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                     candidate = scoped_reference_name(
-                        ctx, source_name, Some(relation.offset), Some(suffix), OPERATION,
+                        ctx,
+                        source_name,
+                        Some(relation.offset),
+                        Some(suffix),
+                        OPERATION,
                     )?;
                 }
             }
@@ -640,8 +689,10 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             let Ok(relation_key) = cadmpeg_ir::ids::IdentityKey::try_new(key_text) else {
                 continue;
             };
-            let id_text = crate::text_admission::format_retained(ctx, 
-                format_args!("sldprt:model:parameter#reference:{relation_key}"), OPERATION,
+            let id_text = crate::text_admission::format_retained(
+                ctx,
+                format_args!("sldprt:model:parameter#reference:{relation_key}"),
+                OPERATION,
             )?;
             let Ok(id) = ParameterId::mint(id_text) else {
                 continue;
@@ -649,24 +700,35 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             if parameter_ids.contains(&id) {
                 continue;
             }
-            let id_copy = ParameterId::mint(crate::text_admission::format_retained(ctx, 
-                format_args!("{}", id.as_str()), OPERATION,
-            )?).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID"))?;
+            let id_copy = ParameterId::mint(crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", id.as_str()),
+                OPERATION,
+            )?)
+            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT parameter ID"))?;
             ctx.charge_collection_items(1, OPERATION)?;
-            parameter_ids.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            parameter_ids
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             parameter_ids.insert(id_copy);
             let mut properties = BTreeMap::new();
             ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ID_PROPERTY),
-                crate::text_admission::format_retained(ctx, format_args!("{}", relation.id), OPERATION)?,
+                crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}", relation.id),
+                    OPERATION,
+                )?,
             );
             ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_const!(RELATION_DISPLAY_SCALAR_ID_PROPERTY),
-                crate::text_admission::format_retained(ctx, format_args!("{}", scalar.id), OPERATION)?,
+                crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}", scalar.id),
+                    OPERATION,
+                )?,
             );
             ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
@@ -676,10 +738,15 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             ctx.charge_collection_items(1, OPERATION)?;
             properties.insert(
                 cadmpeg_core::nonblank_literal!("source_name"),
-                crate::text_admission::format_retained(ctx, format_args!("{source_name}"), OPERATION)?,
+                crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{source_name}"),
+                    OPERATION,
+                )?,
             );
             let name = candidate.0;
-            let parameter_name = crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION)?;
+            let parameter_name =
+                crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION)?;
             let owner_for_parameter = copy_projection_feature_id(ctx, owner, OPERATION)?;
             ctx.reserve_collection_vec(parameters, 1, OPERATION)?;
             parameters.push(DesignParameter {
@@ -696,18 +763,23 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 native_ref: None,
             });
             let owner_for_index = copy_projection_feature_id(ctx, owner, OPERATION)?;
-            let name_for_index = crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION)?;
+            let name_for_index =
+                crate::text_admission::format_retained(ctx, format_args!("{name}"), OPERATION)?;
             ctx.charge_collection_items(1, OPERATION)?;
-            names_by_owner.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            names_by_owner
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             names_by_owner.insert((owner_for_index, name_for_index));
             if !relation_ids.contains(relation.id.as_str()) {
-                let relation_id = crate::text_admission::format_retained(ctx, format_args!("{}", relation.id), OPERATION)?;
+                let relation_id = crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{}", relation.id),
+                    OPERATION,
+                )?;
                 ctx.charge_collection_items(1, OPERATION)?;
-                relation_ids.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                relation_ids
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                 relation_ids.insert(relation_id);
             }
         }
@@ -769,16 +841,16 @@ pub(crate) fn type_display_relation_parameters(
         if let Some(Some(parameter)) = ownership.get(&relation.id) {
             if !families.contains_key(parameter) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                families.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                families
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             }
             let family_set = families.entry(parameter).or_default();
             if !family_set.contains(&relation.family) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                family_set.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                family_set
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             }
             family_set.insert(relation.family);
         }
@@ -888,42 +960,52 @@ pub(crate) fn project_compact_body_selections(
         let mut edit_result = Ok(());
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| -> Result<(), cadmpeg_core::CodecError> {
-            let (bodies, mode) = match definition {
-                FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
-                    (bodies, Some(mode))
-                }
-                FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
-                    (bodies, None)
-                }
-                _ => return Ok(()),
-            };
-            if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
-                let mut ids = Vec::new();
-                ctx.reserve_collection_vec(&mut ids, selection.local_body_ids.len(), OPERATION)?;
-                for id in &selection.local_body_ids {
-                    let digits = id.to_string();
-                    let mut text = String::new();
-                    crate::text_admission::reserve_retained_string(ctx, &mut text, digits.len(), OPERATION)?;
-                    text.push_str(&digits);
-                    ids.push(text);
-                }
-                let Ok(selection) = cadmpeg_ir::features::BodySelection::local_charged(
-                    ids,
-                    compact_body_selection_value_charged(ctx, &selection.local_body_ids)?,
-                    ctx,
-                )? else {
-                    return Ok(());
+                let (bodies, mode) = match definition {
+                    FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, mode }) => {
+                        (bodies, Some(mode))
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::MoveBody { bodies, .. }) => {
+                        (bodies, None)
+                    }
+                    _ => return Ok(()),
                 };
-                *bodies = selection;
-            }
-            if let Some(mode) = mode {
-                if matches!(*mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
-                    if let Some(native_mode) = selection.mode {
-                        *mode = native_mode;
+                if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
+                    let mut ids = Vec::new();
+                    ctx.reserve_collection_vec(
+                        &mut ids,
+                        selection.local_body_ids.len(),
+                        OPERATION,
+                    )?;
+                    for id in &selection.local_body_ids {
+                        let digits = id.to_string();
+                        let mut text = String::new();
+                        crate::text_admission::reserve_retained_string(
+                            ctx,
+                            &mut text,
+                            digits.len(),
+                            OPERATION,
+                        )?;
+                        text.push_str(&digits);
+                        ids.push(text);
+                    }
+                    let Ok(selection) = cadmpeg_ir::features::BodySelection::local_charged(
+                        ids,
+                        compact_body_selection_value_charged(ctx, &selection.local_body_ids)?,
+                        ctx,
+                    )?
+                    else {
+                        return Ok(());
+                    };
+                    *bodies = selection;
+                }
+                if let Some(mode) = mode {
+                    if matches!(*mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
+                        if let Some(native_mode) = selection.mode {
+                            *mode = native_mode;
+                        }
                     }
                 }
-            }
-            Ok(())
+                Ok(())
             })();
         });
         edit_result?;
@@ -945,7 +1027,12 @@ pub(crate) fn project_compact_edge_selections(
         };
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id_text = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut id_text, feature.id.as_str().len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut id_text,
+            feature.id.as_str().len(),
+            INDEX_OPERATION,
+        )?;
         id_text.push_str(feature.id.as_str());
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
@@ -954,11 +1041,16 @@ pub(crate) fn project_compact_edge_selections(
             continue;
         }
         ctx.charge_collection_items(1, INDEX_OPERATION)?;
-        feature_ids_by_native.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        feature_ids_by_native
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         let mut native = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut native, native_ref.len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut native,
+            native_ref.len(),
+            INDEX_OPERATION,
+        )?;
         native.push_str(native_ref);
         feature_ids_by_native.insert(native, id);
     }
@@ -967,11 +1059,13 @@ pub(crate) fn project_compact_edge_selections(
         ctx.charge_work(1, INDEX_OPERATION)?;
         if !selections.contains_key(selection.feature_ref.as_str()) {
             ctx.charge_collection_items(1, INDEX_OPERATION)?;
-            selections.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            selections
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let group = selections.entry(selection.feature_ref.as_str()).or_default();
+        let group = selections
+            .entry(selection.feature_ref.as_str())
+            .or_default();
         ctx.reserve_collection_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
     }
@@ -1115,13 +1209,15 @@ fn variable_fillet_radius_groups<'a>(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     selections: &[&'a FeatureInputEdgeSelection],
-) -> Result<Option<Vec<(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>)>>, cadmpeg_core::CodecError> {
+) -> Result<Option<Vec<(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>)>>, cadmpeg_core::CodecError>
+{
     const OPERATION: &str = "project SLDPRT variable fillet radii";
     let charge_sort = |len: usize| {
         let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
         let count = u64::try_from(len)
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        let units = count.checked_mul(u64::from(levels))
+        let units = count
+            .checked_mul(u64::from(levels))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(units, OPERATION)
     };
@@ -1143,9 +1239,9 @@ fn variable_fillet_radius_groups<'a>(
         ctx.charge_work(1, OPERATION)?;
         if variable_fillet_dimension_index_for_feature(feature, name.as_str()).is_some() {
             ctx.charge_collection_items(1, OPERATION)?;
-            parameter_names.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            parameter_names
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             parameter_names.insert(name);
         }
     }
@@ -1181,11 +1277,13 @@ fn variable_fillet_radius_groups<'a>(
         let mut ordered_parameters = Vec::new();
         ctx.reserve_collection_vec(&mut ordered_parameters, parameter_names.len(), OPERATION)?;
         for name in &parameter_names {
-            let Some(parameter) = variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
-                feature.parameters.get(*name).and_then(|value| {
-                    crate::history::literals::parse_positive_dimension_length_mm(value)
-                }),
-            ) else {
+            let Some(parameter) =
+                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            else {
                 return Ok(None);
             };
             ordered_parameters.push(parameter);
@@ -1216,15 +1314,12 @@ fn variable_fillet_radius_groups<'a>(
             let Some(points) = points else {
                 return Ok(None);
             };
-            let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else {
+            let Some(points) =
+                cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+            else {
                 return Ok(None);
             };
-            return Ok(Some(vec![(
-                RadiusSpec::Variable {
-                    points,
-                },
-                selections,
-            )]));
+            return Ok(Some(vec![(RadiusSpec::Variable { points }, selections)]));
         }
     }
 
@@ -1254,7 +1349,8 @@ fn variable_fillet_radius_groups<'a>(
             .get(index + 1)
             .and_then(|(offset, _)| usize::try_from(*offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let Some(controls) = variable_fillet_control_references(ctx, feature, lane, object_end)? else {
+        let Some(controls) = variable_fillet_control_references(ctx, feature, lane, object_end)?
+        else {
             continue;
         };
         for (name, references) in controls {
@@ -1268,11 +1364,16 @@ fn variable_fillet_radius_groups<'a>(
                         return Ok(None);
                     }
                     ctx.charge_collection_items(1, OPERATION)?;
-                    control_names.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                    })?;
+                    control_names
+                        .try_reserve(1)
+                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                     let mut retained_name = String::new();
-                    crate::text_admission::reserve_retained_string(ctx, &mut retained_name, name.len(), OPERATION)?;
+                    crate::text_admission::reserve_retained_string(
+                        ctx,
+                        &mut retained_name,
+                        name.len(),
+                        OPERATION,
+                    )?;
                     retained_name.push_str(&name);
                     control_names.insert(retained_name);
                     let Some(radius) = feature.parameters.get(name.as_str()).and_then(|value| {
@@ -1303,11 +1404,15 @@ fn variable_fillet_radius_groups<'a>(
                         return Ok(None);
                     }
                     ctx.charge_collection_items(1, OPERATION)?;
-                    non_vertex_control_names.try_reserve(1).map_err(|_| {
-                        ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                    })?;
+                    non_vertex_control_names
+                        .try_reserve(1)
+                        .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
                     non_vertex_control_names.insert(name);
-                    ctx.reserve_collection_vec(&mut non_vertex_control_references, references.len(), OPERATION)?;
+                    ctx.reserve_collection_vec(
+                        &mut non_vertex_control_references,
+                        references.len(),
+                        OPERATION,
+                    )?;
                     non_vertex_control_references.extend(references);
                 }
                 _ => return Ok(None),
@@ -1328,11 +1433,13 @@ fn variable_fillet_radius_groups<'a>(
         let mut ordered_parameters = Vec::new();
         ctx.reserve_collection_vec(&mut ordered_parameters, parameter_names.len(), OPERATION)?;
         for name in &parameter_names {
-            let Some(parameter) = variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
-                feature.parameters.get(*name).and_then(|value| {
-                    crate::history::literals::parse_positive_dimension_length_mm(value)
-                }),
-            ) else {
+            let Some(parameter) =
+                variable_fillet_dimension_index_for_feature(feature, name.as_str()).zip(
+                    feature.parameters.get(*name).and_then(|value| {
+                        crate::history::literals::parse_positive_dimension_length_mm(value)
+                    }),
+                )
+            else {
                 return Ok(None);
             };
             ordered_parameters.push(parameter);
@@ -1355,7 +1462,10 @@ fn variable_fillet_radius_groups<'a>(
         }
         for reference in &non_vertex_control_references {
             let mut present = false;
-            for selected in selections.iter().flat_map(|selection| selection.references.iter()) {
+            for selected in selections
+                .iter()
+                .flat_map(|selection| selection.references.iter())
+            {
                 ctx.charge_work(1, OPERATION)?;
                 if selected == reference {
                     present = true;
@@ -1385,15 +1495,11 @@ fn variable_fillet_radius_groups<'a>(
         let Some(points) = points else {
             return Ok(None);
         };
-        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok() else {
+        let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(points).ok()
+        else {
             return Ok(None);
         };
-        return Ok(Some(vec![(
-            RadiusSpec::Variable {
-                points,
-            },
-            selections,
-        )]));
+        return Ok(Some(vec![(RadiusSpec::Variable { points }, selections)]));
     }
     if control_names.len() != parameter_names.len()
         || !parameter_names
@@ -1482,9 +1588,16 @@ fn variable_fillet_radius_groups<'a>(
     ctx.reserve_collection_vec(&mut result, groups.len(), OPERATION)?;
     for ((first, second), selections) in groups {
         let Some(points) = cadmpeg_ir::features::edge_treatments::VariableRadii::new(vec![
-            VariableRadius { parameter: 0.0, radius: Length::from(first) },
-            VariableRadius { parameter: 1.0, radius: Length::from(second) },
-        ]).ok() else {
+            VariableRadius {
+                parameter: 0.0,
+                radius: Length::from(first),
+            },
+            VariableRadius {
+                parameter: 1.0,
+                radius: Length::from(second),
+            },
+        ])
+        .ok() else {
             return Ok(None);
         };
         result.push((RadiusSpec::Variable { points }, selections));
@@ -1510,7 +1623,12 @@ pub(crate) fn project_compact_surface_selections(
         };
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id_text = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut id_text, feature.id.as_str().len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut id_text,
+            feature.id.as_str().len(),
+            INDEX_OPERATION,
+        )?;
         id_text.push_str(feature.id.as_str());
         let id = cadmpeg_ir::features::FeatureId::mint(id_text)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT feature id"))?;
@@ -1519,11 +1637,16 @@ pub(crate) fn project_compact_surface_selections(
             continue;
         }
         ctx.charge_collection_items(1, INDEX_OPERATION)?;
-        feature_ids_by_native.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        feature_ids_by_native
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         let mut native = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut native, native_ref.len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut native,
+            native_ref.len(),
+            INDEX_OPERATION,
+        )?;
         native.push_str(native_ref);
         feature_ids_by_native.insert(native, id);
     }
@@ -1539,11 +1662,13 @@ pub(crate) fn project_compact_surface_selections(
         ctx.charge_work(1, INDEX_OPERATION)?;
         if !selections.contains_key(selection.feature_ref.as_str()) {
             ctx.charge_collection_items(1, INDEX_OPERATION)?;
-            selections.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            selections
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
-        let group = selections.entry(selection.feature_ref.as_str()).or_default();
+        let group = selections
+            .entry(selection.feature_ref.as_str())
+            .or_default();
         ctx.reserve_collection_vec(group, 1, INDEX_OPERATION)?;
         group.push(selection);
     }
@@ -1675,7 +1800,7 @@ pub(crate) fn project_compact_surface_selections(
                                 .and_then(|(producer, component)| Some((producer, component.local_id?)));
                             if let Some((producer, local_id)) = generated {
                                 let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
-                                let local_id_text = crate::text_admission::format_retained(ctx, 
+                                let local_id_text = crate::text_admission::format_retained(ctx,
                                     format_args!("{local_id}"), OPERATION,
                                 )?;
                                 let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(
@@ -2144,13 +2269,14 @@ pub(crate) fn project_compact_surface_selections(
         if matches!(face, FaceSelection::Unresolved | FaceSelection::Native(_)) {
             continue;
         }
-        let native_key = crate::text_admission::format_retained(ctx, format_args!("{native}"), ALIAS_OPERATION)?;
+        let native_key =
+            crate::text_admission::format_retained(ctx, format_args!("{native}"), ALIAS_OPERATION)?;
         let face_copy = face.try_clone_charged(ctx, ALIAS_OPERATION)?;
         if !face_aliases.contains_key(native) {
             ctx.charge_collection_items(1, ALIAS_OPERATION)?;
-            face_aliases.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(ALIAS_OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            face_aliases
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(ALIAS_OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         face_aliases.insert(native_key, face_copy);
     }
@@ -2159,8 +2285,10 @@ pub(crate) fn project_compact_surface_selections(
         let Some(target) = feature.source_properties.get("ReferenceFaceFeature") else {
             continue;
         };
-        if !matches!(feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })) {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { .. })
+        ) {
             continue;
         }
         let Some(face) = face_aliases.get(target.as_str()) else {
@@ -2172,17 +2300,22 @@ pub(crate) fn project_compact_surface_selections(
                 ctx.charge_work(1, ALIAS_OPERATION)?;
                 if producer != &feature.id && !feature.dependencies.contains(producer) {
                     let copy = copy_projection_feature_id(ctx, producer, ALIAS_OPERATION)?;
-                    feature.dependencies.try_insert_charged(copy, ctx, ALIAS_OPERATION)?;
+                    feature
+                        .dependencies
+                        .try_insert_charged(copy, ctx, ALIAS_OPERATION)?;
                 }
             }
         }
         feature.evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, .. }) =
-                definition
+            let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                reference, ..
+            }) = definition
             else {
                 return;
             };
-            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) = reference {
+            if let Some(cadmpeg_ir::features::DatumPlaneReference::Face { face: existing }) =
+                reference
+            {
                 *existing = face;
             } else if !matches!(
                 reference,
@@ -2224,7 +2357,8 @@ fn full_round_fillet_selection_triple<'a>(
         let count = u64::try_from(len)
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
-        let work = count.checked_mul(u64::from(levels))
+        let work = count
+            .checked_mul(u64::from(levels))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         ctx.charge_work(work, OPERATION)?;
         lane_selections.sort_unstable_by_key(|selection| selection.offset);
@@ -2255,9 +2389,9 @@ fn surface_selections_by_lane<'a>(
         ctx.charge_work(1, operation)?;
         if !by_lane.contains_key(selection.parent.as_str()) {
             ctx.charge_collection_items(1, operation)?;
-            by_lane.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?;
+            by_lane
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         let group = by_lane.entry(selection.parent.as_str()).or_default();
         ctx.reserve_collection_vec(group, 1, operation)?;
@@ -2280,7 +2414,12 @@ pub(crate) fn project_draft_operands(
         };
         ctx.charge_work(1, INDEX_OPERATION)?;
         let mut id = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut id, feature.id.as_str().len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut id,
+            feature.id.as_str().len(),
+            INDEX_OPERATION,
+        )?;
         id.push_str(feature.id.as_str());
         let id = cadmpeg_ir::features::FeatureId::mint(id)
             .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT draft feature id"))?;
@@ -2289,11 +2428,16 @@ pub(crate) fn project_draft_operands(
             continue;
         }
         ctx.charge_collection_items(1, INDEX_OPERATION)?;
-        feature_ids_by_native.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        feature_ids_by_native
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(INDEX_OPERATION, u64::MAX - 1, u64::MAX))?;
         let mut native = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut native, native_ref.len(), INDEX_OPERATION)?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut native,
+            native_ref.len(),
+            INDEX_OPERATION,
+        )?;
         native.push_str(native_ref);
         feature_ids_by_native.insert(native, id);
     }
@@ -2303,9 +2447,9 @@ pub(crate) fn project_draft_operands(
             const OPERATION: &str = "group SLDPRT draft operand candidates";
             if !candidates.contains_key(&feature) {
                 ctx.charge_collection_items(1, OPERATION)?;
-                candidates.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                })?;
+                candidates
+                    .try_reserve(1)
+                    .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             }
             let by_feature = candidates.entry(feature).or_default();
             ctx.reserve_collection_vec(by_feature, 1, OPERATION)?;
@@ -2392,7 +2536,9 @@ pub(crate) fn project_draft_operands(
                     )?;
                 }
                 match anchor {
-                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. } if pull.is_none() => {
+                    cadmpeg_ir::features::DraftAnchor::NeutralPlane { pull, .. }
+                        if pull.is_none() =>
+                    {
                         *pull = Some(cadmpeg_ir::features::DraftPull {
                             direction: pull_direction,
                             plane: None,
@@ -2427,39 +2573,51 @@ fn draft_face_selection(
     let mut generated = Vec::new();
     let mut generated_dependencies = Vec::new();
     for path in paths {
-        let history_count = histories.iter().try_fold(0usize, |count, history| {
-            count.checked_add(history.features.len())
-        }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(u64::try_from(history_count)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let history_count = histories
+            .iter()
+            .try_fold(0usize, |count, history| {
+                count.checked_add(history.features.len())
+            })
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(
+            u64::try_from(history_count)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
         let Some((producer, local_id)) = component_path_terminal_feature(
-            ctx, path,
+            ctx,
+            path,
             histories.iter().flat_map(|history| &history.features),
         )?
-            .filter(|producer| producer != consumer_ref)
-            .and_then(|producer| {
-                feature_ids_by_native
-                    .get(&producer)
-                    .zip(path.last()?.local_id.as_ref())
-            })
-        else {
+        .filter(|producer| producer != consumer_ref)
+        .and_then(|producer| {
+            feature_ids_by_native
+                .get(&producer)
+                .zip(path.last()?.local_id.as_ref())
+        }) else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
         let producer_id = copy_projection_feature_id(ctx, producer, OPERATION)?;
-        let local_id_text = crate::text_admission::format_retained(ctx, format_args!("{local_id}"), OPERATION)?;
-        let Ok(face) =
-            cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text)
+        let local_id_text =
+            crate::text_admission::format_retained(ctx, format_args!("{local_id}"), OPERATION)?;
+        let Ok(face) = cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text)
         else {
             return Ok(cadmpeg_ir::features::FaceSelection::Native(native));
         };
-        ctx.charge_work(u64::try_from(generated.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        ctx.charge_work(
+            u64::try_from(generated.len())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
         if !generated.contains(&face) {
             ctx.reserve_collection_vec(&mut generated, 1, OPERATION)?;
             generated.push(face);
         }
-        ctx.charge_work(u64::try_from(generated_dependencies.len())
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        ctx.charge_work(
+            u64::try_from(generated_dependencies.len())
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
+            OPERATION,
+        )?;
         if !generated_dependencies.contains(producer) {
             let dependency = copy_projection_feature_id(ctx, producer, OPERATION)?;
             ctx.reserve_collection_vec(&mut generated_dependencies, 1, OPERATION)?;
@@ -2474,9 +2632,12 @@ fn draft_face_selection(
                 dependencies.try_insert_charged(dependency, ctx, OPERATION)?;
             }
         }
-        let native_copy = crate::text_admission::format_retained(ctx, format_args!("{native}"), OPERATION)?;
-        Ok(cadmpeg_ir::features::FaceSelection::generated(generated, native_copy)
-            .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)))
+        let native_copy =
+            crate::text_admission::format_retained(ctx, format_args!("{native}"), OPERATION)?;
+        Ok(
+            cadmpeg_ir::features::FaceSelection::generated(generated, native_copy)
+                .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native)),
+        )
     }
 }
 
@@ -2530,7 +2691,8 @@ fn format_surface_path_set<'a>(
         if duplicate {
             continue;
         }
-        unique_count = unique_count.checked_add(1)
+        unique_count = unique_count
+            .checked_add(1)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let mut bytes = PATH_PREFIX.len();
         for (component_index, component) in components.iter().enumerate() {
@@ -2543,18 +2705,30 @@ fn format_surface_path_set<'a>(
                     .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
             };
             let separator = usize::from(component_index != 0);
-            bytes = bytes.checked_add(separator).and_then(|sum| sum.checked_add(digits))
+            bytes = bytes
+                .checked_add(separator)
+                .and_then(|sum| sum.checked_add(digits))
                 .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
-        path_bytes = path_bytes.checked_add(bytes)
+        path_bytes = path_bytes
+            .checked_add(bytes)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     }
-    let set_bytes = if unique_count == 1 { 0 } else {
-        let separators = if unique_count == 0 { 0 } else { unique_count - 1 };
-        set_prefix.len().checked_add(separators)
+    let set_bytes = if unique_count == 1 {
+        0
+    } else {
+        let separators = if unique_count == 0 {
+            0
+        } else {
+            unique_count - 1
+        };
+        set_prefix
+            .len()
+            .checked_add(separators)
             .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?
     };
-    let total_bytes = path_bytes.checked_add(set_bytes)
+    let total_bytes = path_bytes
+        .checked_add(set_bytes)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     let mut value = String::new();
     crate::text_admission::reserve_retained_string(ctx, &mut value, total_bytes, operation)?;
@@ -2583,8 +2757,9 @@ fn format_surface_path_set<'a>(
                 value.push(',');
             }
             match component.local_id {
-                Some(local_id) => write!(value, "{local_id}")
-                    .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface selection"))?,
+                Some(local_id) => write!(value, "{local_id}").map_err(|_| {
+                    cadmpeg_core::CodecError::malformed("cannot format SLDPRT surface selection")
+                })?,
                 None => value.push('_'),
             }
         }
@@ -2649,10 +2824,13 @@ fn same_surface_selection_semantics(
 fn cut_with_surface_selection_pair<'a>(
     ctx: &DecodeContext<'_>,
     selections: &[&'a FeatureInputSurfaceSelection],
-) -> Result<Option<(
-    &'a FeatureInputSurfaceSelection,
-    &'a FeatureInputSurfaceSelection,
-)>, cadmpeg_core::CodecError> {
+) -> Result<
+    Option<(
+        &'a FeatureInputSurfaceSelection,
+        &'a FeatureInputSurfaceSelection,
+    )>,
+    cadmpeg_core::CodecError,
+> {
     const OPERATION: &str = "group SLDPRT surface cut selections";
     let by_lane = surface_selections_by_lane(ctx, selections, OPERATION)?;
     let mut consensus = None;
@@ -2687,8 +2865,17 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     surfaces: &[Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let input_work = [features.len(), histories.len(), faces.len(), surfaces.len()]
-        .into_iter().try_fold(0u64, |work, count| work.checked_add(cadmpeg_core::decode::u64_from_index(count)))
-        .ok_or_else(|| ctx.refuse_codec_limit("find unique SLDPRT cylindrical face", u64::MAX - 1, u64::MAX))?;
+        .into_iter()
+        .try_fold(0u64, |work, count| {
+            work.checked_add(cadmpeg_core::decode::u64_from_index(count))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "find unique SLDPRT cylindrical face",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
     ctx.charge_work(input_work, "find unique SLDPRT cylindrical face")?;
     const OPERATION: &str = "index SLDPRT cosmetic thread history features";
     let mut native_features = HashMap::new();
@@ -2697,9 +2884,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         ctx.charge_work(1, OPERATION)?;
         if !native_features.contains_key(native_feature.id.as_str()) {
             ctx.charge_collection_items(1, OPERATION)?;
-            native_features.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-            })?;
+            native_features
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         }
         native_features.insert(native_feature.id.as_str(), native_feature);
         ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
@@ -2713,11 +2900,15 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             continue;
         };
         ctx.charge_work(1, ID_OPERATION)?;
-        let (mut id_text, id_reservation) =
-            crate::text_admission::reserve_scoped_string(ctx, feature.id.as_str().len(), ID_OPERATION)?;
+        let (mut id_text, id_reservation) = crate::text_admission::reserve_scoped_string(
+            ctx,
+            feature.id.as_str().len(),
+            ID_OPERATION,
+        )?;
         id_text.push_str(feature.id.as_str());
-        let id = cadmpeg_ir::features::FeatureId::mint(id_text)
-            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id"))?;
+        let id = cadmpeg_ir::features::FeatureId::mint(id_text).map_err(|_| {
+            cadmpeg_core::CodecError::malformed("invalid SLDPRT cosmetic thread feature id")
+        })?;
         ctx.reserve_collection_vec(&mut scoped_ids, 1, ID_OPERATION)?;
         scoped_ids.push(id_reservation);
         if let Some(previous) = feature_ids_by_native.get_mut(native_ref) {
@@ -2725,9 +2916,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             continue;
         }
         ctx.charge_collection_items(1, ID_OPERATION)?;
-        feature_ids_by_native.try_reserve(1).map_err(|_| {
-            ctx.refuse_codec_limit(ID_OPERATION, u64::MAX - 1, u64::MAX)
-        })?;
+        feature_ids_by_native
+            .try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(ID_OPERATION, u64::MAX - 1, u64::MAX))?;
         let (mut native_key, key_reservation) =
             crate::text_admission::reserve_scoped_string(ctx, native_ref.len(), ID_OPERATION)?;
         native_key.push_str(native_ref);
@@ -2765,18 +2956,33 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 }
                 const REFERENCE_OPERATION: &str = "collect SLDPRT cosmetic thread references";
                 let format_reference_key = |lane_key: &str, offset: u64| {
-                    let digits = if offset == 0 { 1 } else {
+                    let digits = if offset == 0 {
+                        1
+                    } else {
                         usize::try_from(offset.ilog10())
                             .ok()
                             .and_then(|digits| digits.checked_add(1))
-                            .ok_or_else(|| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX)
+                            })?
                     };
-                    let bytes = lane_key.len().checked_add(1)
+                    let bytes = lane_key
+                        .len()
+                        .checked_add(1)
                         .and_then(|size| size.checked_add(digits))
-                        .ok_or_else(|| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?;
-                    let (mut key, reservation) = crate::text_admission::reserve_scoped_string(ctx, bytes, REFERENCE_OPERATION)?;
-                    write!(key, "{lane_key}:{offset}")
-                        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT cylinder reference key"))?;
+                        .ok_or_else(|| {
+                            ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX)
+                        })?;
+                    let (mut key, reservation) = crate::text_admission::reserve_scoped_string(
+                        ctx,
+                        bytes,
+                        REFERENCE_OPERATION,
+                    )?;
+                    write!(key, "{lane_key}:{offset}").map_err(|_| {
+                        cadmpeg_core::CodecError::malformed(
+                            "cannot format SLDPRT cylinder reference key",
+                        )
+                    })?;
                     Ok::<_, cadmpeg_core::CodecError>((key, reservation))
                 };
                 let mut references = Vec::<(
@@ -2786,7 +2992,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 )>::new();
                 let mut key_reservations = Vec::new();
                 for lane in lanes {
-                    let lane_key = lane.id.rsplit_once('#')
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for selection in &lane.surface_selections {
                         ctx.charge_work(1, REFERENCE_OPERATION)?;
@@ -2806,7 +3014,8 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 }
                 for lane in lanes {
                     let Some((_, start, end)) = feature_object_byte_ranges(ctx, histories, lane)?
-                        .get(native_feature.id.as_str()).copied()
+                        .get(native_feature.id.as_str())
+                        .copied()
                     else {
                         continue;
                     };
@@ -2817,9 +3026,15 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if class.name != "moCylinderRef_w" {
                             continue;
                         }
-                        let token = usize::try_from(class.offset).ok()
-                            .and_then(|offset| class.name.len().checked_add(6)
-                                .and_then(|width| offset.checked_add(width)))
+                        let token = usize::try_from(class.offset)
+                            .ok()
+                            .and_then(|offset| {
+                                class
+                                    .name
+                                    .len()
+                                    .checked_add(6)
+                                    .and_then(|width| offset.checked_add(width))
+                            })
                             .and_then(|body| View::u16_le_at(&lane.native_payload, body))
                             .filter(|token| is_class_token(*token));
                         let Some(token) = token else {
@@ -2833,13 +3048,21 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         }
                         cylinder_tokens.insert(token);
                     }
-                    let lane_key = lane.id.rsplit_once('#')
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
                         .map_or(lane.id.as_str(), |(_, key)| key);
                     for (marker, components) in cosmetic_thread_cylinder_marker_reference(
-                        ctx, native_feature, lane, start, end, &cylinder_tokens,
+                        ctx,
+                        native_feature,
+                        lane,
+                        start,
+                        end,
+                        &cylinder_tokens,
                     )? {
-                        let offset = u64::try_from(marker)
-                            .map_err(|_| ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                        let offset = u64::try_from(marker).map_err(|_| {
+                            ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX)
+                        })?;
                         let (key, reservation) = format_reference_key(lane_key, offset)?;
                         ctx.reserve_collection_vec(&mut key_reservations, 1, REFERENCE_OPERATION)?;
                         key_reservations.push(reservation);
@@ -2848,11 +3071,17 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     }
                 }
                 const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
-                let count = u64::try_from(references.len())
-                    .map_err(|_| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
-                let levels = if references.len() > 1 { references.len().ilog2() + 1 } else { 1 };
-                let sort_work = count.checked_mul(u64::from(levels))
-                    .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                let count = u64::try_from(references.len()).map_err(|_| {
+                    ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
+                let levels = if references.len() > 1 {
+                    references.len().ilog2() + 1
+                } else {
+                    1
+                };
+                let sort_work = count.checked_mul(u64::from(levels)).ok_or_else(|| {
+                    ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
+                })?;
                 ctx.charge_work(sort_work, NATIVE_OPERATION)?;
                 references.sort_unstable_by(|left, right| left.0.cmp(&right.0));
                 let native = if references.is_empty() {
@@ -2867,14 +3096,22 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         if last == Some(reference.as_str()) {
                             continue;
                         }
-                        bytes = bytes.checked_add(reference.len())
+                        bytes = bytes
+                            .checked_add(reference.len())
                             .and_then(|size| size.checked_add(usize::from(distinct != 0)))
-                            .ok_or_else(|| ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX))?;
+                            .ok_or_else(|| {
+                                ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
+                            })?;
                         distinct += 1;
                         last = Some(reference.as_str());
                     }
                     let mut native = String::new();
-                    crate::text_admission::reserve_retained_string(ctx, &mut native, bytes, NATIVE_OPERATION)?;
+                    crate::text_admission::reserve_retained_string(
+                        ctx,
+                        &mut native,
+                        bytes,
+                        NATIVE_OPERATION,
+                    )?;
                     native.push_str(PREFIX);
                     last = None;
                     for (reference, _, _) in &references {
@@ -2898,20 +3135,31 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         None => None,
                         Some(components) => {
                             let explicit = explicit_producer.as_deref().and_then(|producer_ref| {
-                                let producer = history_features.iter().copied()
+                                let producer = history_features
+                                    .iter()
+                                    .copied()
                                     .find(|candidate| candidate.id.as_str() == producer_ref)?;
                                 let component = components.first()?;
-                                component.local_id.is_some().then_some((component, producer))
+                                component
+                                    .local_id
+                                    .is_some()
+                                    .then_some((component, producer))
                             });
                             let selected = match explicit {
                                 Some(selected) => Some(selected),
                                 None => component_path_feature(
-                                    ctx, components, &history_features,
-                                    native_feature.id.as_str(), ComponentPathEnd::Leading,
+                                    ctx,
+                                    components,
+                                    &history_features,
+                                    native_feature.id.as_str(),
+                                    ComponentPathEnd::Leading,
                                 )?,
                             };
                             selected.and_then(|(component, producer)| {
-                                Some((feature_ids_by_native.get(producer.id.as_str())?, component.local_id?))
+                                Some((
+                                    feature_ids_by_native.get(producer.id.as_str())?,
+                                    component.local_id?,
+                                ))
                             })
                         }
                     };
@@ -2932,21 +3180,34 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     let Some(native) = native else {
                         return Ok(());
                     };
-                    let producer_id = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
-                    let local_id_text = crate::text_admission::format_retained(ctx, format_args!("{local_id}"), GENERATED_OPERATION)?;
-                    *face = match cadmpeg_ir::features::GeneratedFaceRef::new(producer_id, local_id_text) {
+                    let producer_id =
+                        copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                    let local_id_text = crate::text_admission::format_retained(
+                        ctx,
+                        format_args!("{local_id}"),
+                        GENERATED_OPERATION,
+                    )?;
+                    *face = match cadmpeg_ir::features::GeneratedFaceRef::new(
+                        producer_id,
+                        local_id_text,
+                    ) {
                         Ok(generated_face) => {
                             let mut faces = Vec::new();
                             ctx.reserve_collection_vec(&mut faces, 1, GENERATED_OPERATION)?;
                             faces.push(generated_face);
-                            let native_copy = crate::text_admission::format_retained(ctx, format_args!("{native}"), GENERATED_OPERATION)?;
+                            let native_copy = crate::text_admission::format_retained(
+                                ctx,
+                                format_args!("{native}"),
+                                GENERATED_OPERATION,
+                            )?;
                             cadmpeg_ir::features::FaceSelection::generated(faces, native_copy)
                                 .unwrap_or(cadmpeg_ir::features::FaceSelection::Native(native))
                         }
                         Err(_) => cadmpeg_ir::features::FaceSelection::Native(native),
                     };
                     if producer != feature_id && !dependencies.contains(producer) {
-                        let dependency = copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
+                        let dependency =
+                            copy_projection_feature_id(ctx, producer, GENERATED_OPERATION)?;
                         dependencies.try_insert_charged(dependency, ctx, GENERATED_OPERATION)?;
                     }
                     return Ok(());
@@ -2956,16 +3217,23 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 };
                 let diameter = diameter.get();
 
-                let selected = match unique_cylindrical_face(ctx, diameter * 0.5, faces, surfaces)? {
+                let selected = match unique_cylindrical_face(ctx, diameter * 0.5, faces, surfaces)?
+                {
                     Some(selected) => Some(selected),
-                    None if native.is_some() => unique_topological_cylindrical_face(ctx, faces, surfaces)?,
+                    None if native.is_some() => {
+                        unique_topological_cylindrical_face(ctx, faces, surfaces)?
+                    }
                     None => None,
                 };
                 let Some(selected) = selected else {
                     return Ok(());
                 };
                 let mut selected_faces = Vec::new();
-                ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound cosmetic thread face")?;
+                ctx.reserve_collection_vec(
+                    &mut selected_faces,
+                    1,
+                    "project SLDPRT unbound cosmetic thread face",
+                )?;
                 selected_faces.push(selected);
                 *face = match native {
                     Some(native) => cadmpeg_ir::features::FaceSelection::Resolved {
@@ -2993,14 +3261,18 @@ fn unique_cylindrical_face(
     }
     let tolerance = (radius.abs() * EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9)
         .max(EPS_PROJECTIONS_UNIQUE_CYLINDRICAL_FACE_E9);
-    unique_matching_face(ctx, faces, surfaces, "find unique SLDPRT cylindrical face", |surface| {
-        match surface.geometry {
+    unique_matching_face(
+        ctx,
+        faces,
+        surfaces,
+        "find unique SLDPRT cylindrical face",
+        |surface| match surface.geometry {
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder_surface)) => {
                 (cylinder_surface.radius().get() - radius).abs() <= tolerance
             }
             _ => false,
-        }
-    })
+        },
+    )
 }
 
 fn unique_matching_face(
@@ -3024,10 +3296,17 @@ fn unique_matching_face(
             break;
         }
     }
-    selected.map(|id| {
-        let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), operation)?;
-        FaceId::mint(text).map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT face id"))
-    }).transpose()
+    selected
+        .map(|id| {
+            let text = crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", id.as_str()),
+                operation,
+            )?;
+            FaceId::mint(text)
+                .map_err(|_| cadmpeg_core::CodecError::malformed("invalid SLDPRT face id"))
+        })
+        .transpose()
 }
 
 fn unique_topological_cylindrical_face(
@@ -3035,12 +3314,18 @@ fn unique_topological_cylindrical_face(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<Option<FaceId>, cadmpeg_core::CodecError> {
-    unique_matching_face(ctx, faces, surfaces, "find unique SLDPRT topological cylinder face", |surface| {
-        matches!(
-            surface.geometry,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-        )
-    })
+    unique_matching_face(
+        ctx,
+        faces,
+        surfaces,
+        "find unique SLDPRT topological cylinder face",
+        |surface| {
+            matches!(
+                surface.geometry,
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+            )
+        },
+    )
 }
 
 /// Resolve frame-only offset-plane supports when exactly one B-rep face lies
@@ -3056,7 +3341,8 @@ pub(crate) fn project_unbound_offset_plane_faces(
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| {
                 let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
-                    reference, ..
+                    reference,
+                    ..
                 }) = definition
                 else {
                     return Ok(());
@@ -3067,11 +3353,17 @@ pub(crate) fn project_unbound_offset_plane_faces(
                     }
                     _ => return Ok(()),
                 };
-                let Some(selected) = unique_planar_face(ctx, origin.get(), normal, faces, surfaces)? else {
+                let Some(selected) =
+                    unique_planar_face(ctx, origin.get(), normal, faces, surfaces)?
+                else {
                     return Ok(());
                 };
                 let mut selected_faces = Vec::new();
-                ctx.reserve_collection_vec(&mut selected_faces, 1, "project SLDPRT unbound offset plane face")?;
+                ctx.reserve_collection_vec(
+                    &mut selected_faces,
+                    1,
+                    "project SLDPRT unbound offset plane face",
+                )?;
                 selected_faces.push(selected);
                 *reference = Some(cadmpeg_ir::features::DatumPlaneReference::Face {
                     face: cadmpeg_ir::features::FaceSelection::Faces(selected_faces),

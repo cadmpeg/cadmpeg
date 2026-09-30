@@ -404,9 +404,9 @@ fn active_configuration_inherits_late_feature_resolutions() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     sync_active_configuration_resolutions(&ctx, &mut ir).unwrap();
 
     assert!(
@@ -473,19 +473,22 @@ fn active_configuration_hole_placements_refuse_collection_limit() {
         cadmpeg_ir::features::holes::HoleConstruction::form(HoleKind::Simple),
         None,
         None,
-    ).unwrap();
-    let definition = |placements| FeatureDefinition::Operation(FeatureOperation::Hole {
-        profile: None,
-        profile_filter: None,
-        face: None,
-        direction: None,
-        placements,
-        shape: shape.clone(),
-        extent: None,
-        bottom: None,
-        taper_angle: None,
-        allow_multi_profile_faces: None,
-    });
+    )
+    .unwrap();
+    let definition = |placements| {
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            profile: None,
+            profile_filter: None,
+            face: None,
+            direction: None,
+            placements,
+            shape: shape.clone(),
+            extent: None,
+            bottom: None,
+            taper_angle: None,
+            allow_multi_profile_faces: None,
+        })
+    };
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
         id: feature_id.clone(),
@@ -497,12 +500,16 @@ fn active_configuration_hole_placements_refuse_collection_limit() {
         source_tag: None,
         source_text: None,
         source_content: cadmpeg_ir::features::FeatureContent::default(),
-        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition(Some(vec![
-            HolePlacement::Directed {
-                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-            },
-        ]))),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition(Some(
+            vec![HolePlacement::Directed {
+                position: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+                    .unwrap(),
+                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                    0.0, 0.0, 1.0,
+                ))
+                .unwrap(),
+            }],
+        ))),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -531,14 +538,17 @@ fn active_configuration_hole_placements_refuse_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     assert!(matches!(
         &ir.model.configurations[0].feature_states[&feature_id].definition,
-        FeatureDefinition::Operation(FeatureOperation::Hole { placements: None, .. })
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            placements: None,
+            ..
+        })
     ));
 }
 
@@ -560,9 +570,16 @@ fn active_configuration_pattern_scan_refuses_work_limit() {
             FeatureDefinition::Operation(FeatureOperation::Pattern {
                 seeds: Vec::new(),
                 pattern: PatternKind::new(PatternTransform::Mirror {
-                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
-                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
-                }).unwrap(),
+                    plane_origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+                        0.0, 0.0, 0.0,
+                    ))
+                    .unwrap(),
+                    plane_normal: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
+                        0.0, 0.0, 1.0,
+                    ))
+                    .unwrap(),
+                })
+                .unwrap(),
             }),
         ),
         native_ref: None,
@@ -584,9 +601,9 @@ fn active_configuration_pattern_scan_refuses_work_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
 }
@@ -643,15 +660,16 @@ fn active_configuration_cosmetic_face_refuses_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     let error = sync_active_configuration_resolutions(&ctx, &mut ir).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     assert!(matches!(
         ir.model.configurations[0].feature_states[&feature_id].definition,
         FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-            face: FaceSelection::Unresolved, ..
+            face: FaceSelection::Unresolved,
+            ..
         })
     ));
 }
@@ -788,9 +806,9 @@ fn active_configuration_snapshot_refuses_parameter_text_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     let error = snapshot_active_configuration(&ctx, &mut ir).unwrap_err();
     assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     assert!(ir.model.configurations[0].parameter_values.is_empty());
@@ -860,9 +878,9 @@ fn active_configuration_snapshots_final_neutral_design_state() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"configuration", &arena, &policy,
-    ).unwrap();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"configuration", &arena, &policy)
+            .unwrap();
     snapshot_active_configuration(&ctx, &mut ir).unwrap();
 
     assert_eq!(

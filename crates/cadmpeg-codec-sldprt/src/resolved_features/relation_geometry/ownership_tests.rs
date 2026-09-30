@@ -23,12 +23,8 @@ pub(super) fn relation_lane() -> FeatureInputLane {
             family: FeatureInputRelationFamily::CircleDiameter,
             class_ref: "class".into(),
             feature_ref: "feature".into(),
-            scalars: RelationScalars::from_refs(
-                vec!["scalar".into()],
-                Some("scalar".into()),
-                None,
-            )
-            .unwrap(),
+            scalars: RelationScalars::from_refs(vec!["scalar".into()], Some("scalar".into()), None)
+                .unwrap(),
             operands: Vec::new(),
         }],
         body_selections: Vec::new(),

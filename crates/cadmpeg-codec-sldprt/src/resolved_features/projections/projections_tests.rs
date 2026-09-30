@@ -29,7 +29,9 @@ use std::collections::BTreeMap;
 mod limits;
 mod patterns;
 
-fn with_projection_context<R>(test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R) -> R {
+fn with_projection_context<R>(
+    test: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> R,
+) -> R {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -67,9 +69,11 @@ fn draft_feature_identity_index_refuses_retained_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error = super::project_draft_operands(&ctx, std::slice::from_mut(&mut feature), &[], &[])
         .expect_err("draft feature identity exceeds retained limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "index SLDPRT draft feature identities"));
+            && limit.operation == "index SLDPRT draft feature identities")
+    );
 }
 
 #[test]
@@ -103,7 +107,8 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             4.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        )).expect("cylindrical face search"),
+        ))
+        .expect("cylindrical face search"),
         Some(face.id.clone())
     );
     assert_eq!(
@@ -112,7 +117,8 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             3.0,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        )).expect("cylindrical face search"),
+        ))
+        .expect("cylindrical face search"),
         None
     );
     assert_eq!(
@@ -120,7 +126,8 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             ctx,
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface)
-        )).expect("topological cylinder search"),
+        ))
+        .expect("topological cylinder search"),
         Some(face.id.clone())
     );
     let mut duplicate = face.clone();
@@ -131,12 +138,17 @@ fn cosmetic_thread_radius_requires_one_topological_cylinder_face() {
             4.0,
             &[face.clone(), duplicate.clone()],
             std::slice::from_ref(&surface),
-        )).expect("cylindrical face search"),
+        ))
+        .expect("cylindrical face search"),
         None
     );
     assert_eq!(
-        with_projection_context(|ctx| unique_topological_cylindrical_face(ctx, &[face, duplicate], &[surface]))
-            .expect("topological cylinder search"),
+        with_projection_context(|ctx| unique_topological_cylindrical_face(
+            ctx,
+            &[face, duplicate],
+            &[surface]
+        ))
+        .expect("topological cylinder search"),
         None
     );
 }
@@ -173,7 +185,8 @@ fn frame_only_plane_support_requires_one_coincident_face() {
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface),
-        )).expect("planar face search"),
+        ))
+        .expect("planar face search"),
         Some(face.id.clone())
     );
     assert_eq!(
@@ -183,7 +196,8 @@ fn frame_only_plane_support_requires_one_coincident_face() {
             Vector3::new(0.0, 0.0, 1.0),
             std::slice::from_ref(&face),
             std::slice::from_ref(&surface),
-        )).expect("planar face search"),
+        ))
+        .expect("planar face search"),
         None
     );
     let mut duplicate = face.clone();
@@ -195,7 +209,8 @@ fn frame_only_plane_support_requires_one_coincident_face() {
             Vector3::new(0.0, 0.0, 1.0),
             &[face, duplicate],
             &[surface],
-        )).expect("planar face search"),
+        ))
+        .expect("planar face search"),
         None
     );
 }
@@ -251,12 +266,15 @@ fn resolved_plane_binds_to_a_face_without_retaining_a_duplicate_frame() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| project_unbound_offset_plane_faces(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&surface),
-    )).expect("offset plane projection");
+    with_projection_context(|ctx| {
+        project_unbound_offset_plane_faces(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&surface),
+        )
+    })
+    .expect("offset plane projection");
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -320,12 +338,15 @@ fn generic_native_offset_plane_support_stays_native() {
         native_ref: None,
     }];
 
-    with_projection_context(|ctx| project_unbound_offset_plane_faces(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&surface),
-    )).expect("offset plane projection");
+    with_projection_context(|ctx| {
+        project_unbound_offset_plane_faces(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&face),
+            std::slice::from_ref(&surface),
+        )
+    })
+    .expect("offset plane projection");
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::Face { face }),
@@ -448,14 +469,17 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| project_unbound_cosmetic_thread_faces(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        &[lane("lane-a", 40), lane("lane-b", 60)],
-        &[],
-        &[],
-    )).expect("cosmetic thread face projection");
+    with_projection_context(|ctx| {
+        project_unbound_cosmetic_thread_faces(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&history),
+            &[lane("lane-a", 40), lane("lane-b", 60)],
+            &[],
+            &[],
+        )
+    })
+    .expect("cosmetic thread face projection");
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::CosmeticThread { face, .. },
@@ -507,14 +531,17 @@ fn cosmetic_thread_uses_consensus_persistent_face_path_before_radius() {
         *face = cadmpeg_ir::features::FaceSelection::Unresolved;
         *diameter = Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap());
     });
-    with_projection_context(|ctx| project_unbound_cosmetic_thread_faces(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        &[],
-        std::slice::from_ref(&topology_face),
-        std::slice::from_ref(&surface),
-    )).expect("cosmetic thread face projection");
+    with_projection_context(|ctx| {
+        project_unbound_cosmetic_thread_faces(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&history),
+            &[],
+            std::slice::from_ref(&topology_face),
+            std::slice::from_ref(&surface),
+        )
+    })
+    .expect("cosmetic thread face projection");
     assert!(matches!(
         features[1].evaluation.definition(),
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::CosmeticThread {
@@ -633,15 +660,17 @@ fn cosmetic_thread_accepts_repeated_carriers_with_distinct_owner_paths() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| project_compact_surface_selections(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        &[
-            lane("one", selection("one", first_tail)),
-            lane("two", selection("two", second_tail)),
-        ],
-    ))
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&history),
+            &[
+                lane("one", selection("one", first_tail)),
+                lane("two", selection("two", second_tail)),
+            ],
+        )
+    })
     .unwrap();
 
     assert!(matches!(
@@ -708,7 +737,10 @@ fn compact_surface_selection_binds_surface_operation_face_slot() {
         references: Vec::new(),
         sketch_entities: Vec::new(),
     };
-    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane])).unwrap();
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
+    })
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::OffsetSurface { faces, .. }) =
         features[0].evaluation.definition()
@@ -799,7 +831,10 @@ fn compact_surface_selection_binds_full_round_fillet_face_sets() {
     for selection in &mut lane_two.surface_selections {
         selection.parent = lane_two.id.clone();
     }
-    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane_two])).unwrap();
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane_two])
+    })
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::FullRoundFillet { groups }) =
         features[1].evaluation.definition()
@@ -929,7 +964,10 @@ fn compact_surface_cut_binds_target_body_and_tool_face_by_vector_order() {
         selection.parent = lane2.id.clone();
     }
 
-    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])).unwrap();
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(ctx, &mut features, &[], &[lane, lane2])
+    })
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
         targets,
@@ -1041,7 +1079,10 @@ fn planar_surface_keeps_unresolved_definition_and_adds_defining_dependencies() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[], &[lane])).unwrap();
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(ctx, &mut features, &[], &[lane])
+    })
+    .unwrap();
 
     assert!(matches!(
         features[2].evaluation.definition(),
@@ -1162,15 +1203,17 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| project_compact_surface_selections(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        &[
-            lane("one", selection("one", first_signature)),
-            lane("two", selection("two", second_signature)),
-        ],
-    ))
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&history),
+            &[
+                lane("one", selection("one", first_signature)),
+                lane("two", selection("two", second_signature)),
+            ],
+        )
+    })
     .unwrap();
 
     let cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -1198,15 +1241,17 @@ fn compact_surface_selection_accepts_semantic_lane_consensus() {
     });
     let mut conflicting = selection("conflicting", first_signature);
     conflicting.components[0].local_id = Some(8);
-    with_projection_context(|ctx| project_compact_surface_selections(
-        ctx,
-        &mut features,
-        std::slice::from_ref(&history),
-        &[
-            lane("one", selection("one", first_signature)),
-            lane("conflicting", conflicting),
-        ],
-    ))
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(
+            ctx,
+            &mut features,
+            std::slice::from_ref(&history),
+            &[
+                lane("one", selection("one", first_signature)),
+                lane("conflicting", conflicting),
+            ],
+        )
+    })
     .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
@@ -1340,7 +1385,10 @@ fn split_face_collects_distinct_generated_target_faces() {
         sketch_entities: Vec::new(),
     };
 
-    with_projection_context(|ctx| project_compact_surface_selections(ctx, &mut features, &[history], &[lane])).unwrap();
+    with_projection_context(|ctx| {
+        project_compact_surface_selections(ctx, &mut features, &[history], &[lane])
+    })
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
         features[2].evaluation.definition()
@@ -1495,13 +1543,15 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(
-        ctx,
-        "variable",
-        std::slice::from_ref(&history),
-        std::slice::from_ref(&lane),
-        &[&selection],
-    ))
+    let groups = with_projection_context(|ctx| {
+        variable_fillet_radius_groups(
+            ctx,
+            "variable",
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+            &[&selection],
+        )
+    })
     .expect("fillet resource limits")
     .expect("vertex join");
     assert!(matches!(
@@ -1692,9 +1742,11 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection]))
-        .expect("fillet resource limits")
-        .expect("legacy edge-control join");
+    let groups = with_projection_context(|ctx| {
+        variable_fillet_radius_groups(ctx, "variable", &[history], &[lane], &[&selection])
+    })
+    .expect("fillet resource limits")
+    .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
         [(RadiusSpec::Variable { points }, selections)]
@@ -1758,13 +1810,15 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
         terminal_feature_ref: None,
     };
 
-    let groups = with_projection_context(|ctx| variable_fillet_radius_groups(
-        ctx,
-        "variable",
-        std::slice::from_ref(&history),
-        &[],
-        &[&selection],
-    ))
+    let groups = with_projection_context(|ctx| {
+        variable_fillet_radius_groups(
+            ctx,
+            "variable",
+            std::slice::from_ref(&history),
+            &[],
+            &[&selection],
+        )
+    })
     .expect("fillet resource limits")
     .expect("endpoint-less two-control roster");
     assert!(matches!(
@@ -1778,9 +1832,15 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
 
     let mut collision = selection;
     collision.references[0][0].instance = Some(0x8083);
-    assert!(with_projection_context(|ctx| variable_fillet_radius_groups(ctx, "variable", &[history], &[], &[&collision]))
-        .expect("fillet resource limits")
-        .is_none());
+    assert!(with_projection_context(|ctx| variable_fillet_radius_groups(
+        ctx,
+        "variable",
+        &[history],
+        &[],
+        &[&collision]
+    ))
+    .expect("fillet resource limits")
+    .is_none());
 }
 
 #[test]
@@ -1895,54 +1955,63 @@ fn a_sole_unresolved_fillet_group_carries_its_tangency_weight() {
 #[test]
 fn a_full_round_fillet_triple_needs_three_ordered_selections_per_lane() {
     with_projection_context(|ctx| {
-    let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
-        id: format!("{parent}-{offset}"),
-        parent: parent.into(),
-        ordinal: 0,
-        offset,
-        selector: 0,
-        kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
-        object_name_ref: "name".into(),
-        feature_ref: "fillet-native".into(),
-        producer_feature_refs: vec!["producer-native".into()],
-        terminal_feature_ref: Some("producer-native".into()),
-        components: vec![FeatureInputComponentPathEntry {
-            instance: Some(0x8020),
-            type_signature: [0; 12],
-            local_id: Some(local_id),
-        }],
-    };
+        let selection = |parent: &str, offset: u64, local_id: u32| FeatureInputSurfaceSelection {
+            id: format!("{parent}-{offset}"),
+            parent: parent.into(),
+            ordinal: 0,
+            offset,
+            selector: 0,
+            kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
+            object_name_ref: "name".into(),
+            feature_ref: "fillet-native".into(),
+            producer_feature_refs: vec!["producer-native".into()],
+            terminal_feature_ref: Some("producer-native".into()),
+            components: vec![FeatureInputComponentPathEntry {
+                instance: Some(0x8020),
+                type_signature: [0; 12],
+                local_id: Some(local_id),
+            }],
+        };
 
-    let lane = [
-        selection("lane-one", 40, 3),
-        selection("lane-one", 20, 2),
-        selection("lane-one", 60, 1),
-    ];
-    let borrowed = lane.iter().collect::<Vec<_>>();
-    let [center, side_one, side_two] =
-        full_round_fillet_selection_triple(ctx, &borrowed).expect("grouping").expect("one lane of three is a triple");
-    assert_eq!(
-        [center.offset, side_one.offset, side_two.offset],
-        [20, 40, 60]
-    );
+        let lane = [
+            selection("lane-one", 40, 3),
+            selection("lane-one", 20, 2),
+            selection("lane-one", 60, 1),
+        ];
+        let borrowed = lane.iter().collect::<Vec<_>>();
+        let [center, side_one, side_two] = full_round_fillet_selection_triple(ctx, &borrowed)
+            .expect("grouping")
+            .expect("one lane of three is a triple");
+        assert_eq!(
+            [center.offset, side_one.offset, side_two.offset],
+            [20, 40, 60]
+        );
 
-    let short = lane[..2].iter().collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(ctx, &short).expect("grouping").is_none());
+        let short = lane[..2].iter().collect::<Vec<_>>();
+        assert!(full_round_fillet_selection_triple(ctx, &short)
+            .expect("grouping")
+            .is_none());
 
-    let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
-    let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(ctx, &with_short_lane).expect("grouping").is_none());
+        let short_lane = [selection("lane-two", 20, 2), selection("lane-two", 40, 3)];
+        let with_short_lane = lane.iter().chain(&short_lane).collect::<Vec<_>>();
+        assert!(full_round_fillet_selection_triple(ctx, &with_short_lane)
+            .expect("grouping")
+            .is_none());
 
-    let other_lane = [
-        selection("lane-two", 20, 9),
-        selection("lane-two", 40, 8),
-        selection("lane-two", 60, 7),
-    ];
-    let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(ctx, &disagreeing).expect("grouping").is_none());
+        let other_lane = [
+            selection("lane-two", 20, 9),
+            selection("lane-two", 40, 8),
+            selection("lane-two", 60, 7),
+        ];
+        let disagreeing = lane.iter().chain(&other_lane).collect::<Vec<_>>();
+        assert!(full_round_fillet_selection_triple(ctx, &disagreeing)
+            .expect("grouping")
+            .is_none());
 
-    let fourth = [selection("lane-one", 80, 4)];
-    let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
-    assert!(full_round_fillet_selection_triple(ctx, &over_long).expect("grouping").is_none());
+        let fourth = [selection("lane-one", 80, 4)];
+        let over_long = lane.iter().chain(&fourth).collect::<Vec<_>>();
+        assert!(full_round_fillet_selection_triple(ctx, &over_long)
+            .expect("grouping")
+            .is_none());
     });
 }

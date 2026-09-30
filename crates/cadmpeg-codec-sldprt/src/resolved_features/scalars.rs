@@ -49,7 +49,8 @@ pub(crate) fn named_scalars_charged(
             ctx.refuse_codec_limit("address SLDPRT named scalar", u64::MAX - 1, u64::MAX)
         })?;
         let operands = scalar_operands_charged(ctx, payload, trailer_offset, parent)?;
-        let id = crate::text_admission::format_retained(ctx, 
+        let id = crate::text_admission::format_retained(
+            ctx,
             format_args!("sldprt:feature-input:scalar#{lane_key}:{value_offset}"),
             "retain SLDPRT scalar identity",
         )?;
@@ -73,11 +74,19 @@ pub(crate) fn named_scalars_charged(
 }
 
 fn copy_scalar_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("retain SLDPRT scalar identity", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT scalar identity")?;
     let mut copy = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut copy, text.len(), "retain SLDPRT scalar identity")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut copy,
+        text.len(),
+        "retain SLDPRT scalar identity",
+    )?;
     copy.push_str(text);
     Ok(copy)
 }
@@ -160,7 +169,8 @@ fn scalar_operands_charged(
         let offset_u64 = u64::try_from(offset).map_err(|_| {
             ctx.refuse_codec_limit("address SLDPRT scalar operand", u64::MAX - 1, u64::MAX)
         })?;
-        let reference_ref = crate::text_admission::format_retained(ctx, 
+        let reference_ref = crate::text_admission::format_retained(
+            ctx,
             format_args!("sldprt:feature-input:reference#{lane_key}:{offset}"),
             "retain SLDPRT scalar identity",
         )?;
@@ -186,7 +196,11 @@ fn operand_cells(
     } else {
         36
     };
-    let second = if compact { 43 } else { first + operand_cell::LEN };
+    let second = if compact {
+        43
+    } else {
+        first + operand_cell::LEN
+    };
     [first, second].map(|relative| {
         let offset = trailer_offset.checked_add(relative)?;
         if compact {

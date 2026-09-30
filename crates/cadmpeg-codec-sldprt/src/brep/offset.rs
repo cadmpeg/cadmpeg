@@ -94,7 +94,9 @@ pub(super) fn scan(
         if let Some((attr, carrier)) = parse_at(body, offset) {
             if !out.contains_key(&attr) {
                 ctx.charge_collection_items(1, "index SLDPRT offset carriers")?;
-                out.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT offset carriers", u64::MAX - 1, u64::MAX))?;
+                out.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("index SLDPRT offset carriers", u64::MAX - 1, u64::MAX)
+                })?;
             }
             out.insert(attr, carrier);
         }
@@ -113,7 +115,8 @@ mod tests {
             bytes,
             &arena,
             &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("test carrier bytes fit service policy");
+        )
+        .expect("test carrier bytes fit service policy");
         super::scan(&ctx, bytes).expect("test carriers fit service policy")
     }
 

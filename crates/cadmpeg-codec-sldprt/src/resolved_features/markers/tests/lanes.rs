@@ -131,11 +131,13 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
                 Some(7),
             );
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| finding.message.contains("local object id does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("local object id does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -160,11 +162,13 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
                 native.feature_input_lanes[0].sketch_entities[0].local_id(),
             );
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| finding.message.contains("object index does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("object index does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),

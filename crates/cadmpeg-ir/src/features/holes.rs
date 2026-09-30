@@ -180,7 +180,9 @@ impl HoleShape {
     ) -> Result<(), &'static str> {
         let form = HoleConstruction::form(kind);
         if !Self::diameter_is_compatible(&form, self.exit_kind.as_ref(), diameter) {
-            return Err("construction and exit_kind treatment diameters must exceed the bore diameter");
+            return Err(
+                "construction and exit_kind treatment diameters must exceed the bore diameter",
+            );
         }
         match &mut self.construction {
             HoleConstruction::Form { kind: current, .. } => *current = kind,
@@ -497,16 +499,31 @@ impl HoleConstruction {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Self, cadmpeg_core::CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()), operation)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()),
+            operation,
+        )?;
         match self {
-            Self::Form { kind, specification } => Ok(Self::Form {
+            Self::Form {
+                kind,
+                specification,
+            } => Ok(Self::Form {
                 kind: *kind,
-                specification: specification.as_deref()
-                    .map(|value| value.try_clone_boxed_charged(ctx, operation)).transpose()?,
+                specification: specification
+                    .as_deref()
+                    .map(|value| value.try_clone_boxed_charged(ctx, operation))
+                    .transpose()?,
             }),
-            Self::NativeThread { major_diameter, thread_depth, pitch, drill_point_angle } => Ok(Self::NativeThread {
-                major_diameter: *major_diameter, thread_depth: *thread_depth,
-                pitch: *pitch, drill_point_angle: *drill_point_angle,
+            Self::NativeThread {
+                major_diameter,
+                thread_depth,
+                pitch,
+                drill_point_angle,
+            } => Ok(Self::NativeThread {
+                major_diameter: *major_diameter,
+                thread_depth: *thread_depth,
+                pitch: *pitch,
+                drill_point_angle: *drill_point_angle,
             }),
         }
     }
@@ -939,7 +956,10 @@ impl HoleSpecification {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         operation: &'static str,
     ) -> Result<Box<Self>, cadmpeg_core::CodecError> {
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()), operation)?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(std::mem::size_of::<Self>()),
+            operation,
+        )?;
         ctx.charge_collection_items(1, operation)?;
         let text = |value: &str| super::copy_feature_selection_text(ctx, value, operation);
         let standard = |value: &NonBlankString| {
@@ -947,18 +967,47 @@ impl HoleSpecification {
                 .ok_or_else(|| cadmpeg_core::CodecError::malformed("invalid decoded hole standard"))
         };
         let copied = match self {
-            Self::Clearance { standard: source_standard, designation, fit, modeled, cosmetic, hand, depth, clearance } => Self::Clearance {
+            Self::Clearance {
+                standard: source_standard,
+                designation,
+                fit,
+                modeled,
+                cosmetic,
+                hand,
+                depth,
+                clearance,
+            } => Self::Clearance {
                 standard: standard(source_standard)?,
                 designation: designation.as_deref().map(text).transpose()?,
                 fit: fit.as_deref().map(text).transpose()?,
-                modeled: *modeled, cosmetic: *cosmetic, hand: *hand, depth: *depth, clearance: *clearance,
+                modeled: *modeled,
+                cosmetic: *cosmetic,
+                hand: *hand,
+                depth: *depth,
+                clearance: *clearance,
             },
-            Self::Threaded { standard: source_standard, designation, class, modeled, cosmetic, pitch, major_diameter, hand, depth, clearance } => Self::Threaded {
+            Self::Threaded {
+                standard: source_standard,
+                designation,
+                class,
+                modeled,
+                cosmetic,
+                pitch,
+                major_diameter,
+                hand,
+                depth,
+                clearance,
+            } => Self::Threaded {
                 standard: standard(source_standard)?,
                 designation: designation.as_deref().map(text).transpose()?,
                 class: class.as_deref().map(text).transpose()?,
-                modeled: *modeled, cosmetic: *cosmetic, pitch: *pitch, major_diameter: *major_diameter,
-                hand: *hand, depth: *depth, clearance: *clearance,
+                modeled: *modeled,
+                cosmetic: *cosmetic,
+                pitch: *pitch,
+                major_diameter: *major_diameter,
+                hand: *hand,
+                depth: *depth,
+                clearance: *clearance,
             },
         };
         Ok(Box::new(copied))
@@ -1058,28 +1107,80 @@ mod length_mapping_tests {
     fn hole_form_edit_preserves_specification_storage_and_refuses_invalid_diameter() {
         let specification = Box::new(super::HoleSpecification::Clearance {
             standard: cadmpeg_core::nonblank_literal!("ISO"),
-            designation: Some("M4".into()), fit: None, modeled: false, cosmetic: false,
-            hand: super::ThreadHand::Right, depth: super::HoleThreadDepth::HoleDepth, clearance: None,
+            designation: Some("M4".into()),
+            fit: None,
+            modeled: false,
+            cosmetic: false,
+            hand: super::ThreadHand::Right,
+            depth: super::HoleThreadDepth::HoleDepth,
+            clearance: None,
         });
         let pointer = std::ptr::from_ref(specification.as_ref());
-        let mut hole = HoleShape::new(HoleConstruction::Form {
-            kind: HoleKind::Simple, specification: Some(specification),
-        }, Some(HoleKind::Counterbore { diameter: positive(5.0), depth: positive(1.0) }), Some(positive(2.0))).unwrap();
+        let mut hole = HoleShape::new(
+            HoleConstruction::Form {
+                kind: HoleKind::Simple,
+                specification: Some(specification),
+            },
+            Some(HoleKind::Counterbore {
+                diameter: positive(5.0),
+                depth: positive(1.0),
+            }),
+            Some(positive(2.0)),
+        )
+        .unwrap();
         let previous = hole.clone();
-        assert_eq!(hole.try_set_form_and_diameter(HoleKind::Simple, Some(positive(5.0))),
-            Err("construction and exit_kind treatment diameters must exceed the bore diameter"));
+        assert_eq!(
+            hole.try_set_form_and_diameter(HoleKind::Simple, Some(positive(5.0))),
+            Err("construction and exit_kind treatment diameters must exceed the bore diameter")
+        );
         assert_eq!(hole, previous);
-        hole.try_set_form_and_diameter(HoleKind::Counterbore { diameter: positive(4.0), depth: positive(1.0) }, Some(positive(3.0))).unwrap();
-        let HoleConstruction::Form { kind, specification: Some(specification) } = hole.construction() else { panic!("standard form"); };
+        hole.try_set_form_and_diameter(
+            HoleKind::Counterbore {
+                diameter: positive(4.0),
+                depth: positive(1.0),
+            },
+            Some(positive(3.0)),
+        )
+        .unwrap();
+        let HoleConstruction::Form {
+            kind,
+            specification: Some(specification),
+        } = hole.construction()
+        else {
+            panic!("standard form");
+        };
         assert_eq!(std::ptr::from_ref(specification.as_ref()), pointer);
-        assert_eq!(*kind, HoleKind::Counterbore { diameter: positive(4.0), depth: positive(1.0) });
+        assert_eq!(
+            *kind,
+            HoleKind::Counterbore {
+                diameter: positive(4.0),
+                depth: positive(1.0)
+            }
+        );
         assert_eq!(hole.diameter(), Some(positive(3.0)));
-        let mut threaded = HoleShape::new(HoleConstruction::NativeThread {
-            major_diameter: positive(4.0), thread_depth: positive(2.0), pitch: None,
-            drill_point_angle: InteriorAngle::new(1.0).unwrap(),
-        }, None, Some(positive(2.0))).unwrap();
-        threaded.try_set_form_and_diameter(HoleKind::Simple, Some(positive(3.0))).unwrap();
-        assert_eq!(threaded, HoleShape::new(HoleConstruction::form(HoleKind::Simple), None, Some(positive(3.0))).unwrap());
+        let mut threaded = HoleShape::new(
+            HoleConstruction::NativeThread {
+                major_diameter: positive(4.0),
+                thread_depth: positive(2.0),
+                pitch: None,
+                drill_point_angle: InteriorAngle::new(1.0).unwrap(),
+            },
+            None,
+            Some(positive(2.0)),
+        )
+        .unwrap();
+        threaded
+            .try_set_form_and_diameter(HoleKind::Simple, Some(positive(3.0)))
+            .unwrap();
+        assert_eq!(
+            threaded,
+            HoleShape::new(
+                HoleConstruction::form(HoleKind::Simple),
+                None,
+                Some(positive(3.0))
+            )
+            .unwrap()
+        );
     }
 
     #[test]

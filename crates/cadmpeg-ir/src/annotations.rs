@@ -391,8 +391,8 @@ impl AnnotationBuilder {
         field: String,
         exactness: Exactness,
     ) -> Result<&mut Self, &'static str> {
-        let field = FieldName::try_from(field)
-            .map_err(|_| "an exactness field name cannot be empty")?;
+        let field =
+            FieldName::try_from(field).map_err(|_| "an exactness field name cannot be empty")?;
         if exactness == Exactness::ByteExact {
             let Some(note) = self.annotations.exactness.remove(&id) else {
                 return Ok(self);
@@ -457,7 +457,9 @@ fn admit_identity_work(
 ) -> Result<(), cadmpeg_core::CodecError> {
     // A binary height bound covers node comparisons and one key copy.
     let levels = u64::from(usize::BITS - entries.leading_zeros()) + 1;
-    let work = levels.checked_mul(32).and_then(|work| work.checked_add(4))
+    let work = levels
+        .checked_mul(32)
+        .and_then(|work| work.checked_add(4))
         .and_then(|work| work.checked_mul(cadmpeg_core::decode::u64_from_index(bytes)))
         .and_then(|work| work.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
@@ -515,19 +517,37 @@ impl Annotations {
         }
         let mut targets = std::collections::BTreeSet::new();
         let mut remapping = Vec::new();
-        ctx.reserve_collection_vec(&mut remapping, ids.len(), "collect annotation identity remapping")?;
+        ctx.reserve_collection_vec(
+            &mut remapping,
+            ids.len(),
+            "collect annotation identity remapping",
+        )?;
         let mut scoped_reservations = Vec::new();
         for id in ids {
             ctx.charge_work(1, "remap annotation identities")?;
             let target = map(id)?;
-            admit_identity_work(ctx, targets.len(), target.len(), "index qualified annotation targets")?;
+            admit_identity_work(
+                ctx,
+                targets.len(),
+                target.len(),
+                "index qualified annotation targets",
+            )?;
             if targets.contains(&target) {
                 const PREFIX: &str = "annotation identity collision at ";
-                let bytes = PREFIX.len().checked_add(target.len())
-                    .ok_or_else(|| ctx.refuse_codec_limit("report annotation identity collision", u64::MAX - 1, u64::MAX))?;
-                ctx.charge_work(cadmpeg_core::decode::u64_from_index(bytes), "report annotation identity collision")?;
+                let bytes = PREFIX.len().checked_add(target.len()).ok_or_else(|| {
+                    ctx.refuse_codec_limit(
+                        "report annotation identity collision",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
+                ctx.charge_work(
+                    cadmpeg_core::decode::u64_from_index(bytes),
+                    "report annotation identity collision",
+                )?;
                 return Err(cadmpeg_core::CodecError::Malformed(ctx.format_retained(
-                    format_args!("{PREFIX}{target}"), "report annotation identity collision",
+                    format_args!("{PREFIX}{target}"),
+                    "report annotation identity collision",
                 )?));
             }
             let (mut target_check, target_reservation) =
@@ -541,7 +561,10 @@ impl Annotations {
                 "retain annotation remap reservations",
             )?;
             scoped_reservations.push(target_reservation);
-            ctx.charge_work(cadmpeg_core::decode::u64_from_index(id.len()), "copy source annotation identity")?;
+            ctx.charge_work(
+                cadmpeg_core::decode::u64_from_index(id.len()),
+                "copy source annotation identity",
+            )?;
             let (mut source, source_reservation) =
                 ctx.reserve_scoped_string(id.len(), "copy source annotation identity")?;
             source.push_str(id);
@@ -555,10 +578,30 @@ impl Annotations {
         }
         let mut remapped = Self::default();
         for (id, target) in remapping {
-            admit_identity_work(ctx, self.provenance.len(), id.len(), "remove source provenance identity")?;
-            admit_identity_work(ctx, self.exactness.len(), id.len(), "remove source exactness identity")?;
-            admit_identity_work(ctx, remapped.provenance.len(), target.len(), "store qualified provenance")?;
-            admit_identity_work(ctx, remapped.exactness.len(), target.len(), "store qualified exactness")?;
+            admit_identity_work(
+                ctx,
+                self.provenance.len(),
+                id.len(),
+                "remove source provenance identity",
+            )?;
+            admit_identity_work(
+                ctx,
+                self.exactness.len(),
+                id.len(),
+                "remove source exactness identity",
+            )?;
+            admit_identity_work(
+                ctx,
+                remapped.provenance.len(),
+                target.len(),
+                "store qualified provenance",
+            )?;
+            admit_identity_work(
+                ctx,
+                remapped.exactness.len(),
+                target.len(),
+                "store qualified exactness",
+            )?;
             let provenance = self.provenance.remove(&id);
             let exactness = self.exactness.remove(&id);
             match (provenance, exactness) {
@@ -693,7 +736,9 @@ mod tests {
         for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
             formatted.note("entity", &stream, offset).tag("tag");
             formatted.exactness("entity", exactness);
-            owned.note_owned(String::from("entity"), &stream, offset).tag("tag");
+            owned
+                .note_owned(String::from("entity"), &stream, offset)
+                .tag("tag");
             owned.exactness_owned(String::from("entity"), exactness);
         }
         let owned = owned.build();
@@ -817,17 +862,35 @@ mod tests {
         for entity_first in [false, true] {
             let mut borrowed = AnnotationBuilder::new();
             let mut owned = AnnotationBuilder::new();
-            for exactness in [Exactness::Derived, Exactness::Inferred, Exactness::ByteExact] {
+            for exactness in [
+                Exactness::Derived,
+                Exactness::Inferred,
+                Exactness::ByteExact,
+            ] {
                 if entity_first {
                     borrowed.exactness("test:point#1", exactness);
                     owned.exactness_owned("test:point#1".to_string(), exactness);
                 }
-                borrowed.field_exactness("test:point#1", "position.x", exactness).unwrap();
-                owned.field_exactness_owned("test:point#1".to_string(), "position.x".to_string(), exactness).unwrap();
+                borrowed
+                    .field_exactness("test:point#1", "position.x", exactness)
+                    .unwrap();
+                owned
+                    .field_exactness_owned(
+                        "test:point#1".to_string(),
+                        "position.x".to_string(),
+                        exactness,
+                    )
+                    .unwrap();
                 assert_eq!(borrowed.annotations(), owned.annotations());
             }
             let before = owned.annotations().clone();
-            assert!(owned.field_exactness_owned("test:point#1".to_string(), String::new(), Exactness::Derived).is_err());
+            assert!(owned
+                .field_exactness_owned(
+                    "test:point#1".to_string(),
+                    String::new(),
+                    Exactness::Derived
+                )
+                .is_err());
             assert_eq!(owned.annotations(), &before);
         }
     }

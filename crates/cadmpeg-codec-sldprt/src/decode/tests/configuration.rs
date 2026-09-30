@@ -197,8 +197,12 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
         native_ref: Some("native:configuration".into()),
     });
 
-    assign_configuration_bodies(&cadmpeg_test_support::service_decode_context(), &mut ir, Vec::new())
-        .unwrap();
+    assign_configuration_bodies(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut ir,
+        Vec::new(),
+    )
+    .unwrap();
     mark_active_configuration(&mut ir);
 
     let configuration = &ir.model.configurations[0];
@@ -274,8 +278,8 @@ fn configuration_loss_counting_refuses_caller_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
         .expect_err("configuration source index consumes one collection item");
@@ -310,8 +314,8 @@ fn design_loss_note_refuses_caller_collection_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let mut report = super::empty_report(true);
     let error = append_design_losses(&ctx, &ir, &mut report)
         .expect_err("the first design loss consumes one collection item");

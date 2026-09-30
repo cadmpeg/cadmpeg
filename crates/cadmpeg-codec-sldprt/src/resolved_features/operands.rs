@@ -8,9 +8,9 @@ use crate::records::operand_tag::NativeOperandTag;
 use crate::records::{
     FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
 };
-use std::collections::{HashMap, HashSet};
-use cadmpeg_core::decode::{DecodeContext, u64_from_index};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
+use std::collections::{HashMap, HashSet};
 
 pub(crate) fn resolve_scalar_operand_markers<'a>(
     ctx: &DecodeContext<'_>,
@@ -20,17 +20,42 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     let entities = collect_operand_candidates(ctx, entities)?;
     let mut resolved = Vec::new();
     for operand in operands {
-        let marker = resolve_operand_marker_excluding(ctx, &entities, operand.kind, operand.entity_index, |_| false)?;
+        let marker = resolve_operand_marker_excluding(
+            ctx,
+            &entities,
+            operand.kind,
+            operand.entity_index,
+            |_| false,
+        )?;
         ctx.reserve_collection_vec(&mut resolved, 1, "collect SLDPRT resolved scalar operands")?;
         resolved.push(marker);
     }
-    if let ([first_operand, second_operand], [Some(first), Some(second)]) = (operands, resolved.as_slice()) {
+    if let ([first_operand, second_operand], [Some(first), Some(second)]) =
+        (operands, resolved.as_slice())
+    {
         if first.id() == second.id() && first_operand.entity_index != second_operand.entity_index {
             let alternatives = [
-                resolve_operand_marker_excluding(ctx, &entities, first_operand.kind, first_operand.entity_index, |id| id == second.id())?.map(|alternative| [alternative, *second]),
-                resolve_operand_marker_excluding(ctx, &entities, second_operand.kind, second_operand.entity_index, |id| id == first.id())?.map(|alternative| [*first, alternative]),
+                resolve_operand_marker_excluding(
+                    ctx,
+                    &entities,
+                    first_operand.kind,
+                    first_operand.entity_index,
+                    |id| id == second.id(),
+                )?
+                .map(|alternative| [alternative, *second]),
+                resolve_operand_marker_excluding(
+                    ctx,
+                    &entities,
+                    second_operand.kind,
+                    second_operand.entity_index,
+                    |id| id == first.id(),
+                )?
+                .map(|alternative| [*first, alternative]),
             ];
-            let mut alternatives = alternatives.into_iter().flatten().filter(|[left, right]| left.id() != right.id());
+            let mut alternatives = alternatives
+                .into_iter()
+                .flatten()
+                .filter(|[left, right]| left.id() != right.id());
             if let (Some(alternative), None) = (alternatives.next(), alternatives.next()) {
                 resolved[0] = Some(alternative[0]);
                 resolved[1] = Some(alternative[1]);
@@ -44,13 +69,22 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
     }
     for (operand, target) in operands.iter().zip(&mut resolved) {
         if target.is_none() {
-            *target = resolve_operand_marker_excluding(ctx, &entities, operand.kind, operand.entity_index, |id| resolved_siblings.contains(id))?;
+            *target = resolve_operand_marker_excluding(
+                ctx,
+                &entities,
+                operand.kind,
+                operand.entity_index,
+                |id| resolved_siblings.contains(id),
+            )?;
         }
     }
     Ok(resolved)
 }
 
-fn collect_operand_candidates<T>(ctx: &DecodeContext<'_>, values: impl IntoIterator<Item = T>) -> Result<Vec<T>, CodecError> {
+fn collect_operand_candidates<T>(
+    ctx: &DecodeContext<'_>,
+    values: impl IntoIterator<Item = T>,
+) -> Result<Vec<T>, CodecError> {
     let mut result = Vec::new();
     for value in values {
         ctx.charge_work(1, "scan SLDPRT scalar operand markers")?;
@@ -60,20 +94,38 @@ fn collect_operand_candidates<T>(ctx: &DecodeContext<'_>, values: impl IntoItera
     Ok(result)
 }
 
-fn operand_marker_index<'a>(ctx: &DecodeContext<'_>, entities: &[&'a SketchInputEntity]) -> Result<HashMap<&'a str, &'a SketchInputEntity>, CodecError> {
+fn operand_marker_index<'a>(
+    ctx: &DecodeContext<'_>,
+    entities: &[&'a SketchInputEntity],
+) -> Result<HashMap<&'a str, &'a SketchInputEntity>, CodecError> {
     let mut result = HashMap::new();
     for entity in entities {
         ctx.charge_work(1, "index SLDPRT scalar operand markers")?;
         ctx.charge_collection_items(1, "index SLDPRT scalar operand markers")?;
-        result.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar operand markers", u64::MAX - 1, u64::MAX))?;
+        result.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "index SLDPRT scalar operand markers",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
         result.insert(entity.id(), *entity);
     }
     Ok(result)
 }
 
-fn reserve_operand_set<T: Eq + std::hash::Hash>(ctx: &DecodeContext<'_>, values: &mut HashSet<T>) -> Result<(), CodecError> {
+fn reserve_operand_set<T: Eq + std::hash::Hash>(
+    ctx: &DecodeContext<'_>,
+    values: &mut HashSet<T>,
+) -> Result<(), CodecError> {
     ctx.charge_collection_items(1, "index SLDPRT scalar operand markers")?;
-    values.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scalar operand markers", u64::MAX - 1, u64::MAX))
+    values.try_reserve(1).map_err(|_| {
+        ctx.refuse_codec_limit(
+            "index SLDPRT scalar operand markers",
+            u64::MAX - 1,
+            u64::MAX,
+        )
+    })
 }
 
 #[cfg(test)]
@@ -83,10 +135,19 @@ fn resolve_operand_marker<'a>(
     address: u16,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
-    resolve_operand_marker_excluding(&cadmpeg_test_support::service_decode_context(), &entities, kind, address, |_| false).unwrap()
+    resolve_operand_marker_excluding(
+        &cadmpeg_test_support::service_decode_context(),
+        &entities,
+        kind,
+        address,
+        |_| false,
+    )
+    .unwrap()
 }
 
-fn unique_entity<'a>(mut candidates: impl Iterator<Item = &'a SketchInputEntity>) -> Option<&'a SketchInputEntity> {
+fn unique_entity<'a>(
+    mut candidates: impl Iterator<Item = &'a SketchInputEntity>,
+) -> Option<&'a SketchInputEntity> {
     let first = candidates.next()?;
     candidates.next().is_none().then_some(first)
 }
@@ -98,21 +159,23 @@ fn resolve_operand_marker_excluding<'a>(
     address: u16,
     excluded: impl Fn(&str) -> bool,
 ) -> Result<Option<&'a SketchInputEntity>, CodecError> {
-    ctx.charge_work(u64_from_index(entities.len()), "scan SLDPRT scalar operand markers")?;
+    ctx.charge_work(
+        u64_from_index(entities.len()),
+        "scan SLDPRT scalar operand markers",
+    )?;
     let excluded = &excluded;
     if kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_81DD) {
-        let mut points = collect_operand_candidates(ctx, entities
-            .iter()
-            .copied()
-            .filter(|entity| {
+        let mut points = collect_operand_candidates(
+            ctx,
+            entities.iter().copied().filter(|entity| {
                 matches!(
                     entity.kind(),
                     SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                 ) && entity
                     .coordinates_m
                     .is_some_and(|coordinates| coordinates.into_iter().all(f64::is_finite))
-            })
-            )?;
+            }),
+        )?;
         points.sort_unstable_by_key(|entity| entity.offset());
         return Ok(points
             .get(usize::from(address))
@@ -294,11 +357,13 @@ fn resolve_operand_marker_excluding<'a>(
             }
         }
     }
-    let mut compatible = collect_operand_candidates(ctx, entities
-        .iter()
-        .copied()
-        .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-        )?;
+    let mut compatible = collect_operand_candidates(
+        ctx,
+        entities
+            .iter()
+            .copied()
+            .filter(|entity| operand_accepts_marker(kind, entity.kind())),
+    )?;
     compatible.sort_unstable_by_key(|entity| entity.offset());
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
@@ -341,19 +406,21 @@ fn resolve_operand_marker_excluding<'a>(
             let mut indirect = if point_operand_uses_link_graph(kind) {
                 linked_point_markers(ctx, entities, address, kind, excluded)?
             } else if operand_accepts_link_indirection(kind) {
-                collect_operand_candidates(ctx, entities
-                    .iter()
-                    .copied()
-                    .filter(|entity| entity.local_id() == Some(u32::from(address)))
-                    .flat_map(crate::records::SketchInputEntity::links)
-                    .filter_map(|link| {
-                        entities
-                            .iter()
-                            .copied()
-                            .find(|entity| entity.id() == link.entity_ref)
-                    })
-                    .filter(|entity| operand_accepts_marker(kind, entity.kind()))
-                    .filter(|entity| !excluded(entity.id()))
+                collect_operand_candidates(
+                    ctx,
+                    entities
+                        .iter()
+                        .copied()
+                        .filter(|entity| entity.local_id() == Some(u32::from(address)))
+                        .flat_map(crate::records::SketchInputEntity::links)
+                        .filter_map(|link| {
+                            entities
+                                .iter()
+                                .copied()
+                                .find(|entity| entity.id() == link.entity_ref)
+                        })
+                        .filter(|entity| operand_accepts_marker(kind, entity.kind()))
+                        .filter(|entity| !excluded(entity.id())),
                 )?
             } else {
                 Vec::new()
@@ -409,20 +476,33 @@ fn linked_point_markers<'a>(
     excluded: impl Fn(&str) -> bool,
 ) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
     let by_id = operand_marker_index(ctx, entities)?;
-    let mut pending = collect_operand_candidates(ctx, entities.iter().copied()
-        .filter(|entity| entity.local_id() == Some(u32::from(address)))
-        .filter(|entity| !operand_accepts_marker(kind, entity.kind()))
-        .map(SketchInputEntity::id))?;
+    let mut pending = collect_operand_candidates(
+        ctx,
+        entities
+            .iter()
+            .copied()
+            .filter(|entity| entity.local_id() == Some(u32::from(address)))
+            .filter(|entity| !operand_accepts_marker(kind, entity.kind()))
+            .map(SketchInputEntity::id),
+    )?;
     let mut visited = HashSet::new();
     let mut compatible = Vec::new();
     while let Some(id) = pending.pop() {
         ctx.charge_work(1, "walk SLDPRT scalar operand links")?;
-        if visited.contains(id) { continue; }
+        if visited.contains(id) {
+            continue;
+        }
         reserve_operand_set(ctx, &mut visited)?;
         visited.insert(id);
-        let Some(entity) = by_id.get(id).copied() else { continue; };
+        let Some(entity) = by_id.get(id).copied() else {
+            continue;
+        };
         if operand_accepts_marker(kind, entity.kind()) && !excluded(entity.id()) {
-            ctx.reserve_collection_vec(&mut compatible, 1, "collect SLDPRT scalar operand markers")?;
+            ctx.reserve_collection_vec(
+                &mut compatible,
+                1,
+                "collect SLDPRT scalar operand markers",
+            )?;
             compatible.push(entity);
             continue;
         }

@@ -30,7 +30,9 @@ fn classify_layers(scan: &crate::container::ContainerScan<'_>) -> super::LayerCl
         .expect("test dialect classification fits service policy")
 }
 
-fn dialect_loss(matched: &cadmpeg_core::dialect::DialectMatch) -> Option<cadmpeg_ir::report::loss::LossNote> {
+fn dialect_loss(
+    matched: &cadmpeg_core::dialect::DialectMatch,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
     super::dialect_loss(&cadmpeg_test_support::service_decode_context(), matched)
         .expect("test dialect loss fits service policy")
 }
@@ -53,9 +55,11 @@ fn dialect_classification_refuses_collection_limit() {
     let Err(error) = super::classify_layers(&ctx, &scan) else {
         panic!("classification must refuse the collection limit");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT Parasolid layers"));
+            && limit.operation == "collect SLDPRT Parasolid layers")
+    );
 }
 
 #[test]
@@ -71,9 +75,11 @@ fn dialect_classification_refuses_retained_limit() {
     let Err(error) = super::classify_layers(&ctx, &scan) else {
         panic!("classification must refuse the retained limit");
     };
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT Parasolid carrier"));
+            && limit.operation == "retain SLDPRT Parasolid carrier")
+    );
 }
 
 #[test]
@@ -490,12 +496,25 @@ fn dialect_decode_route_refuses_work_at_minimum_admission() {
     use cadmpeg_ir::codec::DecodeOptions;
     use std::io::Cursor;
     let source = container_declaring("unverified-declaration");
-    let mut options = DecodeOptions { policy: DecodePolicy::service(), ..DecodeOptions::default() };
-    let expected = SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap().ir().clone();
-    let admitted = |options: &DecodeOptions| match SldprtCodec.decode(&mut Cursor::new(&source), options) {
-        Ok(actual) => { assert_eq!(actual.ir(), &expected); true }
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let expected = SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap()
+        .ir()
+        .clone();
+    let admitted = |options: &DecodeOptions| match SldprtCodec
+        .decode(&mut Cursor::new(&source), options)
+    {
+        Ok(actual) => {
+            assert_eq!(actual.ir(), &expected);
+            true
+        }
         Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
-            assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
         }
         Err(error) => panic!("unexpected dialect decode error: {error}"),
     };
@@ -503,15 +522,23 @@ fn dialect_decode_route_refuses_work_at_minimum_admission() {
     let mut upper = 1_u64;
     loop {
         options.policy.limits.max_work_units = upper;
-        if admitted(&options) { break; }
+        if admitted(&options) {
+            break;
+        }
         upper = upper.checked_mul(2).unwrap();
     }
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         options.policy.limits.max_work_units = middle;
-        if admitted(&options) { upper = middle; } else { lower = middle + 1; }
+        if admitted(&options) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
     }
     assert!(upper > 0);
-    options.policy.limits.max_work_units = upper; assert!(admitted(&options));
-    options.policy.limits.max_work_units = upper - 1; assert!(!admitted(&options));
+    options.policy.limits.max_work_units = upper;
+    assert!(admitted(&options));
+    options.policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&options));
 }

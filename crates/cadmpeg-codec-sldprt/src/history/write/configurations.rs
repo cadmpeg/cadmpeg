@@ -35,7 +35,9 @@ pub(crate) fn prepare_configurations_for_write(
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let feature_state_hash = configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
@@ -52,7 +54,8 @@ pub(crate) fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.feature_states.is_empty());
-    let parameter_value_hash = configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?;
+    let parameter_value_hash =
+        configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?;
     let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
         source
             .attributes
@@ -94,7 +97,9 @@ pub(crate) fn prepare_configurations_for_write(
             (true, true) => {
                 let projected = native
                     .as_ref()
-                    .map(|value| project_configurations_charged(&hash_ctx, &value.feature_histories))
+                    .map(|value| {
+                        project_configurations_charged(&hash_ctx, &value.feature_histories)
+                    })
                     .transpose()?
                     .unwrap_or_default();
                 if configuration_hash(&hash_ctx, &projected)? != neutral_hash {
@@ -121,7 +126,9 @@ fn sync_configuration_design_state(
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let form_padding = ir
@@ -142,11 +149,17 @@ fn sync_configuration_design_state(
         })
         .collect::<HashMap<_, _>>();
     let global_owners = global_parameter_owners(&ir.model.features);
-    let validation_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
-        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let validation_bytes = native
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let validation_arena = DecodeArena::new();
     let (validation_ctx, _) = DecodeContext::from_root_bytes(
-        &validation_bytes, &validation_arena, &DecodePolicy::service(),
+        &validation_bytes,
+        &validation_arena,
+        &DecodePolicy::service(),
     )?;
     if parameters_with_incoherent_evaluated_values(
         &validation_ctx,
@@ -190,11 +203,8 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &projection_bytes,
-        &arena,
-        &DecodePolicy::service(),
-    )?;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let projection_losses = project_configuration_sketch_states(
         &ctx,
         &mut current_projection,
@@ -213,7 +223,8 @@ fn sync_configuration_design_state(
         configuration_feature_state_hash(&hash_ctx, &current_projection.model.configurations)?;
     let current_matches = current_parameter_hash
         == configuration_parameter_value_hash(&hash_ctx, &ir.model.configurations)?
-        && current_feature_hash == configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
+        && current_feature_hash
+            == configuration_feature_state_hash(&hash_ctx, &ir.model.configurations)?;
     if current_matches {
         return Ok(());
     }
@@ -288,11 +299,8 @@ fn sync_configuration_design_state(
         .flat_map(|lane| lane.native_payload.iter().copied())
         .collect::<Vec<_>>();
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &projection_bytes,
-        &arena,
-        &DecodePolicy::service(),
-    )?;
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&projection_bytes, &arena, &DecodePolicy::service())?;
     let projection_losses = project_configuration_sketch_states(
         &ctx,
         &mut projected,
@@ -321,7 +329,11 @@ fn patch_configuration_parameter_scalars(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), CodecError> {
-    let bytes = native.feature_input_lanes.iter().flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let bytes = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())?;
     let parameters = ir

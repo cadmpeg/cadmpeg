@@ -12,12 +12,12 @@ use crate::resolved_features::relation_loci::marker_point_locus;
 use crate::resolved_features::relation_loci::profile_loci_by_marker;
 use crate::resolved_features::transforms::dimensioned_circle_surface_transforms;
 use crate::resolved_features::transforms::dimensioned_circle_transform;
-use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::transforms::unique_compatible_marker_transform;
 use crate::resolved_features::transforms::unique_marker_transform;
 use crate::resolved_features::transforms::Axes;
 use crate::resolved_features::transforms::MarkerTransform;
 use crate::resolved_features::transforms::Sign;
+use crate::resolved_features::transforms::{marker_entities, MarkerEntityFilter};
 use crate::resolved_features::SKETCH_MARKER;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
@@ -393,7 +393,8 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     let projected_len = entities.len();
     project_relation_point_geometry(
         &ctx,
@@ -401,7 +402,8 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(entities.len(), projected_len);
     assert!(entities.iter().any(|entity| {
         entity.construction
@@ -451,12 +453,14 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
             && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(2.5, 4.5))
     }));
-    let loci = profile_loci_by_marker(&ctx,
+    let loci = profile_loci_by_marker(
+        &ctx,
         std::slice::from_ref(&feature),
         &[],
         &entities,
         std::slice::from_ref(&lane),
-    ).expect("transform resource admission");
+    )
+    .expect("transform resource admission");
     assert_eq!(
         loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
         vec![SketchLocus::End(
@@ -469,11 +473,13 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_point_locus(&cadmpeg_test_support::service_decode_context(), 
+        marker_point_locus(
+            &cadmpeg_test_support::service_decode_context(),
             "sldprt:feature-input:sketch-entity#qualified-curve",
             &markers,
             &loci,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchLocus::End(
             SketchEntityId::mint("sldprt:model:sketch-entity#relation-line:lane:84",).unwrap()
         ))
@@ -591,7 +597,8 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         &[],
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(entities.iter().any(|entity| {
         entity.native_ref.as_deref() == Some(point_marker.id())
@@ -606,12 +613,14 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
                 SketchGeometryDefinition::Point { position } if position == Point2::new(6.0, 5.0)
             )
     }));
-    let loci = profile_loci_by_marker(&ctx,
+    let loci = profile_loci_by_marker(
+        &ctx,
         std::slice::from_ref(&feature),
         &[],
         &entities,
         std::slice::from_ref(&lane),
-    ).expect("transform resource admission");
+    )
+    .expect("transform resource admission");
     let point_entity = entities
         .iter()
         .find(|entity| {
@@ -639,11 +648,24 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .map(|marker| (marker.id(), marker))
         .collect::<HashMap<_, _>>();
     assert_eq!(
-        marker_entities(&cadmpeg_test_support::service_decode_context(), point_marker.id(), &markers, &loci, MarkerEntityFilter::All).unwrap(),
+        marker_entities(
+            &cadmpeg_test_support::service_decode_context(),
+            point_marker.id(),
+            &markers,
+            &loci,
+            MarkerEntityFilter::All
+        )
+        .unwrap(),
         vec![SketchEntityId::mint("synthetic:test:id#dimension-carrier").unwrap()]
     );
     assert_eq!(
-        marker_point_locus(&cadmpeg_test_support::service_decode_context(), point_marker.id(), &markers, &loci).unwrap(),
+        marker_point_locus(
+            &cadmpeg_test_support::service_decode_context(),
+            point_marker.id(),
+            &markers,
+            &loci
+        )
+        .unwrap(),
         Some(SketchLocus::Entity(point_entity.id().clone()))
     );
 }
@@ -749,7 +771,8 @@ fn relation_point_uses_resolved_sketch_frame_when_marker_transform_is_ambiguous(
         std::slice::from_ref(&sketch_record),
         std::slice::from_ref(&feature),
         std::slice::from_ref(&lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(entities.len(), 2);
     assert!(entities.iter().any(|entity| {
@@ -786,13 +809,20 @@ fn unique_zero_translation_resolves_symmetric_axis_swaps() {
 #[test]
 fn marker_kinds_disambiguate_axis_swaps() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let compatible = HashMap::from([
         ((0, 0), HashSet::from([(10, 20)])),
         ((0, 2), HashSet::from([(12, 20)])),
         ((3, 1), HashSet::from([(11, 23)])),
     ]);
-    let transform = unique_compatible_marker_transform(&resource_ctx, &compatible).expect("transform resource admission").expect("required invariant");
+    let transform = unique_compatible_marker_transform(&resource_ctx, &compatible)
+        .expect("transform resource admission")
+        .expect("required invariant");
     assert_eq!(
         transform.axes,
         Axes::Aligned {
@@ -807,7 +837,12 @@ fn marker_kinds_disambiguate_axis_swaps() {
 #[test]
 fn symmetric_frames_require_the_same_dimensioned_circle_set() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let identity = MarkerTransform {
         axes: Axes::Aligned {
             swap: false,
@@ -838,7 +873,8 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
                     crate::resolved_features::grid::GridCoordinate::Cell(5)
                 )
             ]
-        ).expect("transform resource admission"),
+        )
+        .expect("transform resource admission"),
         Some(identity)
     );
     assert_eq!(
@@ -855,7 +891,8 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
                     crate::resolved_features::grid::GridCoordinate::Cell(7)
                 )
             ]
-        ).expect("transform resource admission"),
+        )
+        .expect("transform resource admission"),
         None
     );
 }
@@ -863,7 +900,12 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
 #[test]
 fn cylinder_centers_resolve_dimensioned_circle_frame() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -903,9 +945,11 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
             source_object: None,
         })
         .collect::<Vec<_>>();
-    let candidates = dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &circles, 1.0).expect("transform resource admission");
-    let transform =
-        dimensioned_circle_transform(&ctx, &candidates, &circles).expect("transform resource admission").expect("required invariant");
+    let candidates = dimensioned_circle_surface_transforms(&ctx, &sketch, &surfaces, &circles, 1.0)
+        .expect("transform resource admission");
+    let transform = dimensioned_circle_transform(&ctx, &candidates, &circles)
+        .expect("transform resource admission")
+        .expect("required invariant");
     let transformed = circles
         .iter()
         .map(|(center, _)| transform.apply(*center).expect("required invariant"))
@@ -1101,8 +1145,7 @@ fn circular_profile_limit_result(
         other => panic!("unsupported circular profile limit: {other:?}"),
     }
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("test context");
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     bind_circular_profile_by_dimension(&ctx, &mut features, &mut sketches, &entities, &parameters)
         .expect_err("circular profile binding exceeds configured limit")
 }
@@ -1110,34 +1153,45 @@ fn circular_profile_limit_result(
 #[test]
 fn circular_profile_binding_refuses_work_limit() {
     use cadmpeg_core::decode::ResourceDimension;
-    assert!(matches!(circular_profile_limit_result(ResourceDimension::WorkUnits),
+    assert!(
+        matches!(circular_profile_limit_result(ResourceDimension::WorkUnits),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::WorkUnits
-                && limit.operation == "bind SLDPRT circular profile by dimension"));
+                && limit.operation == "bind SLDPRT circular profile by dimension")
+    );
 }
 
 #[test]
 fn circular_profile_binding_refuses_collection_limit() {
     use cadmpeg_core::decode::ResourceDimension;
-    assert!(matches!(circular_profile_limit_result(ResourceDimension::CollectionItems),
+    assert!(
+        matches!(circular_profile_limit_result(ResourceDimension::CollectionItems),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
-                && limit.operation == "bind SLDPRT circular profile by dimension"));
+                && limit.operation == "bind SLDPRT circular profile by dimension")
+    );
 }
 
 #[test]
 fn circular_profile_binding_refuses_retained_limit() {
     use cadmpeg_core::decode::ResourceDimension;
-    assert!(matches!(circular_profile_limit_result(ResourceDimension::RetainedBytes),
+    assert!(
+        matches!(circular_profile_limit_result(ResourceDimension::RetainedBytes),
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::RetainedBytes
-                && limit.operation == "bind SLDPRT circular profile by dimension"));
+                && limit.operation == "bind SLDPRT circular profile by dimension")
+    );
 }
 
 #[test]
 fn dimensioned_circle_matching_keeps_large_radius_identity() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use crate::resolved_features::grid::GridCoordinate;
     let sketch = cadmpeg_ir::sketches::Sketch {
         id: cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#large-radius").unwrap(),
@@ -1167,5 +1221,13 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
         )),
     };
     let circles = [((0, 0), GridCoordinate::new(1e20, 1.0))];
-    assert!(dimensioned_circle_surface_transforms(&resource_ctx, &sketch, &[surface], &circles, 1.0).expect("transform resource admission").is_empty());
+    assert!(dimensioned_circle_surface_transforms(
+        &resource_ctx,
+        &sketch,
+        &[surface],
+        &circles,
+        1.0
+    )
+    .expect("transform resource admission")
+    .is_empty());
 }

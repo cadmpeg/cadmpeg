@@ -68,19 +68,40 @@ fn diameter_display_literals_participate_in_expressions() {
     let aliases = std::collections::HashMap::new();
     let values = std::collections::HashMap::new();
     assert_eq!(
-        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-DIAM>4mm / 2", &aliases, &values).parse().unwrap(),
+        ParameterExpressionParser::new_flat(
+            &cadmpeg_test_support::service_decode_context(),
+            "<MOD-DIAM>4mm / 2",
+            &aliases,
+            &values
+        )
+        .parse()
+        .unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-DIAM>4 + 1mm", &aliases, &values).parse().unwrap(),
+        ParameterExpressionParser::new_flat(
+            &cadmpeg_test_support::service_decode_context(),
+            "<MOD-DIAM>4 + 1mm",
+            &aliases,
+            &values
+        )
+        .parse()
+        .unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(5.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values,).parse().unwrap(),
+        ParameterExpressionParser::new_flat(
+            &cadmpeg_test_support::service_decode_context(),
+            "&lt;MOD-DIAM&gt;4mm / 2",
+            &aliases,
+            &values,
+        )
+        .parse()
+        .unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
@@ -98,13 +119,27 @@ fn radius_display_literals_participate_in_expressions() {
     let aliases = std::collections::HashMap::new();
     let values = std::collections::HashMap::new();
     assert_eq!(
-        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "<MOD-RHO>4mm / 2", &aliases, &values).parse().unwrap(),
+        ParameterExpressionParser::new_flat(
+            &cadmpeg_test_support::service_decode_context(),
+            "<MOD-RHO>4mm / 2",
+            &aliases,
+            &values
+        )
+        .parse()
+        .unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(2.0).unwrap()
         ))
     );
     assert_eq!(
-        ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), "&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values,).parse().unwrap(),
+        ParameterExpressionParser::new_flat(
+            &cadmpeg_test_support::service_decode_context(),
+            "&lt;MOD-RHO&gt;4 + 1mm",
+            &aliases,
+            &values,
+        )
+        .parse()
+        .unwrap(),
         Some(ParameterValue::Length(
             cadmpeg_ir::scalar::Length::new(5.0).unwrap()
         ))
@@ -140,7 +175,14 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
         );
         assert_eq!(dimension_display(expression), Some(display), "{expression}");
         assert_eq!(
-            ParameterExpressionParser::new_flat(&cadmpeg_test_support::service_decode_context(), expression, &aliases, &values).parse().unwrap(),
+            ParameterExpressionParser::new_flat(
+                &cadmpeg_test_support::service_decode_context(),
+                expression,
+                &aliases,
+                &values
+            )
+            .parse()
+            .unwrap(),
             Some(ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(expected).unwrap()
             )),
@@ -156,13 +198,18 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
 fn bare_native_text_is_distinct_from_scalar_expressions_and_references() {
     for text in ["M16x2.0", "740四件等高", "plain text"] {
         assert_eq!(
-            bare_text_parameter_literal(&cadmpeg_test_support::service_decode_context(), text).unwrap(),
+            bare_text_parameter_literal(&cadmpeg_test_support::service_decode_context(), text)
+                .unwrap(),
             Some(ParameterValue::String(text.into()))
         );
     }
     for expression in ["", "1 +", "width/2", "\"D1@Sketch1\"", "D12"] {
         assert_eq!(
-            bare_text_parameter_literal(&cadmpeg_test_support::service_decode_context(), expression).unwrap(),
+            bare_text_parameter_literal(
+                &cadmpeg_test_support::service_decode_context(),
+                expression
+            )
+            .unwrap(),
             None,
             "{expression}"
         );
@@ -179,17 +226,36 @@ fn formatted_text_dimensions_are_strings_only_for_txd_parameters() {
         ("TXD7", "4X M12x1.75 <HOLE-DEPTH> 25<MOD-PM>.25"),
     ] {
         assert_eq!(
-            formatted_text_dimension_literal(&cadmpeg_test_support::service_decode_context(), name, text).unwrap(),
+            formatted_text_dimension_literal(
+                &cadmpeg_test_support::service_decode_context(),
+                name,
+                text
+            )
+            .unwrap(),
             Some(ParameterValue::String(text.into())),
             "{name}"
         );
     }
     for name in ["D5", "TXD", "TXD5-extra"] {
-        assert_eq!(formatted_text_dimension_literal(&cadmpeg_test_support::service_decode_context(), name, text).unwrap(), None, "{name}");
+        assert_eq!(
+            formatted_text_dimension_literal(
+                &cadmpeg_test_support::service_decode_context(),
+                name,
+                text
+            )
+            .unwrap(),
+            None,
+            "{name}"
+        );
     }
     for malformed in ["1 +", "<MOD-DIAM", "MOD-DIAM>", "<>", "< >", "<<TAG>"] {
         assert_eq!(
-            formatted_text_dimension_literal(&cadmpeg_test_support::service_decode_context(), "TXD5", malformed).unwrap(),
+            formatted_text_dimension_literal(
+                &cadmpeg_test_support::service_decode_context(),
+                "TXD5",
+                malformed
+            )
+            .unwrap(),
             None,
             "{malformed}"
         );
@@ -322,7 +388,13 @@ fn mixed_numeric_comparisons_preserve_integer_identity() {
 fn expression_rewrite_quotes_hyphenated_identifiers() {
     let aliases = std::collections::HashMap::from([("Width".into(), "Wall-Gauge".into())]);
     assert_eq!(
-        rewrite_parameter_expression(&cadmpeg_test_support::service_decode_context(), "Width * 2", &aliases).unwrap().as_deref(),
+        rewrite_parameter_expression(
+            &cadmpeg_test_support::service_decode_context(),
+            "Width * 2",
+            &aliases
+        )
+        .unwrap()
+        .as_deref(),
         Some("\"Wall-Gauge\" * 2")
     );
 }

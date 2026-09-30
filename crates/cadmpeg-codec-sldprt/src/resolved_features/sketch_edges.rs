@@ -25,12 +25,19 @@ fn retained_curve_debug(
     curve: &CurveGeometry,
 ) -> Result<String, cadmpeg_core::CodecError> {
     let mut count = FormattedByteCount(0);
-    fmt::write(&mut count, format_args!("{curve:?}"))
-        .map_err(|_| ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX))?;
+    fmt::write(&mut count, format_args!("{curve:?}")).map_err(|_| {
+        ctx.refuse_codec_limit("retain SLDPRT opaque sketch curve", u64::MAX - 1, u64::MAX)
+    })?;
     let mut text = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut text, count.0, "retain SLDPRT opaque sketch curve")?;
-    fmt::write(&mut text, format_args!("{curve:?}"))
-        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve"))?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut text,
+        count.0,
+        "retain SLDPRT opaque sketch curve",
+    )?;
+    fmt::write(&mut text, format_args!("{curve:?}")).map_err(|_| {
+        cadmpeg_core::CodecError::malformed("cannot format SLDPRT opaque sketch curve")
+    })?;
     Ok(text)
 }
 
@@ -87,7 +94,8 @@ pub(super) fn project_endpoint_constraints(
     annotations: &mut Annotations,
     constraints: &mut Vec<SketchConstraint>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut loci_by_endpoint = BTreeMap::<&str, Vec<(bool, &cadmpeg_ir::sketches::SketchEntityId)>>::new();
+    let mut loci_by_endpoint =
+        BTreeMap::<&str, Vec<(bool, &cadmpeg_ir::sketches::SketchEntityId)>>::new();
     for entity in entities {
         if entity.endpoint_refs.len() != 2 {
             continue;
@@ -102,24 +110,41 @@ pub(super) fn project_endpoint_constraints(
         }
     }
     for (_endpoint, sources) in loci_by_endpoint {
-        let Some((_, first)) = sources.first() else { continue; };
+        let Some((_, first)) = sources.first() else {
+            continue;
+        };
         ctx.charge_work(
             u64::try_from(sources.len()).map_err(|_| {
-                ctx.refuse_codec_limit("compare SLDPRT shared sketch endpoints", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "compare SLDPRT shared sketch endpoints",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?,
             "compare SLDPRT shared sketch endpoints",
         )?;
         if !sources.iter().any(|(_, entity)| entity != first) {
             continue;
         }
-        let digits = |value: usize| if value == 0 { 1 } else { value.ilog10() as usize + 1 };
+        let digits = |value: usize| {
+            if value == 0 {
+                1
+            } else {
+                value.ilog10() as usize + 1
+            }
+        };
         let id_length = "sldprt:model:sketch-constraint#:::".len()
             + digits(block_offset)
             + digits(stream_ordinal)
             + digits(face_ordinal)
             + digits(constraints.len());
         let mut id_text = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut id_text, id_length, "retain SLDPRT shared endpoint constraint ID")?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut id_text,
+            id_length,
+            "retain SLDPRT shared endpoint constraint ID",
+        )?;
         std::fmt::Write::write_fmt(
             &mut id_text,
             format_args!(
@@ -127,20 +152,34 @@ pub(super) fn project_endpoint_constraints(
                 constraints.len()
             ),
         )
-        .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT shared endpoint constraint ID"))?;
+        .map_err(|_| {
+            cadmpeg_core::CodecError::malformed(
+                "cannot format SLDPRT shared endpoint constraint ID",
+            )
+        })?;
         let Ok(id) = SketchConstraintId::mint(id_text) else {
             continue;
         };
         let mut loci = Vec::new();
-        ctx.reserve_collection_vec(&mut loci, sources.len(), "collect SLDPRT shared endpoint constraint loci")?;
+        ctx.reserve_collection_vec(
+            &mut loci,
+            sources.len(),
+            "collect SLDPRT shared endpoint constraint loci",
+        )?;
         for (start, source) in sources {
             let source = cadmpeg_ir::sketches::SketchEntityId::mint(retained_id_text(
                 ctx,
                 source.as_str(),
                 "retain SLDPRT shared endpoint entity ID",
             )?)
-            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch entity ID"))?;
-            loci.push(if start { SketchLocus::Start(source) } else { SketchLocus::End(source) });
+            .map_err(|_| {
+                cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch entity ID")
+            })?;
+            loci.push(if start {
+                SketchLocus::Start(source)
+            } else {
+                SketchLocus::End(source)
+            });
         }
         let Ok(definition) = cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(
             SketchConstraintDefinitionInput::CoincidentLoci { loci },
@@ -150,14 +189,22 @@ pub(super) fn project_endpoint_constraints(
         crate::annotations::note(
             ctx,
             annotations,
-            retained_id_text(ctx, id.as_str(), "retain SLDPRT shared endpoint annotation ID")?,
+            retained_id_text(
+                ctx,
+                id.as_str(),
+                "retain SLDPRT shared endpoint annotation ID",
+            )?,
             stream,
             0,
             "feature_input_shared_endpoint",
             Exactness::Derived,
         )?;
-        let sketch = SketchId::mint(retained_id_text(ctx, sketch.as_str(), "retain SLDPRT constraint sketch ID")?)
-            .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
+        let sketch = SketchId::mint(retained_id_text(
+            ctx,
+            sketch.as_str(),
+            "retain SLDPRT constraint sketch ID",
+        )?)
+        .map_err(|_| cadmpeg_core::CodecError::malformed("invalid admitted SLDPRT sketch ID"))?;
         ctx.reserve_collection_vec(constraints, 1, "collect SLDPRT shared endpoint constraints")?;
         constraints.push(SketchConstraint {
             id,
@@ -206,14 +253,24 @@ pub(super) fn project_edge(
         u_axis,
         v_axis,
     } = frame;
-    let Some(start_id) = vertices.get(&edge.start) else { return Ok(None) };
-    let Some(start_point) = points.get(start_id) else { return Ok(None) };
+    let Some(start_id) = vertices.get(&edge.start) else {
+        return Ok(None);
+    };
+    let Some(start_point) = points.get(start_id) else {
+        return Ok(None);
+    };
     let start = project_point(*start_point, origin, u_axis, v_axis);
-    let Some(end_id) = vertices.get(&edge.end) else { return Ok(None) };
-    let Some(end_point) = points.get(end_id) else { return Ok(None) };
+    let Some(end_id) = vertices.get(&edge.end) else {
+        return Ok(None);
+    };
+    let Some(end_point) = points.get(end_id) else {
+        return Ok(None);
+    };
     let end = project_point(*end_point, origin, u_axis, v_axis);
     let line = || SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).ok();
-    let Some(tolerance) = EdgeProjectionTolerance::of(edge) else { return Ok(None) };
+    let Some(tolerance) = EdgeProjectionTolerance::of(edge) else {
+        return Ok(None);
+    };
     let tolerance = tolerance.get();
     if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) =
         edge.curve().and_then(|id| curves.get(id).copied())
@@ -223,21 +280,26 @@ pub(super) fn project_edge(
         let knot_count = u64::try_from(nurbs.knots().as_slice().len())
             .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_collection_items(knot_count, operation)?;
-        let knots = nurbs.knots().try_clone().map_err(|_| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        let knots = nurbs
+            .knots()
+            .try_clone()
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let mut projected = Vec::new();
         ctx.reserve_collection_vec(&mut projected, count, operation)?;
         match nurbs.pole_rows() {
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Polynomial { points } => {
-                projected.extend(points.iter().map(|point| {
-                    project_point(point.get(), origin, u_axis, v_axis)
-                }));
+                projected.extend(
+                    points
+                        .iter()
+                        .map(|point| project_point(point.get(), origin, u_axis, v_axis)),
+                );
             }
             cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational { points } => {
-                projected.extend(points.iter().map(|point| {
-                    project_point(point.point.get(), origin, u_axis, v_axis)
-                }));
+                projected.extend(
+                    points
+                        .iter()
+                        .map(|point| project_point(point.point.get(), origin, u_axis, v_axis)),
+                );
             }
         }
         let weights = match nurbs.pole_rows() {
@@ -250,19 +312,28 @@ pub(super) fn project_edge(
             }
         };
         let passes = if weights.is_some() { 2usize } else { 1usize };
-        let admitted = count.checked_mul(passes).ok_or_else(|| {
-            ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-        })?;
+        let admitted = count
+            .checked_mul(passes)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         ctx.charge_collection_items(
-            u64::try_from(admitted).map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
+            u64::try_from(admitted)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?,
             operation,
         )?;
         return match cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_checked_lanes(
-            nurbs.degree(), knots, projected, weights, nurbs.periodic(),
+            nurbs.degree(),
+            knots,
+            projected,
+            weights,
+            nurbs.periodic(),
         ) {
             Ok(nurbs) => Ok(Some(SketchGeometry::nurbs(nurbs))),
             Err(error) => {
-                refusal.note(ctx, format_args!("sldprt projected sketch edge {}", edge.id), &error)?;
+                refusal.note(
+                    ctx,
+                    format_args!("sldprt projected sketch edge {}", edge.id),
+                    &error,
+                )?;
                 Ok(None)
             }
         };

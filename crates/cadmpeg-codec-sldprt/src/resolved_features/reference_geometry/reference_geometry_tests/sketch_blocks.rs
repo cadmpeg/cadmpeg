@@ -56,10 +56,9 @@ fn sketch_block_error(policy: DecodePolicy) -> CodecError {
     };
     let lanes = [lane];
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy)
-        .unwrap();
-    super::super::enrich_history_sketch_block_references(&ctx, &mut histories, &lanes)
-        .unwrap_err()
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy).unwrap();
+    super::super::enrich_history_sketch_block_references(&ctx, &mut histories, &lanes).unwrap_err()
 }
 
 #[test]

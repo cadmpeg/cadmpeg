@@ -26,7 +26,9 @@ pub(crate) fn validate(
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source_scan.map_or(&[][..], |scan| scan.source_image), &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        source_scan.map_or(&[][..], |scan| scan.source_image),
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let Some(source) = ir.source.as_ref() else {
@@ -110,10 +112,14 @@ pub(crate) fn validate(
         }
     }
     if neutral_parameters_changed {
-        let lane_bytes = native.feature_input_lanes.iter()
-            .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+        let lane_bytes = native
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| lane.native_payload.iter().copied())
+            .collect::<Vec<_>>();
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&lane_bytes, &arena, &DecodePolicy::service())?;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&lane_bytes, &arena, &DecodePolicy::service())?;
         let baseline = project_parameters(&ctx, &native.feature_histories)?;
         for parameter in &ir.model.parameters {
             let original = baseline.iter().find(|original| original.id == parameter.id);
@@ -146,11 +152,8 @@ pub(crate) fn validate(
     };
     if let Some(scan) = source_scan.filter(|_| native_history_changed) {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(
-            scan.source_image,
-            &arena,
-            &DecodePolicy::service(),
-        )?;
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(scan.source_image, &arena, &DecodePolicy::service())?;
         let mut annotations = cadmpeg_ir::Annotations::default();
         let mut losses = Vec::new();
         let baseline = crate::history::histories(&ctx, scan, &mut annotations, &mut losses)?;

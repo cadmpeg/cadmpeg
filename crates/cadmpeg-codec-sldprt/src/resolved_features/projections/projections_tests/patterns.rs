@@ -7,8 +7,9 @@ use crate::records::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed}, BodySelection, FaceSelection, Feature,
-    FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    patterns::{PatternKind, PatternSeed},
+    BodySelection, FaceSelection, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+    FeatureId, FeatureOperation,
 };
 use std::collections::BTreeMap;
 
@@ -66,7 +67,10 @@ fn pattern_fixture() -> (Vec<Feature>, FeatureHistory, FeatureInputLane) {
         properties: BTreeMap::new(),
         content: Vec::new(),
         configurations: Vec::new(),
-        features: vec![native("producer-native", "10"), native("pattern-native", "20")],
+        features: vec![
+            native("producer-native", "10"),
+            native("pattern-native", "20"),
+        ],
     };
     let mut signature = [0u8; 12];
     signature[4..8].copy_from_slice(&10_u32.to_le_bytes());
@@ -118,13 +122,18 @@ fn pattern_surface_seed_uses_generated_face_and_dependency() {
     else {
         panic!("expected pattern");
     };
-    assert!(matches!(seeds.as_slice(), [PatternSeed::Faces(FaceSelection::Generated { faces, native })]
+    assert!(
+        matches!(seeds.as_slice(), [PatternSeed::Faces(FaceSelection::Generated { faces, native })]
         if faces.as_slice() == [cadmpeg_ir::features::GeneratedFaceRef::new(
             FeatureId::mint("synthetic:test:id#producer").expect("identity grammar"),
             "7".into(),
         ).expect("generated face")]
-            && native.as_str() == "sldprt:feature-input:surface-component-ids:7"));
-    assert_eq!(features[1].dependencies.as_slice(), &[features[0].id.clone()]);
+            && native.as_str() == "sldprt:feature-input:surface-component-ids:7")
+    );
+    assert_eq!(
+        features[1].dependencies.as_slice(),
+        &[features[0].id.clone()]
+    );
 }
 
 #[test]
@@ -137,7 +146,9 @@ fn pattern_surface_seed_refuses_collection_limit() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("test context");
     let error = project_compact_surface_selections(&ctx, &mut features, &[], &[lane])
         .expect_err("pattern seed exceeds collection limit");
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "project SLDPRT pattern face seeds"));
+            && limit.operation == "project SLDPRT pattern face seeds")
+    );
 }

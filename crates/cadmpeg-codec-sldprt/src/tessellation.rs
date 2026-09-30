@@ -89,9 +89,9 @@ fn collect_index<K: Eq + Hash, V>(
         ctx.charge_work(1, operation)?;
         if !index.contains_key(&key) {
             ctx.charge_collection_items(1, operation)?;
-            index.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
-            })?;
+            index
+                .try_reserve(1)
+                .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         }
         index.insert(key, value);
     }
@@ -126,7 +126,8 @@ fn copy_retained_string(
     value: &str,
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
+    let copy_work = cadmpeg_core::decode::u64_from_index(value.len())
+        .checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
@@ -311,7 +312,10 @@ pub(crate) fn class_intervals(
         let Some(name_bytes) = payload.get(offset + 6..offset + 6 + length) else {
             continue;
         };
-        if !name_bytes.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')) {
+        if !name_bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
             continue;
         }
         let Ok(name_text) = std::str::from_utf8(name_bytes) else {
@@ -319,10 +323,18 @@ pub(crate) fn class_intervals(
         };
         ctx.charge_retained(length as u64, "retain SLDPRT display class name")?;
         let mut name = String::new();
-        name.try_reserve(length).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT display class name", u64::MAX - 1, u64::MAX))?;
+        name.try_reserve(length).map_err(|_| {
+            ctx.refuse_codec_limit("retain SLDPRT display class name", u64::MAX - 1, u64::MAX)
+        })?;
         name.push_str(name_text);
         ctx.charge_collection_items(1, "collect SLDPRT display class declarations")?;
-        declarations.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class declarations", u64::MAX - 1, u64::MAX))?;
+        declarations.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "collect SLDPRT display class declarations",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
         declarations.push((offset, name));
     }
     let mut declarations = declarations.into_iter().peekable();
@@ -338,7 +350,8 @@ pub(crate) fn class_intervals(
         };
         let mut source_ids = Vec::new();
         for window in records.windows(scene_src::LEN) {
-            let Some(source) = window.starts_with(SCENE_SOURCE_MARKER)
+            let Some(source) = window
+                .starts_with(SCENE_SOURCE_MARKER)
                 .then(|| View::u32_le_at(window, scene_src::SOURCE_ID))
                 .flatten()
                 .filter(|source| *source != 0)
@@ -346,12 +359,29 @@ pub(crate) fn class_intervals(
                 continue;
             };
             ctx.charge_collection_items(1, "collect SLDPRT display class sources")?;
-            source_ids.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class sources", u64::MAX - 1, u64::MAX))?;
+            source_ids.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "collect SLDPRT display class sources",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
             source_ids.push(source);
         }
         ctx.charge_collection_items(1, "collect SLDPRT display class intervals")?;
-        intervals.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT display class intervals", u64::MAX - 1, u64::MAX))?;
-        intervals.push(ClassInterval { name, class_offset: offset, content, source_ids });
+        intervals.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "collect SLDPRT display class intervals",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+        intervals.push(ClassInterval {
+            name,
+            class_offset: offset,
+            content,
+            source_ids,
+        });
     }
     Ok(intervals)
 }
@@ -376,10 +406,14 @@ fn scene_classes(
         for source in class.source_ids {
             ctx.charge_retained(class.name.len() as u64, "retain SLDPRT scene class name")?;
             let mut name = String::new();
-            name.try_reserve(class.name.len()).map_err(|_| ctx.refuse_codec_limit("retain SLDPRT scene class name", u64::MAX - 1, u64::MAX))?;
+            name.try_reserve(class.name.len()).map_err(|_| {
+                ctx.refuse_codec_limit("retain SLDPRT scene class name", u64::MAX - 1, u64::MAX)
+            })?;
             name.push_str(&class.name);
             ctx.charge_collection_items(1, "collect SLDPRT scene classes")?;
-            classes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT scene classes", u64::MAX - 1, u64::MAX))?;
+            classes.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit("collect SLDPRT scene classes", u64::MAX - 1, u64::MAX)
+            })?;
             classes.push((source, name));
         }
     }
@@ -395,7 +429,13 @@ pub(crate) fn scene_feature_classes(
         for (source, class) in scene_classes(ctx, section.payload())? {
             if !candidates.contains_key(&source) {
                 ctx.charge_collection_items(1, "index SLDPRT scene class sources")?;
-                candidates.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("index SLDPRT scene class sources", u64::MAX - 1, u64::MAX))?;
+                candidates.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit(
+                        "index SLDPRT scene class sources",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
+                })?;
             }
             candidates
                 .entry(source)
@@ -411,7 +451,13 @@ pub(crate) fn scene_feature_classes(
     for (source, class) in candidates {
         if let Some(class) = class {
             ctx.charge_collection_items(1, "collect SLDPRT scene feature classes")?;
-            resolved.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("collect SLDPRT scene feature classes", u64::MAX - 1, u64::MAX))?;
+            resolved.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "collect SLDPRT scene feature classes",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
             resolved.insert(source, class);
         }
     }
@@ -501,7 +547,11 @@ fn probe_table(
             item_size as u32,
             kind,
             flags,
-            crate::byte_admission::copy_retained(ctx, &bytes[data..end], "copy display-list channel bytes")?,
+            crate::byte_admission::copy_retained(
+                ctx,
+                &bytes[data..end],
+                "copy display-list channel bytes",
+            )?,
         ) else {
             return Ok(None);
         };
@@ -691,7 +741,12 @@ pub(crate) fn section_display_faces(
             });
         }
     }
-    ctx.stable_sort_by(&mut faces, |left, right| left.table.start().cmp(&right.table.start()), |_| 0, "sort SLDPRT display faces")?;
+    ctx.stable_sort_by(
+        &mut faces,
+        |left, right| left.table.start().cmp(&right.table.start()),
+        |_| 0,
+        "sort SLDPRT display faces",
+    )?;
     for index in 0..faces.len() {
         let metadata_end = faces
             .get(index + 1)
@@ -850,7 +905,11 @@ fn persistent_surface_references(
         };
         let mut trailing_fields = Vec::new();
         for field in fields {
-            ctx.reserve_collection_vec(&mut trailing_fields, 1, "scan display-list reference fields")?;
+            ctx.reserve_collection_vec(
+                &mut trailing_fields,
+                1,
+                "scan display-list reference fields",
+            )?;
             trailing_fields.push(field);
         }
         if trailing_fields
@@ -927,16 +986,71 @@ pub(crate) fn assign_unique_surface_owners(
             }
         }
     }
-    let surfaces = collect_index(ctx, model.surfaces.iter().map(|surface| (&surface.id, &surface.geometry)), "index SLDPRT tessellation surfaces")?;
-    let regions = collect_index(ctx, model.regions.iter().map(|region| (&region.id, &region.body)), "index SLDPRT tessellation regions")?;
-    let shell_bodies = collect_index(ctx, model.shells.iter().filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))), "index SLDPRT tessellation shells")?;
-    let body_transforms = collect_index(ctx, model.bodies.iter().map(|body| (&body.id, body.transform)), "index SLDPRT tessellation body transforms")?;
-    let loops = collect_index(ctx, model.loops.iter().map(|loop_| (&loop_.id, loop_)), "index SLDPRT tessellation loops")?;
-    let coedges = collect_index(ctx, model.coedges.iter().map(|coedge| (&coedge.id, coedge)), "index SLDPRT tessellation coedges")?;
-    let edges = collect_index(ctx, model.edges.iter().map(|edge| (&edge.id, edge)), "index SLDPRT tessellation edges")?;
-    let vertices = collect_index(ctx, model.vertices.iter().map(|vertex| (&vertex.id, vertex)), "index SLDPRT tessellation vertices")?;
-    let points = collect_index(ctx, model.points.iter().map(|point| (&point.id, point.position().get())), "index SLDPRT tessellation points")?;
-    let curves = collect_index(ctx, model.curves.iter().map(|curve| (&curve.id, &curve.geometry)), "index SLDPRT tessellation curves")?;
+    let surfaces = collect_index(
+        ctx,
+        model
+            .surfaces
+            .iter()
+            .map(|surface| (&surface.id, &surface.geometry)),
+        "index SLDPRT tessellation surfaces",
+    )?;
+    let regions = collect_index(
+        ctx,
+        model
+            .regions
+            .iter()
+            .map(|region| (&region.id, &region.body)),
+        "index SLDPRT tessellation regions",
+    )?;
+    let shell_bodies = collect_index(
+        ctx,
+        model
+            .shells
+            .iter()
+            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
+        "index SLDPRT tessellation shells",
+    )?;
+    let body_transforms = collect_index(
+        ctx,
+        model.bodies.iter().map(|body| (&body.id, body.transform)),
+        "index SLDPRT tessellation body transforms",
+    )?;
+    let loops = collect_index(
+        ctx,
+        model.loops.iter().map(|loop_| (&loop_.id, loop_)),
+        "index SLDPRT tessellation loops",
+    )?;
+    let coedges = collect_index(
+        ctx,
+        model.coedges.iter().map(|coedge| (&coedge.id, coedge)),
+        "index SLDPRT tessellation coedges",
+    )?;
+    let edges = collect_index(
+        ctx,
+        model.edges.iter().map(|edge| (&edge.id, edge)),
+        "index SLDPRT tessellation edges",
+    )?;
+    let vertices = collect_index(
+        ctx,
+        model.vertices.iter().map(|vertex| (&vertex.id, vertex)),
+        "index SLDPRT tessellation vertices",
+    )?;
+    let points = collect_index(
+        ctx,
+        model
+            .points
+            .iter()
+            .map(|point| (&point.id, point.position().get())),
+        "index SLDPRT tessellation points",
+    )?;
+    let curves = collect_index(
+        ctx,
+        model
+            .curves
+            .iter()
+            .map(|curve| (&curve.id, &curve.geometry)),
+        "index SLDPRT tessellation curves",
+    )?;
     let mut candidates = Vec::new();
     for face in &model.faces {
         ctx.charge_work(1, "select SLDPRT tessellation face candidates")?;
@@ -972,7 +1086,11 @@ pub(crate) fn assign_unique_surface_owners(
                 &points,
                 &curves,
             )?;
-            ctx.reserve_collection_vec(&mut candidates, 1, "collect SLDPRT tessellation face candidates")?;
+            ctx.reserve_collection_vec(
+                &mut candidates,
+                1,
+                "collect SLDPRT tessellation face candidates",
+            )?;
             candidates.push(candidate);
         }
     }
@@ -994,12 +1112,21 @@ pub(crate) fn assign_unique_surface_owners(
         for candidate in &candidates {
             ctx.charge_work(1, "test SLDPRT tessellation face candidate")?;
             let tolerance = candidate.tolerance.max(quantization_tolerance);
-            let Some(surface) = candidate.surface.solved() else { continue; };
+            let Some(surface) = candidate.surface.solved() else {
+                continue;
+            };
             let mut fits = true;
             for point in mesh.vertices() {
                 ctx.charge_work(1, "test SLDPRT tessellation vertex")?;
-                let Some(local) = candidate.inverse.apply_point(point.get()) else { fits = false; break; };
-                let Some(measure) = surface_measure(ctx, surface, local.get(), Some(tolerance))? else { fits = false; break; };
+                let Some(local) = candidate.inverse.apply_point(point.get()) else {
+                    fits = false;
+                    break;
+                };
+                let Some(measure) = surface_measure(ctx, surface, local.get(), Some(tolerance))?
+                else {
+                    fits = false;
+                    break;
+                };
                 if measure.residual > tolerance {
                     fits = false;
                     break;
@@ -1023,7 +1150,11 @@ pub(crate) fn assign_unique_surface_owners(
                     None => true,
                 };
                 if keep {
-                    ctx.reserve_collection_vec(&mut trimmed, 1, "collect SLDPRT trimmed tessellation owners")?;
+                    ctx.reserve_collection_vec(
+                        &mut trimmed,
+                        1,
+                        "collect SLDPRT trimmed tessellation owners",
+                    )?;
                     trimmed.push(candidate);
                 }
             }
@@ -1049,12 +1180,21 @@ pub(crate) fn assign_unique_surface_owners(
                 (owner.face, owner.body, Some(deflection))
             }
         };
-        ctx.reserve_collection_vec(&mut mesh.faces, 1, "assign SLDPRT geometric tessellation face")?;
+        ctx.reserve_collection_vec(
+            &mut mesh.faces,
+            1,
+            "assign SLDPRT geometric tessellation face",
+        )?;
         let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
         let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
         let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
-        let body = cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
-        let assigned_id = copy_retained_string(ctx, mesh.id.as_str(), "retain SLDPRT assigned tessellation ID")?;
+        let body =
+            cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(
+            ctx,
+            mesh.id.as_str(),
+            "retain SLDPRT assigned tessellation ID",
+        )?;
         ctx.reserve_collection_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
         mesh.faces.push(face);
         mesh.body = Some(body);
@@ -1080,7 +1220,12 @@ fn approximate_surface_owner(
     if mesh.vertex_normals().len() != mesh.vertex_count() || mesh.vertex_normals().is_empty() {
         return Ok(None);
     }
-    charge_fit_work(ctx, candidates.len(), mesh.vertex_count(), "test SLDPRT tessellation surface fits")?;
+    charge_fit_work(
+        ctx,
+        candidates.len(),
+        mesh.vertex_count(),
+        "test SLDPRT tessellation surface fits",
+    )?;
     let mut fits = Vec::new();
     for outcome in candidates
         .iter()
@@ -1089,11 +1234,12 @@ fn approximate_surface_owner(
             let mut max_residual = 0.0_f64;
             for (point, normal) in mesh.vertices().into_iter().zip(mesh.vertex_normals()) {
                 let local_point = candidate.inverse.apply_point(point.get())?.get();
-                let measure = match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
-                    Ok(Some(measure)) => measure,
-                    Ok(None) => return None,
-                    Err(limit) => return Some(Err(limit)),
-                };
+                let measure =
+                    match surface_measure(ctx, candidate.surface.solved()?, local_point, None) {
+                        Ok(Some(measure)) => measure,
+                        Ok(None) => return None,
+                        Err(limit) => return Some(Err(limit)),
+                    };
                 let residual = measure.residual;
                 let surface_normal = measure.normal?;
                 let mesh_normal = candidate.inverse.apply_vector(normal.get())?.unit()?;
@@ -1117,18 +1263,20 @@ fn approximate_surface_owner(
     if fits.is_empty() {
         return approximate_trimmed_surface_owner(ctx, mesh, candidates, quantization_tolerance);
     }
-    ctx.stable_sort_by(&mut fits, |left, right| left.1.total_cmp(&right.1), |_| 0, "sort SLDPRT tessellation surface fits")?;
+    ctx.stable_sort_by(
+        &mut fits,
+        |left, right| left.1.total_cmp(&right.1),
+        |_| 0,
+        "sort SLDPRT tessellation surface fits",
+    )?;
     let best_deflection = fits[0].1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     let mut trimmed = Vec::new();
     for fit @ (index, _) in fits {
         let keep = match candidates[index].trim.as_ref() {
-            Some(trim) => trim.contains_mesh(
-                ctx,
-                mesh,
-                candidates[index].inverse,
-                quantization_tolerance,
-            )?,
+            Some(trim) => {
+                trim.contains_mesh(ctx, mesh, candidates[index].inverse, quantization_tolerance)?
+            }
             None => true,
         };
         if keep {
@@ -1159,7 +1307,12 @@ fn approximate_trimmed_surface_owner(
     candidates: &[SurfaceCandidate<'_>],
     quantization_tolerance: f64,
 ) -> Result<Option<(usize, f64)>, cadmpeg_core::CodecError> {
-    charge_fit_work(ctx, candidates.len(), mesh.vertex_count(), "test SLDPRT tessellation trimmed fits")?;
+    charge_fit_work(
+        ctx,
+        candidates.len(),
+        mesh.vertex_count(),
+        "test SLDPRT tessellation trimmed fits",
+    )?;
     let mut fits = Vec::new();
     for outcome in candidates
         .iter()
@@ -1196,8 +1349,15 @@ fn approximate_trimmed_surface_owner(
         ctx.reserve_collection_vec(&mut fits, 1, "collect SLDPRT tessellation trimmed fits")?;
         fits.push(fit);
     }
-    ctx.stable_sort_by(&mut fits, |left, right| left.1.total_cmp(&right.1), |_| 0, "sort SLDPRT tessellation surface fits")?;
-    let Some(first) = fits.first() else { return Ok(None); };
+    ctx.stable_sort_by(
+        &mut fits,
+        |left, right| left.1.total_cmp(&right.1),
+        |_| 0,
+        "sort SLDPRT tessellation surface fits",
+    )?;
+    let Some(first) = fits.first() else {
+        return Ok(None);
+    };
     let best_deflection = first.1;
     fits.retain(|(_, deflection)| *deflection <= best_deflection + quantization_tolerance);
     let [(index, deflection)] = fits.as_slice() else {
@@ -1239,7 +1399,11 @@ pub(crate) fn assign_persistent_owners(
         if !faces_by_identity.contains_key(identity) {
             ctx.charge_collection_items(1, "index SLDPRT persistent face identities")?;
             faces_by_identity.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT persistent face identities", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "index SLDPRT persistent face identities",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
         }
         match faces_by_identity.entry(identity) {
@@ -1254,9 +1418,30 @@ pub(crate) fn assign_persistent_owners(
         }
     }
 
-    let regions = collect_index(ctx, model.regions.iter().map(|region| (&region.id, &region.body)), "index SLDPRT tessellation regions")?;
-    let shell_bodies = collect_index(ctx, model.shells.iter().filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))), "index SLDPRT tessellation shells")?;
-    let face_bodies = collect_index(ctx, model.faces.iter().filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?))), "index SLDPRT tessellation faces")?;
+    let regions = collect_index(
+        ctx,
+        model
+            .regions
+            .iter()
+            .map(|region| (&region.id, &region.body)),
+        "index SLDPRT tessellation regions",
+    )?;
+    let shell_bodies = collect_index(
+        ctx,
+        model
+            .shells
+            .iter()
+            .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?))),
+        "index SLDPRT tessellation shells",
+    )?;
+    let face_bodies = collect_index(
+        ctx,
+        model
+            .faces
+            .iter()
+            .filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?))),
+        "index SLDPRT tessellation faces",
+    )?;
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1266,7 +1451,11 @@ pub(crate) fn assign_persistent_owners(
         if !bindings_by_mesh.contains_key(key) {
             ctx.charge_collection_items(1, "index SLDPRT persistent tessellation bindings")?;
             bindings_by_mesh.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit("index SLDPRT persistent tessellation bindings", u64::MAX - 1, u64::MAX)
+                ctx.refuse_codec_limit(
+                    "index SLDPRT persistent tessellation bindings",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
             })?;
         }
         match bindings_by_mesh.entry(key) {
@@ -1295,12 +1484,21 @@ pub(crate) fn assign_persistent_owners(
         let Some(body) = face_bodies.get(face) else {
             continue;
         };
-        ctx.reserve_collection_vec(&mut mesh.faces, 1, "assign SLDPRT persistent tessellation face")?;
+        ctx.reserve_collection_vec(
+            &mut mesh.faces,
+            1,
+            "assign SLDPRT persistent tessellation face",
+        )?;
         let face = copy_retained_string(ctx, face.as_str(), "retain SLDPRT tessellation face ID")?;
         let face = FaceId::mint(face).map_err(cadmpeg_core::CodecError::malformed)?;
         let body = copy_retained_string(ctx, body.as_str(), "retain SLDPRT tessellation body ID")?;
-        let body = cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
-        let assigned_id = copy_retained_string(ctx, mesh.id.as_str(), "retain SLDPRT assigned tessellation ID")?;
+        let body =
+            cadmpeg_ir::ids::BodyId::mint(body).map_err(cadmpeg_core::CodecError::malformed)?;
+        let assigned_id = copy_retained_string(
+            ctx,
+            mesh.id.as_str(),
+            "retain SLDPRT assigned tessellation ID",
+        )?;
         ctx.reserve_collection_vec(&mut assigned, 1, "collect SLDPRT assigned tessellations")?;
         mesh.faces.push(face);
         mesh.body = Some(body);
@@ -1523,7 +1721,11 @@ impl PlanarTrim {
             let Some(point) = inverse_body.apply_point(point.get()) else {
                 return Ok(false);
             };
-            ctx.reserve_collection_vec(&mut projected, 1, "collect SLDPRT planar trim projections")?;
+            ctx.reserve_collection_vec(
+                &mut projected,
+                1,
+                "collect SLDPRT planar trim projections",
+            )?;
             projected.push(self.frame.project(point.get()));
         }
         let mut holes = Vec::new();
@@ -1543,7 +1745,10 @@ impl PlanarTrim {
                     else {
                         return Ok(false);
                     };
-                    HoleConstraint::Circle { exclusion, boundary }
+                    HoleConstraint::Circle {
+                        exclusion,
+                        boundary,
+                    }
                 }
             };
             ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim constraints")?;
@@ -1660,7 +1865,10 @@ fn planar_boundary_samples(
             let radius = circle_curve.radius().get();
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || radius <= tolerance
-                || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    center
+                )) > tolerance
             {
                 return Ok(None);
             }
@@ -1713,7 +1921,10 @@ fn planar_boundary_samples(
             if axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
                 || major_radius <= tolerance
                 || minor_radius <= tolerance
-                || require_some!(analytic_surface_residual(require_some!(surface.solved()), center)) > tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    center
+                )) > tolerance
             {
                 return Ok(None);
             }
@@ -1913,8 +2124,14 @@ fn planar_trim(
             };
             let start = *require_some!(points.get(&require_some!(vertices.get(start)).point));
             let end = *require_some!(points.get(&require_some!(vertices.get(end)).point));
-            if require_some!(analytic_surface_residual(require_some!(surface.solved()), start)) > tolerance
-                || require_some!(analytic_surface_residual(require_some!(surface.solved()), end)) > tolerance
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                start
+            )) > tolerance
+                || require_some!(analytic_surface_residual(
+                    require_some!(surface.solved()),
+                    end
+                )) > tolerance
                 || previous_end.is_some_and(|previous: Point3| previous.distance(start) > tolerance)
             {
                 return Ok(None);
@@ -1929,7 +2146,11 @@ fn planar_trim(
                 tolerance,
                 sampling_tolerance,
             )?);
-            ctx.reserve_collection_vec(&mut polygon, samples.len(), "collect SLDPRT planar trim polygon")?;
+            ctx.reserve_collection_vec(
+                &mut polygon,
+                samples.len(),
+                "collect SLDPRT planar trim polygon",
+            )?;
             polygon.extend(samples);
             boundary_tolerance = boundary_tolerance.max(sample_tolerance);
             first_start.get_or_insert(start);
@@ -1948,7 +2169,11 @@ fn planar_trim(
         let (outer, holes) = require_some!(circular_outer_and_holes(ctx, &circles, tolerance)?);
         let mut planar_holes = Vec::new();
         for hole in holes {
-            ctx.reserve_collection_vec(&mut planar_holes, 1, "collect SLDPRT circular planar holes")?;
+            ctx.reserve_collection_vec(
+                &mut planar_holes,
+                1,
+                "collect SLDPRT circular planar holes",
+            )?;
             planar_holes.push(PlanarHole::Circle(hole));
         }
         (PlanarOuter::Circle(outer), planar_holes)
@@ -1975,7 +2200,11 @@ fn planar_trim(
         let mut polygon_holes = Vec::new();
         for (index, polygon) in polygons.iter().enumerate() {
             if index != outer_index {
-                ctx.reserve_collection_vec(&mut polygon_holes, 1, "collect SLDPRT planar polygon holes")?;
+                ctx.reserve_collection_vec(
+                    &mut polygon_holes,
+                    1,
+                    "collect SLDPRT planar polygon holes",
+                )?;
                 polygon_holes.push(polygon);
             }
         }
@@ -2008,14 +2237,22 @@ fn planar_trim(
         }
         for polygon in polygon_holes {
             let mut boundary = Vec::new();
-            ctx.reserve_collection_vec(&mut boundary, polygon.len(), "copy SLDPRT planar hole boundary")?;
+            ctx.reserve_collection_vec(
+                &mut boundary,
+                polygon.len(),
+                "copy SLDPRT planar hole boundary",
+            )?;
             boundary.extend_from_slice(polygon);
             let hole = require_some!(PlanarHole::polygon(ctx, boundary, sampling_tolerance)?);
             ctx.reserve_collection_vec(&mut holes, 1, "collect SLDPRT planar trim holes")?;
             holes.push(hole);
         }
         let mut outer = Vec::new();
-        ctx.reserve_collection_vec(&mut outer, outer_polygon.len(), "copy SLDPRT planar outer boundary")?;
+        ctx.reserve_collection_vec(
+            &mut outer,
+            outer_polygon.len(),
+            "copy SLDPRT planar outer boundary",
+        )?;
         outer.extend_from_slice(outer_polygon);
         (PlanarOuter::Polygon(outer), holes)
     };
@@ -2054,7 +2291,8 @@ fn planar_hole_trim(
     for loop_id in &face.loops {
         ctx.charge_work(1, "test SLDPRT planar hole loop")?;
         let loop_ = require_some!(loops.get(loop_id));
-        if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none() {
+        if loop_.face == face.id && loop_.coedges().len() == 1 && loop_.vertices().next().is_none()
+        {
             if let Some(circle) = closed_planar_circle(
                 loop_, surface, frame, tolerance, coedges, edges, vertices, points, curves,
             ) {
@@ -2133,7 +2371,11 @@ fn cylindrical_trim(
             ctx.charge_work(1, "scan SLDPRT cylindrical trim endpoints")?;
             let vertex = require_some!(vertices.get(vertex_id));
             let point = *require_some!(points.get(&vertex.point));
-            if require_some!(analytic_surface_residual(require_some!(surface.solved()), point)) > tolerance {
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                point
+            )) > tolerance
+            {
                 return Ok(None);
             }
             let axial = point.vector_from(origin).dot(axis);
@@ -2161,15 +2403,17 @@ fn cylindrical_trim(
         }
     }
     let (angular_start, angular_span) = require_some!(circular_interval(ctx, &mut angles)?);
-    Ok((max_axial - min_axial > tolerance).then_some(CylindricalTrim {
-        origin,
-        frame,
-        radius,
-        min_axial,
-        max_axial,
-        angular_start,
-        angular_span,
-    }))
+    Ok(
+        (max_axial - min_axial > tolerance).then_some(CylindricalTrim {
+            origin,
+            frame,
+            radius,
+            min_axial,
+            max_axial,
+            angular_start,
+            angular_span,
+        }),
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2293,7 +2537,11 @@ fn conical_trim(
             ctx.charge_work(1, "scan SLDPRT conical trim endpoints")?;
             let vertex = require_some!(vertices.get(vertex_id));
             let point = *require_some!(points.get(&vertex.point));
-            if require_some!(analytic_surface_residual(require_some!(surface.solved()), point)) > tolerance {
+            if require_some!(analytic_surface_residual(
+                require_some!(surface.solved()),
+                point
+            )) > tolerance
+            {
                 return Ok(None);
             }
             let axial = point.vector_from(origin).dot(axis);
@@ -2366,13 +2614,24 @@ fn cone_angle(
         .then_some(angle.rem_euclid(std::f64::consts::TAU))
 }
 
-fn circular_interval(ctx: &DecodeContext<'_>, angles: &mut Vec<f64>) -> Result<Option<(f64, f64)>, cadmpeg_core::CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(angles.len()), "select SLDPRT circular trim angles")?;
+fn circular_interval(
+    ctx: &DecodeContext<'_>,
+    angles: &mut Vec<f64>,
+) -> Result<Option<(f64, f64)>, cadmpeg_core::CodecError> {
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(angles.len()),
+        "select SLDPRT circular trim angles",
+    )?;
     angles.retain(|angle| angle.is_finite());
     if angles.is_empty() {
         return Ok(None);
     }
-    ctx.stable_sort_by(angles, f64::total_cmp, |_| 0, "sort SLDPRT circular trim angles")?;
+    ctx.stable_sort_by(
+        angles,
+        f64::total_cmp,
+        |_| 0,
+        "sort SLDPRT circular trim angles",
+    )?;
     angles.dedup_by(|left, right| (*left - *right).abs() <= EPS_CYLINDER_ANGLE);
     if angles.len() == 1 {
         return Ok(Some((angles[0], std::f64::consts::TAU)));
@@ -2387,7 +2646,10 @@ fn circular_interval(ctx: &DecodeContext<'_>, angles: &mut Vec<f64>) -> Result<O
             };
             (index, gap)
         })
-        .max_by(|left, right| left.1.total_cmp(&right.1)) else { return Ok(None); };
+        .max_by(|left, right| left.1.total_cmp(&right.1))
+    else {
+        return Ok(None);
+    };
     let start = angles[(largest_gap_index + 1) % angles.len()];
     Ok(Some((start, std::f64::consts::TAU - largest_gap)))
 }
@@ -2414,10 +2676,14 @@ fn analytic_trim(
 ) -> Result<Option<AnalyticTrim>, cadmpeg_core::CodecError> {
     match surface {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_)) => {
-            let trim = planar_trim(ctx, face, surface, loops, coedges, edges, vertices, points, curves)?;
+            let trim = planar_trim(
+                ctx, face, surface, loops, coedges, edges, vertices, points, curves,
+            )?;
             let trim = match trim {
                 Some(trim) => Some(trim),
-                None => planar_hole_trim(ctx, face, surface, loops, coedges, edges, vertices, points, curves)?,
+                None => planar_hole_trim(
+                    ctx, face, surface, loops, coedges, edges, vertices, points, curves,
+                )?,
             };
             Ok(trim.map(AnalyticTrim::Planar))
         }
@@ -2510,7 +2776,11 @@ fn triangulate_polygon(
         .get()
         .signum();
     let mut remaining = Vec::new();
-    ctx.reserve_collection_vec(&mut remaining, polygon.len(), "collect SLDPRT planar polygon vertices")?;
+    ctx.reserve_collection_vec(
+        &mut remaining,
+        polygon.len(),
+        "collect SLDPRT planar polygon vertices",
+    )?;
     remaining.extend(0..polygon.len());
     let mut triangles = Vec::new();
     while remaining.len() > 3 {
@@ -2757,7 +3027,9 @@ fn circular_outer_and_holes(
             }
         }
     }
-    let Some(outer_index) = outer_index else { return Ok(None); };
+    let Some(outer_index) = outer_index else {
+        return Ok(None);
+    };
     let mut holes = Vec::new();
     for (index, hole) in circles.iter().enumerate() {
         if index != outer_index {
@@ -2787,7 +3059,9 @@ fn chordal_hole_constraint(
         let distance = point_distance(*point, hole.center);
         minimum = Some(minimum.map_or(distance, |current| current.min(distance)));
     }
-    let Some(minimum) = minimum else { return Ok(None); };
+    let Some(minimum) = minimum else {
+        return Ok(None);
+    };
     if minimum >= hole.radius - tolerance {
         return Ok(Some((hole, hole)));
     }
@@ -2797,23 +3071,36 @@ fn chordal_hole_constraint(
         ctx.charge_work(1, "scan SLDPRT circular trim boundary")?;
         let distance = point_distance(*point, hole.center);
         if (distance - hole.radius).abs() <= tolerance {
-            ctx.reserve_collection_vec(&mut boundary_angles, 1, "collect SLDPRT circular trim angles")?;
+            ctx.reserve_collection_vec(
+                &mut boundary_angles,
+                1,
+                "collect SLDPRT circular trim angles",
+            )?;
             boundary_angles.push((point.v - hole.center.v).atan2(point.u - hole.center.u));
         }
     }
-    ctx.stable_sort_by(&mut boundary_angles, f64::total_cmp, |_| 0, "sort SLDPRT circular trim angles")?;
+    ctx.stable_sort_by(
+        &mut boundary_angles,
+        f64::total_cmp,
+        |_| 0,
+        "sort SLDPRT circular trim angles",
+    )?;
     boundary_angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / hole.radius);
     if boundary_angles.len() < 3 {
         return Ok(None);
     }
-    let Some(last) = boundary_angles.last() else { return Ok(None); };
+    let Some(last) = boundary_angles.last() else {
+        return Ok(None);
+    };
     let wrap_gap = boundary_angles[0] + std::f64::consts::TAU - *last;
     let maximum_gap = boundary_angles
         .windows(2)
         .map(|pair| pair[1] - pair[0])
         .chain(std::iter::once(wrap_gap))
         .reduce(f64::max);
-    let Some(maximum_gap) = maximum_gap else { return Ok(None); };
+    let Some(maximum_gap) = maximum_gap else {
+        return Ok(None);
+    };
     if maximum_gap > std::f64::consts::PI {
         return Ok(None);
     }
@@ -3035,9 +3322,23 @@ fn surface_measure(
     fit_tolerance: Option<f64>,
 ) -> Result<Option<SurfaceMeasure>, cadmpeg_core::CodecError> {
     if let SolvedSurfaceGeometry::Nurbs(nurbs) = surface {
-        let Some(tolerance) = fit_tolerance else { return Ok(None); };
-        let Some(parameters) = crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)? else { return Ok(None); };
-        let Some(partials) = crate::brep::evaluation::nurbs_surface_partials(ctx, nurbs, parameters.u, parameters.v)? else { return Ok(None); };
+        let Some(tolerance) = fit_tolerance else {
+            return Ok(None);
+        };
+        let Some(parameters) =
+            crate::brep::evaluation::nurbs_surface_parameter_near_point(ctx, nurbs, point, None)?
+        else {
+            return Ok(None);
+        };
+        let Some(partials) = crate::brep::evaluation::nurbs_surface_partials(
+            ctx,
+            nurbs,
+            parameters.u,
+            parameters.v,
+        )?
+        else {
+            return Ok(None);
+        };
         let residual = point.distance(partials.point.get());
         if residual > tolerance {
             return Ok(None);
@@ -3052,21 +3353,26 @@ fn surface_measure(
         let _depth = ctx.enter_nested("measure SLDPRT placed surface")?;
         let transform = placed.transform();
         if transform.is_proper_rigid() {
-            let Some(inverse) = transform.try_inverse_affine().ok() else { return Ok(None); };
-            let Some(local_point) = inverse.apply_point(point) else { return Ok(None); };
-            let Some(mut measure) = surface_measure(
-                ctx,
-                placed.basis(),
-                local_point.get(),
-                fit_tolerance,
-            )? else { return Ok(None); };
+            let Some(inverse) = transform.try_inverse_affine().ok() else {
+                return Ok(None);
+            };
+            let Some(local_point) = inverse.apply_point(point) else {
+                return Ok(None);
+            };
+            let Some(mut measure) =
+                surface_measure(ctx, placed.basis(), local_point.get(), fit_tolerance)?
+            else {
+                return Ok(None);
+            };
             measure.normal = measure
                 .normal
                 .and_then(|normal| transform.apply_vector(normal)?.unit());
             return Ok(Some(measure));
         }
     }
-    let Some(residual) = analytic_surface_residual(surface, point) else { return Ok(None); };
+    let Some(residual) = analytic_surface_residual(surface, point) else {
+        return Ok(None);
+    };
     Ok(Some(SurfaceMeasure {
         residual,
         normal: analytic_surface_normal(surface, point),

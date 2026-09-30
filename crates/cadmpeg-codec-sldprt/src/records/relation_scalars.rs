@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Relation scalar membership and selected parameter/display roles.
 
-use super::{FeatureInputScalar, FeatureInputScalarRole};
 use super::charged_clone::CloneCharged;
+use super::{FeatureInputScalar, FeatureInputScalarRole};
 use serde::{ser::SerializeMap, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,7 +13,11 @@ pub(crate) struct RelationScalars {
 }
 
 impl CloneCharged for RelationScalars {
-    fn clone_charged(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, operation: &'static str) -> Result<Self, cadmpeg_core::CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
             refs: self.refs.clone_charged(ctx, operation)?,
             parameter: self.parameter,
@@ -47,7 +51,11 @@ impl RelationScalars {
                 FeatureInputScalarRole::Native => {}
             }
             ctx.reserve_collection_vec(&mut refs, 1, "collect SLDPRT relation scalar references")?;
-            refs.push(crate::text_admission::format_retained(ctx, format_args!("{}", scalar.id), "retain SLDPRT relation scalar identity")?);
+            refs.push(crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", scalar.id),
+                "retain SLDPRT relation scalar identity",
+            )?);
         }
         Ok(Self {
             parameter: if duplicate_parameter { None } else { parameter },
@@ -93,8 +101,16 @@ impl RelationScalars {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         id: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        ctx.reserve_collection_vec(&mut self.refs, 1, "collect SLDPRT relation scalar references")?;
-        self.refs.push(crate::text_admission::format_retained(ctx, format_args!("{id}"), "retain SLDPRT relation scalar identity")?);
+        ctx.reserve_collection_vec(
+            &mut self.refs,
+            1,
+            "collect SLDPRT relation scalar references",
+        )?;
+        self.refs.push(crate::text_admission::format_retained(
+            ctx,
+            format_args!("{id}"),
+            "retain SLDPRT relation scalar identity",
+        )?);
         Ok(())
     }
 

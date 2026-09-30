@@ -42,7 +42,8 @@ fn display_value_charges_escaped_chunks_and_formats_once() {
     };
     let ctx = crate::native::test_ctx();
     let record = super::super::NativeRecord::from_typed_with_sink(
-        &ctx, &Record {
+        &ctx,
+        &Record {
             id: "test:native:record#display",
             value: DisplayText(&calls),
         },
@@ -94,8 +95,9 @@ fn display_map_key_charges_escaped_chunks_and_formats_once() {
         Ok(())
     };
     let ctx = crate::native::test_ctx();
-    let record = super::super::NativeRecord::from_typed_with_sink(&ctx, &Record(&calls), Some(&sink))
-        .expect("valid key record");
+    let record =
+        super::super::NativeRecord::from_typed_with_sink(&ctx, &Record(&calls), Some(&sink))
+            .expect("valid key record");
     assert_eq!(calls.get(), 1);
     assert_eq!(record.field("key\n"), Some(serde_json::json!(7)));
     assert_eq!(*captured.borrow(), serde_json::to_vec(&record).unwrap());
@@ -175,7 +177,8 @@ fn malformed_map_protocol_is_reported() {
     assert!(pending.serialize_key("second").is_err());
     assert!(SerializeMap::end(pending).is_err());
 
-    let mut no_key = serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
+    let mut no_key =
+        serde::Serializer::serialize_map(CanonValue::for_record(&ctx), None).expect("map");
     assert!(no_key.serialize_value(&1).is_err());
 }
 
@@ -489,21 +492,33 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
     }
     let id = "test:native:record#raw-limit";
     let json = r#"[["retained"]]"#;
-    let record = Record { id, raw: RawValue::from_string(json.into()).unwrap() };
+    let record = Record {
+        id,
+        raw: RawValue::from_string(json.into()).unwrap(),
+    };
     let arena = DecodeArena::new();
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default()).unwrap();
     let stored = super::super::NativeRecord::from_typed_with_sink(&service, &record, None).unwrap();
     assert_eq!(stored.field("raw"), Some(serde_json::json!([["retained"]])));
-    for dimension in [ResourceDimension::CollectionItems, ResourceDimension::RetainedBytes, ResourceDimension::RecursionDepth] {
+    for dimension in [
+        ResourceDimension::CollectionItems,
+        ResourceDimension::RetainedBytes,
+        ResourceDimension::RecursionDepth,
+    ] {
         let mut policy = DecodePolicy::default();
         match dimension {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
-            ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = u64::try_from(2 + id.len() + 3 + json.len()).unwrap(),
+            ResourceDimension::RetainedBytes => {
+                policy.limits.max_retained_bytes =
+                    u64::try_from(2 + id.len() + 3 + json.len()).unwrap()
+            }
             ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
             _ => panic!("unsupported raw-native test dimension"),
         }
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let error = super::super::NativeRecord::from_typed_with_sink(&limited, &record, None).unwrap_err();
+        let error =
+            super::super::NativeRecord::from_typed_with_sink(&limited, &record, None).unwrap_err();
         assert!(matches!(cadmpeg_core::CodecError::from(error),
             cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
     }
@@ -520,16 +535,42 @@ fn native_float_keys_keep_the_scalar_json_spelling() {
         }
     }
     #[derive(Serialize)]
-    struct Record<T> { id: &'static str, keyed: Keyed<T> }
-    for value in [f64::MIN, -0.0, f64::MIN_POSITIVE, f64::from_bits(1), f64::MAX] {
-        let record = Record { id: "test:native:record#float-key", keyed: Keyed(value) };
-        let stored = super::super::NativeRecord::from_typed(&record).unwrap();
-        assert_eq!(serde_json::to_value(&stored).unwrap(), serde_json::to_value(&record).unwrap());
+    struct Record<T> {
+        id: &'static str,
+        keyed: Keyed<T>,
     }
-    for value in [f32::MIN, -0.0, f32::MIN_POSITIVE, f32::from_bits(1), f32::MAX] {
-        let record = Record { id: "test:native:record#float-key", keyed: Keyed(value) };
+    for value in [
+        f64::MIN,
+        -0.0,
+        f64::MIN_POSITIVE,
+        f64::from_bits(1),
+        f64::MAX,
+    ] {
+        let record = Record {
+            id: "test:native:record#float-key",
+            keyed: Keyed(value),
+        };
         let stored = super::super::NativeRecord::from_typed(&record).unwrap();
-        assert_eq!(serde_json::to_value(&stored).unwrap(), serde_json::to_value(&record).unwrap());
+        assert_eq!(
+            serde_json::to_value(&stored).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
     }
-
+    for value in [
+        f32::MIN,
+        -0.0,
+        f32::MIN_POSITIVE,
+        f32::from_bits(1),
+        f32::MAX,
+    ] {
+        let record = Record {
+            id: "test:native:record#float-key",
+            keyed: Keyed(value),
+        };
+        let stored = super::super::NativeRecord::from_typed(&record).unwrap();
+        assert_eq!(
+            serde_json::to_value(&stored).unwrap(),
+            serde_json::to_value(&record).unwrap()
+        );
+    }
 }

@@ -249,17 +249,18 @@ fn parasolid_header_preserves_lossy_description_decoding() {
     let mut stream = parasolid_payload("partition", "SCH_SW_33103_11000");
     stream[6] = 0xff;
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service()).unwrap();
-    let header = crate::parasolid::stream_header(&ctx, &stream).unwrap().unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&stream, &arena, &DecodePolicy::service()).unwrap();
+    let header = crate::parasolid::stream_header(&ctx, &stream)
+        .unwrap()
+        .unwrap();
     assert_eq!(header.description, "�artition");
 }
 
 #[test]
 fn parasolid_extracts_every_direct_stream_in_block() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     payload.extend(parasolid_with_body(
         "deltas body",
@@ -275,9 +276,7 @@ fn parasolid_extracts_every_direct_stream_in_block() {
 #[test]
 fn parasolid_reassembles_chained_sections_before_header_parsing() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &vec![0x31; 5000]);
     let deltas = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &vec![0x42; 3000]);
     let partition_split = 7;
@@ -304,9 +303,7 @@ fn parasolid_reassembles_chained_sections_before_header_parsing() {
 #[test]
 fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut payload = WRAPPED_MAGIC.to_vec();
@@ -324,9 +321,7 @@ fn parasolid_reassembles_the_degenerate_one_frame_wrapper() {
 #[test]
 fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut stream = b"prefix".to_vec();
     stream.extend(parasolid_payload("partition body", "SCH_SW_33103_11000"));
     let member = zlib_member(&stream);
@@ -345,9 +340,7 @@ fn wrapped_member_requires_the_parasolid_header_at_byte_zero() {
 #[test]
 fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let stream = parasolid_payload("partition body", "SCH_SW_33103_11000");
     let member = zlib_member(&stream);
     let mut section = WRAPPED_MAGIC.to_vec();
@@ -368,9 +361,7 @@ fn malformed_chained_continuation_is_not_emitted_as_a_prefix_stream() {
 #[test]
 fn parasolid_does_not_split_at_an_unframed_interior_signature() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
         crate::parasolid::extract_streams_with_offsets(b"PS\0\0not-a-stream-header", &ctx)
             .unwrap()
@@ -397,9 +388,7 @@ fn parasolid_does_not_split_at_an_unframed_interior_signature() {
 #[test]
 fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).unwrap();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let description = b"boundary_polyline mesh";
     let schema = b"SCH_3201255_32001_13006";
     let mut stream = b"PS\0\0".to_vec();
@@ -413,7 +402,9 @@ fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
     for value in [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
         stream.extend(value.to_be_bytes());
     }
-    let header = crate::parasolid::stream_header(&ctx, &stream).unwrap().unwrap();
+    let header = crate::parasolid::stream_header(&ctx, &stream)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         crate::parasolid::mesh_polyline_from_header(&ctx, &stream, &header).unwrap(),
         Some(vec![
@@ -428,30 +419,61 @@ fn direct_parasolid_decode_route_refuses_work_at_minimum_admission() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
     let mut payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
-    payload.extend(parasolid_with_body("deltas body", "SCH_SW_33103_11000", &world_point(60, [2.0, 0.0, 0.0])));
+    payload.extend(parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &world_point(60, [2.0, 0.0, 0.0]),
+    ));
     let mut source = crate::test_support::container::outer_header();
-    source.extend(crate::test_support::container::make_block(0x20, "Contents/Config-0-Partition", &payload));
-    let mut options = DecodeOptions { policy: DecodePolicy::service(), ..DecodeOptions::default() };
-    let expected = crate::SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap().ir().clone();
+    source.extend(crate::test_support::container::make_block(
+        0x20,
+        "Contents/Config-0-Partition",
+        &payload,
+    ));
+    let mut options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let expected = crate::SldprtCodec
+        .decode(&mut Cursor::new(&source), &options)
+        .unwrap()
+        .ir()
+        .clone();
     assert!(!expected.model.bodies.is_empty());
-    let admitted = |options: &DecodeOptions| match crate::SldprtCodec.decode(&mut Cursor::new(&source), options) {
-        Ok(actual) => { assert_eq!(actual.ir(), &expected); true }
-        Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+    let admitted = |options: &DecodeOptions| match crate::SldprtCodec
+        .decode(&mut Cursor::new(&source), options)
+    {
+        Ok(actual) => {
+            assert_eq!(actual.ir(), &expected);
+            true
+        }
+        Err(cadmpeg_ir::DecodeFailure::Codec(CodecError::ResourceLimit(limit))) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
+        }
         Err(error) => panic!("unexpected direct Parasolid decode error: {error}"),
     };
     let mut lower = 0;
     let mut upper = 1_u64;
     loop {
         options.policy.limits.max_work_units = upper;
-        if admitted(&options) { break; }
+        if admitted(&options) {
+            break;
+        }
         upper = upper.checked_mul(2).unwrap();
     }
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         options.policy.limits.max_work_units = middle;
-        if admitted(&options) { upper = middle; } else { lower = middle + 1; }
+        if admitted(&options) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
     }
     assert!(upper > 0);
-    options.policy.limits.max_work_units = upper; assert!(admitted(&options));
-    options.policy.limits.max_work_units = upper - 1; assert!(!admitted(&options));
+    options.policy.limits.max_work_units = upper;
+    assert!(admitted(&options));
+    options.policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&options));
 }

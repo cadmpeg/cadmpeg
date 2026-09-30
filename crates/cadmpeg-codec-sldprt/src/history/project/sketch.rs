@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Split-face, cosmetic-thread, and sketch-block projection.
 
+use super::copy_projected_feature_text;
 use crate::records::Feature;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use super::copy_projected_feature_text;
 use cadmpeg_ir::features::{
     CosmeticThreadExtent, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
     SplitFaceTool,
@@ -16,7 +16,10 @@ use crate::history::literals::{
     parse_positive_dimension_length_mm, strip_diameter_modifier,
 };
 
-pub(super) fn project_split_face(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<Option<FeatureDefinition>, CodecError> {
+pub(super) fn project_split_face(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<Option<FeatureDefinition>, CodecError> {
     if feature.input_class.as_deref() != Some("moPLine_c")
         || feature
             .properties
@@ -29,15 +32,26 @@ pub(super) fn project_split_face(ctx: &DecodeContext<'_>, feature: &Feature) -> 
     let Some(native) = feature
         .properties
         .get(crate::resolved_features::operations::SPLIT_LINE_TOOL_PROPERTY)
-        .map(String::as_str) else { return Ok(None); };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::SplitFace {
-        targets: FaceSelection::Unresolved,
-        tool: SplitFaceTool::Path(PathRef::Native(copy_projected_feature_text(ctx, native)?)),
-    })))
+        .map(String::as_str)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::SplitFace {
+            targets: FaceSelection::Unresolved,
+            tool: SplitFaceTool::Path(PathRef::Native(copy_projected_feature_text(ctx, native)?)),
+        },
+    )))
 }
 
-pub(super) fn project_cosmetic_thread(ctx: &DecodeContext<'_>, feature: &Feature) -> Result<FeatureDefinition, CodecError> {
-    ctx.charge_work(feature.parameters.len() as u64, "scan SLDPRT cosmetic thread dimensions")?;
+pub(super) fn project_cosmetic_thread(
+    ctx: &DecodeContext<'_>,
+    feature: &Feature,
+) -> Result<FeatureDefinition, CodecError> {
+    ctx.charge_work(
+        feature.parameters.len() as u64,
+        "scan SLDPRT cosmetic thread dimensions",
+    )?;
     let diameter = feature
         .parameters
         .get("D2")
@@ -63,15 +77,18 @@ pub(super) fn project_cosmetic_thread(ctx: &DecodeContext<'_>, feature: &Feature
             }),
         None => Some(CosmeticThreadExtent::Through {}),
     };
-    Ok(FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-        face: feature
-            .properties
-            .get("Face")
-            .map(|value| copy_projected_feature_text(ctx, value)).transpose()?
-            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        diameter,
-        extent,
-    }))
+    Ok(FeatureDefinition::Operation(
+        FeatureOperation::CosmeticThread {
+            face: feature
+                .properties
+                .get("Face")
+                .map(|value| copy_projected_feature_text(ctx, value))
+                .transpose()?
+                .map_or(FaceSelection::Unresolved, FaceSelection::Native),
+            diameter,
+            extent,
+        },
+    ))
 }
 
 pub(in crate::history) fn sketch_block_placement(feature: &Feature) -> Option<Transform> {

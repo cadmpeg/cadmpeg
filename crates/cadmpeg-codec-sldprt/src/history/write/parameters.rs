@@ -26,7 +26,9 @@ pub(crate) fn prepare_parameters_for_write(
 ) -> Result<(), CodecError> {
     let hash_arena = cadmpeg_core::decode::DecodeArena::new();
     let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &hash_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &[],
+        &hash_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
 
     let neutral_hash = parameter_hash(&hash_ctx, &ir.model.parameters)?;
@@ -62,15 +64,23 @@ pub(crate) fn prepare_parameters_for_write(
             if feature_parameter_changes_authorized {
                 return sync_neutral_parameters(ir, native);
             }
-            let lane_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
-                .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+            let lane_bytes = native
+                .as_ref()
+                .into_iter()
+                .flat_map(|native| &native.feature_input_lanes)
+                .flat_map(|lane| lane.native_payload.iter().copied())
+                .collect::<Vec<_>>();
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+                &lane_bytes,
+                &arena,
+                &cadmpeg_core::decode::DecodePolicy::service(),
             )?;
-            let projected = native.as_ref()
+            let projected = native
+                .as_ref()
                 .map(|value| project_parameters(&ctx, &value.feature_histories))
-                .transpose()?.unwrap_or_default();
+                .transpose()?
+                .unwrap_or_default();
             if parameter_hash(&hash_ctx, &projected)? == neutral_hash {
                 Ok(())
             } else {
@@ -110,11 +120,17 @@ fn sync_neutral_parameters(
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let lane_bytes = native.as_ref().into_iter().flat_map(|native| &native.feature_input_lanes)
-        .flat_map(|lane| lane.native_payload.iter().copied()).collect::<Vec<_>>();
+    let lane_bytes = native
+        .as_ref()
+        .into_iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| lane.native_payload.iter().copied())
+        .collect::<Vec<_>>();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane_bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        &lane_bytes,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
     )?;
     let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
@@ -123,16 +139,24 @@ fn sync_neutral_parameters(
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .map(|feature| Ok((neutral_feature_id_charged(&ctx, &feature.id)?, feature.name.clone())))
+            .map(|feature| {
+                Ok((
+                    neutral_feature_id_charged(&ctx, &feature.id)?,
+                    feature.name.clone(),
+                ))
+            })
             .collect::<Result<HashMap<_, _>, CodecError>>()?;
         rewrite_renamed_parameter_references(
-            &ctx, &mut parameters,
+            &ctx,
+            &mut parameters,
             &original,
             &original_feature_names,
             &feature_names,
         )?;
     }
-    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)? > 0 {
+    if parameters_with_incoherent_dependencies(&ctx, &parameters, &feature_names, &global_owners)?
+        > 0
+    {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
@@ -313,7 +337,8 @@ fn sync_neutral_parameters(
 }
 
 fn rewrite_renamed_parameter_references(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, parameters: &mut [DesignParameter],
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parameters: &mut [DesignParameter],
     original: &[DesignParameter],
     original_feature_names: &HashMap<FeatureId, String>,
     feature_names: &HashMap<FeatureId, String>,
@@ -391,7 +416,8 @@ fn rewrite_renamed_parameter_references(
         if aliases.is_empty() {
             continue;
         }
-        if let Some(rewritten) = rewrite_parameter_expression(ctx, &parameter.expression, &aliases)? {
+        if let Some(rewritten) = rewrite_parameter_expression(ctx, &parameter.expression, &aliases)?
+        {
             parameter.expression = rewritten;
         }
     }
@@ -399,10 +425,13 @@ fn rewrite_renamed_parameter_references(
 }
 
 pub(in crate::history) fn rewrite_parameter_expression(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>, expression: &str,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    expression: &str,
     aliases: &HashMap<String, String>,
 ) -> Result<Option<String>, CodecError> {
-    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else { return Ok(None); };
+    let Some(tokens) = expression_identifier_tokens(ctx, expression)? else {
+        return Ok(None);
+    };
     let mut rewritten = String::with_capacity(expression.len());
     let mut tail = expression;
     let mut replaced = false;

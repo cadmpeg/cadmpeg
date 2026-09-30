@@ -2,18 +2,32 @@
 //! Charged copies of native lane records and their nested collections.
 
 use super::CloneCharged;
-use crate::records::{FeatureInputLane, FeatureInputBodySelection, FeatureInputEdgeSelection, FeatureInputSurfaceSelection, FeatureInputGeneratedSurfaceIdentity, FeatureInputComponentPathEntry, FeatureInputRelationBinding, FeatureInputRelationInstance, FeatureInputReference, FeatureInputName, FeatureInputScalar, FeatureInputOperand, FeatureInputClass, SketchInputEntity, SketchInputLinks, SketchInputLink};
+use crate::records::{
+    FeatureInputBodySelection, FeatureInputClass, FeatureInputComponentPathEntry,
+    FeatureInputEdgeSelection, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputReference, FeatureInputRelationBinding,
+    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputSurfaceSelection,
+    SketchInputEntity, SketchInputLink, SketchInputLinks,
+};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
 impl CloneCharged for FeatureInputLane {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         #[cfg(test)]
         crate::records::FEATURE_INPUT_LANE_CLONE_COUNT.with(|count| count.set(count.get() + 1));
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             configuration: self.configuration.clone_charged(ctx, operation)?,
-            native_payload: crate::byte_admission::copy_retained(ctx, &self.native_payload, operation)?,
+            native_payload: crate::byte_admission::copy_retained(
+                ctx,
+                &self.native_payload,
+                operation,
+            )?,
             classes: self.classes.clone_charged(ctx, operation)?,
             names: self.names.clone_charged(ctx, operation)?,
             scalars: self.scalars.clone_charged(ctx, operation)?,
@@ -22,7 +36,9 @@ impl CloneCharged for FeatureInputLane {
             body_selections: self.body_selections.clone_charged(ctx, operation)?,
             edge_selections: self.edge_selections.clone_charged(ctx, operation)?,
             surface_selections: self.surface_selections.clone_charged(ctx, operation)?,
-            generated_surface_identities: self.generated_surface_identities.clone_charged(ctx, operation)?,
+            generated_surface_identities: self
+                .generated_surface_identities
+                .clone_charged(ctx, operation)?,
             references: self.references.clone_charged(ctx, operation)?,
             sketch_entities: self.sketch_entities.clone_charged(ctx, operation)?,
         })
@@ -30,7 +46,11 @@ impl CloneCharged for FeatureInputLane {
 }
 
 impl CloneCharged for FeatureInputBodySelection {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -46,7 +66,11 @@ impl CloneCharged for FeatureInputBodySelection {
 }
 
 impl CloneCharged for FeatureInputEdgeSelection {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -64,7 +88,11 @@ impl CloneCharged for FeatureInputEdgeSelection {
 }
 
 impl CloneCharged for FeatureInputSurfaceSelection {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -82,7 +110,11 @@ impl CloneCharged for FeatureInputSurfaceSelection {
 }
 
 impl CloneCharged for FeatureInputGeneratedSurfaceIdentity {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -97,7 +129,11 @@ impl CloneCharged for FeatureInputGeneratedSurfaceIdentity {
 }
 
 impl CloneCharged for FeatureInputComponentPathEntry {
-    fn clone_charged(&self, _ctx: &DecodeContext<'_>, _operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             instance: self.instance,
             type_signature: self.type_signature,
@@ -107,7 +143,11 @@ impl CloneCharged for FeatureInputComponentPathEntry {
 }
 
 impl CloneCharged for FeatureInputRelationBinding {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -122,7 +162,11 @@ impl CloneCharged for FeatureInputRelationBinding {
 }
 
 impl CloneCharged for FeatureInputRelationInstance {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -138,7 +182,11 @@ impl CloneCharged for FeatureInputRelationInstance {
 }
 
 impl CloneCharged for FeatureInputReference {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -153,7 +201,11 @@ impl CloneCharged for FeatureInputReference {
 }
 
 impl CloneCharged for FeatureInputName {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -166,7 +218,11 @@ impl CloneCharged for FeatureInputName {
 }
 
 impl CloneCharged for FeatureInputScalar {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -183,7 +239,11 @@ impl CloneCharged for FeatureInputScalar {
 }
 
 impl CloneCharged for FeatureInputOperand {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             offset: self.offset,
             reference_ref: self.reference_ref.clone_charged(ctx, operation)?,
@@ -195,7 +255,11 @@ impl CloneCharged for FeatureInputOperand {
 }
 
 impl CloneCharged for FeatureInputClass {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -207,7 +271,11 @@ impl CloneCharged for FeatureInputClass {
 }
 
 impl CloneCharged for SketchInputEntity {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             id: self.id.clone_charged(ctx, operation)?,
             parent: self.parent.clone_charged(ctx, operation)?,
@@ -225,7 +293,11 @@ impl CloneCharged for SketchInputEntity {
 }
 
 impl CloneCharged for SketchInputLinks {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             selector: self.selector,
             entries: self.entries.clone_charged(ctx, operation)?,
@@ -234,11 +306,14 @@ impl CloneCharged for SketchInputLinks {
 }
 
 impl CloneCharged for SketchInputLink {
-    fn clone_charged(&self, ctx: &DecodeContext<'_>, operation: &'static str) -> Result<Self, CodecError> {
+    fn clone_charged(
+        &self,
+        ctx: &DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, CodecError> {
         Ok(Self {
             local_id: self.local_id,
             entity_ref: self.entity_ref.clone_charged(ctx, operation)?,
         })
     }
 }
-

@@ -45,16 +45,37 @@ pub(crate) fn bind_history_classes(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let source_items = lanes.iter().try_fold(0usize, |count, lane| {
-        count.checked_add(lane.names.len()).and_then(|count| count.checked_add(lane.classes.len()))
-    }).ok_or_else(|| ctx.refuse_codec_limit("validate SLDPRT history class candidates", u64::MAX - 1, u64::MAX))?;
-    ctx.charge_collection_items(u64::try_from(source_items).map_err(|_| ctx.refuse_codec_limit(
-        "validate SLDPRT history class candidates", u64::MAX - 1, u64::MAX,
-    ))?, "validate SLDPRT history class candidates")?;
+    let source_items = lanes
+        .iter()
+        .try_fold(0usize, |count, lane| {
+            count
+                .checked_add(lane.names.len())
+                .and_then(|count| count.checked_add(lane.classes.len()))
+        })
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "validate SLDPRT history class candidates",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
+    ctx.charge_collection_items(
+        u64::try_from(source_items).map_err(|_| {
+            ctx.refuse_codec_limit(
+                "validate SLDPRT history class candidates",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?,
+        "validate SLDPRT history class candidates",
+    )?;
     for history in histories.iter() {
-        ctx.charge_work(u64::try_from(history.features.len()).map_err(|_| ctx.refuse_codec_limit(
-            "bind SLDPRT history classes", u64::MAX - 1, u64::MAX,
-        ))?, "bind SLDPRT history classes")?;
+        ctx.charge_work(
+            u64::try_from(history.features.len()).map_err(|_| {
+                ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
+            })?,
+            "bind SLDPRT history classes",
+        )?;
     }
     for feature in histories
         .iter_mut()
@@ -64,7 +85,8 @@ pub(crate) fn bind_history_classes(
     }
     let mut classes_by_object = HashMap::<u32, Vec<&str>>::new();
     for lane in lanes {
-        let names_by_offset = collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name)))?;
+        let names_by_offset =
+            collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name)))?;
         for class in &lane.classes {
             let name_offset = class.offset + 6 + class.name.len() as u64;
             let Some(name) = names_by_offset.get(&name_offset) else {
@@ -99,7 +121,12 @@ pub(crate) fn bind_history_classes(
 
     let mut direct_classes_by_name = HashMap::<&str, Vec<&str>>::new();
     for lane in lanes {
-        let names_by_offset = collect_class_map(ctx, lane.names.iter().map(|name| (name.offset, name.value.as_str())))?;
+        let names_by_offset = collect_class_map(
+            ctx,
+            lane.names
+                .iter()
+                .map(|name| (name.offset, name.value.as_str())),
+        )?;
         for class in &lane.classes {
             let name_offset = class.offset + 6 + class.name.len() as u64;
             let Some(name) = names_by_offset.get(&name_offset) else {
@@ -121,7 +148,9 @@ pub(crate) fn bind_history_classes(
     for feature in histories.iter().flat_map(|history| &history.features) {
         if !feature.name.is_empty() {
             reserve_class_map(ctx, &mut history_name_counts)?;
-            *history_name_counts.entry(copy_class_text(ctx, &feature.name)?).or_default() += 1;
+            *history_name_counts
+                .entry(copy_class_text(ctx, &feature.name)?)
+                .or_default() += 1;
         }
     }
     for feature in histories
@@ -142,16 +171,29 @@ pub(crate) fn bind_history_classes(
 
     let mut cosmetic_thread_classes = HashMap::<String, Vec<String>>::new();
     for lane in lanes {
-        let mut declared = collect_class_vec(ctx, lane.classes.iter()
-            .filter(|class| native_object_class(&class.name) == NativeClassKind::CosmeticThread)
-            .map(|class| class.name.as_str()))?;
-        ctx.stable_sort_by(&mut declared, Ord::cmp, |class| class.len(), "sort SLDPRT declared classes")?;
+        let mut declared = collect_class_vec(
+            ctx,
+            lane.classes
+                .iter()
+                .filter(|class| native_object_class(&class.name) == NativeClassKind::CosmeticThread)
+                .map(|class| class.name.as_str()),
+        )?;
+        ctx.stable_sort_by(
+            &mut declared,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT declared classes",
+        )?;
         declared.dedup();
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = collect_class_set(ctx, lane.classes.iter()
-            .map(|class| class.offset + 6 + class.name.len() as u64))?;
+        let direct_name_offsets = collect_class_set(
+            ctx,
+            lane.classes
+                .iter()
+                .map(|class| class.offset + 6 + class.name.len() as u64),
+        )?;
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
         for feature in histories
             .iter()
@@ -184,7 +226,9 @@ pub(crate) fn bind_history_classes(
             {
                 for feature in features {
                     reserve_class_map(ctx, &mut cosmetic_thread_classes)?;
-                    let classes = cosmetic_thread_classes.entry(copy_class_text(ctx, &feature.id)?).or_default();
+                    let classes = cosmetic_thread_classes
+                        .entry(copy_class_text(ctx, &feature.id)?)
+                        .or_default();
                     ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
                     classes.push(copy_class_text(ctx, class)?);
                 }
@@ -192,7 +236,12 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in cosmetic_thread_classes.values_mut() {
-        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
+        ctx.stable_sort_by(
+            classes,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT bound classes",
+        )?;
         classes.dedup();
     }
     for feature in histories
@@ -207,10 +256,9 @@ pub(crate) fn bind_history_classes(
 
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in lanes {
-        let resolved = collect_class_vec(ctx, lane
-            .classes
-            .iter()
-            .filter_map(|class| {
+        let resolved = collect_class_vec(
+            ctx,
+            lane.classes.iter().filter_map(|class| {
                 matches!(
                     native_object_class(&class.name),
                     NativeClassKind::ReferencePlane
@@ -219,8 +267,8 @@ pub(crate) fn bind_history_classes(
                         | NativeClassKind::Extrusion
                 )
                 .then_some(class.name.as_str())
-            })
-            )?;
+            }),
+        )?;
         for classes in resolved.windows(4) {
             let [plane, origin, sketch, extrusion] = classes else {
                 continue;
@@ -239,14 +287,16 @@ pub(crate) fn bind_history_classes(
     native_startups.dedup();
     if let [classes] = native_startups.as_slice() {
         for history in histories.iter_mut() {
-            let mut candidates = history.features.windows(6).enumerate()
+            let mut candidates = history
+                .features
+                .windows(6)
+                .enumerate()
                 .filter(|(_, records)| idless_legacy_startup_shape(records))
                 .map(|(index, _)| index);
             let first = candidates.next();
             let second = candidates.next();
             if let (Some(index), None) = (first, second) {
-                for (feature, class) in history.features[index..index + 6].iter_mut().zip(classes)
-                {
+                for (feature, class) in history.features[index..index + 6].iter_mut().zip(classes) {
                     feature.input_class = Some(copy_class_text(ctx, class)?);
                 }
             }
@@ -257,13 +307,20 @@ pub(crate) fn bind_history_classes(
     for feature in histories.iter().flat_map(|history| &history.features) {
         if let Some(class) = &feature.input_class {
             reserve_class_map(ctx, &mut classes_by_type)?;
-            let classes = classes_by_type.entry(copy_class_text(ctx, &feature.kind)?).or_default();
+            let classes = classes_by_type
+                .entry(copy_class_text(ctx, &feature.kind)?)
+                .or_default();
             ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
             classes.push(copy_class_text(ctx, class)?);
         }
     }
     for classes in classes_by_type.values_mut() {
-        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
+        ctx.stable_sort_by(
+            classes,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT bound classes",
+        )?;
         classes.dedup();
     }
     for feature in histories
@@ -276,9 +333,14 @@ pub(crate) fn bind_history_classes(
         }
     }
 
-    let direct_name_offsets = collect_class_set(ctx, lanes.iter().flat_map(|lane| {
-        lane.classes.iter().map(|class| (lane.id.as_str(), class.offset + 6 + class.name.len() as u64))
-    }))?;
+    let direct_name_offsets = collect_class_set(
+        ctx,
+        lanes.iter().flat_map(|lane| {
+            lane.classes
+                .iter()
+                .map(|class| (lane.id.as_str(), class.offset + 6 + class.name.len() as u64))
+        }),
+    )?;
     let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         let Some(class) = &feature.input_class else {
@@ -309,7 +371,9 @@ pub(crate) fn bind_history_classes(
                 };
                 if let Some(token) = repeated_class_token(&lane.native_payload, offset) {
                     reserve_class_map(ctx, &mut classes_by_token)?;
-                    let classes = classes_by_token.entry((lane.id.as_str(), token)).or_default();
+                    let classes = classes_by_token
+                        .entry((lane.id.as_str(), token))
+                        .or_default();
                     ctx.reserve_collection_vec(classes, 1, "bind SLDPRT history classes")?;
                     classes.push(copy_class_text(ctx, class)?);
                 }
@@ -317,7 +381,12 @@ pub(crate) fn bind_history_classes(
         }
     }
     for classes in classes_by_token.values_mut() {
-        ctx.stable_sort_by(classes, Ord::cmp, |class| class.len(), "sort SLDPRT bound classes")?;
+        ctx.stable_sort_by(
+            classes,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT bound classes",
+        )?;
         classes.dedup();
     }
     for feature in histories
@@ -361,7 +430,12 @@ pub(crate) fn bind_history_classes(
                 }
             }
         }
-        ctx.stable_sort_by(&mut candidates, Ord::cmp, |class| class.len(), "sort SLDPRT class candidates")?;
+        ctx.stable_sort_by(
+            &mut candidates,
+            Ord::cmp,
+            |class| class.len(),
+            "sort SLDPRT class candidates",
+        )?;
         candidates.dedup();
         if let [class] = candidates.as_slice() {
             feature.input_class = Some(copy_class_text(ctx, class)?);
@@ -424,9 +498,9 @@ fn legacy_repeated_hole_wizard_classes(
                 })
             {
                 ctx.charge_collection_items(1, "bind SLDPRT history classes")?;
-                hole_shapes.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(
-                    "bind SLDPRT history classes", u64::MAX - 1, u64::MAX,
-                ))?;
+                hole_shapes.try_reserve(1).map_err(|_| {
+                    ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
+                })?;
                 hole_shapes.insert(operation.id.as_str());
             }
         }
@@ -434,16 +508,24 @@ fn legacy_repeated_hole_wizard_classes(
 
     let mut bindings = HashMap::new();
     for lane in lanes {
-        let mut declared = collect_class_vec(ctx, lane.classes.iter()
-            .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
-            .map(|class| class.name.as_str()))?;
+        let mut declared = collect_class_vec(
+            ctx,
+            lane.classes
+                .iter()
+                .filter(|class| native_object_class(&class.name) == NativeClassKind::HoleWizard)
+                .map(|class| class.name.as_str()),
+        )?;
         declared.sort_unstable();
         declared.dedup();
         let [class] = declared.as_slice() else {
             continue;
         };
-        let direct_name_offsets = collect_class_set(ctx, lane.classes.iter()
-            .map(|class| class.offset + 6 + class.name.len() as u64))?;
+        let direct_name_offsets = collect_class_set(
+            ctx,
+            lane.classes
+                .iter()
+                .map(|class| class.offset + 6 + class.name.len() as u64),
+        )?;
         let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
         for name in &lane.names {
             if direct_name_offsets.contains(&name.offset) {
@@ -471,7 +553,10 @@ fn legacy_repeated_hole_wizard_classes(
             {
                 for feature in features {
                     reserve_class_map(ctx, &mut bindings)?;
-                    bindings.insert(copy_class_text(ctx, &feature.id)?, copy_class_text(ctx, class)?);
+                    bindings.insert(
+                        copy_class_text(ctx, &feature.id)?,
+                        copy_class_text(ctx, class)?,
+                    );
                 }
             }
         }
@@ -479,19 +564,36 @@ fn legacy_repeated_hole_wizard_classes(
     Ok(bindings)
 }
 
-fn copy_class_text(ctx: &cadmpeg_core::decode::DecodeContext<'_>, text: &str) -> Result<String, cadmpeg_core::CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX))?;
+fn copy_class_text(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    text: &str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(copy_work, "bind SLDPRT history classes")?;
-    crate::text_admission::format_retained(ctx, format_args!("{text}"), "bind SLDPRT history classes")
+    crate::text_admission::format_retained(
+        ctx,
+        format_args!("{text}"),
+        "bind SLDPRT history classes",
+    )
 }
 
-fn reserve_class_map<K: Eq + std::hash::Hash, V>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut HashMap<K, V>) -> Result<(), cadmpeg_core::CodecError> {
+fn reserve_class_map<K: Eq + std::hash::Hash, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    map: &mut HashMap<K, V>,
+) -> Result<(), cadmpeg_core::CodecError> {
     ctx.charge_collection_items(1, "bind SLDPRT history classes")?;
-    map.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX))
+    map.try_reserve(1)
+        .map_err(|_| ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX))
 }
 
-fn collect_class_map<K: Eq + std::hash::Hash, V>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, items: impl Iterator<Item = (K, V)>) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
+fn collect_class_map<K: Eq + std::hash::Hash, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    items: impl Iterator<Item = (K, V)>,
+) -> Result<HashMap<K, V>, cadmpeg_core::CodecError> {
     let mut map = HashMap::new();
     for (key, value) in items {
         reserve_class_map(ctx, &mut map)?;
@@ -500,17 +602,25 @@ fn collect_class_map<K: Eq + std::hash::Hash, V>(ctx: &cadmpeg_core::decode::Dec
     Ok(map)
 }
 
-fn collect_class_set<T: Eq + std::hash::Hash>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<HashSet<T>, cadmpeg_core::CodecError> {
+fn collect_class_set<T: Eq + std::hash::Hash>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    items: impl Iterator<Item = T>,
+) -> Result<HashSet<T>, cadmpeg_core::CodecError> {
     let mut set = HashSet::new();
     for item in items {
         ctx.charge_collection_items(1, "bind SLDPRT history classes")?;
-        set.try_reserve(1).map_err(|_| ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX))?;
+        set.try_reserve(1).map_err(|_| {
+            ctx.refuse_codec_limit("bind SLDPRT history classes", u64::MAX - 1, u64::MAX)
+        })?;
         set.insert(item);
     }
     Ok(set)
 }
 
-fn collect_class_vec<T>(ctx: &cadmpeg_core::decode::DecodeContext<'_>, items: impl Iterator<Item = T>) -> Result<Vec<T>, cadmpeg_core::CodecError> {
+fn collect_class_vec<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    items: impl Iterator<Item = T>,
+) -> Result<Vec<T>, cadmpeg_core::CodecError> {
     let mut values = Vec::new();
     for item in items {
         ctx.reserve_collection_vec(&mut values, 1, "bind SLDPRT history classes")?;
@@ -698,7 +808,8 @@ mod idless_history_binding_tests {
             &cadmpeg_test_support::service_decode_context(),
             &mut histories,
             &[lane],
-        ).unwrap();
+        )
+        .unwrap();
 
         let properties = &histories[0].features[0].properties;
         assert!(!properties.contains_key("Reference"));
@@ -849,11 +960,13 @@ mod idless_history_binding_tests {
             },
         ];
 
-        project_adjacent_extrusion_profiles(&cadmpeg_test_support::service_decode_context(),
+        project_adjacent_extrusion_profiles(
+            &cadmpeg_test_support::service_decode_context(),
             &mut features,
             std::slice::from_ref(&history),
             std::slice::from_ref(&lane),
-        ).unwrap();
+        )
+        .unwrap();
 
         assert!(matches!(
             features[1].evaluation.definition(),
@@ -986,7 +1099,12 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        let bindings = legacy_repeated_hole_wizard_classes(&cadmpeg_test_support::service_decode_context(), &[history], &[lane]).unwrap();
+        let bindings = legacy_repeated_hole_wizard_classes(
+            &cadmpeg_test_support::service_decode_context(),
+            &[history],
+            &[lane],
+        )
+        .unwrap();
         assert_eq!(
             bindings.get("feature-10").map(String::as_str),
             Some("moHoleWzd_c")
@@ -1015,27 +1133,33 @@ mod idless_history_binding_tests {
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         definition_b.source_id = FeatureSource::from_value(27);
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ).unwrap());
+        )
+        .unwrap());
 
         definition_b.input_class = Some("moRefPlane_c".into());
         let objects = [&definition_a, &instance, &definition_b];
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ).unwrap());
+        )
+        .unwrap());
         definition_b.input_class = Some("moSketchBlockDef_c".into());
         let objects = [&definition_a, &instance, &definition_b];
         profile.properties.insert(
             cadmpeg_core::nonblank_literal!("DissectableChildren"),
             "23,23".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             objects.iter().copied()
-        ).unwrap());
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1052,19 +1176,23 @@ mod idless_history_binding_tests {
         definition.input_class = Some("moSketchBlockDef_c".into());
         definition.source_id = FeatureSource::from_value(23);
 
-        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &definition]
-        ).unwrap());
+        )
+        .unwrap());
 
         instance.properties.insert(
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "24".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &definition]
-        ).unwrap());
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1084,14 +1212,18 @@ mod idless_history_binding_tests {
         unused.input_class = Some("moSketchBlockDef_c".into());
         unused.source_id = FeatureSource::from_value(24);
 
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &referenced, &unused]
-        ).unwrap());
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        )
+        .unwrap());
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&referenced]
-        ).unwrap());
+        )
+        .unwrap());
 
         let mut second_instance = feature(4, "block instance");
         second_instance.input_class = Some("moSketchBlockInst_c".into());
@@ -1100,18 +1232,22 @@ mod idless_history_binding_tests {
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "23".into(),
         );
-        assert!(profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &second_instance, &referenced]
-        ).unwrap());
+        )
+        .unwrap());
         second_instance.properties.insert(
             cadmpeg_core::nonblank_literal!("BlockDefinition"),
             "24".into(),
         );
-        assert!(!profile_owns_intervening_sketch_blocks(&cadmpeg_test_support::service_decode_context(),
+        assert!(!profile_owns_intervening_sketch_blocks(
+            &cadmpeg_test_support::service_decode_context(),
             &profile,
             [&instance, &second_instance, &referenced]
-        ).unwrap());
+        )
+        .unwrap());
     }
 
     #[test]
@@ -1171,7 +1307,12 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&cadmpeg_test_support::service_decode_context(), &mut histories, &[lane]).unwrap();
+        bind_history_classes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        )
+        .unwrap();
 
         assert_eq!(
             histories[0]
@@ -1246,7 +1387,12 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&cadmpeg_test_support::service_decode_context(), &mut histories, &[lane]).unwrap();
+        bind_history_classes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        )
+        .unwrap();
 
         assert_eq!(
             histories[0].features[0].input_class.as_deref(),
@@ -1326,7 +1472,12 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&cadmpeg_test_support::service_decode_context(), &mut histories, &[lane]).unwrap();
+        bind_history_classes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        )
+        .unwrap();
 
         assert!(histories[0]
             .features
@@ -1400,7 +1551,12 @@ mod idless_history_binding_tests {
             sketch_entities: Vec::new(),
         };
 
-        bind_history_classes(&cadmpeg_test_support::service_decode_context(), &mut histories, &[lane]).unwrap();
+        bind_history_classes(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut histories,
+            &[lane],
+        )
+        .unwrap();
 
         assert!(histories[0]
             .features

@@ -17,11 +17,13 @@ use cadmpeg_ir::{
 };
 
 use super::{
-    dimension_subtype, exact_count,
-    neutral_parameter_is_count, patch_payload, patch_slots,
+    dimension_subtype, exact_count, neutral_parameter_is_count, patch_payload, patch_slots,
 };
 
-fn parse_payload(payload: &[u8], losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>) -> Vec<PmiDimension> {
+fn parse_payload(
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<PmiDimension> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         payload,
@@ -42,7 +44,10 @@ fn pmi_limit_refusal(
     let mut losses = Vec::new();
     let error = super::parse_payload(&ctx, &payload, &mut losses)
         .expect_err("PMI parser must refuse the selected limit");
-    assert!(losses.is_empty(), "resource refusal must not become a PMI loss");
+    assert!(
+        losses.is_empty(),
+        "resource refusal must not become a PMI loss"
+    );
     let cadmpeg_core::CodecError::ResourceLimit(limit) = error else {
         panic!("expected a resource refusal");
     };
@@ -54,7 +59,10 @@ fn pmi_payload_reports_work_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_work_units = pmi_semantic_payload().len() as u64 - 1;
     let limit = pmi_limit_refusal(policy);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::WorkUnits);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::WorkUnits
+    );
     assert_eq!(limit.operation, "scan SLDPRT PMI candidates");
 }
 
@@ -63,7 +71,10 @@ fn pmi_payload_reports_scoped_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_materialized_bytes = 35;
     let limit = pmi_limit_refusal(policy);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::MaterializedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::MaterializedBytes
+    );
     assert_eq!(limit.operation, "normalize SLDPRT PMI candidate GUID");
 }
 
@@ -72,7 +83,10 @@ fn pmi_payload_reports_retained_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_retained_bytes = ("sldprt:pmi:dimension#".len() + 35) as u64;
     let limit = pmi_limit_refusal(policy);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RetainedBytes
+    );
     assert_eq!(limit.operation, "retain SLDPRT PMI dimension ID");
 }
 
@@ -81,7 +95,10 @@ fn pmi_payload_reports_collection_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_collection_items = 0;
     let limit = pmi_limit_refusal(policy);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::CollectionItems
+    );
     assert_eq!(limit.operation, "collect SLDPRT PMI map fields");
 }
 
@@ -90,7 +107,10 @@ fn pmi_payload_reports_nesting_limit() {
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     policy.limits.max_recursion_depth = 2;
     let limit = pmi_limit_refusal(policy);
-    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::RecursionDepth);
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::RecursionDepth
+    );
     assert_eq!(limit.operation, "parse SLDPRT PMI MessagePack");
 }
 
@@ -164,14 +184,20 @@ fn named_feature(id: &str, name: &str) -> Feature {
 fn empty_subtype_requires_established_count_semantics() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let record = dimension("", 2.0);
     assert_eq!(
         dimension_subtype(&ctx, &record, false).unwrap(),
         PmiDimensionSubtype::Native(String::new())
     );
-    assert_eq!(dimension_subtype(&ctx, &record, true).unwrap(), PmiDimensionSubtype::Count);
+    assert_eq!(
+        dimension_subtype(&ctx, &record, true).unwrap(),
+        PmiDimensionSubtype::Count
+    );
     assert_eq!(
         dimension_subtype(&ctx, &dimension("", 2.5), true).unwrap(),
         PmiDimensionSubtype::Native(String::new())
@@ -239,8 +265,11 @@ fn explicit_keywords_dimension_precedes_pmi_value() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[record]).unwrap();
 
     let parameter = &parameters[0];
@@ -272,8 +301,11 @@ fn conflicting_pmi_dimensions_do_not_bind_a_parameter() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[first, second]).unwrap();
 
     assert!(parameters.is_empty());
@@ -290,8 +322,11 @@ fn equivalent_pmi_dimensions_bind_once_to_lowest_record_id() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     super::apply_to_parameters(&ctx, &mut parameters, &[feature], &[canonical, alias]).unwrap();
 
     let [parameter] = parameters.as_slice() else {
@@ -340,8 +375,11 @@ fn conflicting_pmi_metadata_do_not_enrich_history() {
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     super::enrich_history_parameters(&ctx, &mut history, &[first, second]).unwrap();
 
     assert!(history[0].features[0].parameters.is_empty());
@@ -601,7 +639,9 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("abcdef01-89ab-cdef-0123-456789abcdef"));
+    assert!(losses[0]
+        .message
+        .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
 #[test]

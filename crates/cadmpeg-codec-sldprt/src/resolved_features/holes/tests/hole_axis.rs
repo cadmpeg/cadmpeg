@@ -43,9 +43,8 @@ fn generated_hole_axis_route_refuses_feature_index_collection() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_generated_hole_axes(
-        &ctx, &mut [], &[native_history()], &[], &[], &[], &[],
-    ).expect_err("native feature index requires collection admission");
+    let error = project_generated_hole_axes(&ctx, &mut [], &[native_history()], &[], &[], &[], &[])
+        .expect_err("native feature index requires collection admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "index SLDPRT generated hole features"));
@@ -57,9 +56,8 @@ fn generated_hole_axis_route_refuses_feature_index_work() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_work_units = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = project_generated_hole_axes(
-        &ctx, &mut [], &[native_history()], &[], &[], &[], &[],
-    ).expect_err("native feature index requires work admission");
+    let error = project_generated_hole_axes(&ctx, &mut [], &[native_history()], &[], &[], &[], &[])
+        .expect_err("native feature index requires work admission");
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT generated hole features"));
@@ -172,7 +170,16 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let with_component = profile_reference_plane_payload(true);
     let index = plane_index(&with_component);
     assert_eq!(
-        feature_input_sketch_frame(&ctx, &with_component, &frames, &index, 0, 0, with_component.len()).unwrap(),
+        feature_input_sketch_frame(
+            &ctx,
+            &with_component,
+            &frames,
+            &index,
+            0,
+            0,
+            with_component.len()
+        )
+        .unwrap(),
         Some((
             Point3::new(0.0, 0.0, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
@@ -184,13 +191,15 @@ fn midplane_sketch_uses_component_basis_and_never_arbitrary_datum_axis() {
     let index = plane_index(&without_component);
     assert_eq!(
         feature_input_sketch_frame(
-            &ctx, &without_component,
+            &ctx,
+            &without_component,
             &frames,
             &index,
             0,
             0,
             without_component.len(),
-        ).unwrap(),
+        )
+        .unwrap(),
         None
     );
 }
@@ -289,7 +298,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 10.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -309,7 +319,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![cadmpeg_ir::features::holes::HolePlacement::Axis {
             origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0)).unwrap(),
             axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
@@ -330,7 +341,8 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
                 vertices: &[],
                 points: &[],
             },
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(vec![
             cadmpeg_ir::features::holes::HolePlacement::Axis {
                 origin: cadmpeg_ir::features::FinitePoint3::new(Point3::new(-5.0, 0.0, 0.0))
@@ -432,7 +444,8 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
-    ).unwrap();
+    )
+    .unwrap();
     let updated_hole_evaluation = &mut hole.evaluation;
     let mut updated_hole_definition = updated_hole_evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
@@ -456,7 +469,8 @@ fn generated_face_identities_resolve_primary_bore_axes() {
         &identities,
         &faces,
         &surfaces,
-    ).unwrap();
+    )
+    .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { placements, .. }) =
         hole.evaluation.definition()
     else {
@@ -960,7 +974,8 @@ fn hole_topology_uses_exact_cylinder_spans() {
     )
     .unwrap();
     updated_hole_evaluation.set_definition(updated_hole_definition);
-    project_topological_hole_constructions(&ctx, std::slice::from_mut(&mut hole), &topology).unwrap();
+    project_topological_hole_constructions(&ctx, std::slice::from_mut(&mut hole), &topology)
+        .unwrap();
     let FeatureDefinition::Operation(FeatureOperation::Hole { shape, extent, .. }) =
         hole.evaluation.definition()
     else {
@@ -1264,17 +1279,18 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
         };
         *placements = None;
     });
-    assert!(seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
-        .unwrap()
-        .is_none());
+    assert!(
+        seeded_drilled_bore_candidates(&ctx, &features, &[0, 1], 4.0, &topology)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[test]
 fn unclaimed_seeded_bore_axes_refuse_collection_growth() {
     let placement = HolePlacement::Axis {
         origin: cadmpeg_ir::features::FinitePoint3::ZERO,
-        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0))
-            .unwrap(),
+        axis: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 0.0, 1.0)).unwrap(),
     };
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
@@ -1293,13 +1309,16 @@ fn numerical_audit_hole_carriers_keep_distinct_large_coordinate_axes() {
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let axis = Vector3::new(0.0, 0.0, 1.0);
     for positions in [[1.0e12, 2.0e12], [-2.0e12, -1.0e12], [1.0e300, 2.0e300]] {
-        let placements = crate::resolved_features::holes::carrier_placements(&ctx, positions.map(|x| {
-            (
-                Point3::new(x, 0.0, 0.0),
-                cadmpeg_ir::features::FeatureDirection3::new(axis)
-                    .expect("unit +Z axis is an admitted feature direction"),
-            )
-        }))
+        let placements = crate::resolved_features::holes::carrier_placements(
+            &ctx,
+            positions.map(|x| {
+                (
+                    Point3::new(x, 0.0, 0.0),
+                    cadmpeg_ir::features::FeatureDirection3::new(axis)
+                        .expect("unit +Z axis is an admitted feature direction"),
+                )
+            }),
+        )
         .unwrap()
         .unwrap();
         assert_eq!(placements.len(), 2);

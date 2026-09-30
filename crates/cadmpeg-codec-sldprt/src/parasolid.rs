@@ -45,8 +45,11 @@ pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<ExtractedStream>, CodecError> {
-    let scan_work = cadmpeg_core::decode::u64_from_index(payload.len()).checked_mul(64)
-        .ok_or_else(|| ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX))?;
+    let scan_work = cadmpeg_core::decode::u64_from_index(payload.len())
+        .checked_mul(64)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("scan Parasolid stream candidates", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(scan_work, "scan Parasolid stream candidates")?;
     let mut out = Vec::new();
     let wrapped_prefix = has_wrapped_prefix(payload);
@@ -62,7 +65,11 @@ pub(crate) fn extract_streams_with_offsets(
         out.try_reserve(1).map_err(|_| {
             ctx.refuse_codec_limit("collect direct Parasolid streams", u64::MAX - 1, u64::MAX)
         })?;
-        let payload = crate::byte_admission::copy_retained(ctx, &payload[start..end], "retain direct Parasolid stream")?;
+        let payload = crate::byte_admission::copy_retained(
+            ctx,
+            &payload[start..end],
+            "retain direct Parasolid stream",
+        )?;
         out.push(ExtractedStream {
             offset: start,
             payload,
@@ -87,18 +94,26 @@ pub(crate) fn extract_streams_with_offsets(
             chained_wrapped_stream(payload, magic_at, ctx)?
         };
         if let Some(stream) = stream {
-            if !stream_payload_present(ctx, &out, &stream.payload)?
-            {
+            if !stream_payload_present(ctx, &out, &stream.payload)? {
                 ctx.charge_collection_items(1, "collect wrapped Parasolid streams")?;
                 out.try_reserve(1).map_err(|_| {
-                    ctx.refuse_codec_limit("collect wrapped Parasolid streams", u64::MAX - 1, u64::MAX)
+                    ctx.refuse_codec_limit(
+                        "collect wrapped Parasolid streams",
+                        u64::MAX - 1,
+                        u64::MAX,
+                    )
                 })?;
                 out.push(stream);
             }
         }
     }
     if !out.is_empty() {
-        ctx.stable_sort_by(&mut out, |left, right| left.offset.cmp(&right.offset), |_| 0, "sort wrapped Parasolid streams")?;
+        ctx.stable_sort_by(
+            &mut out,
+            |left, right| left.offset.cmp(&right.offset),
+            |_| 0,
+            "sort wrapped Parasolid streams",
+        )?;
         return Ok(out);
     }
 
@@ -141,34 +156,41 @@ pub(crate) fn extract_streams_with_offsets(
                 })?;
             }
             let inner = match inflate_zlib_member(
-                    ctx,
-                    View::over_retained(&payload[i..]),
-                    ExpandSpec::Unknown,
-                ) {
-                    Ok((view, _)) if view.window().starts_with(b"PS\0\0") => {
-                        if let Some(header) = stream_header(ctx, view.window())? {
-                            Some(ExtractedStream {
-                                offset: i,
-                                payload: crate::byte_admission::copy_retained(ctx, view.window(), "retain Parasolid zlib candidate")?,
-                                header,
-                            })
-                        } else {
-                            None
-                        }
+                ctx,
+                View::over_retained(&payload[i..]),
+                ExpandSpec::Unknown,
+            ) {
+                Ok((view, _)) if view.window().starts_with(b"PS\0\0") => {
+                    if let Some(header) = stream_header(ctx, view.window())? {
+                        Some(ExtractedStream {
+                            offset: i,
+                            payload: crate::byte_admission::copy_retained(
+                                ctx,
+                                view.window(),
+                                "retain Parasolid zlib candidate",
+                            )?,
+                            header,
+                        })
+                    } else {
+                        None
                     }
-                    Ok(_) => None,
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                    Err(_) => None,
+                }
+                Ok(_) => None,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => None,
             };
             if let Some(stream) = inner {
-                    if !stream_payload_present(ctx, &out, &stream.payload)?
-                    {
-                        ctx.charge_collection_items(1, "collect nested Parasolid streams")?;
-                        out.try_reserve(1).map_err(|_| {
-                            ctx.refuse_codec_limit("collect nested Parasolid streams", u64::MAX - 1, u64::MAX)
-                        })?;
-                        out.push(stream);
-                    }
+                if !stream_payload_present(ctx, &out, &stream.payload)? {
+                    ctx.charge_collection_items(1, "collect nested Parasolid streams")?;
+                    out.try_reserve(1).map_err(|_| {
+                        ctx.refuse_codec_limit(
+                            "collect nested Parasolid streams",
+                            u64::MAX - 1,
+                            u64::MAX,
+                        )
+                    })?;
+                    out.push(stream);
+                }
             }
         }
         i += 1;
@@ -182,9 +204,17 @@ fn stream_payload_present(
     payload: &[u8],
 ) -> Result<bool, CodecError> {
     const OPERATION: &str = "compare Parasolid stream candidates";
-    let bytes = streams.iter().try_fold(cadmpeg_core::decode::u64_from_index(streams.len()), |bytes, known| {
-        bytes.checked_add(cadmpeg_core::decode::u64_from_index(known.payload.len().min(payload.len())))
-    }).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let bytes = streams
+        .iter()
+        .try_fold(
+            cadmpeg_core::decode::u64_from_index(streams.len()),
+            |bytes, known| {
+                bytes.checked_add(cadmpeg_core::decode::u64_from_index(
+                    known.payload.len().min(payload.len()),
+                ))
+            },
+        )
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(bytes, OPERATION)?;
     Ok(streams.iter().any(|known| known.payload == payload))
 }
@@ -309,7 +339,11 @@ fn chained_wrapped_stream(
     let stream = if frame_outputs.len() == 1 {
         frame_outputs.remove(0)
     } else {
-        crate::byte_admission::concat_retained(ctx, &frame_outputs, "retain concatenated Parasolid stream")?
+        crate::byte_admission::concat_retained(
+            ctx,
+            &frame_outputs,
+            "retain concatenated Parasolid stream",
+        )?
     };
     extracted_stream(ctx, chain_len_at, stream)
 }
@@ -355,7 +389,8 @@ fn inflate_zlib_frame_budgeted(
         ));
     }
     let reservation = ctx.reserve_scoped(declared, "inflate Parasolid frame")?;
-    let work = declared.checked_add(cadmpeg_core::decode::u64_from_index(member.len()))
+    let work = declared
+        .checked_add(cadmpeg_core::decode::u64_from_index(member.len()))
         .ok_or_else(|| ctx.refuse_codec_limit("inflate Parasolid frame", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, "inflate Parasolid frame")?;
     let mut decoder = Decompress::new(true);
@@ -466,21 +501,36 @@ pub(crate) fn stream_header(
     })() else {
         return Ok(None);
     };
-    let header_work = cadmpeg_core::decode::u64_from_index(description_bytes.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("decode Parasolid stream header", u64::MAX - 1, u64::MAX))?;
+    let header_work = cadmpeg_core::decode::u64_from_index(description_bytes.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit("decode Parasolid stream header", u64::MAX - 1, u64::MAX)
+        })?;
     ctx.charge_work(header_work, "decode Parasolid stream header")?;
     let description_len = lossy_utf8_len(description_bytes).ok_or_else(|| {
-        ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "retain Parasolid stream description",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     ctx.charge_retained(
         u64::try_from(description_len).map_err(|_| {
-            ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+            ctx.refuse_codec_limit(
+                "retain Parasolid stream description",
+                u64::MAX - 1,
+                u64::MAX,
+            )
         })?,
         "retain Parasolid stream description",
     )?;
     let mut description = String::new();
     description.try_reserve(description_len).map_err(|_| {
-        ctx.refuse_codec_limit("retain Parasolid stream description", u64::MAX - 1, u64::MAX)
+        ctx.refuse_codec_limit(
+            "retain Parasolid stream description",
+            u64::MAX - 1,
+            u64::MAX,
+        )
     })?;
     append_lossy_utf8(&mut description, description_bytes);
 
@@ -496,9 +546,8 @@ pub(crate) fn stream_header(
         ctx.refuse_codec_limit("retain Parasolid schema token", u64::MAX - 1, u64::MAX)
     })?;
     owned_schema.push_str(schema_text);
-    let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(owned_schema).map_err(|_| {
-        CodecError::Malformed("Parasolid schema token is invalid".into())
-    })?;
+    let schema = cadmpeg_parasolid::OwnedSchemaToken::try_from(owned_schema)
+        .map_err(|_| CodecError::Malformed("Parasolid schema token is invalid".into()))?;
 
     Ok(Some(StreamHeader {
         description,
@@ -514,7 +563,9 @@ fn lossy_utf8_len(mut bytes: &[u8]) -> Option<usize> {
             Ok(valid) => return size.checked_add(valid.len()),
             Err(error) => {
                 size = size.checked_add(error.valid_up_to())?.checked_add(3)?;
-                let invalid = error.error_len().unwrap_or(bytes.len() - error.valid_up_to());
+                let invalid = error
+                    .error_len()
+                    .unwrap_or(bytes.len() - error.valid_up_to());
                 bytes = bytes.get(error.valid_up_to().checked_add(invalid)?..)?;
             }
         }
@@ -534,7 +585,9 @@ fn append_lossy_utf8(output: &mut String, mut bytes: &[u8]) {
                     output.push_str(valid);
                 }
                 output.push(char::REPLACEMENT_CHARACTER);
-                let invalid = error.error_len().unwrap_or(bytes.len() - error.valid_up_to());
+                let invalid = error
+                    .error_len()
+                    .unwrap_or(bytes.len() - error.valid_up_to());
                 let Some(remaining) = bytes.get(error.valid_up_to() + invalid..) else {
                     break;
                 };
@@ -553,8 +606,12 @@ fn parasolid_offset(payload: &[u8]) -> Option<usize> {
 /// Test whether the description identifies a partition or deltas body stream.
 pub(crate) fn is_body_stream(header: &StreamHeader) -> bool {
     let bytes = header.description.as_bytes();
-    bytes.windows(9).any(|part| part.eq_ignore_ascii_case(b"partition"))
-        || bytes.windows(6).any(|part| part.eq_ignore_ascii_case(b"deltas"))
+    bytes
+        .windows(9)
+        .any(|part| part.eq_ignore_ascii_case(b"partition"))
+        || bytes
+            .windows(6)
+            .any(|part| part.eq_ignore_ascii_case(b"deltas"))
 }
 
 /// Decode the unique counted XYZ polyline carried by a classified mesh stream.
@@ -567,7 +624,10 @@ pub(crate) fn mesh_polyline_from_header(
     payload: &[u8],
     header: &StreamHeader,
 ) -> Result<Option<Vec<Point3>>, CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(payload.len()), "scan Parasolid mesh coordinates")?;
+    ctx.charge_work(
+        cadmpeg_core::decode::u64_from_index(payload.len()),
+        "scan Parasolid mesh coordinates",
+    )?;
     let schema = header.schema.value();
     if !schema.as_bytes().ends_with(b"_13006") {
         return Ok(None);
@@ -592,7 +652,10 @@ pub(crate) fn mesh_polyline_from_header(
             continue;
         };
         let point_count = scalar_count / 3;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), "decode Parasolid mesh coordinates")?;
+        ctx.charge_work(
+            cadmpeg_core::decode::u64_from_index(values.len()),
+            "decode Parasolid mesh coordinates",
+        )?;
         ctx.charge_collection_items(
             u64::try_from(point_count).map_err(|_| {
                 ctx.refuse_codec_limit("decode Parasolid mesh points", u64::MAX - 1, u64::MAX)
@@ -611,9 +674,7 @@ pub(crate) fn mesh_polyline_from_header(
             ) else {
                 return Ok(None);
             };
-            let point = Point3::new(
-                x, y, z,
-            );
+            let point = Point3::new(x, y, z);
             if !point.is_finite() {
                 points.clear();
                 break;
@@ -628,7 +689,12 @@ pub(crate) fn mesh_polyline_from_header(
             candidates.push((scalar_count, points));
         }
     }
-    ctx.stable_sort_by(&mut candidates, |left, right| right.0.cmp(&left.0), |_| 0, "sort Parasolid mesh candidates")?;
+    ctx.stable_sort_by(
+        &mut candidates,
+        |left, right| right.0.cmp(&left.0),
+        |_| 0,
+        "sort Parasolid mesh candidates",
+    )?;
     let Some((largest_count, _)) = candidates.first() else {
         return Ok(None);
     };

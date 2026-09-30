@@ -150,14 +150,16 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
     );
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             parameter: parameter.id,
@@ -200,11 +202,13 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         entities: entities.iter().map(|entity| entity.id().clone()).collect(),
         parameter: parameter.id.clone(),
     };
-    assert!(!relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(!relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &entities,
-    ).unwrap());
+    )
+    .unwrap());
 
     let mut mismatched = entities;
     mismatched[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
@@ -212,9 +216,11 @@ fn repeated_circle_dimension_is_inactive_when_any_radius_differs() {
         radius: Length::new(2.0).unwrap(),
     })
     .unwrap();
-    assert!(relation_constraint_is_inactive(&cadmpeg_test_support::service_decode_context(), 
+    assert!(relation_constraint_is_inactive(
+        &cadmpeg_test_support::service_decode_context(),
         Some(&parameter),
         &definition,
         &mismatched,
-    ).unwrap());
+    )
+    .unwrap());
 }

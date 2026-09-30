@@ -23,21 +23,39 @@ fn record_id(
     lane_key: &str,
     offset: usize,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let digits = if offset == 0 { 1 } else { offset.ilog10() as usize + 1 };
-    let length = "sldprt:feature-input:".len()
+    let digits = if offset == 0 {
+        1
+    } else {
+        offset.ilog10() as usize + 1
+    };
+    let length = "sldprt:feature-input:"
+        .len()
         .checked_add(family.len())
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(lane_key.len()))
         .and_then(|length| length.checked_add(1))
         .and_then(|length| length.checked_add(digits))
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT feature input record ID", u64::MAX - 1, u64::MAX))?;
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "retain SLDPRT feature input record ID",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
     let mut id = String::new();
-    crate::text_admission::reserve_retained_string(ctx, &mut id, length, "retain SLDPRT feature input record ID")?;
+    crate::text_admission::reserve_retained_string(
+        ctx,
+        &mut id,
+        length,
+        "retain SLDPRT feature input record ID",
+    )?;
     std::fmt::Write::write_fmt(
         &mut id,
         format_args!("sldprt:feature-input:{family}#{lane_key}:{offset}"),
     )
-    .map_err(|_| cadmpeg_core::CodecError::malformed("cannot format SLDPRT feature input record ID"))?;
+    .map_err(|_| {
+        cadmpeg_core::CodecError::malformed("cannot format SLDPRT feature input record ID")
+    })?;
     Ok(id)
 }
 
@@ -66,20 +84,39 @@ pub(crate) fn object_names(
         let mut length = 0usize;
         let mut valid = true;
         for character in std::char::decode_utf16(utf16_units(units)) {
-            let Ok(character) = character else { valid = false; break; };
+            let Ok(character) = character else {
+                valid = false;
+                break;
+            };
             let Some(next) = length.checked_add(character.len_utf8()) else {
-                return Err(ctx.refuse_codec_limit("retain SLDPRT feature input name", u64::MAX - 1, u64::MAX));
+                return Err(ctx.refuse_codec_limit(
+                    "retain SLDPRT feature input name",
+                    u64::MAX - 1,
+                    u64::MAX,
+                ));
             };
             length = next;
         }
-        if !valid { continue; }
+        if !valid {
+            continue;
+        }
         let mut value = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut value, length, "retain SLDPRT feature input name")?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut value,
+            length,
+            "retain SLDPRT feature input name",
+        )?;
         for character in std::char::decode_utf16(utf16_units(units)) {
-            let Ok(character) = character else { valid = false; break; };
+            let Ok(character) = character else {
+                valid = false;
+                break;
+            };
             value.push(character);
         }
-        if !valid { continue; }
+        if !valid {
+            continue;
+        }
         let id = record_id(ctx, "name", lane_key, offset)?;
         let parent = retained_text(ctx, parent, "retain SLDPRT feature input name parent")?;
         ctx.reserve_collection_vec(&mut names, 1, "collect SLDPRT feature input names")?;
@@ -286,7 +323,9 @@ pub(super) fn configuration(
     ctx: &DecodeContext<'_>,
     section: &str,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
-    let Some(start) = section.find("Config-") else { return Ok(None); };
+    let Some(start) = section.find("Config-") else {
+        return Ok(None);
+    };
     let start = start + "Config-".len();
     let tail = &section[start..];
     let end = tail
@@ -296,7 +335,11 @@ pub(super) fn configuration(
     if tail[..end].is_empty() {
         return Ok(None);
     }
-    Ok(Some(retained_text(ctx, &tail[..end], "retain SLDPRT feature input configuration")?))
+    Ok(Some(retained_text(
+        ctx,
+        &tail[..end],
+        "retain SLDPRT feature input configuration",
+    )?))
 }
 
 #[cfg(test)]

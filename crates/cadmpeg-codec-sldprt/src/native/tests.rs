@@ -411,8 +411,7 @@ fn native_body_validation_collection_limit_refuses_before_candidates() {
     policy.limits.max_collection_items =
         u64::try_from(super::selection_payload_span(lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::body_selection_disagrees_with_payload(&limited, lane, record).unwrap_err();
+    let error = super::body_selection_disagrees_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -446,8 +445,7 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = source_units - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error =
-        super::body_state_ids_disagree_with_payload(&limited, lane, record).unwrap_err();
+    let error = super::body_state_ids_disagree_with_payload(&limited, lane, record).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -463,8 +461,11 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
 fn native_edge_validation_collection_limit_refuses_before_candidates() {
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
     let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &reference_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &reference_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut lane = emitter_models()
@@ -490,18 +491,20 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     let mut record = lane.edge_selections[0].clone();
     record.offset = u64::try_from(marker).unwrap();
     record.local_edge_ids = vec![7];
-    record.components = crate::resolved_features::selections::compact_edge_component_path_at(&reference_ctx, 
+    record.components = crate::resolved_features::selections::compact_edge_component_path_at(
+        &reference_ctx,
         &lane.native_payload,
         marker,
-    ).unwrap()
+    )
+    .unwrap()
     .unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items =
         u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::edge_selection_disagrees_with_payload(&limited, &lane, &record, &[])
-        .unwrap_err();
+    let error =
+        super::edge_selection_disagrees_with_payload(&limited, &lane, &record, &[]).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -510,9 +513,7 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(
-        !super::edge_selection_disagrees_with_payload(&service, &lane, &record, &[]).unwrap()
-    );
+    assert!(!super::edge_selection_disagrees_with_payload(&service, &lane, &record, &[]).unwrap());
 }
 
 #[test]
@@ -552,8 +553,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
         u64::try_from(super::selection_payload_span(&lane, record.offset)).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error =
-        super::surface_selection_disagrees_with_payload(&limited, &lane, &record, &[])
-            .unwrap_err();
+        super::surface_selection_disagrees_with_payload(&limited, &lane, &record, &[]).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -563,8 +563,7 @@ fn native_surface_validation_collection_limit_refuses_before_candidates() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert!(
-        !super::surface_selection_disagrees_with_payload(&service, &lane, &record, &[])
-            .unwrap()
+        !super::surface_selection_disagrees_with_payload(&service, &lane, &record, &[]).unwrap()
     );
 }
 
@@ -621,8 +620,7 @@ fn native_validation_scoped_limit_reaches_caller() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_materialized_bytes = u64::try_from(expected_bytes).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, &limited)
-        .unwrap_err();
+    let error = super::lanes::admit(&native, &limited).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -647,8 +645,7 @@ fn native_validation_retained_limit_reaches_caller() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::lanes::admit(&native, &limited)
-        .unwrap_err();
+    let error = super::lanes::admit(&native, &limited).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -661,8 +658,11 @@ fn native_validation_retained_limit_reaches_caller() {
 fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     let identity_arena = cadmpeg_core::decode::DecodeArena::new();
     let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &identity_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let class_name = "moWzdHoleSurfIdRep_c";
@@ -698,14 +698,15 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
         sketch_entities: Vec::new(),
     };
     lane.generated_surface_identities =
-        crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane).unwrap();
+        crate::resolved_features::selections::generated_surface_identities(&identity_ctx, &lane)
+            .unwrap();
     assert_eq!(lane.generated_surface_identities.len(), 1);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = u64::try_from(lane.native_payload.len()).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::generated_surface_identities_disagree_with_payload(&limited, &lane)
-        .unwrap_err();
+    let error =
+        super::generated_surface_identities_disagree_with_payload(&limited, &lane).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -714,9 +715,7 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    assert!(
-        !super::generated_surface_identities_disagree_with_payload(&service, &lane).unwrap()
-    );
+    assert!(!super::generated_surface_identities_disagree_with_payload(&service, &lane).unwrap());
 }
 
 #[test]
@@ -791,9 +790,12 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
     policy.limits.max_collection_items = u64::try_from(source_items).unwrap() - 1;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let mut histories = native.feature_histories.clone();
-    let error =
-        crate::resolved_features::classes::bind_history_classes(&limited, &mut histories, &native.feature_input_lanes)
-            .unwrap_err();
+    let error = crate::resolved_features::classes::bind_history_classes(
+        &limited,
+        &mut histories,
+        &native.feature_input_lanes,
+    )
+    .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -802,8 +804,12 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
     ));
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
-    crate::resolved_features::classes::bind_history_classes(&service, &mut histories, &native.feature_input_lanes)
-        .unwrap();
+    crate::resolved_features::classes::bind_history_classes(
+        &service,
+        &mut histories,
+        &native.feature_input_lanes,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1143,7 +1149,13 @@ fn native_store_preserves_midpoint_with_two_point_markers() {
             entity.local_id(),
         );
     }
-    let expected = crate::native::lanes::expected_lanes_charged(&cadmpeg_test_support::service_decode_context(), &native).unwrap().remove(0).1;
+    let expected = crate::native::lanes::expected_lanes_charged(
+        &cadmpeg_test_support::service_decode_context(),
+        &native,
+    )
+    .unwrap()
+    .remove(0)
+    .1;
     let lane = &mut native.feature_input_lanes[0];
     lane.scalars = expected.scalars;
     lane.relation_bindings = expected.relation_bindings;
@@ -1210,7 +1222,8 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
     let duplicate = native.feature_input_lanes[0].relation_instances[0].scalar_refs()[0].clone();
     native.feature_input_lanes[0].relation_instances[0]
         .scalars
-        .push(&cadmpeg_test_support::service_decode_context(), &duplicate).unwrap();
+        .push(&cadmpeg_test_support::service_decode_context(), &duplicate)
+        .unwrap();
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
@@ -1247,7 +1260,13 @@ fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
         .unwrap();
     let relation = relations.first_mut().expect("relation instance");
     assert_eq!(relation.scalar_refs().len(), 2);
-    relation.scalars.push(&cadmpeg_test_support::service_decode_context(), &relation.scalar_refs()[0].clone()).unwrap();
+    relation
+        .scalars
+        .push(
+            &cadmpeg_test_support::service_decode_context(),
+            &relation.scalar_refs()[0].clone(),
+        )
+        .unwrap();
     namespace
         .set_arena(
             &cadmpeg_test_support::service_decode_context(),
@@ -1709,13 +1728,16 @@ mod typed_load_limits;
 fn native_store_refuses_work_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let decoded = SldprtCodec.decode(
-        &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-        &DecodeOptions::default(),
-    ).unwrap();
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let native = sldprt_native(decoded.ir());
     let arena = DecodeArena::new();
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut expected = cadmpeg_ir::NativeNamespace::default();
     native.store(&service, &mut expected).unwrap();
     assert!(!expected.arenas()["features"].is_empty());
@@ -1733,13 +1755,16 @@ fn native_store_refuses_work_limit() {
 fn assert_native_store_dimension_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
-    let decoded = SldprtCodec.decode(
-        &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
-        &DecodeOptions::default(),
-    ).unwrap();
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let native = sldprt_native(decoded.ir());
     let arena = DecodeArena::new();
-    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let (service, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let mut expected = cadmpeg_ir::NativeNamespace::default();
     native.store(&service, &mut expected).unwrap();
     assert!(!expected.arenas()["features"].is_empty());

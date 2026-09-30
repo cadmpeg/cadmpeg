@@ -58,9 +58,7 @@ fn current_compact_spatial_point_marker(
     marker
 }
 
-fn spatial_projection_limit_error(
-    configure: impl FnOnce(&mut DecodePolicy),
-) -> CodecError {
+fn spatial_projection_limit_error(configure: impl FnOnce(&mut DecodePolicy)) -> CodecError {
     let native_ref = "sldprt:history:feature#spatial-limit";
     let lane_id = "sldprt:feature-input:resolved-features#spatial-limit";
     let mut payload = 1u32.to_le_bytes().to_vec();
@@ -164,18 +162,14 @@ fn spatial_sketch_projection_refuses_work_limit() {
 
 #[test]
 fn sketch_marker_identity_refuses_retained_limit() {
-    let payload = current_compact_spatial_point_marker(
-        1,
-        [0x04, 0x00, 0x02, 0x00],
-        [0.125, -0.25, 0.375],
-    );
+    let payload =
+        current_compact_spatial_point_marker(1, [0x04, 0x00, 0x02, 0x00], [0.125, -0.25, 0.375]);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&payload, &arena, &policy)
         .expect("marker payload fits root policy");
-    let Err(CodecError::ResourceLimit(limit)) =
-        admit_sketch_input_entities(&ctx, &payload, "lane")
+    let Err(CodecError::ResourceLimit(limit)) = admit_sketch_input_entities(&ctx, &payload, "lane")
     else {
         panic!("sketch marker identity must use retained budget");
     };
@@ -185,7 +179,12 @@ fn sketch_marker_identity_refuses_retained_limit() {
 #[test]
 fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let parent = "sldprt:feature-input:resolved-features#synthetic";
     let kind = FeatureInputOperandKind::Native(NativeOperandTag::try_from(0x81d5).unwrap());
     let reference = |offset| FeatureInputOperand {
@@ -231,7 +230,8 @@ fn reference_cells_bind_reused_lane_local_tokens_to_their_declared_class() {
         offset: 299,
         name: "sgArcHandle".into(),
     });
-    assert!(reference_cells_charged(&ctx, &scalars, &ambiguous_classes).unwrap()
+    assert!(reference_cells_charged(&ctx, &scalars, &ambiguous_classes)
+        .unwrap()
         .iter()
         .all(|reference| reference.class_ref.is_none()));
 }
@@ -561,14 +561,12 @@ fn compact_spatial_profile_points_project_and_ignore_unindexed_anchors() {
     }];
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &DecodePolicy::service(),
-    )
-    .expect("spatial marker input fits policy");
-    let (sketches, entities) = spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
-        .expect("spatial sketch projection succeeds");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
+            .expect("spatial marker input fits policy");
+    let (sketches, entities) =
+        spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+            .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -674,14 +672,12 @@ fn current_indexed_profile_spatial_points_project_from_indexed_markers() {
     }];
 
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &DecodePolicy::service(),
-    )
-    .expect("spatial marker input fits policy");
-    let (sketches, entities) = spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
-        .expect("spatial sketch projection succeeds");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lane.native_payload, &arena, &DecodePolicy::service())
+            .expect("spatial marker input fits policy");
+    let (sketches, entities) =
+        spatial_sketches(&ctx, &mut features, &[history], std::slice::from_ref(&lane))
+            .expect("spatial sketch projection succeeds");
 
     assert_eq!(sketches.len(), 1);
     assert_eq!(entities.len(), 2);
@@ -858,21 +854,25 @@ fn relation_binding_requires_family_operand_signature() {
     };
 
     assert_eq!(
-        relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
+        relation_bindings_charged(
+            &cadmpeg_test_support::service_decode_context(),
             "lane",
             std::slice::from_ref(&class),
             &[scalar(FeatureInputOperandKind::E1)],
-        ).unwrap()
+        )
+        .unwrap()
         .len(),
         1
     );
-    assert!(relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
+    assert!(relation_bindings_charged(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
         &[scalar(FeatureInputOperandKind::Native(
             NativeOperandTag::TAG_8DDA
         ))],
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
 
@@ -907,8 +907,8 @@ fn relation_binding_identity_refuses_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     let Err(CodecError::ResourceLimit(limit)) =
         relation_bindings_charged(&ctx, "lane", &[class], &[scalar])
     else {
@@ -947,11 +947,13 @@ fn relation_binding_with_ambiguous_declarations_is_withheld() {
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings_charged(&cadmpeg_test_support::service_decode_context(),
+    assert!(relation_bindings_charged(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class(10, "sgPntPntDist"), class(20, "sgPntPntVertDist")],
         &[scalar],
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
 
@@ -985,12 +987,14 @@ fn scoped_relation_binding_does_not_cross_feature_interval() {
         operands: vec![operand(0), operand(1)],
     };
 
-    assert!(relation_bindings_scoped(&cadmpeg_test_support::service_decode_context(),
+    assert!(relation_bindings_scoped(
+        &cadmpeg_test_support::service_decode_context(),
         "lane",
         &[class],
         &[scalar],
         &[(0, Some(100), "first".into()), (100, None, "second".into())],
-    ).unwrap()
+    )
+    .unwrap()
     .is_empty());
 }
 
@@ -1332,8 +1336,11 @@ fn extended_geometry_values_share_the_coordinate_record_layout() {
 fn linked_profile_point_carries_coordinates_for_compact_and_long_tails() {
     let link_arena = cadmpeg_core::decode::DecodeArena::new();
     let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &link_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let offset = 4;
     let mut payload = vec![0; offset + 154 + SKETCH_MARKER.len()];
     payload[..offset].copy_from_slice(&7u32.to_le_bytes());
@@ -1566,7 +1573,11 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         payload.extend(value.to_le_bytes());
     }
     assert_eq!(
-        crate::resolved_features::markers::spatial_vertex_coordinates_charged(&cadmpeg_test_support::service_decode_context(), &payload).unwrap(),
+        crate::resolved_features::markers::spatial_vertex_coordinates_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload
+        )
+        .unwrap(),
         vec![
             cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
                 1.25, -2.5, 3.75
@@ -1575,5 +1586,12 @@ fn spatial_vertex_record_decodes_model_coordinates() {
         ]
     );
     payload[7 + 43] = 0x1e;
-    assert!(crate::resolved_features::markers::spatial_vertex_coordinates_charged(&cadmpeg_test_support::service_decode_context(), &payload).unwrap().is_empty());
+    assert!(
+        crate::resolved_features::markers::spatial_vertex_coordinates_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload
+        )
+        .unwrap()
+        .is_empty()
+    );
 }

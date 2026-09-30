@@ -92,12 +92,9 @@ fn parameter_limit_error(
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
     limits(&mut policy.limits);
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &lane.native_payload,
-        &arena,
-        &policy,
-    )
-    .expect("empty lane fits root input limit");
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy)
+            .expect("empty lane fits root input limit");
     enrich_history_parameters(&ctx, &mut histories, [&lane], true)
         .expect_err("parameter projection must refuse the selected limit")
 }

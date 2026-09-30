@@ -324,7 +324,9 @@ impl SldprtNative {
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::default(),
         )?;
         Self::load_charged(&ctx, namespace)
     }
@@ -366,7 +368,10 @@ impl SldprtNative {
         let history_ids = collect_index_set(
             ctx,
             native.feature_histories.len(),
-            native.feature_histories.iter().map(|history| history.id.as_str()),
+            native
+                .feature_histories
+                .iter()
+                .map(|history| history.id.as_str()),
             "index SLDPRT history ids",
         )?;
         if let Some(record) = configurations
@@ -375,10 +380,7 @@ impl SldprtNative {
         {
             return Err(invalid_owner(
                 ctx,
-                format_args!(
-                "configuration {} references {}",
-                record.id, record.parent
-            ),
+                format_args!("configuration {} references {}", record.id, record.parent),
             )?);
         }
         if let Some(record) = features
@@ -387,10 +389,7 @@ impl SldprtNative {
         {
             return Err(invalid_owner(
                 ctx,
-                format_args!(
-                "feature {} references {}",
-                record.id, record.parent
-            ),
+                format_args!("feature {} references {}", record.id, record.parent),
             )?);
         }
         let feature_ids = collect_index_set(
@@ -402,13 +401,19 @@ impl SldprtNative {
         let lane_ids = collect_index_set(
             ctx,
             native.feature_input_lanes.len(),
-            native.feature_input_lanes.iter().map(|lane| lane.id.as_str()),
+            native
+                .feature_input_lanes
+                .iter()
+                .map(|lane| lane.id.as_str()),
             "index SLDPRT lane ids",
         )?;
         let lane_payloads = collect_index_map(
             ctx,
             native.feature_input_lanes.len(),
-            native.feature_input_lanes.iter().map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
+            native
+                .feature_input_lanes
+                .iter()
+                .map(|lane| (lane.id.as_str(), lane.native_payload.as_slice())),
             "index SLDPRT lane payloads",
         )?;
         if let Some(record) = entity_wires
@@ -418,9 +423,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "sketch input entity {} references {}",
-                record.id, record.parent
-            ),
+                    "sketch input entity {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         let mut entities = Vec::new();
@@ -453,9 +458,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input class {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input class {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = body_selections
@@ -465,9 +470,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input body selection {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input body selection {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = edge_selections
@@ -477,9 +482,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input edge selection {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input edge selection {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = surface_selections
@@ -489,9 +494,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input surface selection {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input surface selection {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = generated_surface_identities
@@ -501,9 +506,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input generated surface identity {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input generated surface identity {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = names
@@ -513,9 +518,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input name {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input name {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = scalars
@@ -525,9 +530,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input scalar {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input scalar {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = scalars.iter().find(|record| {
@@ -539,10 +544,10 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input scalar {} references missing feature {}",
-                record.id,
-                record.feature_ref.as_deref().unwrap_or_default()
-            ),
+                    "feature-input scalar {} references missing feature {}",
+                    record.id,
+                    record.feature_ref.as_deref().unwrap_or_default()
+                ),
             )?);
         }
         if let Some(record) = references
@@ -552,9 +557,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input reference {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input reference {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = relation_bindings
@@ -564,9 +569,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input relation binding {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input relation binding {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         if let Some(record) = relation_instances
@@ -576,9 +581,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input relation instance {} references {}",
-                record.id, record.parent
-            ),
+                    "feature-input relation instance {} references {}",
+                    record.id, record.parent
+                ),
             )?);
         }
         let name_ids = collect_index_set(
@@ -595,9 +600,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input body selection {} has unresolved ownership",
-                record.id
-            ),
+                    "feature-input body selection {} has unresolved ownership",
+                    record.id
+                ),
             )?);
         }
         if let Some(record) = edge_selections.iter().find(|record| {
@@ -608,9 +613,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input edge selection {} has unresolved ownership",
-                record.id
-            ),
+                    "feature-input edge selection {} has unresolved ownership",
+                    record.id
+                ),
             )?);
         }
         if let Some(record) = surface_selections.iter().find(|record| {
@@ -640,9 +645,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input surface selection {} has unresolved ownership",
-                record.id
-            ),
+                    "feature-input surface selection {} has unresolved ownership",
+                    record.id
+                ),
             )?);
         }
         if let Some(record) = scalars
@@ -652,9 +657,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input scalar {} references name {}",
-                record.id, record.name
-            ),
+                    "feature-input scalar {} references name {}",
+                    record.id, record.name
+                ),
             )?);
         }
         let references_by_id = collect_index_map(
@@ -686,9 +691,9 @@ impl SldprtNative {
             return Err(invalid_owner(
                 ctx,
                 format_args!(
-                "feature-input relation binding {} has an unresolved class or scalar",
-                record.id
-            ),
+                    "feature-input relation binding {} has an unresolved class or scalar",
+                    record.id
+                ),
             )?);
         }
         if let Some(record) = relation_instances.iter().find(|record| {
@@ -745,24 +750,24 @@ impl SldprtNative {
             for operand in &scalar.operands {
                 let Some(reference) = references_by_id.get(operand.reference_ref.as_str()) else {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input scalar {} references missing cell {}",
-                        scalar.id, operand.reference_ref
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input scalar {} references missing cell {}",
+                            scalar.id, operand.reference_ref
+                        ),
+                    )?);
                 };
                 if reference.offset != operand.offset
                     || reference.kind != operand.kind
                     || reference.object_index != operand.entity_index
                 {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input scalar {} has inconsistent cell {}",
-                        scalar.id, operand.reference_ref
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input scalar {} has inconsistent cell {}",
+                            scalar.id, operand.reference_ref
+                        ),
+                    )?);
                 }
             }
         }
@@ -774,38 +779,48 @@ impl SldprtNative {
                     .filter(|record| record.parent == history.id),
                 "attach SLDPRT history configurations",
             )?;
-            ctx.stable_sort_by(&mut history.configurations, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut history.configurations,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             if let Some(pair) = history
                 .configurations
                 .windows(2)
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "SolidWorks history {} repeats configuration ordinal {}",
-                    history.id, pair[1].ordinal
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "SolidWorks history {} repeats configuration ordinal {}",
+                        history.id, pair[1].ordinal
+                    ),
+                )?);
             }
             history.features = collect_retained_clones(
                 ctx,
                 features.iter().filter(|record| record.parent == history.id),
                 "attach SLDPRT history features",
             )?;
-            ctx.stable_sort_by(&mut history.features, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut history.features,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             if let Some(pair) = history
                 .features
                 .windows(2)
                 .find(|pair| pair[0].ordinal == pair[1].ordinal)
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "SolidWorks history {} repeats feature ordinal {}",
-                    history.id, pair[1].ordinal
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "SolidWorks history {} repeats feature ordinal {}",
+                        history.id, pair[1].ordinal
+                    ),
+                )?);
             }
         }
         for lane in &mut native.feature_input_lanes {
@@ -814,25 +829,45 @@ impl SldprtNative {
                 classes.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane classes",
             )?;
-            ctx.stable_sort_by(&mut lane.classes, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.classes,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.names = collect_retained_clones(
                 ctx,
                 names.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane names",
             )?;
-            ctx.stable_sort_by(&mut lane.names, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.names,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.scalars = collect_retained_clones(
                 ctx,
                 scalars.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane scalars",
             )?;
-            ctx.stable_sort_by(&mut lane.scalars, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.scalars,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.references = collect_retained_clones(
                 ctx,
                 references.iter().filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane references",
             )?;
-            ctx.stable_sort_by(&mut lane.references, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.references,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.relation_bindings = collect_retained_clones(
                 ctx,
                 relation_bindings
@@ -840,7 +875,12 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation bindings",
             )?;
-            ctx.stable_sort_by(&mut lane.relation_bindings, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.relation_bindings,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.relation_instances = collect_retained_clones(
                 ctx,
                 relation_instances
@@ -848,7 +888,12 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane relation instances",
             )?;
-            ctx.stable_sort_by(&mut lane.relation_instances, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.relation_instances,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.body_selections = collect_retained_clones(
                 ctx,
                 body_selections
@@ -856,16 +901,21 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane body selections",
             )?;
-            ctx.stable_sort_by(&mut lane.body_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.body_selections,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             for record in &lane.body_selections {
                 if body_selection_disagrees_with_payload(ctx, lane, record)? {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input body selection {} disagrees with its payload",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input body selection {} disagrees with its payload",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             lane.edge_selections = collect_retained_clones(
@@ -875,25 +925,31 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane edge selections",
             )?;
-            ctx.stable_sort_by(&mut lane.edge_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.edge_selections,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
                 ctx,
                 features.iter(),
                 "validate SLDPRT edge feature context",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                ctx, &mut edge_features,
+                ctx,
+                &mut edge_features,
                 std::slice::from_ref(lane),
             )?;
             for record in &lane.edge_selections {
                 if edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)? {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input edge selection {} disagrees with its payload",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input edge selection {} disagrees with its payload",
+                            record.id
+                        ),
+                    )?);
                 }
                 let _reference_reservation = admit_validation_candidates(
                     ctx,
@@ -902,9 +958,11 @@ impl SldprtNative {
                 )?;
                 let references = match usize::try_from(record.offset) {
                     Ok(offset) => {
-                        let feature_kind = edge_features.iter()
+                        let feature_kind = edge_features
+                            .iter()
                             .find(|feature| feature.id == record.feature_ref)
-                            .map(|feature| feature.kind.as_str()).unwrap_or_default();
+                            .map(|feature| feature.kind.as_str())
+                            .unwrap_or_default();
                         crate::resolved_features::selections::compact_edge_reference_list_for_feature(
                             ctx, &lane.native_payload, offset, feature_kind,
                         )?
@@ -914,12 +972,12 @@ impl SldprtNative {
                 let disagreement = references.unwrap_or_default() != record.references;
                 if disagreement {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input edge selection {} disagrees with its payload",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input edge selection {} disagrees with its payload",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
@@ -928,7 +986,8 @@ impl SldprtNative {
                 "validate SLDPRT surface feature context",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                ctx, &mut surface_features,
+                ctx,
+                &mut surface_features,
                 std::slice::from_ref(lane),
             )?;
             lane.surface_selections = collect_retained_clones(
@@ -938,16 +997,21 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane surface selections",
             )?;
-            ctx.stable_sort_by(&mut lane.surface_selections, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut lane.surface_selections,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             for record in &lane.surface_selections {
                 if surface_selection_disagrees_with_payload(ctx, lane, record, &surface_features)? {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input surface selection {} disagrees with its payload",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input surface selection {} disagrees with its payload",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             let mut records = collect_retained_clones(
@@ -957,23 +1021,33 @@ impl SldprtNative {
                     .filter(|record| record.parent == lane.id),
                 "attach SLDPRT lane generated surfaces",
             )?;
-            ctx.stable_sort_by(&mut records, |left, right| left.ordinal.cmp(&right.ordinal), |_| 0, "sort SLDPRT native records")?;
+            ctx.stable_sort_by(
+                &mut records,
+                |left, right| left.ordinal.cmp(&right.ordinal),
+                |_| 0,
+                "sort SLDPRT native records",
+            )?;
             lane.generated_surface_identities = records;
             if generated_surface_identities_disagree_with_payload(ctx, lane)? {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
+                    ctx,
+                    format_args!(
                     "feature-input lane {} generated surface identities disagree with its payload",
                     lane.id
                 ),
-            )?);
+                )?);
             }
             lane.sketch_entities = collect_retained_clones(
                 ctx,
                 entities.iter().filter(|record| record.parent() == lane.id),
                 "attach SLDPRT lane sketch entities",
             )?;
-            ctx.stable_sort_by(&mut lane.sketch_entities, |left, right| left.ordinal().cmp(&right.ordinal()), |_| 0, "sort SLDPRT sketch entity records")?;
+            ctx.stable_sort_by(
+                &mut lane.sketch_entities,
+                |left, right| left.ordinal().cmp(&right.ordinal()),
+                |_| 0,
+                "sort SLDPRT sketch entity records",
+            )?;
         }
         lanes::admit(&native, ctx)?;
         Ok(native)
@@ -994,12 +1068,12 @@ impl SldprtNative {
                 .find(|record| record.parent != history.id)
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "configuration {} references {} instead of {}",
-                    record.id, record.parent, history.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "configuration {} references {} instead of {}",
+                        record.id, record.parent, history.id
+                    ),
+                )?);
             }
             if let Some(record) = history
                 .features
@@ -1007,12 +1081,12 @@ impl SldprtNative {
                 .find(|record| record.parent != history.id)
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature {} references {} instead of {}",
-                    record.id, record.parent, history.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature {} references {} instead of {}",
+                        record.id, record.parent, history.id
+                    ),
+                )?);
             }
         }
         ctx.charge_work(
@@ -1042,7 +1116,9 @@ impl SldprtNative {
             let references_by_id = collect_index_map(
                 ctx,
                 lane.references.len(),
-                lane.references.iter().map(|record| (record.id.as_str(), record)),
+                lane.references
+                    .iter()
+                    .map(|record| (record.id.as_str(), record)),
                 "index SLDPRT stored references",
             )?;
             let class_ids = collect_index_set(
@@ -1059,30 +1135,30 @@ impl SldprtNative {
             )?;
             if let Some(record) = lane.classes.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input class {} references {} instead of {}",
-                    record.id, record.parent, lane.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input class {} references {} instead of {}",
+                        record.id, record.parent, lane.id
+                    ),
+                )?);
             }
             if let Some(record) = lane.names.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input name {} references {} instead of {}",
-                    record.id, record.parent, lane.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input name {} references {} instead of {}",
+                        record.id, record.parent, lane.id
+                    ),
+                )?);
             }
             if let Some(record) = lane.scalars.iter().find(|record| record.parent != lane.id) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input scalar {} references {} instead of {}",
-                    record.id, record.parent, lane.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input scalar {} references {} instead of {}",
+                        record.id, record.parent, lane.id
+                    ),
+                )?);
             }
             for record in &lane.body_selections {
                 let invalid = record.parent != lane.id
@@ -1091,23 +1167,23 @@ impl SldprtNative {
                     || record.local_body_ids.is_empty();
                 if invalid {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input body selection {} has inconsistent ownership",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input body selection {} has inconsistent ownership",
+                            record.id
+                        ),
+                    )?);
                 }
                 let invalid = body_state_ids_disagree_with_payload(ctx, lane, record)?
                     || body_selection_disagrees_with_payload(ctx, lane, record)?;
                 if invalid {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input body selection {} has inconsistent ownership",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input body selection {} has inconsistent ownership",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             let (mut edge_features, _edge_features_reservation) = collect_temporary_clones(
@@ -1116,7 +1192,8 @@ impl SldprtNative {
                 "validate SLDPRT store edge features",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                ctx, &mut edge_features,
+                ctx,
+                &mut edge_features,
                 std::slice::from_ref(lane),
             )?;
             for record in &lane.edge_selections {
@@ -1125,20 +1202,15 @@ impl SldprtNative {
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.local_edge_ids.is_empty();
                 if invalid
-                    || edge_selection_disagrees_with_payload(
-                        ctx,
-                        lane,
-                        record,
-                        &edge_features,
-                    )?
+                    || edge_selection_disagrees_with_payload(ctx, lane, record, &edge_features)?
                 {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input edge selection {} has inconsistent ownership",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input edge selection {} has inconsistent ownership",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             let (mut surface_features, _surface_features_reservation) = collect_temporary_clones(
@@ -1147,7 +1219,8 @@ impl SldprtNative {
                 "validate SLDPRT store surface features",
             )?;
             crate::resolved_features::selections::enrich_feature_object_sources(
-                ctx, &mut surface_features,
+                ctx,
+                &mut surface_features,
                 std::slice::from_ref(lane),
             )?;
             for record in &lane.surface_selections {
@@ -1164,12 +1237,12 @@ impl SldprtNative {
                     )?
                 {
                     return Err(invalid_owner(
-                ctx,
-                format_args!(
-                        "feature-input surface selection {} has inconsistent ownership",
-                        record.id
-                    ),
-            )?);
+                        ctx,
+                        format_args!(
+                            "feature-input surface selection {} has inconsistent ownership",
+                            record.id
+                        ),
+                    )?);
                 }
             }
             if let Some(record) = lane.scalars.iter().find(|record| {
@@ -1179,13 +1252,13 @@ impl SldprtNative {
                     .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input scalar {} references missing feature {}",
-                    record.id,
-                    record.feature_ref.as_deref().unwrap_or_default()
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input scalar {} references missing feature {}",
+                        record.id,
+                        record.feature_ref.as_deref().unwrap_or_default()
+                    ),
+                )?);
             }
             if let Some(record) = lane
                 .references
@@ -1193,12 +1266,12 @@ impl SldprtNative {
                 .find(|record| record.parent != lane.id)
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input reference {} references {} instead of {}",
-                    record.id, record.parent, lane.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input reference {} references {} instead of {}",
+                        record.id, record.parent, lane.id
+                    ),
+                )?);
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 record.parent != lane.id
@@ -1210,12 +1283,12 @@ impl SldprtNative {
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input relation binding {} has inconsistent ownership",
-                    record.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input relation binding {} has inconsistent ownership",
+                        record.id
+                    ),
+                )?);
             }
             if let Some(record) = lane.relation_instances.iter().find(|record| {
                 record.parent != lane.id
@@ -1244,12 +1317,12 @@ impl SldprtNative {
                     })
             }) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input relation instance {} has inconsistent ownership",
-                    record.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input relation instance {} has inconsistent ownership",
+                        record.id
+                    ),
+                )?);
             }
             if let Some(record) = lane.relation_bindings.iter().find(|record| {
                 lane.scalars
@@ -1258,12 +1331,12 @@ impl SldprtNative {
                     .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
             }) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input relation binding {} disagrees with its scalar owner",
-                    record.id
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input relation binding {} disagrees with its scalar owner",
+                        record.id
+                    ),
+                )?);
             }
             if let Some(record) = lane
                 .scalars
@@ -1271,17 +1344,19 @@ impl SldprtNative {
                 .find(|record| !name_ids.contains(record.name.as_str()))
             {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "feature-input scalar {} references name {}",
-                    record.id, record.name
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "feature-input scalar {} references name {}",
+                        record.id, record.name
+                    ),
+                )?);
             }
             let sketch_entities = collect_index_map(
                 ctx,
                 lane.sketch_entities.len(),
-                lane.sketch_entities.iter().map(|record| (record.id(), record)),
+                lane.sketch_entities
+                    .iter()
+                    .map(|record| (record.id(), record)),
                 "index SLDPRT stored sketch entities",
             )?;
             for scalar in &lane.scalars {
@@ -1290,43 +1365,43 @@ impl SldprtNative {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
                         return Err(invalid_owner(
-                ctx,
-                format_args!(
-                            "feature-input scalar {} references missing cell {}",
-                            scalar.id, operand.reference_ref
-                        ),
-            )?);
+                            ctx,
+                            format_args!(
+                                "feature-input scalar {} references missing cell {}",
+                                scalar.id, operand.reference_ref
+                            ),
+                        )?);
                     };
                     if reference.offset != operand.offset
                         || reference.kind != operand.kind
                         || reference.object_index != operand.entity_index
                     {
                         return Err(invalid_owner(
-                ctx,
-                format_args!(
-                            "feature-input scalar {} has inconsistent cell {}",
-                            scalar.id, operand.reference_ref
-                        ),
-            )?);
+                            ctx,
+                            format_args!(
+                                "feature-input scalar {} has inconsistent cell {}",
+                                scalar.id, operand.reference_ref
+                            ),
+                        )?);
                     }
                     if let Some(entity_ref) = operand.entity_ref.as_deref() {
                         let Some(target) = sketch_entities.get(entity_ref) else {
                             return Err(invalid_owner(
-                ctx,
-                format_args!(
-                                "feature-input scalar {} references missing sketch marker {}",
-                                scalar.id, entity_ref
-                            ),
-            )?);
+                                ctx,
+                                format_args!(
+                                    "feature-input scalar {} references missing sketch marker {}",
+                                    scalar.id, entity_ref
+                                ),
+                            )?);
                         };
                         if resolved != Some(*target) {
                             return Err(invalid_owner(
-                ctx,
-                format_args!(
-                                "feature-input scalar {} has inconsistent sketch marker {}",
-                                scalar.id, entity_ref
-                            ),
-            )?);
+                                ctx,
+                                format_args!(
+                                    "feature-input scalar {} has inconsistent sketch marker {}",
+                                    scalar.id, entity_ref
+                                ),
+                            )?);
                         }
                     }
                 }
@@ -1339,36 +1414,36 @@ impl SldprtNative {
                         .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(invalid_owner(
-                ctx,
-                format_args!(
-                    "sketch input entity {} has inconsistent lane or feature ownership",
-                    record.id()
-                ),
-            )?);
+                    ctx,
+                    format_args!(
+                        "sketch input entity {} has inconsistent lane or feature ownership",
+                        record.id()
+                    ),
+                )?);
             }
             for record in &lane.sketch_entities {
                 for link in record.links() {
                     let Some(target) = sketch_entities.get(link.entity_ref.as_str()) else {
                         return Err(invalid_owner(
-                ctx,
-                format_args!(
-                            "sketch input entity {} references missing local-link target {}",
-                            record.id(),
-                            link.entity_ref
-                        ),
-            )?);
+                            ctx,
+                            format_args!(
+                                "sketch input entity {} references missing local-link target {}",
+                                record.id(),
+                                link.entity_ref
+                            ),
+                        )?);
                     };
                     if target.feature_ref != record.feature_ref
                         || target.local_id() != Some(u32::from(link.local_id))
                     {
                         return Err(invalid_owner(
-                ctx,
-                format_args!(
-                            "sketch input entity {} has inconsistent local-link target {}",
-                            record.id(),
-                            link.entity_ref
-                        ),
-            )?);
+                            ctx,
+                            format_args!(
+                                "sketch input entity {} has inconsistent local-link target {}",
+                                record.id(),
+                                link.entity_ref
+                            ),
+                        )?);
                     }
                 }
             }
@@ -1385,7 +1460,11 @@ impl SldprtNative {
             }),
             "validate SLDPRT history lanes",
         )?;
-        crate::resolved_features::classes::bind_history_classes(ctx, &mut expected_histories, &history_lanes)?;
+        crate::resolved_features::classes::bind_history_classes(
+            ctx,
+            &mut expected_histories,
+            &history_lanes,
+        )?;
         if self
             .feature_histories
             .iter()
@@ -1447,7 +1526,8 @@ fn generated_surface_identities_disagree_with_payload(
             ctx,
             lane.native_payload.len(),
             "validate SLDPRT generated surface identities",
-        ).map(Some)?
+        )
+        .map(Some)?
     } else {
         None
     };
@@ -1477,8 +1557,9 @@ fn body_state_ids_disagree_with_payload(
     let _reservation =
         admit_validation_candidates(ctx, source_units, "validate SLDPRT body state candidates")?;
     Ok(
-        crate::resolved_features::selections::compact_body_state_ids_for_selection(ctx, lane, record)?
-            != record.body_state_ids,
+        crate::resolved_features::selections::compact_body_state_ids_for_selection(
+            ctx, lane, record,
+        )? != record.body_state_ids,
     )
 }
 
@@ -1495,7 +1576,9 @@ fn body_selection_disagrees_with_payload(
     )?;
     let selection = match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::compact_body_selection_at(
-            ctx, &lane.native_payload, offset,
+            ctx,
+            &lane.native_payload,
+            offset,
         )?,
         Err(_) => None,
     };
@@ -1520,27 +1603,44 @@ fn edge_selection_disagrees_with_payload(
         "validate SLDPRT edge selection candidates",
     )?;
     Ok(match usize::try_from(record.offset) {
-        Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(ctx, &lane.native_payload, offset)?,
+        Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(
+            ctx,
+            &lane.native_payload,
+            offset,
+        )?,
         Err(_) => None,
     }
-        .as_ref()
+    .as_ref()
         != Some(&record.local_edge_ids)
         || match usize::try_from(record.offset) {
             Ok(offset) => crate::resolved_features::selections::compact_edge_component_path_at(
-                ctx, &lane.native_payload, offset,
+                ctx,
+                &lane.native_payload,
+                offset,
             )?,
             Err(_) => None,
-        }.unwrap_or_default()
+        }
+        .unwrap_or_default()
             != record.components
         || match usize::try_from(record.offset) {
             Ok(offset) => crate::resolved_features::selections::compact_edge_producer_features_at(
-                ctx, &lane.native_payload, offset, &record.components, edge_features, &record.feature_ref,
+                ctx,
+                &lane.native_payload,
+                offset,
+                &record.components,
+                edge_features,
+                &record.feature_ref,
             )?,
             Err(_) => Vec::new(),
         } != record.producer_feature_refs
         || match usize::try_from(record.offset) {
             Ok(offset) => crate::resolved_features::selections::compact_edge_owner_feature_at(
-                ctx, &lane.native_payload, offset, &record.components, edge_features, &record.feature_ref,
+                ctx,
+                &lane.native_payload,
+                offset,
+                &record.components,
+                edge_features,
+                &record.feature_ref,
             )?,
             Err(_) => None,
         } != record.terminal_feature_ref)
@@ -1564,7 +1664,8 @@ fn surface_selection_disagrees_with_payload(
     // the selection states nothing the payload agrees with.
     let matches_payload = match usize::try_from(record.offset) {
         Ok(offset) => crate::resolved_features::selections::surface_reference_matches_at(
-            ctx, &lane.native_payload,
+            ctx,
+            &lane.native_payload,
             offset,
             &record.components,
         )?,
@@ -1572,14 +1673,21 @@ fn surface_selection_disagrees_with_payload(
     };
     Ok(!matches_payload
         || crate::resolved_features::component_paths::surface_selection_producer_features(
-            ctx, &record.components,
+            ctx,
+            &record.components,
             record.terminal_feature_ref.as_deref(),
             surface_features,
         )? != record.producer_feature_refs
         || match usize::try_from(record.offset) {
-            Ok(offset) => crate::resolved_features::selections::surface_selection_terminal_feature_at(
-                ctx, &lane.native_payload, offset, &record.components, surface_features,
-            )?,
+            Ok(offset) => {
+                crate::resolved_features::selections::surface_selection_terminal_feature_at(
+                    ctx,
+                    &lane.native_payload,
+                    offset,
+                    &record.components,
+                    surface_features,
+                )?
+            }
             Err(_) => None,
         } != record.terminal_feature_ref)
 }

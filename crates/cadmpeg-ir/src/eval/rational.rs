@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Homogeneous sums and quotient derivatives with an extended exponent range.
 use crate::features::FinitePoint3;
+use crate::geometry::nurbs::scratch;
 use crate::math::sum::{product_sum, ExactSignedSum, ProductSum, ScaledValue};
 use crate::scalar::FiniteReal;
-use crate::geometry::nurbs::scratch;
 use cadmpeg_core::decode::ResourceLimit;
 
 #[derive(Clone, Copy)]
@@ -57,28 +57,63 @@ impl Homogeneous {
     /// Keep source weights when they remain normal. Otherwise choose one
     /// binary scale for the complete output net, preserving relative weights.
     pub(super) fn weights(values: &[Self]) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        if values.iter().any(|value| value.values[3].is_none()) { return Ok(None); }
+        if values.iter().any(|value| value.values[3].is_none()) {
+            return Ok(None);
+        }
         let mut output = Vec::new();
         scratch::reserve_exact(&mut output, values.len(), "IR homogeneous output weights")?;
         for value in values {
-            let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else { break; };
+            let Some(weight) = value.values[3].and_then(|weight| weight.finite().ok()) else {
+                break;
+            };
             output.push(weight.get());
         }
         if output.len() == values.len() && output.iter().all(|value| value.is_normal()) {
             return Ok(Some(output));
         }
-        let Some(minimum) = values.iter().filter_map(|value| value.values[3]).map(|weight| weight.exponent()).min() else { return Ok(None); };
-        let Some(maximum) = values.iter().filter_map(|value| value.values[3]).map(|weight| weight.exponent()).max() else { return Ok(None); };
+        let Some(minimum) = values
+            .iter()
+            .filter_map(|value| value.values[3])
+            .map(|weight| weight.exponent())
+            .min()
+        else {
+            return Ok(None);
+        };
+        let Some(maximum) = values
+            .iter()
+            .filter_map(|value| value.values[3])
+            .map(|weight| weight.exponent())
+            .max()
+        else {
+            return Ok(None);
+        };
         let normal_range = (maximum - 1023, minimum + 1021);
         let full_range = (maximum - 1024, minimum + 1073);
-        let (lower, upper) = if normal_range.0 <= normal_range.1 { normal_range } else { full_range };
-        if lower > upper { return Ok(None); }
+        let (lower, upper) = if normal_range.0 <= normal_range.1 {
+            normal_range
+        } else {
+            full_range
+        };
+        if lower > upper {
+            return Ok(None);
+        }
         // Select the nearest exponent to zero that preserves the complete net.
-        let exponent = if 0 < lower { lower } else if 0 > upper { upper } else { 0 };
+        let exponent = if 0 < lower {
+            lower
+        } else if 0 > upper {
+            upper
+        } else {
+            0
+        };
         output.clear();
         for value in values {
-            let Some(weight) = value.values[3].and_then(|weight| weight.rescale(exponent))
-                .map(FiniteReal::get).filter(|weight| *weight != 0.0) else { return Ok(None); };
+            let Some(weight) = value.values[3]
+                .and_then(|weight| weight.rescale(exponent))
+                .map(FiniteReal::get)
+                .filter(|weight| *weight != 0.0)
+            else {
+                return Ok(None);
+            };
             output.push(weight);
         }
         Ok(Some(output))

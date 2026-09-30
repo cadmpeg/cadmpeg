@@ -2571,35 +2571,56 @@ fn face_selections_overlap(first: &FaceSelection, second: &FaceSelection) -> boo
 }
 
 fn body_selections_overlap(first: &BodySelection, second: &BodySelection) -> bool {
-    fn any_direct(selection: &BodySelection, predicate: impl FnMut(&crate::ids::BodyId) -> bool) -> Option<bool> {
+    fn any_direct(
+        selection: &BodySelection,
+        predicate: impl FnMut(&crate::ids::BodyId) -> bool,
+    ) -> Option<bool> {
         match selection {
-            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => Some(bodies.iter().any(predicate)),
+            BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                Some(bodies.iter().any(predicate))
+            }
             BodySelection::ResolvedSet { members } => Some(members.bodies().any(predicate)),
             _ => None,
         }
     }
     fn historical_state(selection: &BodySelection) -> Option<&crate::ids::FeatureInputTopologyId> {
         match selection {
-            BodySelection::Historical { state, .. } | BodySelection::HistoricalSet { state, .. } => Some(state),
+            BodySelection::Historical { state, .. }
+            | BodySelection::HistoricalSet { state, .. } => Some(state),
             _ => None,
         }
     }
-    fn any_historical(selection: &BodySelection, predicate: impl FnMut(&crate::ids::HistoricalBodyId) -> bool) -> bool {
+    fn any_historical(
+        selection: &BodySelection,
+        predicate: impl FnMut(&crate::ids::HistoricalBodyId) -> bool,
+    ) -> bool {
         match selection {
             BodySelection::Historical { bodies, .. } => bodies.iter().any(predicate),
             BodySelection::HistoricalSet { members, .. } => members.bodies().any(predicate),
             _ => false,
         }
     }
-    if let Some(overlap) = any_direct(first, |body| any_direct(second, |candidate| body == candidate) == Some(true)) {
+    if let Some(overlap) = any_direct(first, |body| {
+        any_direct(second, |candidate| body == candidate) == Some(true)
+    }) {
         return overlap;
     }
-    if let Some((first_state, second_state)) = historical_state(first).zip(historical_state(second)) {
-        return first_state == second_state && any_historical(first, |body| any_historical(second, |candidate| body == candidate));
+    if let Some((first_state, second_state)) = historical_state(first).zip(historical_state(second))
+    {
+        return first_state == second_state
+            && any_historical(first, |body| {
+                any_historical(second, |candidate| body == candidate)
+            });
     }
     match (first, second) {
-        (BodySelection::Generated { bodies: first, .. }, BodySelection::Generated { bodies: second, .. }) => first.iter().any(|body| second.contains(body)),
-        (BodySelection::Local { bodies: first, .. }, BodySelection::Local { bodies: second, .. }) => first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Generated { bodies: first, .. },
+            BodySelection::Generated { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
+        (
+            BodySelection::Local { bodies: first, .. },
+            BodySelection::Local { bodies: second, .. },
+        ) => first.iter().any(|body| second.contains(body)),
         _ => false,
     }
 }
@@ -4943,7 +4964,8 @@ impl RevolveConstruction {
                 allow_multi_profile_faces: None,
             }),
         );
-        let (profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces) = match old {
+        let (profile, extent, solid, face_maker, fuse_order, allow_multi_profile_faces) = match old
+        {
             Self::Unresolved(PartialRevolveConstruction::Profile {
                 extent,
                 solid,
@@ -4951,7 +4973,14 @@ impl RevolveConstruction {
                 fuse_order,
                 allow_multi_profile_faces,
                 ..
-            }) => (None, extent, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            }) => (
+                None,
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
             Self::Unresolved(PartialRevolveConstruction::Axis {
                 profile,
                 extent,
@@ -4959,7 +4988,14 @@ impl RevolveConstruction {
                 face_maker,
                 fuse_order,
                 allow_multi_profile_faces,
-            }) => (Some(profile), extent, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            }) => (
+                Some(profile),
+                extent,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
             Self::Unresolved(PartialRevolveConstruction::Extent {
                 profile,
                 solid,
@@ -4967,7 +5003,14 @@ impl RevolveConstruction {
                 fuse_order,
                 allow_multi_profile_faces,
                 ..
-            }) => (Some(profile), None, solid, face_maker, fuse_order, allow_multi_profile_faces),
+            }) => (
+                Some(profile),
+                None,
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
             Self::Resolved {
                 profile,
                 extent,
@@ -4976,7 +5019,14 @@ impl RevolveConstruction {
                 fuse_order,
                 allow_multi_profile_faces,
                 ..
-            } => (Some(profile), Some(extent), solid, face_maker, fuse_order, allow_multi_profile_faces),
+            } => (
+                Some(profile),
+                Some(extent),
+                solid,
+                face_maker,
+                fuse_order,
+                allow_multi_profile_faces,
+            ),
         };
         *self = match (profile, axis, extent) {
             (None, axis, extent) => Self::Unresolved(PartialRevolveConstruction::Profile {
@@ -6180,9 +6230,16 @@ impl FaceSelection {
                     copied.push(id);
                 }
                 let native = copy_feature_selection_text(ctx, native, operation)?;
-                Ok(Self::Resolved { faces: copied, native })
+                Ok(Self::Resolved {
+                    faces: copied,
+                    native,
+                })
             }
-            Self::Historical { state, faces, native } => {
+            Self::Historical {
+                state,
+                faces,
+                native,
+            } => {
                 let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
                 let state = FeatureInputTopologyId::mint(state_text)
                     .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
@@ -6198,9 +6255,18 @@ impl FaceSelection {
                 let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
                 let native = NonBlankString::new(native_text)
                     .ok_or_else(|| CodecError::malformed("blank decoded face selection"))?;
-                Ok(Self::Historical { state, faces: SelectionMembers(copied), native })
+                Ok(Self::Historical {
+                    state,
+                    faces: SelectionMembers(copied),
+                    native,
+                })
             }
-            Self::HistoricalPartial { state, faces, unresolved, native } => {
+            Self::HistoricalPartial {
+                state,
+                faces,
+                unresolved,
+                native,
+            } => {
                 let state_text = copy_feature_selection_text(ctx, state.as_str(), operation)?;
                 let state = FeatureInputTopologyId::mint(state_text)
                     .map_err(|_| CodecError::malformed("invalid decoded topology state ID"))?;
@@ -6234,10 +6300,12 @@ impl FaceSelection {
                 let mut copied = Vec::new();
                 for face in faces.as_slice() {
                     ctx.charge_work(1, operation)?;
-                    let feature_text = copy_feature_selection_text(ctx, face.feature.as_str(), operation)?;
+                    let feature_text =
+                        copy_feature_selection_text(ctx, face.feature.as_str(), operation)?;
                     let feature = FeatureId::mint(feature_text)
                         .map_err(|_| CodecError::malformed("invalid decoded feature ID"))?;
-                    let local = copy_feature_selection_text(ctx, face.local_id.as_str(), operation)?;
+                    let local =
+                        copy_feature_selection_text(ctx, face.local_id.as_str(), operation)?;
                     let face = GeneratedFaceRef::new(feature, local)
                         .map_err(|_| CodecError::malformed("invalid decoded generated face"))?;
                     reserve_feature_selection_copy(ctx, &mut copied, operation)?;
@@ -6246,11 +6314,14 @@ impl FaceSelection {
                 let native_text = copy_feature_selection_text(ctx, native.as_str(), operation)?;
                 let native = SelectionReference::try_from(native_text)
                     .map_err(|_| CodecError::malformed("invalid decoded face selection"))?;
-                Ok(Self::Generated { faces: NonEmptyMembers(copied), native })
+                Ok(Self::Generated {
+                    faces: NonEmptyMembers(copied),
+                    native,
+                })
             }
-            Self::Native(native) => Ok(Self::Native(
-                copy_feature_selection_text(ctx, native, operation)?,
-            )),
+            Self::Native(native) => Ok(Self::Native(copy_feature_selection_text(
+                ctx, native, operation,
+            )?)),
         }
     }
 }
@@ -6260,7 +6331,10 @@ fn copy_feature_selection_text(
     text: &str,
     operation: &'static str,
 ) -> Result<String, cadmpeg_core::CodecError> {
-    let work = text.len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
+    let work = text
+        .len()
+        .checked_mul(4)
+        .and_then(|bytes| bytes.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
     ctx.format_retained(format_args!("{text}"), operation)
@@ -6271,7 +6345,10 @@ fn reserve_feature_selection_copy<T>(
     values: &mut Vec<T>,
     operation: &'static str,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let work = values.len().checked_add(1).and_then(|count| count.checked_mul(std::mem::size_of::<T>()))
+    let work = values
+        .len()
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(std::mem::size_of::<T>()))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
     ctx.reserve_collection_vec(values, 1, operation)

@@ -14,7 +14,8 @@ struct RetainedText<'ctx, 'arena> {
 
 impl fmt::Write for RetainedText<'_, '_> {
     fn write_str(&mut self, fragment: &str) -> fmt::Result {
-        let admitted = reserve_retained_string(self.ctx, &mut self.text, fragment.len(), self.operation);
+        let admitted =
+            reserve_retained_string(self.ctx, &mut self.text, fragment.len(), self.operation);
         if let Err(error) = admitted {
             self.refusal = Some(error);
             return Err(fmt::Error);
@@ -29,9 +30,16 @@ pub(crate) fn format_retained(
     message: fmt::Arguments<'_>,
     operation: &'static str,
 ) -> Result<String, CodecError> {
-    let mut output = RetainedText { ctx, operation, text: String::new(), refusal: None };
+    let mut output = RetainedText {
+        ctx,
+        operation,
+        text: String::new(),
+        refusal: None,
+    };
     if fmt::write(&mut output, message).is_err() {
-        return Err(output.refusal.unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
+        return Err(output
+            .refusal
+            .unwrap_or_else(|| CodecError::malformed("cannot format retained text")));
     }
     Ok(output.text)
 }

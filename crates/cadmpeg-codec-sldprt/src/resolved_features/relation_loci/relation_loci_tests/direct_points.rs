@@ -83,14 +83,16 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
     let relation = dynamic_relation(FeatureInputRelationFamily::PointPointDistance, [0, 1]);
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
             &entities,
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first.id().clone()),
             second: SketchLocus::Entity(target.id().clone()),
@@ -126,14 +128,16 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
     relation.operands[0].entity_ref = Some(point_marker.id().to_string());
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
             &[point.clone(), line.clone()],
             &markers_by_id,
             &HashMap::new(),
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),
@@ -218,14 +222,16 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
     relation.operands[1].entity_ref = Some(line_marker.id().to_string());
 
     assert_eq!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(
+            &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(1.0)),
             &sketch,
             &[point.clone(), qualified_proxy, line.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ).unwrap(),
+        )
+        .unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(point.id().clone()),
             second: SketchLocus::Entity(line.id().clone()),

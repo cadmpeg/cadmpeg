@@ -5,8 +5,8 @@ fn reference_point_error(policy: DecodePolicy) -> CodecError {
     let lanes = [super::reference_point_lane(243, 4, [0.125, -0.25, 0.0])];
     let mut histories = [super::reference_point_history()];
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy).unwrap();
     super::super::enrich_history_reference_points(&ctx, &mut histories, &lanes).unwrap_err()
 }
 

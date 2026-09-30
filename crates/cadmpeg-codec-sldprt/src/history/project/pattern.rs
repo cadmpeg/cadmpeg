@@ -87,18 +87,33 @@ pub(super) fn project_pattern(
                 seeds.clear();
                 break;
             };
-            let copied = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), OPERATION)?;
+            let copied = crate::text_admission::format_retained(
+                ctx,
+                format_args!("{}", id.as_str()),
+                OPERATION,
+            )?;
             let id = FeatureId::mint(copied).map_err(CodecError::malformed)?;
             ctx.reserve_collection_vec(&mut seeds, 1, OPERATION)?;
             seeds.push(PatternSeed::Feature(id));
         }
     }
     let mut curve_path = if form == Some(NativePatternClass::CurveDriven) {
-        feature.properties.get("Path").map(|source| {
-            let text = native_by_source.get(source.as_str()).copied().unwrap_or(source);
-            crate::text_admission::format_retained(ctx, format_args!("{text}"), "retain SLDPRT pattern path")
+        feature
+            .properties
+            .get("Path")
+            .map(|source| {
+                let text = native_by_source
+                    .get(source.as_str())
+                    .copied()
+                    .unwrap_or(source);
+                crate::text_admission::format_retained(
+                    ctx,
+                    format_args!("{text}"),
+                    "retain SLDPRT pattern path",
+                )
                 .map(PathRef::Native)
-        }).transpose()?
+            })
+            .transpose()?
     } else {
         None
     };
@@ -183,7 +198,10 @@ pub(super) fn project_pattern(
             Some(NativePatternClass::CurveDriven) => PatternKind::UNRESOLVED_CURVE_DRIVEN,
             Some(NativePatternClass::Mirror) => PatternKind::UNRESOLVED_MIRROR,
         });
-    Ok(FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }))
+    Ok(FeatureDefinition::Operation(FeatureOperation::Pattern {
+        seeds,
+        pattern,
+    }))
 }
 
 pub(crate) fn parse_count(value: &str) -> Option<u32> {
@@ -201,7 +219,10 @@ mod tests {
     #[test]
     fn pattern_seed_projection_refuses_collection_limit() {
         let mut feature = crate::history::tests::feature("pattern", None, 0);
-        feature.properties.insert(cadmpeg_core::nonblank_literal!("Seeds"), "source".to_owned());
+        feature.properties.insert(
+            cadmpeg_core::nonblank_literal!("Seeds"),
+            "source".to_owned(),
+        );
         let by_source = HashMap::from([(
             "source".to_owned(),
             FeatureId::mint("synthetic:test:id#seed").unwrap(),
@@ -218,7 +239,10 @@ mod tests {
     fn pattern_path_projection_refuses_retained_limit() {
         let mut feature = crate::history::tests::feature("pattern", None, 0);
         feature.kind = "CurvePattern".to_owned();
-        feature.properties.insert(cadmpeg_core::nonblank_literal!("Path"), "native-path".to_owned());
+        feature.properties.insert(
+            cadmpeg_core::nonblank_literal!("Path"),
+            "native-path".to_owned(),
+        );
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let arena = DecodeArena::new();

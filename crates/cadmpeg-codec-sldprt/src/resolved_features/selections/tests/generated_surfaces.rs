@@ -27,14 +27,22 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
         configuration: None,
         native_payload: payload,
         classes: vec![FeatureInputClass {
-            id: "class".into(), parent: "lane".into(), ordinal: 0,
-            offset: 0, name: class_name.into(),
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            name: class_name.into(),
         }],
-        names: Vec::new(), scalars: Vec::new(),
-        relation_bindings: Vec::new(), relation_instances: Vec::new(),
-        body_selections: Vec::new(), edge_selections: Vec::new(),
-        surface_selections: Vec::new(), generated_surface_identities: Vec::new(),
-        references: Vec::new(), sketch_entities: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
@@ -48,6 +56,9 @@ fn generated_surface_identity_path_keeps_absent_source_component() {
     assert_eq!(identity.components[0].instance, None);
     assert_eq!(identity.components[0].local_id, None);
     assert_eq!(identity.components[1].instance, Some(0x85b5));
-    assert_eq!(&identity.components[1].type_signature[4..8], &u32::MAX.to_le_bytes());
+    assert_eq!(
+        &identity.components[1].type_signature[4..8],
+        &u32::MAX.to_le_bytes()
+    );
     assert_eq!(identity.components[1].local_id, Some(3));
 }

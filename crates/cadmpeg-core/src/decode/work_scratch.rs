@@ -12,9 +12,13 @@ pub struct WorkScratch<'a> {
 
 impl<'a> WorkScratch<'a> {
     pub(super) fn new(
-        session: Option<&'a DecodeBudget>, bytes: u64, operation: &'static str,
+        session: Option<&'a DecodeBudget>,
+        bytes: u64,
+        operation: &'static str,
     ) -> Result<Self, ResourceLimit> {
-        let reservation = session.map(|session| session.reserve_scoped_resource(bytes, operation)).transpose()?;
+        let reservation = session
+            .map(|session| session.reserve_scoped_resource(bytes, operation))
+            .transpose()?;
         Ok(Self { reservation })
     }
 
@@ -23,7 +27,9 @@ impl<'a> WorkScratch<'a> {
     /// # Errors
     /// Returns the original resource refusal from an attached decode session.
     pub fn grow(&mut self, bytes: u64) -> Result<(), ResourceLimit> {
-        if let Some(reservation) = &mut self.reservation { reservation.grow_resource(bytes)?; }
+        if let Some(reservation) = &mut self.reservation {
+            reservation.grow_resource(bytes)?;
+        }
         Ok(())
     }
 }
@@ -52,6 +58,8 @@ mod tests {
         assert_eq!(error.used, 8);
         assert_eq!(error.additional, 1);
         drop(scratch);
-        assert!(matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(limit)) if limit == error));
+        assert!(
+            matches!(ctx.finish_session(), Err(crate::CodecError::ResourceLimit(limit)) if limit == error)
+        );
     }
 }

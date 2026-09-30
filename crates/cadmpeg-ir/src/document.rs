@@ -899,11 +899,15 @@ impl Model {
         if self.feature_tree_parent(child).is_some() {
             return Err(RegenerationParentError::TreeChild(child));
         }
-        let child_ordinal = self.features.iter()
+        let child_ordinal = self
+            .features
+            .iter()
             .find(|feature| feature.id == *child)
             .map(|feature| feature.ordinal)
             .ok_or(RegenerationParentError::MissingChild(child))?;
-        let parent_ordinal = self.features.iter()
+        let parent_ordinal = self
+            .features
+            .iter()
             .find(|feature| feature.id == *parent)
             .map(|feature| feature.ordinal)
             .ok_or(RegenerationParentError::MissingParent(parent))?;
@@ -919,7 +923,8 @@ impl Model {
         child: crate::features::FeatureId,
         parent: crate::features::FeatureId,
     ) -> Result<(), String> {
-        self.validate_regeneration_parent(&child, &parent).map_err(|error| error.to_string())?;
+        self.validate_regeneration_parent(&child, &parent)
+            .map_err(|error| error.to_string())?;
         self.feature_regeneration_parents.0.insert(child, parent);
         Ok(())
     }
@@ -935,8 +940,9 @@ impl Model {
         for feature in &self.features {
             ctx.charge_work(3, OPERATION)?;
             if let crate::features::FeatureDefinition::Operation(
-                crate::features::FeatureOperation::TreeNode { children, .. }
-            ) = feature.evaluation.definition() {
+                crate::features::FeatureOperation::TreeNode { children, .. },
+            ) = feature.evaluation.definition()
+            {
                 ctx.charge_work(children.len() as u64, OPERATION)?;
             }
         }
@@ -948,14 +954,15 @@ impl Model {
         ctx.charge_collection_items(1, OPERATION)?;
         let child = crate::features::FeatureId::mint(
             ctx.format_retained(format_args!("{child}"), OPERATION)?,
-        ).map_err(cadmpeg_core::CodecError::malformed)?;
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         let parent = crate::features::FeatureId::mint(
             ctx.format_retained(format_args!("{parent}"), OPERATION)?,
-        ).map_err(cadmpeg_core::CodecError::malformed)?;
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
         self.feature_regeneration_parents.0.insert(child, parent);
         Ok(())
     }
-
 }
 
 /// Failure to attach a procedural construction to its sole carrier.

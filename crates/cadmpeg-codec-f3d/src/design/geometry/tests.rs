@@ -207,7 +207,12 @@ fn empty_profile_table_arranges_face_around_open_sketch_branch() {
 #[test]
 fn historical_point_inside_unique_closed_line_profile_selects_region() {
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &resource_arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let mut entities = Vec::new();
     let mut profile = Vec::new();
@@ -288,10 +293,16 @@ fn historical_point_inside_unique_closed_line_profile_selects_region() {
 
     let mut incomplete = sketch.clone();
     let ellipse = SketchEntityId::mint("synthetic:test:id#unsupported-ellipse").unwrap();
-    incomplete.profiles.push_single(&resource_ctx, SketchEntityUse {
-        entity: ellipse.clone(),
-        reversed: false,
-    }).unwrap();
+    incomplete
+        .profiles
+        .push_single(
+            &resource_ctx,
+            SketchEntityUse {
+                entity: ellipse.clone(),
+                reversed: false,
+            },
+        )
+        .unwrap();
     entities.push(SketchEntity::new(
         ellipse,
         incomplete.id.clone(),

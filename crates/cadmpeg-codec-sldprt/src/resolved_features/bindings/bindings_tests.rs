@@ -2,8 +2,7 @@
 
 use super::super::{LEGACY_SKETCH_MARKER, SKETCH_MARKER};
 use super::{
-    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes,
-    bind_pattern_inputs,
+    bind_detached_legacy_sketch_objects, bind_mirror_surface_planes, bind_pattern_inputs,
     bind_resolved_curve_vertices, bind_scalar_operands, normalize_indexed_curve_entities,
     represented_sketch_features,
 };
@@ -31,7 +30,9 @@ fn bind_pattern_inputs_test(
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+    let bytes = lanes
+        .first()
+        .map_or(&[][..], |lane| lane.native_payload.as_slice());
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         bytes,
         &arena,
@@ -160,10 +161,12 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         }],
     };
 
-    bind_scalar_operands(&cadmpeg_test_support::service_decode_context(),
+    bind_scalar_operands(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(lane.scalars[..3]
         .iter()
@@ -174,7 +177,12 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
         Some("profile-child")
     );
     assert_eq!(
-        represented_sketch_features(&cadmpeg_test_support::service_decode_context(), std::slice::from_ref(&history), std::slice::from_ref(&lane)).unwrap(),
+        represented_sketch_features(
+            &cadmpeg_test_support::service_decode_context(),
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane)
+        )
+        .unwrap(),
         HashSet::from([String::from("profile-child")])
     );
 }
@@ -738,8 +746,10 @@ fn indexed_curve_vertex_binding_follows_the_resolved_coordinate_roster() {
         ],
     };
 
-    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
-    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
+    normalize_indexed_curve_entities(&cadmpeg_test_support::service_decode_context(), &mut lane)
+        .unwrap();
+    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)
+        .unwrap();
 
     assert_eq!(lane.sketch_entities[4].kind(), SketchInputKind::Point);
 }
@@ -807,7 +817,8 @@ fn local_link_promotes_a_coordinate_bearing_curve_to_a_profile_vertex() {
         ],
     };
 
-    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane).unwrap();
+    bind_resolved_curve_vertices(&cadmpeg_test_support::service_decode_context(), &mut lane)
+        .unwrap();
 
     assert_eq!(
         lane.sketch_entities[0].kind(),
@@ -909,11 +920,13 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
         features: vec![feature.clone()],
     };
 
-    bind_detached_legacy_sketch_objects(&cadmpeg_test_support::service_decode_context(),
+    bind_detached_legacy_sketch_objects(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         lane.sketch_entities[0].feature_ref.as_deref(),
         Some("spatial")
@@ -935,11 +948,13 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     second.id = "other-spatial".into();
     let mut ambiguous_history = history;
     ambiguous_history.features.push(second);
-    bind_detached_legacy_sketch_objects(&cadmpeg_test_support::service_decode_context(),
+    bind_detached_legacy_sketch_objects(
+        &cadmpeg_test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(ambiguous
         .sketch_entities
         .iter()

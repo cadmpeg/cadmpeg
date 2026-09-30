@@ -87,8 +87,14 @@ fn metadata_annotation_route_refuses_work_at_minimum_admission() {
     assert!(!expected.0.is_empty());
     assert!(!expected.1.provenance.is_empty());
     let admitted = |policy: &DecodePolicy| match run(policy) {
-        Ok(actual) => { assert_eq!(actual, expected); true }
-        Err(CodecError::ResourceLimit(limit)) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+        Ok(actual) => {
+            assert_eq!(actual, expected);
+            true
+        }
+        Err(CodecError::ResourceLimit(limit)) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
+            false
+        }
         Err(error) => panic!("unexpected metadata annotation error: {error}"),
     };
     let mut policy = DecodePolicy::service();
@@ -96,17 +102,25 @@ fn metadata_annotation_route_refuses_work_at_minimum_admission() {
     let mut upper = 1_u64;
     loop {
         policy.limits.max_work_units = upper;
-        if admitted(&policy) { break; }
+        if admitted(&policy) {
+            break;
+        }
         upper = upper.checked_mul(2).unwrap();
     }
     while lower < upper {
         let middle = lower + (upper - lower) / 2;
         policy.limits.max_work_units = middle;
-        if admitted(&policy) { upper = middle; } else { lower = middle + 1; }
+        if admitted(&policy) {
+            upper = middle;
+        } else {
+            lower = middle + 1;
+        }
     }
     assert!(upper > 0);
-    policy.limits.max_work_units = upper; assert!(admitted(&policy));
-    policy.limits.max_work_units = upper - 1; assert!(!admitted(&policy));
+    policy.limits.max_work_units = upper;
+    assert!(admitted(&policy));
+    policy.limits.max_work_units = upper - 1;
+    assert!(!admitted(&policy));
 }
 
 #[test]

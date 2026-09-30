@@ -103,7 +103,11 @@ impl<P: PoleValue<FinitePoint2>> PcurveNurbsPoles<P> {
         match self {
             Self::Polynomial { points } => {
                 let mut output = Vec::new();
-                super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR admitted polynomial poles")?;
+                super::nurbs::scratch::reserve_exact(
+                    &mut output,
+                    points.len(),
+                    "IR admitted polynomial poles",
+                )?;
                 for point in points {
                     output.push(point.admit().ok_or_else(non_finite_control_point)?);
                 }
@@ -111,7 +115,11 @@ impl<P: PoleValue<FinitePoint2>> PcurveNurbsPoles<P> {
             }
             Self::Rational { points } => {
                 let mut output = Vec::new();
-                super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR admitted rational poles")?;
+                super::nurbs::scratch::reserve_exact(
+                    &mut output,
+                    points.len(),
+                    "IR admitted rational poles",
+                )?;
                 for pole in points {
                     output.push(WeightedPole2 {
                         point: pole.point.admit().ok_or_else(non_finite_control_point)?,
@@ -138,7 +146,9 @@ impl PcurveNurbsPoles<FinitePoint2> {
 
     /// Copy rational evaluator weights with scratch bounded by the admitted pole count.
     pub fn try_weights(&self) -> Result<Option<Vec<f64>>, ResourceLimit> {
-        let Self::Rational { points } = self else { return Ok(None); };
+        let Self::Rational { points } = self else {
+            return Ok(None);
+        };
         let mut output = Vec::new();
         super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR pcurve weight copy")?;
         output.extend(points.iter().map(|pole| pole.weight.get()));
@@ -333,7 +343,10 @@ fn weighted_poles_2<P, W>(
     let mut output = Vec::new();
     super::nurbs::scratch::reserve_exact(&mut output, points.len(), "IR weighted pcurve poles")?;
     for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
-        output.push(WeightedPole2 { point, weight: weight(index, value)? });
+        output.push(WeightedPole2 {
+            point,
+            weight: weight(index, value)?,
+        });
     }
     Ok(output)
 }
@@ -1540,14 +1553,19 @@ impl<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>> PolarNurbsPoles<P, S>
     /// Refuses a pole with a non-finite radial coordinate or axial value.
     fn admit(self) -> Result<PolarNurbsPoles<FinitePoint2, FiniteReal>, NurbsError> {
         let admit = |radial: P, axial: S| {
-            radial.admit().zip(axial.admit()).ok_or_else(|| {
-                NurbsError::Structure("poles contain a non-finite value".into())
-            })
+            radial
+                .admit()
+                .zip(axial.admit())
+                .ok_or_else(|| NurbsError::Structure("poles contain a non-finite value".into()))
         };
         match self {
             Self::Polynomial { poles } => {
                 let mut output = Vec::new();
-                super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR admitted polynomial polar poles")?;
+                super::nurbs::scratch::reserve_exact(
+                    &mut output,
+                    poles.len(),
+                    "IR admitted polynomial polar poles",
+                )?;
                 for pole in poles {
                     let (radial, axial) = admit(pole.radial, pole.axial)?;
                     output.push(PolarNurbsPole { radial, axial });
@@ -1556,10 +1574,18 @@ impl<P: PoleValue<FinitePoint2>, S: PoleValue<FiniteReal>> PolarNurbsPoles<P, S>
             }
             Self::Rational { poles } => {
                 let mut output = Vec::new();
-                super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR admitted rational polar poles")?;
+                super::nurbs::scratch::reserve_exact(
+                    &mut output,
+                    poles.len(),
+                    "IR admitted rational polar poles",
+                )?;
                 for pole in poles {
                     let (radial, axial) = admit(pole.radial, pole.axial)?;
-                    output.push(WeightedPolarNurbsPole { radial, axial, weight: pole.weight });
+                    output.push(WeightedPolarNurbsPole {
+                        radial,
+                        axial,
+                        weight: pole.weight,
+                    });
                 }
                 Ok(PolarNurbsPoles::Rational { poles: output })
             }
@@ -1596,7 +1622,11 @@ impl<P, S> PolarNurbsPoles<P, S> {
         };
         require_weight_lane("polar poles", poles.len(), weights.len())?;
         let mut output = Vec::new();
-        super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR pair polar pole weights")?;
+        super::nurbs::scratch::reserve_exact(
+            &mut output,
+            poles.len(),
+            "IR pair polar pole weights",
+        )?;
         for (index, (pole, weight)) in poles.into_iter().zip(weights).enumerate() {
             output.push(WeightedPolarNurbsPole {
                 radial: pole.radial,
@@ -1623,9 +1653,17 @@ impl<P, S> PolarNurbsPoles<P, S> {
         };
         require_weight_lane("polar poles", poles.len(), weights.len())?;
         let mut output = Vec::new();
-        super::nurbs::scratch::reserve_exact(&mut output, poles.len(), "IR pair checked polar pole weights")?;
+        super::nurbs::scratch::reserve_exact(
+            &mut output,
+            poles.len(),
+            "IR pair checked polar pole weights",
+        )?;
         for (pole, weight) in poles.into_iter().zip(weights) {
-            output.push(WeightedPolarNurbsPole { radial: pole.radial, axial: pole.axial, weight });
+            output.push(WeightedPolarNurbsPole {
+                radial: pole.radial,
+                axial: pole.axial,
+                weight,
+            });
         }
         Ok(Self::Rational { poles: output })
     }
@@ -1890,7 +1928,12 @@ impl PcurveNurbs {
                 PcurveNurbsPoles::Rational { points: copied }
             }
         };
-        Ok(Self { degree: self.degree, knots, poles, periodic: self.periodic })
+        Ok(Self {
+            degree: self.degree,
+            knots,
+            poles,
+            periodic: self.periodic,
+        })
     }
 
     /// Map admitted pole positions in place without allocating storage.
@@ -1904,10 +1947,14 @@ impl PcurveNurbs {
     ) -> Result<(), E> {
         match &mut self.poles {
             PcurveNurbsPoles::Polynomial { points } => {
-                for point in points { *point = map(*point)?; }
+                for point in points {
+                    *point = map(*point)?;
+                }
             }
             PcurveNurbsPoles::Rational { points } => {
-                for pole in points { pole.point = map(pole.point)?; }
+                for pole in points {
+                    pole.point = map(pole.point)?;
+                }
             }
         }
         Ok(())

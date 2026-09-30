@@ -51,7 +51,8 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
                 feature_input_lane("first", Some("1")),
                 feature_input_lane("second", Some("2")),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         0
     );
     assert_eq!(
@@ -63,7 +64,8 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
                 feature_input_lane("duplicate-second", Some("1")),
                 feature_input_lane("unmatched", Some("3")),
             ],
-        ).unwrap(),
+        )
+        .unwrap(),
         3
     );
 }
@@ -89,7 +91,11 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0).unwrap(), ir.model.surfaces,);
+    assert_eq!(
+        configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0)
+            .unwrap(),
+        ir.model.surfaces,
+    );
 }
 
 #[test]
@@ -112,7 +118,13 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
         .configurations
         .push(design_configuration("empty", 0, Some(0), None));
 
-    assert!(configuration_surface_carriers(&cadmpeg_test_support::service_decode_context(), &ir, 0).unwrap().is_empty());
+    assert!(configuration_surface_carriers(
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        0
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -551,7 +563,8 @@ fn dissected_sketch_alias_inherits_an_omitted_class_without_solved_geometry() {
         &mut features,
         &[],
         &[history],
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         features[1].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TreeNode {
@@ -909,7 +922,12 @@ fn configuration_offset_plane_inherits_shared_reference() {
         distance: Length::new(8.0).unwrap(),
     });
 
-    inherit_configuration_shared_semantics(&cadmpeg_test_support::service_decode_context(), &mut configured, &base).unwrap();
+    inherit_configuration_shared_semantics(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut configured,
+        &base,
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference,
@@ -950,7 +968,12 @@ fn configuration_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         distance: Length::new(8.0).unwrap(),
     });
 
-    inherit_configuration_shared_semantics(&cadmpeg_test_support::service_decode_context(), &mut configured, &base).unwrap();
+    inherit_configuration_shared_semantics(
+        &cadmpeg_test_support::service_decode_context(),
+        &mut configured,
+        &base,
+    )
+    .unwrap();
 
     let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
         reference: Some(DatumPlaneReference::ResolvedPlane { frame }),
@@ -1036,7 +1059,8 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id.clone()]);
     assert!(matches!(
@@ -1066,7 +1090,8 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut mismatched),
         &[base_plane, base_offset],
-    ).unwrap();
+    )
+    .unwrap();
     assert!(matches!(
         mismatched.evaluation.definition().clone(),
         FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
@@ -1138,7 +1163,8 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
-    ).unwrap();
+    )
+    .unwrap();
 
     assert_eq!(configured.dependencies.as_slice(), vec![plane_id]);
     assert!(matches!(
@@ -1174,7 +1200,8 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut remains_unresolved),
         std::slice::from_ref(&unresolved_base),
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         remains_unresolved.evaluation.definition().clone(),
         unresolved_base.evaluation.definition().clone()
@@ -1239,7 +1266,8 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
         &cadmpeg_test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         std::slice::from_ref(&base),
-    ).unwrap();
+    )
+    .unwrap();
 
     assert!(matches!(
         configured.evaluation.definition().clone(),
@@ -1307,7 +1335,8 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         native_ref: None,
     });
 
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
 
     assert_eq!(
         ir.model.configurations[0].parameter_values[&parameter_id],
@@ -1321,7 +1350,8 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Length(Length::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1331,7 +1361,8 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.0).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert_eq!(
         ir.model.configurations[0].parameter_values[&count_id],
         ParameterValue::Integer(7)
@@ -1341,7 +1372,8 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
         count_id.clone(),
         ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(7.5).unwrap()),
     );
-    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+    align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir)
+        .unwrap();
     assert!(!ir.model.configurations[0]
         .parameter_values
         .contains_key(&count_id));
@@ -1357,7 +1389,11 @@ fn configuration_numeric_override_inherits_parameter_dimension() {
             count_id.clone(),
             ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+        align_configuration_parameter_kinds(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+        )
+        .unwrap();
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref()
@@ -1402,7 +1438,11 @@ fn integer_parameter_refuses_real_override_outside_i64_or_fractional() {
             count_id.clone(),
             ParameterValue::Real(FiniteReal::new(real).unwrap()),
         );
-        align_configuration_parameter_kinds(&cadmpeg_test_support::service_decode_context(), &mut ir).unwrap();
+        align_configuration_parameter_kinds(
+            &cadmpeg_test_support::service_decode_context(),
+            &mut ir,
+        )
+        .unwrap();
         assert_eq!(
             ir.model.configurations[0].parameter_values.get(&count_id),
             expected.map(ParameterValue::Integer).as_ref(),
@@ -1435,7 +1475,8 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     let native =
-        crate::resolved_features::terminations::compact_surface_selection_value(&ctx, &components).expect("surface selection text");
+        crate::resolved_features::terminations::compact_surface_selection_value(&ctx, &components)
+            .expect("surface selection text");
     let selection = || crate::records::FeatureInputSurfaceSelection {
         id: "selection".into(),
         parent: "lane".into(),

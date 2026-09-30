@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum, curve, helix, and wrap projection.
 
+use super::copy_projected_feature_id;
 use crate::records::Feature;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use super::copy_projected_feature_id;
 use cadmpeg_ir::{
     features::{
         CurveProjectionDirection, CurveProjectionDirectionState, DatumPlaneReference,
@@ -22,10 +22,21 @@ use crate::history::literals::{
 };
 
 fn copy_reference_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
-    let copy_work = cadmpeg_core::decode::u64_from_index(text.len()).checked_mul(4)
-        .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT datum and curve reference", u64::MAX - 1, u64::MAX))?;
+    let copy_work = cadmpeg_core::decode::u64_from_index(text.len())
+        .checked_mul(4)
+        .ok_or_else(|| {
+            ctx.refuse_codec_limit(
+                "retain SLDPRT datum and curve reference",
+                u64::MAX - 1,
+                u64::MAX,
+            )
+        })?;
     ctx.charge_work(copy_work, "retain SLDPRT datum and curve reference")?;
-    crate::text_admission::format_retained(ctx, format_args!("{text}"), "retain SLDPRT datum and curve reference")
+    crate::text_admission::format_retained(
+        ctx,
+        format_args!("{text}"),
+        "retain SLDPRT datum and curve reference",
+    )
 }
 
 pub(super) fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
@@ -48,7 +59,11 @@ pub(in crate::history) fn project_offset_plane(
     feature: &Feature,
     by_source: &HashMap<String, FeatureId>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(distance) = feature.parameters.get("D1").and_then(|value| parse_dimension_length_mm(value)) else {
+    let Some(distance) = feature
+        .parameters
+        .get("D1")
+        .and_then(|value| parse_dimension_length_mm(value))
+    else {
         return Ok(None);
     };
     let resolved_frame = || {
@@ -62,18 +77,30 @@ pub(in crate::history) fn project_offset_plane(
             )?)?,
         )
     };
-    let reference = if let Some(reference) = feature.properties.get("Reference")
+    let reference = if let Some(reference) = feature
+        .properties
+        .get("Reference")
         .or_else(|| feature.properties.get("Plane"))
-        .and_then(|source| by_source.get(source.as_str())) {
-        Some(DatumPlaneReference::Feature { feature: copy_projected_feature_id(ctx, reference)? })
+        .and_then(|source| by_source.get(source.as_str()))
+    {
+        Some(DatumPlaneReference::Feature {
+            feature: copy_projected_feature_id(ctx, reference)?,
+        })
     } else if let Some(frame) = resolved_frame() {
         Some(DatumPlaneReference::ResolvedPlane { frame })
     } else if let Some(native) = feature.properties.get("ReferenceFaceNative") {
-        Some(DatumPlaneReference::Face { face: FaceSelection::Native(copy_reference_text(ctx, native)?) })
+        Some(DatumPlaneReference::Face {
+            face: FaceSelection::Native(copy_reference_text(ctx, native)?),
+        })
     } else {
         None
     };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane { reference, distance })))
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::DatumOffsetPlane {
+            reference,
+            distance,
+        },
+    )))
 }
 
 pub(super) fn project_datum_axis(feature: &Feature) -> Option<FeatureDefinition> {
@@ -123,7 +150,12 @@ pub(super) fn project_equation_curve(
             feature.properties.get("XEquation")?.trim(),
             feature.properties.get("YEquation")?.trim(),
             feature.properties.get("ZEquation")?.trim(),
-            feature.properties.get("Start")?.trim().parse::<f64>().ok()?,
+            feature
+                .properties
+                .get("Start")?
+                .trim()
+                .parse::<f64>()
+                .ok()?,
             feature.properties.get("End")?.trim().parse::<f64>().ok()?,
         ))
     })() else {
@@ -136,7 +168,8 @@ pub(super) fn project_equation_curve(
         copy_reference_text(ctx, z_expression)?,
         start,
         end,
-    ).map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })))
+    )
+    .map(|curve| FeatureDefinition::Operation(FeatureOperation::EquationCurve { curve })))
 }
 
 pub(super) fn project_projected_curve(
@@ -146,20 +179,35 @@ pub(super) fn project_projected_curve(
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((source, target_faces, direction, bidirectional)) = (|| {
         let source = feature.properties.get("Source")?;
-        let source = native_by_source.get(source.as_str()).copied().unwrap_or(source);
+        let source = native_by_source
+            .get(source.as_str())
+            .copied()
+            .unwrap_or(source);
         let direction = match feature.properties.get("Direction") {
             Some(value) => CurveProjectionDirection::Vector(parse_valid_direction(value)?),
             None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
         };
-        Some((source, feature.properties.get("TargetFaces")?, direction,
-            feature.properties.get("Bidirectional").and_then(|value| parse_bool(value)).unwrap_or(false)))
-    })() else { return Ok(None); };
-    Ok(Some(FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
-        source: PathRef::Native(copy_reference_text(ctx, source)?),
-        target_faces: FaceSelection::Native(copy_reference_text(ctx, target_faces)?),
-        direction,
-        bidirectional: Some(bidirectional),
-    })))
+        Some((
+            source,
+            feature.properties.get("TargetFaces")?,
+            direction,
+            feature
+                .properties
+                .get("Bidirectional")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ))
+    })() else {
+        return Ok(None);
+    };
+    Ok(Some(FeatureDefinition::Operation(
+        FeatureOperation::ProjectedCurve {
+            source: PathRef::Native(copy_reference_text(ctx, source)?),
+            target_faces: FaceSelection::Native(copy_reference_text(ctx, target_faces)?),
+            direction,
+            bidirectional: Some(bidirectional),
+        },
+    )))
 }
 
 pub(super) fn project_composite_curve(
@@ -167,20 +215,34 @@ pub(super) fn project_composite_curve(
     feature: &Feature,
     native_by_source: &HashMap<String, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
-    let Some(segment_text) = feature.properties.get("Segments") else { return Ok(None); };
+    let Some(segment_text) = feature.properties.get("Segments") else {
+        return Ok(None);
+    };
     let mut segments = Vec::new();
-    for source in segment_text.split(';').map(str::trim).filter(|value| !value.is_empty()) {
+    for source in segment_text
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         ctx.charge_work(1, "project SLDPRT composite curve segments")?;
         let source = native_by_source.get(source).copied().unwrap_or(source);
         let segment = PathRef::Native(copy_reference_text(ctx, source)?);
         ctx.reserve_collection_vec(&mut segments, 1, "project SLDPRT composite curve segments")?;
         segments.push(segment);
     }
-    if segments.is_empty() { return Ok(None); }
-    let Some(closed) = feature.properties.get("Closed").map_or(Some(false), |value| parse_bool(value)) else { return Ok(None); };
-    Ok(segments.try_into().ok().map(|segments| FeatureDefinition::Operation(
-        FeatureOperation::CompositeCurve { segments, closed }
-    )))
+    if segments.is_empty() {
+        return Ok(None);
+    }
+    let Some(closed) = feature
+        .properties
+        .get("Closed")
+        .map_or(Some(false), |value| parse_bool(value))
+    else {
+        return Ok(None);
+    };
+    Ok(segments.try_into().ok().map(|segments| {
+        FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed })
+    }))
 }
 
 pub(super) fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
@@ -224,27 +286,37 @@ pub(super) fn project_native_axis_helix(
     feature: &Feature,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((axial_rise, pitch, revolutions, start_angle, clockwise)) = (|| {
-    let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
-    let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
-    let revolutions = feature
-        .parameters
-        .get("D5")?
-        .trim()
-        .parse::<f64>()
-        .ok()
-        .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
-    let start_angle = parse_angle_rad(feature.parameters.get("D7")?)?;
-    let clockwise = feature
-        .properties
-        .get("Clockwise")
-        .and_then(|value| parse_bool(value))
-        .unwrap_or(false);
+        let axial_rise = parse_dimension_length_mm(feature.parameters.get("D3")?)?;
+        let pitch = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
+        let revolutions = feature
+            .parameters
+            .get("D5")?
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .and_then(cadmpeg_ir::scalar::PositiveReal::new)?;
+        let start_angle = parse_angle_rad(feature.parameters.get("D7")?)?;
+        let clockwise = feature
+            .properties
+            .get("Clockwise")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(false);
         Some((axial_rise, pitch, revolutions, start_angle, clockwise))
-    })() else { return Ok(None); };
-    let axis_native_ref = cadmpeg_core::text::NonBlankString::new(copy_reference_text(ctx, &feature.id)?);
-    Ok(axis_native_ref.map(|axis_native_ref| FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
-        axis_native_ref, axial_rise, pitch, revolutions, start_angle, clockwise,
-    })))
+    })() else {
+        return Ok(None);
+    };
+    let axis_native_ref =
+        cadmpeg_core::text::NonBlankString::new(copy_reference_text(ctx, &feature.id)?);
+    Ok(axis_native_ref.map(|axis_native_ref| {
+        FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
+            axis_native_ref,
+            axial_rise,
+            pitch,
+            revolutions,
+            start_angle,
+            clockwise,
+        })
+    }))
 }
 
 pub(super) fn project_wrap(
@@ -253,27 +325,30 @@ pub(super) fn project_wrap(
     native_by_source: &HashMap<String, &str>,
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     let Some((profile, face, mode)) = (|| {
-    let profile = feature.properties.get("Profile")?;
-    let profile = native_by_source
-        .get(profile.as_str())
-        .copied().unwrap_or(profile);
-    let face = feature.properties.get("Face")?;
-    let mode_name = feature.properties.get("Mode")?;
-    let mode = if mode_name.eq_ignore_ascii_case("emboss") {
-        WrapMode::Emboss {
-            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        }
-    } else if mode_name.eq_ignore_ascii_case("deboss") {
-        WrapMode::Deboss {
-            depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
-        }
-    } else if mode_name.eq_ignore_ascii_case("scribe") {
-        WrapMode::Scribe
-    } else {
-        return None;
-    };
+        let profile = feature.properties.get("Profile")?;
+        let profile = native_by_source
+            .get(profile.as_str())
+            .copied()
+            .unwrap_or(profile);
+        let face = feature.properties.get("Face")?;
+        let mode_name = feature.properties.get("Mode")?;
+        let mode = if mode_name.eq_ignore_ascii_case("emboss") {
+            WrapMode::Emboss {
+                depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+            }
+        } else if mode_name.eq_ignore_ascii_case("deboss") {
+            WrapMode::Deboss {
+                depth: parse_positive_length_mm(feature.parameters.get("Depth")?)?,
+            }
+        } else if mode_name.eq_ignore_ascii_case("scribe") {
+            WrapMode::Scribe
+        } else {
+            return None;
+        };
         Some((profile, face, mode))
-    })() else { return Ok(None); };
+    })() else {
+        return Ok(None);
+    };
     Ok(Some(FeatureDefinition::Operation(FeatureOperation::Wrap {
         profile: PlanarProfileRef::Native(copy_reference_text(ctx, profile)?),
         face: FaceSelection::Native(copy_reference_text(ctx, face)?),
@@ -333,6 +408,11 @@ mod tests {
                 if revolutions.get() == 2.5
         ));
         parameter(&mut feature, "D5", "0");
-        assert!(project_native_axis_helix(&cadmpeg_test_support::service_decode_context(), &feature).unwrap().is_none());
+        assert!(project_native_axis_helix(
+            &cadmpeg_test_support::service_decode_context(),
+            &feature
+        )
+        .unwrap()
+        .is_none());
     }
 }

@@ -70,8 +70,8 @@ fn reference_plane_error(policy: DecodePolicy) -> CodecError {
     };
     let lanes = [lane];
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy)
-        .unwrap();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&lanes[0].native_payload, &arena, &policy).unwrap();
     super::super::enrich_history_reference_planes(&ctx, &mut histories, &lanes).unwrap_err()
 }
 

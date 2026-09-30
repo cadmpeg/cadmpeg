@@ -37,13 +37,19 @@ fn lower_profile_tier_holds_an_admitted_nonnegative_magnitude() {
     assert_eq!(magnitude.get(), length(0.0).expect("finite zero length"));
 
     entity.doubles.insert("ToleranceLowerTier".into(), -1.0);
-    assert!(project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
-        .expect("invalid lower tier fits policy").is_none());
+    assert!(
+        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+            .expect("invalid lower tier fits policy")
+            .is_none()
+    );
     entity
         .doubles
         .insert("ToleranceLowerTier".into(), f64::INFINITY);
-    assert!(project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
-        .expect("invalid lower tier fits policy").is_none());
+    assert!(
+        project_lower_profile_tier(&ctx, &reference, &entity, &BTreeMap::new(), None)
+            .expect("invalid lower tier fits policy")
+            .is_none()
+    );
 }
 
 fn put_pstr(bytes: &mut Vec<u8>, value: &str) {
@@ -147,12 +153,14 @@ fn swift_annotations_refuse_retained_stream_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(root.class.len()).expect("fixture length");
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     let Err(CodecError::ResourceLimit(limit)) =
         crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
-    else { panic!("expected retained refusal") };
+    else {
+        panic!("expected retained refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
 }
 
@@ -176,8 +184,8 @@ fn swift_rendered_annotation_limit_error(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);
-    let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy)
-        .expect("source fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&source, &arena, &policy).expect("source fits policy");
     let mut annotations = cadmpeg_ir::annotations::Annotations::default();
     crate::swift::annotations(&ctx, &scan, &mut annotations, None, None)
         .expect_err("SWIFT annotations must refuse")
@@ -187,7 +195,9 @@ fn swift_rendered_annotation_limit_error(
 fn swift_annotations_refuse_work_limit() {
     let CodecError::ResourceLimit(limit) =
         swift_rendered_annotation_limit_error(|limits| limits.max_work_units = 0)
-    else { panic!("expected work refusal") };
+    else {
+        panic!("expected work refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
@@ -195,7 +205,9 @@ fn swift_annotations_refuse_work_limit() {
 fn swift_annotations_refuse_scoped_limit() {
     let CodecError::ResourceLimit(limit) =
         swift_rendered_annotation_limit_error(|limits| limits.max_materialized_bytes = 0)
-    else { panic!("expected scoped refusal") };
+    else {
+        panic!("expected scoped refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
 }
 
@@ -203,7 +215,9 @@ fn swift_annotations_refuse_scoped_limit() {
 fn swift_annotations_refuse_collection_limit() {
     let CodecError::ResourceLimit(limit) =
         swift_rendered_annotation_limit_error(|limits| limits.max_collection_items = 0)
-    else { panic!("expected collection refusal") };
+    else {
+        panic!("expected collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 
@@ -211,7 +225,9 @@ fn swift_annotations_refuse_collection_limit() {
 fn swift_annotations_refuse_nesting_limit() {
     let CodecError::ResourceLimit(limit) =
         swift_rendered_annotation_limit_error(|limits| limits.max_recursion_depth = 0)
-    else { panic!("expected nesting refusal") };
+    else {
+        panic!("expected nesting refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
 }
 
@@ -310,7 +326,9 @@ fn repeated_swift_tolerances_share_one_datum_system() {
         .get(1)
         .expect("position annotation")
         .clone();
-    root.annotations.references.push(super::reference("A21", "GdtPosition"));
+    root.annotations
+        .references
+        .push(super::reference("A21", "GdtPosition"));
     root.annotations.entities.push(second_position);
     let projected = project(&root);
     let systems = projected

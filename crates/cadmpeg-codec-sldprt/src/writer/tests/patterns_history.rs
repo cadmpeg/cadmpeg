@@ -1626,11 +1626,13 @@ fn semantic_writer_rejects_edited_feature_input_class_index() {
     update_sldprt_native(&mut decoded.ir_mut(), |native| {
         native.feature_input_lanes[0].classes[0].name = "sgOtherHandle".into();
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| finding.message.contains("class index does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("class index does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -1668,7 +1670,14 @@ fn semantic_writer_rewrites_feature_input_name_values() {
     assert_eq!(written[0].value, lane.names[0].value);
     assert_eq!(written[2].value, lane.names[2].value);
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars_charged(&cadmpeg_test_support::service_decode_context(), &payload, &lane.id, &written).unwrap().len(),
+        crate::resolved_features::scalars::named_scalars_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &lane.id,
+            &written
+        )
+        .unwrap()
+        .len(),
         scalars
     );
 }
@@ -1705,11 +1714,13 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         native.feature_input_lanes[0].scalars[0].value =
             cadmpeg_ir::scalar::FiniteReal::new(0.050).expect("finite test scalar");
     });
-    assert!(
-        crate::resolved_features::validate::validate_native(&cadmpeg_test_support::service_decode_context(), decoded.ir()).unwrap()
-            .iter()
-            .any(|finding| finding.message.contains("scalar index does not match"))
-    );
+    assert!(crate::resolved_features::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir()
+    )
+    .unwrap()
+    .iter()
+    .any(|finding| finding.message.contains("scalar index does not match")));
 
     let error = crate::test_support::plan_inherited_write(
         decoded.ir(),
@@ -1963,7 +1974,14 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         ]
     );
     assert_eq!(
-        crate::resolved_features::scalars::named_scalars_charged(&cadmpeg_test_support::service_decode_context(), &payload, &lane.id, &written).unwrap().len(),
+        crate::resolved_features::scalars::named_scalars_charged(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &lane.id,
+            &written
+        )
+        .unwrap()
+        .len(),
         scalars
     );
 }

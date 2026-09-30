@@ -68,7 +68,11 @@ fn tagged(ctx: &DecodeContext<'_>, variant: &str, payload: Value) -> Result<Node
 }
 
 fn copy_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CanonError> {
-    ctx.charge_work(u64::try_from(text.len()).map_err(|_| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?, WORK)?;
+    ctx.charge_work(
+        u64::try_from(text.len())
+            .map_err(|_| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
+        WORK,
+    )?;
     let mut copied = String::new();
     ctx.reserve_retained_string(&mut copied, text.len(), STORAGE)?;
     copied.push_str(text);
@@ -159,7 +163,9 @@ struct ChargingDisplayText<'a> {
 
 impl std::fmt::Write for ChargingDisplayText<'_> {
     fn write_str(&mut self, fragment: &str) -> std::fmt::Result {
-        let work = u64::try_from(fragment.len()).ok().and_then(|len| len.checked_mul(8))
+        let work = u64::try_from(fragment.len())
+            .ok()
+            .and_then(|len| len.checked_mul(8))
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX));
         if let Err(error) = work.and_then(|work| self.ctx.charge_work(work, WORK)) {
             self.refusal = Some(CanonError::Resource(error));
@@ -170,18 +176,24 @@ impl std::fmt::Write for ChargingDisplayText<'_> {
             return Err(std::fmt::Error);
         }
         let admission = (|| {
-            let work = u64::try_from(fragment.len()).map_err(|_| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
+            let work = u64::try_from(fragment.len())
+                .map_err(|_| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
             self.ctx.charge_work(work, WORK)?;
-            self.ctx.reserve_retained_string(&mut self.text, fragment.len(), STORAGE)
+            self.ctx
+                .reserve_retained_string(&mut self.text, fragment.len(), STORAGE)
         })();
-        if let Err(error) = admission { self.refusal = Some(CanonError::Resource(error)); return Err(std::fmt::Error); }
+        if let Err(error) = admission {
+            self.refusal = Some(CanonError::Resource(error));
+            return Err(std::fmt::Error);
+        }
         self.text.push_str(fragment);
         Ok(())
     }
 }
 
 fn collect_display_text<T: Display + ?Sized>(
-    ctx: &DecodeContext<'_>, value: &T,
+    ctx: &DecodeContext<'_>,
+    value: &T,
     sink: Option<&dyn ByteSink>,
 ) -> Result<String, CanonError> {
     emit_bytes(sink, b"\"")?;
@@ -237,34 +249,51 @@ impl CanonError {
 
     /// This refusal, stated from one container further out.
     fn within(self, ctx: &DecodeContext<'_>, step: impl FnOnce() -> Result<Step, Self>) -> Self {
-        let Self::NonFinite(mut steps) = self else { return self; };
+        let Self::NonFinite(mut steps) = self else {
+            return self;
+        };
         let admitted = (|| {
             ctx.reserve_collection_vec(&mut steps, 1, WORK)?;
             Ok::<_, Self>(step()?)
         })();
         match admitted {
-            Ok(step) => { steps.push(step); Self::NonFinite(steps) }
+            Ok(step) => {
+                steps.push(step);
+                Self::NonFinite(steps)
+            }
             Err(error) => error,
         }
     }
 
-    pub(super) fn field_path(ctx: &DecodeContext<'_>, steps: &[Step]) -> Result<String, CodecError> {
+    pub(super) fn field_path(
+        ctx: &DecodeContext<'_>,
+        steps: &[Step],
+    ) -> Result<String, CodecError> {
         let mut path = String::new();
         for step in steps.iter().rev() {
             ctx.charge_work(1, WORK)?;
             match step {
                 Step::Key(key) => {
-                    ctx.charge_work(u64::try_from(key.len()).map_err(|_| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?, WORK)?;
-                    let extra = key.len().checked_add(usize::from(!path.is_empty()))
+                    ctx.charge_work(
+                        u64::try_from(key.len())
+                            .map_err(|_| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
+                        WORK,
+                    )?;
+                    let extra = key
+                        .len()
+                        .checked_add(usize::from(!path.is_empty()))
                         .ok_or_else(|| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
                     ctx.reserve_retained_string(&mut path, extra, STORAGE)?;
-                    if !path.is_empty() { path.push('.'); }
+                    if !path.is_empty() {
+                        path.push('.');
+                    }
                     path.push_str(key);
                 }
                 Step::Index(index) => {
                     ctx.charge_work(32, WORK)?;
                     ctx.reserve_retained_string(&mut path, 32, STORAGE)?;
-                    write!(path, "[{index}]").map_err(|_| CodecError::malformed("cannot format native member path"))?;
+                    write!(path, "[{index}]")
+                        .map_err(|_| CodecError::malformed("cannot format native member path"))?;
                 }
             }
         }
@@ -280,12 +309,21 @@ impl std::fmt::Display for CanonError {
                 let mut started = false;
                 for step in steps.iter().rev() {
                     match step {
-                        Step::Key(key) => { if started { f.write_str(".")?; } f.write_str(key)?; started |= !key.is_empty(); }
-                        Step::Index(index) => { write!(f, "[{index}]")?; started = true; }
+                        Step::Key(key) => {
+                            if started {
+                                f.write_str(".")?;
+                            }
+                            f.write_str(key)?;
+                            started |= !key.is_empty();
+                        }
+                        Step::Index(index) => {
+                            write!(f, "[{index}]")?;
+                            started = true;
+                        }
                     }
                 }
                 f.write_str(" holds a non-finite number")
-            },
+            }
             Self::Json(error) => error.fmt(f),
             Self::Resource(error) => error.fmt(f),
             Self::Message(message) => f.write_str(message),
@@ -302,7 +340,9 @@ impl ser::Error for CanonError {
 }
 
 impl From<CodecError> for CanonError {
-    fn from(error: CodecError) -> Self { Self::Resource(error) }
+    fn from(error: CodecError) -> Self {
+        Self::Resource(error)
+    }
 }
 
 impl From<serde_json::Error> for CanonError {
@@ -350,7 +390,10 @@ impl<'a> CanonValue<'a> {
         }
     }
 
-    pub(super) const fn for_record_with_sink(ctx: &'a DecodeContext<'a>, sink: Option<&'a dyn ByteSink>) -> Self {
+    pub(super) const fn for_record_with_sink(
+        ctx: &'a DecodeContext<'a>,
+        sink: Option<&'a dyn ByteSink>,
+    ) -> Self {
         Self {
             ctx,
             depth: MAX_NATIVE_NESTING_DEPTH + 1,
@@ -360,7 +403,11 @@ impl<'a> CanonValue<'a> {
     }
 
     /// The serializer for a child value that may enter `depth` containers.
-    const fn within(ctx: &'a DecodeContext<'a>, depth: usize, sink: Option<&'a dyn ByteSink>) -> Self {
+    const fn within(
+        ctx: &'a DecodeContext<'a>,
+        depth: usize,
+        sink: Option<&'a dyn ByteSink>,
+    ) -> Self {
         Self {
             ctx,
             depth,
@@ -369,7 +416,11 @@ impl<'a> CanonValue<'a> {
         }
     }
 
-    const fn raw_text(ctx: &'a DecodeContext<'a>, depth: usize, sink: Option<&'a dyn ByteSink>) -> Self {
+    const fn raw_text(
+        ctx: &'a DecodeContext<'a>,
+        depth: usize,
+        sink: Option<&'a dyn ByteSink>,
+    ) -> Self {
         Self {
             ctx,
             depth,
@@ -384,9 +435,13 @@ impl<'a> CanonValue<'a> {
             Some(depth) => {
                 self.ctx.charge_work(1, WORK)?;
                 // The record root is the entry frame; child containers are recursive frames.
-                let nested = if self.depth <= MAX_NATIVE_NESTING_DEPTH { Some(self.ctx.enter_nested(WORK)?) } else { None };
+                let nested = if self.depth <= MAX_NATIVE_NESTING_DEPTH {
+                    Some(self.ctx.enter_nested(WORK)?)
+                } else {
+                    None
+                };
                 Ok((depth, nested))
-            },
+            }
             None => Err(ser::Error::custom(nests_too_deep_message())),
         }
     }
@@ -478,12 +533,20 @@ impl<'a> ser::Serializer for CanonValue<'a> {
     fn serialize_char(self, value: char) -> Result<Node, Error> {
         emit(self.sink, &value)?;
         let mut text = [0; 4];
-        Ok(Node::Value(Value::String(copy_text(self.ctx, value.encode_utf8(&mut text))?)))
+        Ok(Node::Value(Value::String(copy_text(
+            self.ctx,
+            value.encode_utf8(&mut text),
+        )?)))
     }
 
     fn serialize_str(self, value: &str) -> Result<Node, Error> {
-        self.ctx.charge_work(u64::try_from(value.len()).ok().and_then(|len| len.checked_mul(8))
-            .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?, WORK)?;
+        self.ctx.charge_work(
+            u64::try_from(value.len())
+                .ok()
+                .and_then(|len| len.checked_mul(8))
+                .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
+            WORK,
+        )?;
         if self.raw_text {
             emit_bytes(self.sink, value.as_bytes())?;
         } else {
@@ -551,7 +614,9 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         emit_bytes(self.sink, b":")?;
         let inner = value
             .serialize(CanonValue::within(self.ctx, depth, self.sink))
-            .map_err(|error| error.within(self.ctx, || copy_text(self.ctx, variant).map(Step::Key)))?
+            .map_err(|error| {
+                error.within(self.ctx, || copy_text(self.ctx, variant).map(Step::Key))
+            })?
             .into_value();
         emit_bytes(self.sink, b"}")?;
         tagged(self.ctx, variant, inner)
@@ -728,8 +793,11 @@ impl ser::SerializeTupleVariant for CanonVariantSeq<'_> {
 
     fn serialize_field<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Error> {
         let variant = self.variant;
-        ser::SerializeSeq::serialize_element(&mut self.seq, value)
-            .map_err(|error| error.within(self.seq.ctx, || copy_text(self.seq.ctx, variant).map(Step::Key)))
+        ser::SerializeSeq::serialize_element(&mut self.seq, value).map_err(|error| {
+            error.within(self.seq.ctx, || {
+                copy_text(self.seq.ctx, variant).map(Step::Key)
+            })
+        })
     }
 
     fn end(self) -> Result<Node, Error> {
@@ -758,16 +826,22 @@ impl CanonMap<'_> {
         let depth = self.depth;
         let key_bytes = key.len();
         let comparisons = self.entries.len().checked_ilog2().unwrap_or(0) + 1;
-        let work = self.max_key_bytes.max(key_bytes).checked_add(1)
+        let work = self
+            .max_key_bytes
+            .max(key_bytes)
+            .checked_add(1)
             .and_then(|bytes| bytes.checked_mul(usize::try_from(comparisons).ok()?))
-            .and_then(|units| units.checked_mul(4)).and_then(|units| u64::try_from(units).ok())
+            .and_then(|units| units.checked_mul(4))
+            .and_then(|units| u64::try_from(units).ok())
             .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
         self.ctx.charge_work(work, WORK)?;
         match self.entries.entry(key) {
             serde_json::map::Entry::Vacant(entry) => {
                 let value = value
                     .serialize(CanonValue::within(self.ctx, depth, self.sink))
-                    .map_err(|error| error.within(self.ctx, || copy_text(self.ctx, entry.key()).map(Step::Key)))?
+                    .map_err(|error| {
+                        error.within(self.ctx, || copy_text(self.ctx, entry.key()).map(Step::Key))
+                    })?
                     .into_value();
                 self.ctx.charge_collection_items(1, WORK)?;
                 entry.insert(value);
@@ -775,8 +849,15 @@ impl CanonMap<'_> {
                 Ok(())
             }
             serde_json::map::Entry::Occupied(entry) => {
-                self.ctx.charge_work(u64::try_from(entry.key().len()).map_err(|_| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?, WORK)?;
-                Err(CanonError::Message(self.ctx.format_retained(format_args!("duplicate key {}", entry.key()), STORAGE)?))
+                self.ctx.charge_work(
+                    u64::try_from(entry.key().len())
+                        .map_err(|_| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
+                    WORK,
+                )?;
+                Err(CanonError::Message(self.ctx.format_retained(
+                    format_args!("duplicate key {}", entry.key()),
+                    STORAGE,
+                )?))
             }
         }
     }
@@ -808,7 +889,10 @@ impl ser::SerializeMap for CanonMap<'_> {
         if !self.entries.is_empty() {
             emit_bytes(self.sink, b",")?;
         }
-        self.key = Some(key.serialize(CanonKey { ctx: self.ctx, sink: self.sink })?);
+        self.key = Some(key.serialize(CanonKey {
+            ctx: self.ctx,
+            sink: self.sink,
+        })?);
         Ok(())
     }
 
@@ -875,16 +959,20 @@ impl ser::SerializeStruct for CanonStruct<'_> {
                 // The replay counts the text's containers and this serializer
                 // counts the containers it is driven through, from the same
                 // remaining budget, so both refuse at the same container.
-                let work = u64::try_from(json.len()).ok().and_then(|len| len.checked_add(1))
-                    .and_then(|len| u64::try_from(*depth).ok().and_then(|depth| depth.checked_add(1)).and_then(|depth| len.checked_mul(depth)))
+                let work = u64::try_from(json.len())
+                    .ok()
+                    .and_then(|len| len.checked_add(1))
+                    .and_then(|len| {
+                        u64::try_from(*depth)
+                            .ok()
+                            .and_then(|depth| depth.checked_add(1))
+                            .and_then(|depth| len.checked_mul(depth))
+                    })
                     .and_then(|work| work.checked_mul(16))
                     .ok_or_else(|| ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?;
                 ctx.charge_work(work, WORK)?;
-                let replayed = super::replay::emit(
-                    &json,
-                    CanonValue::within(ctx, *depth, None),
-                    *depth,
-                );
+                let replayed =
+                    super::replay::emit(&json, CanonValue::within(ctx, *depth, None), *depth);
                 ctx.charge_work(0, WORK)?;
                 *parsed = Some(replayed?);
                 Ok(())
@@ -923,9 +1011,11 @@ impl ser::SerializeStructVariant for CanonVariantMap<'_> {
         value: &T,
     ) -> Result<(), Error> {
         let variant = self.variant;
-        self.map
-            .insert_field(key, value)
-            .map_err(|error| error.within(self.map.ctx, || copy_text(self.map.ctx, variant).map(Step::Key)))
+        self.map.insert_field(key, value).map_err(|error| {
+            error.within(self.map.ctx, || {
+                copy_text(self.map.ctx, variant).map(Step::Key)
+            })
+        })
     }
 
     fn end(self) -> Result<Node, Error> {
@@ -958,18 +1048,26 @@ struct NumberText {
 
 impl Write for NumberText {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        let end = self.len.checked_add(bytes.len()).filter(|end| *end <= self.bytes.len())
+        let end = self
+            .len
+            .checked_add(bytes.len())
+            .filter(|end| *end <= self.bytes.len())
             .ok_or_else(|| io::Error::other("native number text exceeds its fixed buffer"))?;
         self.bytes[self.len..end].copy_from_slice(bytes);
         self.len = end;
         Ok(bytes.len())
     }
-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn number_key_text<T: Serialize>(ctx: &DecodeContext<'_>, value: &T) -> Result<String, Error> {
     ctx.charge_work(128, WORK)?;
-    let mut text = NumberText { bytes: [0; 128], len: 0 };
+    let mut text = NumberText {
+        bytes: [0; 128],
+        len: 0,
+    };
     serde_json::to_writer(&mut text, value)?;
     let text = std::str::from_utf8(&text.bytes[..text.len])
         .map_err(|_| <Error as ser::Error>::custom("native number text is not UTF-8"))?;
@@ -999,52 +1097,82 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_i8(self, value: i8) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_i16(self, value: i16) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_i32(self, value: i32) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_i64(self, value: i64) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_i128(self, value: i128) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_u8(self, value: u8) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_u16(self, value: u16) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_u32(self, value: u32) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_u64(self, value: u64) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_u128(self, value: u128) -> Result<String, Error> {
         emit_number_key(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_f32(self, value: f32) -> Result<String, Error> {
@@ -1067,12 +1195,20 @@ impl ser::Serializer for CanonKey<'_> {
 
     fn serialize_char(self, value: char) -> Result<String, Error> {
         emit(self.sink, &value)?;
-        { self.ctx.charge_work(64, WORK)?; Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?) }
+        {
+            self.ctx.charge_work(64, WORK)?;
+            Ok(self.ctx.format_retained(format_args!("{value}"), STORAGE)?)
+        }
     }
 
     fn serialize_str(self, value: &str) -> Result<String, Error> {
-        self.ctx.charge_work(u64::try_from(value.len()).ok().and_then(|len| len.checked_mul(8))
-            .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?, WORK)?;
+        self.ctx.charge_work(
+            u64::try_from(value.len())
+                .ok()
+                .and_then(|len| len.checked_mul(8))
+                .ok_or_else(|| self.ctx.refuse_codec_limit(WORK, u64::MAX - 1, u64::MAX))?,
+            WORK,
+        )?;
         emit(self.sink, value)?;
         copy_text(self.ctx, value)
     }

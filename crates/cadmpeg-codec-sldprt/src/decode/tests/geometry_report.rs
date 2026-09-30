@@ -54,13 +54,9 @@ fn appearance_assignment_loss_retains_exact_text_and_refuses_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::appearance_assignment_loss_message(
-        &ctx,
-        &assigned,
-        &matched,
-        &conflicts,
-    )
-    .expect_err("one byte below the exact message length must refuse");
+    let error =
+        super::super::appearance_assignment_loss_message(&ctx, &assigned, &matched, &conflicts)
+            .expect_err("one byte below the exact message length must refuse");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -93,13 +89,9 @@ fn conflicting_display_reference_retains_exact_text_and_refuses_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = (expected.len() - 1) as u64;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::super::conflicting_display_reference(
-        &ctx,
-        "SyntheticDisplayStream",
-        7,
-        &candidates,
-    )
-    .expect_err("one byte below the exact message length must refuse");
+    let error =
+        super::super::conflicting_display_reference(&ctx, "SyntheticDisplayStream", 7, &candidates)
+            .expect_err("one byte below the exact message length must refuse");
     assert!(matches!(
         error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -274,7 +266,15 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(unprojected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 3);
+    assert_eq!(
+        unprojected_sketch_relation_records(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native
+        )
+        .unwrap(),
+        3
+    );
 
     ir.model.features[0]
         .evaluation
@@ -282,7 +282,15 @@ fn only_sketch_owned_relation_records_without_constraints_are_counted() {
             role: FeatureTreeNodeRole::History,
             children: cadmpeg_ir::features::TreeChildren::default(),
         }));
-    assert_eq!(unprojected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 0);
+    assert_eq!(
+        unprojected_sketch_relation_records(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native
+        )
+        .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -364,7 +372,15 @@ fn native_relation_records_have_at_most_one_neutral_owner() {
         ..SldprtNative::default()
     };
 
-    assert_eq!(multiply_projected_sketch_relation_records(&cadmpeg_test_support::service_decode_context(), &ir, &native).unwrap(), 1);
+    assert_eq!(
+        multiply_projected_sketch_relation_records(
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native
+        )
+        .unwrap(),
+        1
+    );
 }
 
 #[test]
@@ -403,7 +419,14 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
         feature_input_lanes: vec![lane.clone()],
         ..SldprtNative::default()
     };
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        1
+    );
 
     native.feature_histories.push(FeatureHistory {
         id: "history".into(),
@@ -429,9 +452,23 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
             content: Vec::new(),
         }],
     });
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        0
+    );
     native.feature_histories[0].features[0].input_class = None;
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        0
+    );
     native.feature_histories[0].features[0].xml_tag = "Sketch".into();
     native.feature_histories[0].features[0].kind = "Sketch".into();
     native.feature_histories[0].features[0].name = "Profile".into();
@@ -439,7 +476,14 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     lane.names[0].offset = 10 + 6 + "moProfileFeature_c".len() as u64;
     lane.names[0].value = "Profile".into();
     native.feature_input_lanes = vec![lane.clone()];
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        0
+    );
     native.feature_histories[0].features[0].xml_tag = "Extrusion".into();
     native.feature_histories[0].features[0].kind = "Extrusion".into();
     native.feature_histories[0].features[0].name = "Boss".into();
@@ -449,18 +493,46 @@ fn direct_feature_input_operations_require_unique_history_bindings() {
     lane.names[0].value = "Boss".into();
     native.feature_input_lanes = vec![lane.clone()];
     native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        1
+    );
     native.feature_histories[0].features[0].input_class = Some(class_name.into());
     native.feature_histories[0].features[0].source_id = None;
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        0
+    );
     let mut duplicate = native.feature_histories[0].features[0].clone();
     duplicate.id = "duplicate-feature".into();
     native.feature_histories[0].features.push(duplicate);
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 1);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        1
+    );
 
     lane.names[0].offset += 1;
     native.feature_input_lanes = vec![lane];
-    assert_eq!(unbound_feature_input_operation_objects(&cadmpeg_test_support::service_decode_context(), &native).unwrap(), 0);
+    assert_eq!(
+        unbound_feature_input_operation_objects(
+            &cadmpeg_test_support::service_decode_context(),
+            &native
+        )
+        .unwrap(),
+        0
+    );
 }
 
 #[test]
@@ -538,11 +610,9 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
     let mut decoded = Brep::default();
     decoded.stats.ambiguous_pcurve_parameters = 2;
 
-    let classification = crate::dialect::classify_layers(
-        &cadmpeg_test_support::service_decode_context(),
-        &scan,
-    )
-    .unwrap();
+    let classification =
+        crate::dialect::classify_layers(&cadmpeg_test_support::service_decode_context(), &scan)
+            .unwrap();
     let report = super::super::build_geometry_report(
         &cadmpeg_test_support::service_decode_context(),
         &scan,
@@ -591,9 +661,11 @@ fn unsupported_swift_loss_refuses_collection_limit() {
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
-            && limit.operation == "collect SLDPRT unsupported SWIFT classes"));
+            && limit.operation == "collect SLDPRT unsupported SWIFT classes")
+    );
 }
 
 #[test]
@@ -606,9 +678,11 @@ fn unsupported_swift_loss_refuses_retained_limit() {
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::RetainedBytes
-            && limit.operation == "retain SLDPRT unsupported SWIFT class"));
+            && limit.operation == "retain SLDPRT unsupported SWIFT class")
+    );
 }
 
 #[test]
@@ -618,11 +692,12 @@ fn unsupported_swift_loss_refuses_scoped_limit() {
     let scan = crate::container::scan_bytes(&source);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
-    policy.limits.max_materialized_bytes =
-        ("GdtAnalysisGraphUnresolved (1)".len() - 1) as u64;
+    policy.limits.max_materialized_bytes = ("GdtAnalysisGraphUnresolved (1)".len() - 1) as u64;
     let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
     let error = super::super::append_swift_pmi_losses(&ctx, &scan, &mut Vec::new()).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+    assert!(
+        matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::MaterializedBytes
-            && limit.operation == "format SLDPRT unsupported SWIFT classes"));
+            && limit.operation == "format SLDPRT unsupported SWIFT classes")
+    );
 }

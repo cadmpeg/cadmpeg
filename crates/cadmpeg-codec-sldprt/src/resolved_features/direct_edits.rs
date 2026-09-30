@@ -4,8 +4,8 @@ use super::axes::{compact_line_reference_directions, declared_line_reference_dir
 use super::scalars::feature_object_name;
 use crate::classification::{classify, FeatureClass};
 use crate::records::FeatureInputLane;
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FeatureDirection3, FiniteVector3};
 use cadmpeg_ir::scalar::FiniteReal;
@@ -32,8 +32,12 @@ pub(super) fn move_body_translation_record(
     const TRAILER_OFFSET: usize = 200;
     const NON_COPY_TRAILER: [u8; 8] = [1, 0, 0, 0, 0, 0, 1, 0];
     const OPERATION: &str = "decode SLDPRT move-body translation record";
-    let (Ok(data_class_offset), Some(end)) = (usize::try_from(data_class_offset), super::DeclaredEnd::of(object_end, payload.len()))
-        else { return Ok(None); };
+    let (Ok(data_class_offset), Some(end)) = (
+        usize::try_from(data_class_offset),
+        super::DeclaredEnd::of(object_end, payload.len()),
+    ) else {
+        return Ok(None);
+    };
     let end = end.get();
     if data_class_offset < object_start || data_class_offset >= end {
         return Ok(None);
@@ -43,10 +47,13 @@ pub(super) fn move_body_translation_record(
         FiniteReal::new(value)
     };
     let mut candidate = None;
-    let Some(scan_end) = end.checked_sub(TRAILER_OFFSET + 20) else { return Ok(None); };
+    let Some(scan_end) = end.checked_sub(TRAILER_OFFSET + 20) else {
+        return Ok(None);
+    };
     for selection_offset in data_class_offset..scan_end {
         ctx.charge_work(400, OPERATION)?;
-        let Some(count) = View::u32_le_at(payload, selection_offset).and_then(|value| usize::try_from(value).ok())
+        let Some(count) = View::u32_le_at(payload, selection_offset)
+            .and_then(|value| usize::try_from(value).ok())
         else {
             continue;
         };
@@ -80,7 +87,9 @@ pub(super) fn move_body_translation_record(
             }
             Some(values)
         })();
-        let Some(matrix) = matrix else { continue; };
+        let Some(matrix) = matrix else {
+            continue;
+        };
         if matrix
             .iter()
             .zip([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0])
@@ -133,11 +142,15 @@ pub(super) fn move_body_translation_record(
 }
 
 pub(super) fn move_body_selection_at(
-    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize,
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    offset: usize,
 ) -> Result<Option<Vec<u32>>, CodecError> {
-    Ok(move_body_translation_record(ctx, payload, offset, payload.len(), u64_from_index(offset))?
-        .filter(|record| record.selection_offset == offset)
-        .map(|record| record.local_body_ids))
+    Ok(
+        move_body_translation_record(ctx, payload, offset, payload.len(), u64_from_index(offset))?
+            .filter(|record| record.selection_offset == offset)
+            .map(|record| record.local_body_ids),
+    )
 }
 
 /// Charge each Move Face candidate and its per-feature slot before insertion.
@@ -169,7 +182,11 @@ pub(crate) fn enrich_history_move_face_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-face feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT move-face feature starts")?;
+                    ctx.reserve_collection_vec(
+                        &mut starts,
+                        1,
+                        "collect SLDPRT move-face feature starts",
+                    )?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -197,10 +214,18 @@ pub(crate) fn enrich_history_move_face_translations(
                 continue;
             };
             if start >= end {
-                push_move_face_candidate(ctx, &mut candidates, (history_index, feature_index), None)?;
+                push_move_face_candidate(
+                    ctx,
+                    &mut candidates,
+                    (history_index, feature_index),
+                    None,
+                )?;
                 continue;
             }
-            ctx.charge_work(lane.classes.len() as u64, "scan SLDPRT move-face direction classes")?;
+            ctx.charge_work(
+                lane.classes.len() as u64,
+                "scan SLDPRT move-face direction classes",
+            )?;
             let direction_specs = lane
                 .classes
                 .iter()
@@ -209,21 +234,28 @@ pub(crate) fn enrich_history_move_face_translations(
                         && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
                 })
                 .count();
-            let mut line_refs = lane
-                .classes
-                .iter()
-                .filter(|class| {
-                    class.name == "moLineRef_w"
-                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                });
+            let mut line_refs = lane.classes.iter().filter(|class| {
+                class.name == "moLineRef_w"
+                    && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+            });
             let line_ref = line_refs.next();
             if direction_specs != 1 || line_ref.is_none() || line_refs.next().is_some() {
-                push_move_face_candidate(ctx, &mut candidates, (history_index, feature_index), None)?;
+                push_move_face_candidate(
+                    ctx,
+                    &mut candidates,
+                    (history_index, feature_index),
+                    None,
+                )?;
                 continue;
             }
-            let Some(line_ref) = line_ref else { continue; };
+            let Some(line_ref) = line_ref else {
+                continue;
+            };
             let mut directions = declared_line_reference_directions(
-                ctx, &lane.native_payload, line_ref.offset, end,
+                ctx,
+                &lane.native_payload,
+                line_ref.offset,
+                end,
             )?;
             let excluded_handles = std::iter::once(line_ref)
                 .filter_map(|class| usize::try_from(class.offset).ok())
@@ -236,7 +268,11 @@ pub(crate) fn enrich_history_move_face_translations(
                 end,
                 &excluded_handles,
             )?;
-            ctx.reserve_precharged_vec(&mut directions, compact.len(), "merge SLDPRT move-face directions")?;
+            ctx.reserve_precharged_vec(
+                &mut directions,
+                compact.len(),
+                "merge SLDPRT move-face directions",
+            )?;
             directions.extend(compact);
             let mut unique = Vec::new();
             for direction in directions
@@ -244,14 +280,23 @@ pub(crate) fn enrich_history_move_face_translations(
                 .map(FeatureDirection3::from_unit_without_small_components)
             {
                 if !unique.contains(&direction) {
-                    ctx.reserve_collection_vec(&mut unique, 1, "collect SLDPRT unique move-face directions")?;
+                    ctx.reserve_collection_vec(
+                        &mut unique,
+                        1,
+                        "collect SLDPRT unique move-face directions",
+                    )?;
                     unique.push(direction);
                 }
             }
-            push_move_face_candidate(ctx, &mut candidates, (history_index, feature_index), match unique.as_slice() {
+            push_move_face_candidate(
+                ctx,
+                &mut candidates,
+                (history_index, feature_index),
+                match unique.as_slice() {
                     [direction] => Some(*direction),
                     _ => None,
-                })?;
+                },
+            )?;
         }
     }
     for ((history_index, feature_index), candidates) in candidates {
@@ -277,14 +322,14 @@ pub(crate) fn enrich_history_move_face_translations(
         feature
             .properties
             .insert(cadmpeg_core::nonblank_literal!("Mode"), "Translate".into());
-        let direction = crate::text_admission::format_retained(ctx, 
+        let direction = crate::text_admission::format_retained(
+            ctx,
             format_args!("{},{},{}", first.get().x, first.get().y, first.get().z),
             "format SLDPRT move-face direction",
         )?;
-        feature.properties.insert(
-            cadmpeg_core::nonblank_literal!("Direction"),
-            direction,
-        );
+        feature
+            .properties
+            .insert(cadmpeg_core::nonblank_literal!("Direction"), direction);
     }
     Ok(())
 }
@@ -302,7 +347,11 @@ pub(crate) fn enrich_history_move_body_translations(
             for (feature_index, feature) in history.features.iter().enumerate() {
                 ctx.charge_work(1, "scan SLDPRT move-body feature starts")?;
                 if let Some(name) = feature_object_name(feature, lane) {
-                    ctx.reserve_collection_vec(&mut starts, 1, "collect SLDPRT move-body feature starts")?;
+                    ctx.reserve_collection_vec(
+                        &mut starts,
+                        1,
+                        "collect SLDPRT move-body feature starts",
+                    )?;
                     starts.push((name.offset, history_index, feature_index));
                 }
             }
@@ -328,18 +377,19 @@ pub(crate) fn enrich_history_move_body_translations(
             let Some(start) = usize::try_from(start).ok().filter(|start| *start < end) else {
                 continue;
             };
-            let mut data_classes = lane
-                .classes
-                .iter()
-                .filter(|class| {
-                    class.name == "moMoveCopyBodyData_c"
-                        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-                });
+            let mut data_classes = lane.classes.iter().filter(|class| {
+                class.name == "moMoveCopyBodyData_c"
+                    && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
+            });
             let candidate = match (data_classes.next(), data_classes.next()) {
-                (Some(class), None) => {
-                    move_body_translation_record(ctx, &lane.native_payload, start, end, class.offset)?
-                        .map(|record| record.translation_m)
-                }
+                (Some(class), None) => move_body_translation_record(
+                    ctx,
+                    &lane.native_payload,
+                    start,
+                    end,
+                    class.offset,
+                )?
+                .map(|record| record.translation_m),
                 _ => None,
             };
             let key = (history_index, feature_index);
@@ -363,7 +413,8 @@ pub(crate) fn enrich_history_move_body_translations(
         if !properties.contains_key("Translation") {
             ctx.charge_collection_items(1, "insert SLDPRT move-body translation")?;
         }
-        let translation = crate::text_admission::format_retained(ctx, 
+        let translation = crate::text_admission::format_retained(
+            ctx,
             format_args!(
                 "{}mm,{}mm,{}mm",
                 first.x * 1000.0,
@@ -372,10 +423,7 @@ pub(crate) fn enrich_history_move_body_translations(
             ),
             "format SLDPRT move-body translation",
         )?;
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("Translation"),
-            translation,
-        );
+        properties.insert(cadmpeg_core::nonblank_literal!("Translation"), translation);
     }
     Ok(())
 }
@@ -384,8 +432,7 @@ pub(crate) fn enrich_history_move_body_translations(
 mod tests {
     use super::{
         enrich_history_move_body_translations, enrich_history_move_face_translations,
-        move_body_translation_record,
-        MoveBodyTranslationRecord,
+        move_body_translation_record, MoveBodyTranslationRecord,
     };
     use crate::records::FeatureInputLane;
     use crate::records::FeatureSource;
@@ -407,10 +454,15 @@ mod tests {
         lanes: &[FeatureInputLane],
     ) {
         let arena = cadmpeg_core::decode::DecodeArena::new();
-        let bytes = lanes.first().map_or(&[][..], |lane| lane.native_payload.as_slice());
+        let bytes = lanes
+            .first()
+            .map_or(&[][..], |lane| lane.native_payload.as_slice());
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            bytes, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).expect("move-face test input fits service policy");
+            bytes,
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .expect("move-face test input fits service policy");
         enrich_history_move_face_translations(&ctx, histories, lanes)
             .expect("move-face test enrichment succeeds");
     }
@@ -460,11 +512,17 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_collection_items = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload, &arena, &policy,
+            &lane.native_payload,
+            &arena,
+            &policy,
         )
         .expect("move-body input fits root policy");
-        let error = enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
-            .expect_err("one matching feature start requires collection admission");
+        let error = enrich_history_move_body_translations(
+            &ctx,
+            &mut histories,
+            std::slice::from_ref(&lane),
+        )
+        .expect_err("one matching feature start requires collection admission");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
@@ -475,11 +533,17 @@ mod tests {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_work_units = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload, &arena, &policy,
+            &lane.native_payload,
+            &arena,
+            &policy,
         )
         .expect("move-body input fits root policy");
-        let error = enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
-            .expect_err("one feature scan requires work admission");
+        let error = enrich_history_move_body_translations(
+            &ctx,
+            &mut histories,
+            std::slice::from_ref(&lane),
+        )
+        .expect_err("one feature scan requires work admission");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
     }
 
@@ -520,23 +584,31 @@ mod tests {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let service = cadmpeg_core::decode::DecodePolicy::service();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload, &arena, &service,
+            &lane.native_payload,
+            &arena,
+            &service,
         )
         .expect("move-body input fits root policy");
         enrich_history_move_body_translations(&ctx, &mut histories, std::slice::from_ref(&lane))
             .expect("move-body translation fits service policy");
-        assert!(histories[0].features[0].properties.contains_key("Translation"));
+        assert!(histories[0].features[0]
+            .properties
+            .contains_key("Translation"));
         histories[0].features[0].properties.remove("Translation");
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
         policy.limits.max_retained_bytes = 0;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &lane.native_payload, &arena, &policy,
+            &lane.native_payload,
+            &arena,
+            &policy,
         )
         .expect("move-body input fits root policy");
         let error = enrich_history_move_body_translations(
-            &ctx, &mut histories, std::slice::from_ref(&lane),
+            &ctx,
+            &mut histories,
+            std::slice::from_ref(&lane),
         )
         .expect_err("translation text requires retained bytes");
         assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(_)));
@@ -640,7 +712,11 @@ mod tests {
         )
         .expect("move-face parameter enrichment succeeds");
         assert_eq!(histories[0].features[0].parameters["D1"], "5mm");
-        let projected = crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap();
+        let projected = crate::history::project::project_features(
+            &cadmpeg_test_support::service_decode_context(),
+            &histories,
+        )
+        .unwrap();
         assert!(matches!(
             projected[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::MoveFace {
@@ -659,7 +735,11 @@ mod tests {
             let mut histories = vec![move_face_history()];
             enrich_history_move_face_translations_test(&mut histories, &[lane]);
             assert!(matches!(
-                crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0]
+                crate::history::project::project_features(
+                    &cadmpeg_test_support::service_decode_context(),
+                    &histories
+                )
+                .unwrap()[0]
                     .evaluation
                     .definition(),
                 FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -675,7 +755,11 @@ mod tests {
             ],
         );
         assert!(matches!(
-            crate::history::project::project_features(&cadmpeg_test_support::service_decode_context(), &histories).unwrap()[0]
+            crate::history::project::project_features(
+                &cadmpeg_test_support::service_decode_context(),
+                &histories
+            )
+            .unwrap()[0]
                 .evaluation
                 .definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -710,8 +794,11 @@ mod tests {
 
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-        ).unwrap();
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         assert_eq!(
             move_body_translation_record(&ctx, &payload, 0, payload.len(), 0).unwrap(),
             Some(MoveBodyTranslationRecord {

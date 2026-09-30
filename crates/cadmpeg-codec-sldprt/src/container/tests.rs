@@ -158,7 +158,8 @@ fn charged_container_scan_preserves_utf16_envelope() {
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/SolidWorks", &payload));
     let arena = DecodeArena::new();
-    let (ctx, root) = DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&source, &arena, &DecodePolicy::service()).unwrap();
     let scan = container::scan(&ctx, root).unwrap();
     assert!(container::solidworks_envelope(&scan).is_some());
 }
@@ -347,9 +348,8 @@ fn parasolid_partition_selection_withholds_ambiguous_sites() {
 fn parasolid_partition_selection_retains_a_compound_stream_site() {
     let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(
-        &[], &arena, &DecodePolicy::service(),
-    ).expect("root");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
     let stream = container::compound_stream(
         &ctx,
         "Contents/Config-0-Partition".into(),

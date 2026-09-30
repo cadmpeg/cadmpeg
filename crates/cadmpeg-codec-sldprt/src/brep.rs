@@ -38,10 +38,10 @@ const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
 const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
 const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
-pub(crate) mod evaluation;
 mod attrib;
 mod blend;
 pub(crate) mod entity;
+pub(crate) mod evaluation;
 mod index;
 mod intersection;
 mod offset;
@@ -400,7 +400,8 @@ pub(crate) fn curve_by_attr(body: &[u8], attr: u16) -> Option<CurveGeometry> {
 /// Replace the scalar run of one compact analytic carrier.
 pub(crate) fn patch_compact_values(body: &mut [u8], attr: u16, values: &[f64]) -> bool {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()) else {
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service())
+    else {
         return false;
     };
     let Ok(carriers) = scan_carriers(&ctx, body) else {
@@ -429,7 +430,8 @@ pub(crate) fn patch_nurbs_by_attr(
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> bool {
     let arena = DecodeArena::new();
-    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service()) else {
+    let Ok((ctx, _)) = DecodeContext::from_root_bytes(body, &arena, &DecodePolicy::service())
+    else {
         return false;
     };
     let Ok(carriers) = scan_carriers(&ctx, body) else {
@@ -544,10 +546,13 @@ mod tests {
 
     #[test]
     fn scan_does_not_skip_overlapping_carrier_starts() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
         let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
         bytes.truncate(60);
         bytes.extend(compact_carrier(

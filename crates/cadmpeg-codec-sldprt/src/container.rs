@@ -16,7 +16,9 @@ use cadmpeg_container::compression::{
     inflate_bounded_probe, inflate_deflate_owned, inflate_zlib_member_owned,
 };
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ScopedReservation, View};
+use cadmpeg_core::decode::{
+    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ScopedReservation, View,
+};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -403,9 +405,17 @@ fn completed_scan(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> ContainerScan<'_> {
-    let mut scan = assemble_scan(source_image, version, blocks, directory, cache_cells, compound_streams);
+    let mut scan = assemble_scan(
+        source_image,
+        version,
+        blocks,
+        directory,
+        cache_cells,
+        compound_streams,
+    );
     let solidworks = scan_solidworks_envelopes(
-        scan.sections().map(|section| (section.name(), section.payload())),
+        scan.sections()
+            .map(|section| (section.name(), section.payload())),
         ScanAdmission::Probe,
     )
     .unwrap_or_default();
@@ -422,9 +432,17 @@ fn completed_scan_charged<'a>(
     cache_cells: Vec<CacheCell>,
     compound_streams: Vec<CompoundStream>,
 ) -> Result<ContainerScan<'a>, CodecError> {
-    let mut scan = assemble_scan(source_image, version, blocks, directory, cache_cells, compound_streams);
+    let mut scan = assemble_scan(
+        source_image,
+        version,
+        blocks,
+        directory,
+        cache_cells,
+        compound_streams,
+    );
     let solidworks = scan_solidworks_envelopes(
-        scan.sections().map(|section| (section.name(), section.payload())),
+        scan.sections()
+            .map(|section| (section.name(), section.payload())),
         ScanAdmission::Decode(ctx),
     )?;
     scan.solidworks = solidworks;
@@ -582,10 +600,19 @@ fn compound_streams<'a>(
             continue;
         };
         let view = snapshot.open(ctx, entry)?;
-        let payload = crate::byte_admission::copy_retained(ctx, view.window(), "retain SolidWorks CFB stream")?;
+        let payload = crate::byte_admission::copy_retained(
+            ctx,
+            view.window(),
+            "retain SolidWorks CFB stream",
+        )?;
         let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
         let mut path = String::new();
-        crate::text_admission::reserve_retained_string(ctx, &mut path, entry.path().len(), "retain SLDPRT stream path")?;
+        crate::text_admission::reserve_retained_string(
+            ctx,
+            &mut path,
+            entry.path().len(),
+            "retain SLDPRT stream path",
+        )?;
         path.push_str(entry.path());
         let stream = compound_stream(
             ctx,
@@ -1059,14 +1086,19 @@ pub(crate) fn notes_charged(
                 ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
             })?;
             let mut active = String::new();
-            crate::text_admission::reserve_retained_string(ctx, 
+            crate::text_admission::reserve_retained_string(
+                ctx,
                 &mut active,
                 required,
                 "retain SLDPRT active site note",
             )?;
-            write!(active, "{PREFIX}{name}{MIDDLE}{size}{SUFFIX}{schema}{CLOSE}").map_err(
-                |_| ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX),
-            )?;
+            write!(
+                active,
+                "{PREFIX}{name}{MIDDLE}{size}{SUFFIX}{schema}{CLOSE}"
+            )
+            .map_err(|_| {
+                ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
+            })?;
             active
         }
         None => NO_ACTIVE_PARASOLID_NOTE.to_string(),
@@ -1190,13 +1222,12 @@ pub(crate) fn configuration_index(section: &str) -> Option<usize> {
 }
 
 pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
-    explicit_active_configuration_index(scan)
-        .or_else(|| {
-            scan.solidworks
-                .manifest_active_configuration
-                .unique_ref()
-                .map(|(index, _)| index)
-        })
+    explicit_active_configuration_index(scan).or_else(|| {
+        scan.solidworks
+            .manifest_active_configuration
+            .unique_ref()
+            .map(|(index, _)| index)
+    })
 }
 
 /// Return the active configuration's unique manifest identity, when one
@@ -1220,9 +1251,7 @@ fn manifest_configuration_name(
     row: roxmltree::Node<'_, '_>,
     id: &str,
 ) -> Result<Option<String>, CodecError> {
-    let direct = row
-        .attribute("swName")
-        .filter(|value| !value.is_empty());
+    let direct = row.attribute("swName").filter(|value| !value.is_empty());
     let model = row
         .attribute("swModelRef")
         .and_then(|reference| {
@@ -1257,7 +1286,13 @@ pub(crate) fn active_configuration_name_ref<'a>(scan: &'a ContainerScan<'_>) -> 
         .and_then(|(_, name)| name)
         .or_else(|| {
             (scan.solidworks.configuration_names.len() == 1)
-                .then(|| scan.solidworks.configuration_names.iter().next().map(String::as_str))
+                .then(|| {
+                    scan.solidworks
+                        .configuration_names
+                        .iter()
+                        .next()
+                        .map(String::as_str)
+                })
                 .flatten()
         })
 }
@@ -1288,12 +1323,13 @@ impl EnvelopeText<'_> {
 }
 
 impl ScanAdmission<'_, '_> {
-    fn text<'scope>(&'scope self, bytes: &[u8]) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
+    fn text<'scope>(
+        &'scope self,
+        bytes: &[u8],
+    ) -> Result<Option<EnvelopeText<'scope>>, CodecError> {
         match self {
             Self::Probe => Ok(xml_text(bytes).map(|text| EnvelopeText { text, _scope: None })),
-            Self::Decode(ctx) => {
-                xml_text_charged(ctx, bytes, "materialize SLDPRT XML text")
-            }
+            Self::Decode(ctx) => xml_text_charged(ctx, bytes, "materialize SLDPRT XML text"),
         }
     }
 
@@ -1302,15 +1338,26 @@ impl ScanAdmission<'_, '_> {
             Self::Probe => Ok(value.to_owned()),
             Self::Decode(ctx) => {
                 let mut copy = String::new();
-                crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
+                crate::text_admission::reserve_retained_string(
+                    ctx,
+                    &mut copy,
+                    value.len(),
+                    operation,
+                )?;
                 copy.push_str(value);
                 Ok(copy)
             }
         }
     }
 
-    fn copy_opt(&self, value: Option<&str>, operation: &'static str) -> Result<Option<String>, CodecError> {
-        value.map(|value| self.copy_str(value, operation)).transpose()
+    fn copy_opt(
+        &self,
+        value: Option<&str>,
+        operation: &'static str,
+    ) -> Result<Option<String>, CodecError> {
+        value
+            .map(|value| self.copy_str(value, operation))
+            .transpose()
     }
 
     fn charge_item(&self, operation: &'static str) -> Result<(), CodecError> {
@@ -1320,7 +1367,11 @@ impl ScanAdmission<'_, '_> {
         Ok(())
     }
 
-    fn reserve_vec<T>(&self, values: &mut Vec<T>, operation: &'static str) -> Result<(), CodecError> {
+    fn reserve_vec<T>(
+        &self,
+        values: &mut Vec<T>,
+        operation: &'static str,
+    ) -> Result<(), CodecError> {
         if let Self::Decode(ctx) = self {
             ctx.reserve_collection_vec(values, 1, operation)?;
         }
@@ -1357,22 +1408,30 @@ pub(crate) fn xml_text_charged<'ctx>(
             })
         };
         let length = chars().try_fold(0usize, |length, value| {
-            length.checked_add(value.len_utf8()).ok_or_else(|| {
-                ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
-            })
+            length
+                .checked_add(value.len_utf8())
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX))
         })?;
-        let (mut text, scope) = crate::text_admission::reserve_scoped_string(ctx, length, operation)?;
+        let (mut text, scope) =
+            crate::text_admission::reserve_scoped_string(ctx, length, operation)?;
         for value in chars() {
             text.push(value);
         }
-        Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
+        Ok(Some(EnvelopeText {
+            text,
+            _scope: Some(scope),
+        }))
     } else {
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Ok(None);
         };
-        let (mut text, scope) = crate::text_admission::reserve_scoped_string(ctx, source.len(), operation)?;
+        let (mut text, scope) =
+            crate::text_admission::reserve_scoped_string(ctx, source.len(), operation)?;
         text.push_str(source);
-        Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
+        Ok(Some(EnvelopeText {
+            text,
+            _scope: Some(scope),
+        }))
     }
 }
 
@@ -1474,13 +1533,16 @@ fn scan_solidworks_envelopes<'a>(
                     continue;
                 };
                 if let Some(indices) = scan.configuration_source_indices.get_mut(name) {
-                    admission.reserve_vec(indices, "collect SLDPRT configuration source indices")?;
+                    admission
+                        .reserve_vec(indices, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
                 } else {
                     admission.charge_item("collect SLDPRT configuration source names")?;
-                    let name = admission.copy_str(name, "retain SLDPRT configuration source name")?;
+                    let name =
+                        admission.copy_str(name, "retain SLDPRT configuration source name")?;
                     let mut indices = Vec::new();
-                    admission.reserve_vec(&mut indices, "collect SLDPRT configuration source indices")?;
+                    admission
+                        .reserve_vec(&mut indices, "collect SLDPRT configuration source indices")?;
                     indices.push(index);
                     scan.configuration_source_indices.insert(name, indices);
                 }
@@ -1543,10 +1605,19 @@ fn scan_solidworks_envelopes<'a>(
         }
         scan.first = Some(SolidWorksEnvelope {
             sw_version: admission.copy_opt(root.attribute("swVersion"), "retain SLDPRT version")?,
-            creation_time: admission.copy_opt(root.attribute("swCreationTime"), "retain SLDPRT creation time")?,
+            creation_time: admission.copy_opt(
+                root.attribute("swCreationTime"),
+                "retain SLDPRT creation time",
+            )?,
             path: admission.copy_opt(root.attribute("swPath"), "retain SLDPRT path")?,
-            model_name: admission.copy_opt(model.and_then(|node| node.attribute("swName")), "retain SLDPRT model name")?,
-            configuration_name: admission.copy_opt(model.and_then(|node| node.attribute("swConfigurationName")), "retain SLDPRT envelope configuration name")?,
+            model_name: admission.copy_opt(
+                model.and_then(|node| node.attribute("swName")),
+                "retain SLDPRT model name",
+            )?,
+            configuration_name: admission.copy_opt(
+                model.and_then(|node| node.attribute("swConfigurationName")),
+                "retain SLDPRT envelope configuration name",
+            )?,
             configuration_attributes,
         });
     }

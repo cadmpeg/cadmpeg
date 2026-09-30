@@ -1250,8 +1250,8 @@ fn rendered_literal_limit_error(
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     set_limit(&mut policy.limits);
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty root fits policy");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
     rendered_dimensions(&ctx, &payload).expect_err("rendered scan must refuse")
 }
 
@@ -1259,7 +1259,9 @@ fn rendered_literal_limit_error(
 fn swift_rendered_literals_refuse_work_limit() {
     let CodecError::ResourceLimit(limit) =
         rendered_literal_limit_error(|limits| limits.max_work_units = 0)
-    else { panic!("expected work refusal") };
+    else {
+        panic!("expected work refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::WorkUnits);
 }
 
@@ -1267,7 +1269,9 @@ fn swift_rendered_literals_refuse_work_limit() {
 fn swift_rendered_literals_refuse_scoped_limit() {
     let CodecError::ResourceLimit(limit) =
         rendered_literal_limit_error(|limits| limits.max_materialized_bytes = 0)
-    else { panic!("expected scoped refusal") };
+    else {
+        panic!("expected scoped refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::MaterializedBytes);
 }
 
@@ -1275,7 +1279,9 @@ fn swift_rendered_literals_refuse_scoped_limit() {
 fn swift_rendered_literals_refuse_collection_limit() {
     let CodecError::ResourceLimit(limit) =
         rendered_literal_limit_error(|limits| limits.max_collection_items = 0)
-    else { panic!("expected collection refusal") };
+    else {
+        panic!("expected collection refusal")
+    };
     assert_eq!(limit.dimension, ResourceDimension::CollectionItems);
 }
 

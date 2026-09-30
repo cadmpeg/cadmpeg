@@ -209,7 +209,10 @@ fn weighted_poles<P, W>(
     let mut output = Vec::new();
     scratch::reserve_exact(&mut output, points.len(), "IR weighted poles")?;
     for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
-        output.push(WeightedPole3 { point, weight: weight(index, value)? });
+        output.push(WeightedPole3 {
+            point,
+            weight: weight(index, value)?,
+        });
     }
     Ok(output)
 }
@@ -511,11 +514,21 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
         match self {
             Self::Polynomial { rows } => {
                 let mut output = Vec::new();
-                scratch::reserve_exact(&mut output, rows.len(), "IR admitted polynomial grid rows")?;
+                scratch::reserve_exact(
+                    &mut output,
+                    rows.len(),
+                    "IR admitted polynomial grid rows",
+                )?;
                 for row in rows {
                     let mut points = Vec::new();
-                    scratch::reserve_exact(&mut points, row.len(), "IR admitted polynomial grid poles")?;
-                    for point in row { points.push(point.admit().ok_or_else(non_finite_control_point)?); }
+                    scratch::reserve_exact(
+                        &mut points,
+                        row.len(),
+                        "IR admitted polynomial grid poles",
+                    )?;
+                    for point in row {
+                        points.push(point.admit().ok_or_else(non_finite_control_point)?);
+                    }
                     output.push(points);
                 }
                 Ok(NurbsPoleGrid::Polynomial { rows: output })
@@ -525,8 +538,17 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
                 scratch::reserve_exact(&mut output, rows.len(), "IR admitted rational grid rows")?;
                 for row in rows {
                     let mut points = Vec::new();
-                    scratch::reserve_exact(&mut points, row.len(), "IR admitted rational grid poles")?;
-                    for pole in row { points.push(WeightedPole3 { point: pole.point.admit().ok_or_else(non_finite_control_point)?, weight: pole.weight }); }
+                    scratch::reserve_exact(
+                        &mut points,
+                        row.len(),
+                        "IR admitted rational grid poles",
+                    )?;
+                    for pole in row {
+                        points.push(WeightedPole3 {
+                            point: pole.point.admit().ok_or_else(non_finite_control_point)?,
+                            weight: pole.weight,
+                        });
+                    }
                     output.push(points);
                 }
                 Ok(NurbsPoleGrid::Rational { rows: output })
@@ -748,8 +770,14 @@ impl BsplineSurface {
         let v_knots = bspline_axis_knots("v", v_degree, v_count, v_knots)?;
         require_rectangular_grid("control_points", &control_points)?;
         let mut rows = Vec::new();
-        scratch::reserve_exact(&mut rows, control_points.len(), "IR admitted B-spline grid rows")?;
-        for row in control_points { rows.push(admit_finite_row_3(row)?); }
+        scratch::reserve_exact(
+            &mut rows,
+            control_points.len(),
+            "IR admitted B-spline grid rows",
+        )?;
+        for row in control_points {
+            rows.push(admit_finite_row_3(row)?);
+        }
         let control_points = rows;
         Ok(Self {
             u_degree,
@@ -815,7 +843,9 @@ fn bspline_axis_knots(
 fn admit_finite_row_3(row: Vec<Point3>) -> Result<Vec<FinitePoint3>, NurbsError> {
     let mut output = Vec::new();
     scratch::reserve_exact(&mut output, row.len(), "IR admitted B-spline grid poles")?;
-    for point in row { output.push(FinitePoint3::new(point).ok_or_else(non_finite_control_point)?); }
+    for point in row {
+        output.push(FinitePoint3::new(point).ok_or_else(non_finite_control_point)?);
+    }
     Ok(output)
 }
 
@@ -1150,12 +1180,14 @@ impl NurbsSurface {
             NurbsPoleGrid::Rational { rows } => require_rectangular_grid("control_points", rows)?,
         }
         let poles = poles.admit()?;
-        let u_knots = u_knots
-            .admit()
-            .map_err(|error| match error { NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit), error => NurbsError::Structure(format!("u_{error}")) })?;
-        let v_knots = v_knots
-            .admit()
-            .map_err(|error| match error { NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit), error => NurbsError::Structure(format!("v_{error}")) })?;
+        let u_knots = u_knots.admit().map_err(|error| match error {
+            NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
+            error => NurbsError::Structure(format!("u_{error}")),
+        })?;
+        let v_knots = v_knots.admit().map_err(|error| match error {
+            NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit),
+            error => NurbsError::Structure(format!("v_{error}")),
+        })?;
         Ok(Self {
             u_degree,
             v_degree,

@@ -120,7 +120,11 @@ fn decode_deduplicates_partition_and_deltas_face_bindings() {
             .count(),
         1
     );
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -378,7 +382,11 @@ fn merged_opaque_geometry_retains_its_owning_site() {
             .find(|unknown| unknown.id == record)
             .is_some_and(|unknown| { unknown.links.iter().any(|link| link.as_str() == geometry) }));
     }
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -406,14 +414,21 @@ fn deltas_full_record_overrides_partition_record() {
 fn partition_topology_wins_when_deltas_reuse_a_bridge_identity() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[], &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
     let partition = triangle_body();
     let deltas = bridge_owned(10, 120, 200, 700);
     let partition_payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
     let deltas_payload = parasolid_with_body("deltas body", "SCH_SW_33103_11000", &deltas);
-    let partition_header = crate::parasolid::stream_header(&ctx, &partition_payload).unwrap().unwrap();
-    let deltas_header = crate::parasolid::stream_header(&ctx, &deltas_payload).unwrap().unwrap();
+    let partition_header = crate::parasolid::stream_header(&ctx, &partition_payload)
+        .unwrap()
+        .unwrap();
+    let deltas_header = crate::parasolid::stream_header(&ctx, &deltas_payload)
+        .unwrap()
+        .unwrap();
 
     let decoded = crate::brep::graph::decode_bodies(
         &ctx,
@@ -436,12 +451,9 @@ fn partition_stream_index_refuses_collection_limit() {
 
     let payload = parasolid_with_body("partition body", "SCH_SW_33103_11000", &triangle_body());
     let arena = DecodeArena::new();
-    let (header_ctx, _) = DecodeContext::from_root_bytes(
-        &payload,
-        &arena,
-        &DecodePolicy::service(),
-    )
-    .expect("header context");
+    let (header_ctx, _) =
+        DecodeContext::from_root_bytes(&payload, &arena, &DecodePolicy::service())
+            .expect("header context");
     let header = crate::parasolid::stream_header(&header_ctx, &payload)
         .expect("header read")
         .expect("header");
@@ -476,7 +488,8 @@ fn unselected_deltas_bridges_do_not_enter_partition_membership() {
         .points
         .iter()
         .all(|point| point.position().get().x != 10_000.0));
-    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new()).expect("resource allocation did not fail");
+    let report = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("resource allocation did not fail");
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
 }
 
@@ -502,7 +515,11 @@ fn partition_point_refs_do_not_select_deltas_framing() {
     assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(result.ir().model.vertices.len(), 3);
     assert_eq!(result.ir().model.points.len(), 3);
-    assert!(cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail").is_ok());
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("resource allocation did not fail")
+            .is_ok()
+    );
 }
 
 #[test]

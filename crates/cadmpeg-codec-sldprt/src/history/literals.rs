@@ -396,16 +396,27 @@ mod literal_tests {
     #[test]
     fn length_literal_keeps_decimal_and_scientific_boundaries() {
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         for (value, expected) in [
-            (0.0, "0mm"), (-0.0, "-0mm"), (3.0, "3mm"),
+            (0.0, "0mm"),
+            (-0.0, "-0mm"),
+            (3.0, "3mm"),
             (super::EPS_LITERALS_FORMAT_F64_LITERAL_E6, "0.000001mm"),
             (super::EPS_LITERALS_FORMAT_F64_LITERAL_E6 / 10.0, "1e-7mm"),
             (1.0e15, "1e15mm"),
         ] {
             let length = Length::new(value).unwrap();
             assert_eq!(format_length_mm(length), expected);
-            assert_eq!(crate::text_admission::format_retained(&ctx, format_args!("{}", LengthLiteral(length)), "test length literal").unwrap(), expected);
+            assert_eq!(
+                crate::text_admission::format_retained(
+                    &ctx,
+                    format_args!("{}", LengthLiteral(length)),
+                    "test length literal"
+                )
+                .unwrap(),
+                expected
+            );
         }
     }
 }
