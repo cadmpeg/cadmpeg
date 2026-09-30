@@ -8,7 +8,7 @@ use cadmpeg_ir::{AnnotationBuilder, Exactness};
 use crate::container::ContainerScan;
 
 use super::coverage::{source_section_ref, surface_family};
-use super::native::{emit_uniform, store_arena};
+use super::native::{emit_uniform, store_arena, UniformArena};
 use super::native_records::{
     CreoFc05CircleRecord, CreoFc05CylinderCapPairRecord, CreoFeatureSurfaceReplayAssociation,
     CreoHalfEdgeRef,
@@ -33,26 +33,30 @@ pub(super) fn attach_expanded_sections(
         ctx,
         ir,
         annotations,
-        "expanded_sections",
-        &records,
-        |record| &record.id,
-        |record| &record.name,
-        |record| record.source_offset as u64,
-        "unix_compress_expanded_section",
-        Exactness::Derived,
+        &UniformArena {
+            key: "expanded_sections",
+            records: &records,
+            id: |record| &record.id,
+            stream: |record| &record.name,
+            offset: |record| cadmpeg_core::decode::u64_from_index(record.source_offset),
+            tag: "unix_compress_expanded_section",
+            exactness: Exactness::Derived,
+        },
     )?;
     let tables = double_xar_records(ctx, scan)?;
     emit_uniform(
         ctx,
         ir,
         annotations,
-        "double_xar_tables",
-        &tables,
-        |table| &table.id,
-        |table| &table.table.section_name,
-        |table| table.table.section_source_offset as u64,
-        "model_scalar_dictionary",
-        Exactness::ByteExact,
+        &UniformArena {
+            key: "double_xar_tables",
+            records: &tables,
+            id: |table| &table.id,
+            stream: |table| &table.table.section_name,
+            offset: |table| cadmpeg_core::decode::u64_from_index(table.table.section_source_offset),
+            tag: "model_scalar_dictionary",
+            exactness: Exactness::ByteExact,
+        },
     )?;
     let primitive_arrays = primitive_scalar_array_records(ctx, scan)?;
     store_arena(ctx, ir, "primitive_scalar_arrays", &primitive_arrays)?;
@@ -484,7 +488,8 @@ mod tests {
 
     #[test]
     fn native_surface_replay_id_refuses_retained_limit() {
-        let limit = "creo:allfeatur:surface_replay#4:0:0:7".len() as u64 - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:allfeatur:surface_replay#4:0:0:7".len()) - 1;
         let error = with_replay_limits(limit, 1, 1, |ctx, scan| {
             let records = feature_surface_replay_associations(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -530,7 +535,7 @@ mod tests {
 
     #[test]
     fn native_double_xar_id_refuses_retained_limit() {
-        let limit = "creo:Body:double_xar#0:0".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:Body:double_xar#0:0".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = double_xar_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -566,7 +571,9 @@ mod tests {
 
     #[test]
     fn native_scalar_array_id_refuses_retained_limit() {
-        let limit = "creo:solid_primdata:scalar_array#pts:0".len() as u64 - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:solid_primdata:scalar_array#pts:0".len())
+                - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = primitive_scalar_array_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -603,7 +610,7 @@ mod tests {
 
     #[test]
     fn native_fc05_circle_id_refuses_retained_limit() {
-        let limit = "creo:curve:fc05_circle#20".len() as u64 - 1;
+        let limit = cadmpeg_core::decode::u64_from_index("creo:curve:fc05_circle#20".len()) - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_circle_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))
@@ -640,7 +647,9 @@ mod tests {
 
     #[test]
     fn native_fc05_cap_pair_id_refuses_retained_limit() {
-        let limit = "creo:surface:fc05_cylinder_cap_pair#10".len() as u64 - 1;
+        let limit =
+            cadmpeg_core::decode::u64_from_index("creo:surface:fc05_cylinder_cap_pair#10".len())
+                - 1;
         let error = with_limits(limit, 1, |ctx, scan| {
             let records = fc05_cylinder_cap_pair_records(ctx, scan)?;
             Ok(serde_json::json!(records.len()))

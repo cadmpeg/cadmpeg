@@ -1129,12 +1129,12 @@ mod tests {
             section_3d: None,
             dimensions: None,
             relations: Some(crate::feature::definitions::FeatureRelationTable {
-                declared_count: rows.len() as u32,
+                declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                 entity_ref: None,
                 rows: Vec::new(),
                 skamps: Some(crate::feature::definitions::SolverSubtable::Declared {
                     header: crate::feature::definitions::FeatureSolverTableHeader {
-                        declared_count: rows.len() as u32,
+                        declared_count: u32::try_from(rows.len()).expect("fixture value fits u32"),
                         entity_ref: 1,
                         offset: 0,
                     },

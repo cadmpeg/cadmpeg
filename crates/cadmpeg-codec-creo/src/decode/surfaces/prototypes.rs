@@ -524,7 +524,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
             annotations,
             &id,
             section.name(),
-            record.offset as u64,
+            cadmpeg_core::decode::u64_from_index(record.offset),
             "first_instance_surface_prototype",
             Exactness::Derived,
         )?;
@@ -688,7 +688,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
             annotations,
             &id,
             section.name(),
-            parameter.body_offset as u64,
+            cadmpeg_core::decode::u64_from_index(parameter.body_offset),
             "positional_spline_prototype_replay",
             Exactness::Derived,
         )?;
@@ -880,7 +880,7 @@ pub(in super::super) fn transfer_legacy_ascii_surface_carriers(
             annotations,
             &id,
             "legacy_ascii",
-            carrier.offset as u64,
+            cadmpeg_core::decode::u64_from_index(carrier.offset),
             "legacy_surface_prototype_carrier",
             Exactness::Derived,
         )?;

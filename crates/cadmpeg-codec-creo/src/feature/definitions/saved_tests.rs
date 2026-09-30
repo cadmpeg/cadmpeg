@@ -911,7 +911,16 @@ fn saved_section_41_form_occupies_eight_bytes() {
 fn saved_section_zero_does_not_consume_named_record_opener() {
     let mut section = Vec::new();
     for index in 0_u16..=224 {
-        section.extend_from_slice(&[0x46, 0x08, (index >> 8) as u8, index as u8, 0, 0, 0, 0]);
+        section.extend_from_slice(&[
+            0x46,
+            0x08,
+            u8::try_from(index >> 8).expect("fixture value fits u8"),
+            u8::try_from(index).expect("fixture value fits u8"),
+            0,
+            0,
+            0,
+            0,
+        ]);
     }
     let cache = scalar::ScalarCache::from_section(&section);
 

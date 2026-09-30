@@ -127,7 +127,7 @@ pub(in super::super) fn transfer_active_datum_cylinders(
             annotations,
             &id,
             "ActDatums",
-            datum.offset_in_payload as u64,
+            cadmpeg_core::decode::u64_from_index(datum.offset_in_payload),
             "active_datum_cylinder",
             Exactness::Derived,
         )?;
@@ -258,7 +258,7 @@ pub(in super::super) fn transfer_constrained_slot_fillet_cylinders(
             annotations,
             &id,
             "AllFeatur",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             "constrained_slot_fillet_cylinder",
             Exactness::Derived,
         )?;
@@ -349,7 +349,7 @@ pub(in super::super) fn transfer_rowless_round_cylinders(
             annotations,
             &id,
             "AllFeatur",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "round_rowless_sibling_cylinder",
             Exactness::Derived,
         )?;
@@ -433,7 +433,7 @@ pub(in super::super) fn transfer_hole_cylinders(
                 annotations,
                 &id,
                 "AllFeatur",
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 "hole_cap_outline_cylinder",
                 Exactness::Derived,
             )?;
@@ -589,7 +589,7 @@ pub(in super::super) fn transfer_split_outline_cylinders(
                 annotations,
                 &id,
                 "VisibGeom",
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 "split_outline_cylinder",
                 Exactness::Derived,
             )?;
@@ -1335,7 +1335,7 @@ pub(in super::super) fn transfer_positional_cylinders(
                         annotations,
                         &id,
                         "VisibGeom",
-                        row.offset as u64,
+                        cadmpeg_core::decode::u64_from_index(row.offset),
                         "positional_cylinder_frame_reconciled",
                         Exactness::Derived,
                     )?;
@@ -1348,7 +1348,7 @@ pub(in super::super) fn transfer_positional_cylinders(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             mechanism.label(),
             Exactness::Derived,
         )?;
@@ -1599,7 +1599,7 @@ pub(in super::super) fn transfer_positional_cones(
             annotations,
             &id,
             "VisibGeom",
-            row.offset as u64,
+            cadmpeg_core::decode::u64_from_index(row.offset),
             "positional_cone_frame",
             Exactness::Derived,
         )?;
@@ -1680,7 +1680,7 @@ pub(in super::super) fn transfer_circular_sweep_cylinders(
                 annotations,
                 &id,
                 "AllFeatur",
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 "circular_sweep_cap_outline_cylinder",
                 Exactness::Derived,
             )?;
@@ -1759,7 +1759,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             annotations,
             &id,
             "Xsections",
-            frame.offset as u64,
+            cadmpeg_core::decode::u64_from_index(frame.offset),
             "cross_section_plane_local_system",
             Exactness::Derived,
         )?;
@@ -1811,7 +1811,7 @@ pub(in super::super) fn transfer_cross_section_planes(
             annotations,
             &id,
             "Xsections",
-            plane.offset as u64,
+            cadmpeg_core::decode::u64_from_index(plane.offset),
             "cross_section_plane_outline_held_coordinate",
             Exactness::Derived,
         )?;

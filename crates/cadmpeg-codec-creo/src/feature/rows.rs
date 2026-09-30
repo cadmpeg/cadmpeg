@@ -384,7 +384,10 @@ pub(super) fn row_spans(
         let Ok((id, after)) = psb::reference_id(payload, offset) else {
             continue;
         };
-        let prefix_end = after.saturating_add(16).min(payload.len());
+        let Some(prefix_end) = after.checked_add(16) else {
+            continue;
+        };
+        let prefix_end = prefix_end.min(payload.len());
         // Row-like identifiers inside a body are not boundaries. A compound
         // close is the only in-body boundary; the section header is the
         // corresponding boundary before the first row.
@@ -745,7 +748,10 @@ pub(crate) fn choice_fields(
     let mut fields = Vec::new();
     for choice in choices {
         let mut headers = Vec::new();
-        for offset in 0..choice.payload.len().saturating_sub(2) {
+        let Some(last) = choice.payload.len().checked_sub(2) else {
+            continue;
+        };
+        for offset in 0..last {
             if choice.payload[offset] != psb::token::NAMED_RECORD {
                 continue;
             }
@@ -894,7 +900,7 @@ fn positional_datum_geometry_table_at(
         cursor += 1;
     }
 
-    let capacity = bounded_len(u64::from(count), 1, body.len().saturating_sub(cursor))?;
+    let capacity = bounded_len(u64::from(count), 1, body.len().checked_sub(cursor)?)?;
     let entry_class = entity_class.checked_add(1)?;
     let mut entry_ids = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut entry_ids, capacity, "creo positional datum ids") {
@@ -1017,9 +1023,10 @@ pub(crate) fn affected_ids(
                 }
                 // Each id is a compact int of at least one byte, so the count
                 // cannot exceed the unread bytes of the row body.
-                let Some(capacity) =
-                    bounded_len(u64::from(count), 1, row.body.len().saturating_sub(cursor))
-                else {
+                let Some(remaining) = row.body.len().checked_sub(cursor) else {
+                    continue;
+                };
+                let Some(capacity) = bounded_len(u64::from(count), 1, remaining) else {
                     continue;
                 };
                 let mut ids = Vec::new();
@@ -1097,7 +1104,7 @@ fn replay_ids(
 ) -> Option<Result<(Vec<u32>, usize), CodecError>> {
     // Each id is a compact int of at least one byte, so the count cannot exceed
     // the unread bytes of the run.
-    let capacity = bounded_len(u64::from(count), 1, run.len().saturating_sub(cursor))?;
+    let capacity = bounded_len(u64::from(count), 1, run.len().checked_sub(cursor)?)?;
     let mut ids = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut ids, capacity, "creo replay affected ids") {
         return Some(Err(error));
@@ -1627,7 +1634,10 @@ pub(crate) fn loop_history_entries(
         let Some(row) = rows.iter().find(|row| {
             row.feature_id == table.feature_id
                 && table.offset >= row.body_offset
-                && table.offset < row.body_offset.saturating_add(row.body.len())
+                && row
+                    .body_offset
+                    .checked_add(row.body.len())
+                    .is_some_and(|end| table.offset < end)
         }) else {
             continue;
         };
@@ -1687,7 +1697,7 @@ fn loop_history_roster(
     mut cursor: usize,
     count: usize,
 ) -> Option<Result<Vec<ParsedLoopHistoryEntry>, CodecError>> {
-    (count > 0 && count <= body.len().saturating_sub(cursor) / 2).then_some(())?;
+    (count > 0 && count <= body.len().checked_sub(cursor)? / 2).then_some(())?;
     let mut entries = Vec::new();
     if let Err(error) = ctx.reserve_vec(&mut entries, count, "creo loop history roster") {
         return Some(Err(error));

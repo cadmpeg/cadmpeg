@@ -4,8 +4,6 @@
 //! Do not edit by hand. Regenerate with:
 //! `UPDATE_LAYOUT_CODE=1 cargo test -p cadmpeg --test layout_tables`.
 
-#![allow(dead_code)] // Not every generated constant is referenced yet.
-
 /// Byte offsets for the `mesh_kernel_side_entry_header` record.
 ///
 /// Spec §11. Record length 264 B.
@@ -16,12 +14,8 @@
 pub(crate) mod mesh_kernel_side_entry_header {
     /// Record length in bytes. Spec §11.
     pub(crate) const LEN: usize = 264;
-    /// Offset of `magic` (`u32`, endianness unstated). Spec §11.
-    pub(crate) const MAGIC: usize = 0;
     /// Stated value of `magic` (`u32`). Spec §11.
     pub(crate) const MAGIC_VALUE: u32 = 0xa0b0_c0d0;
-    /// Offset of `version` (`u32`, endianness unstated). Spec §11.
-    pub(crate) const VERSION: usize = 4;
     /// Stated value of `version` (`u32`). Spec §11.
     pub(crate) const VERSION_VALUE: u32 = 0x0001_0000;
     /// Offset of `information` (`bytes[256]`). Spec §11.
@@ -38,38 +32,6 @@ pub(crate) mod mesh_kernel_side_entry_header {
 pub(crate) mod mesh_facet {
     /// Record length in bytes. Spec §11.
     pub(crate) const LEN: usize = 24;
-    /// Offset of `point_indices` (`u32[3]`, little-endian). Spec §11.
-    pub(crate) const POINT_INDICES: usize = 0;
-    /// Offset of `neighbour_indices` (`u32[3]`, little-endian). Spec §11.
-    pub(crate) const NEIGHBOUR_INDICES: usize = 12;
-}
-
-/// Byte offsets for the `point_kernel_side_entry_header` record.
-///
-/// Spec §11. Record length 4 B.
-///
-/// ```text
-/// Fixed prefix only; `count` float32 XYZ triples follow at +4. The property's `Points` element carries the sixteen finite row-major transform scalars separately, in XML.
-/// ```
-pub(crate) mod point_kernel_side_entry_header {
-    /// Record length in bytes. Spec §11.
-    pub(crate) const LEN: usize = 4;
-    /// Offset of `point_count` (`u32`, little-endian). Spec §11.
-    pub(crate) const POINT_COUNT: usize = 0;
-}
-
-/// Byte offsets for the `packed_color_list_header` record.
-///
-/// Spec §11. Record length 4 B.
-///
-/// ```text
-/// Applies to `DiffuseColor`, `LineColorArray`, and `PointColorArray`. A count of one applies its colour to every member of the corresponding element-map group; otherwise the count must equal the number of names in that ordered group.
-/// ```
-pub(crate) mod packed_color_list_header {
-    /// Record length in bytes. Spec §11.
-    pub(crate) const LEN: usize = 4;
-    /// Offset of `count` (`u32`, little-endian). Spec §11.
-    pub(crate) const COUNT: usize = 0;
 }
 
 /// Byte offsets for the `link_array_side_entry_header` record.
@@ -82,6 +44,4 @@ pub(crate) mod packed_color_list_header {
 pub(crate) mod link_array_side_entry_header {
     /// Record length in bytes. Spec §9.
     pub(crate) const LEN: usize = 4;
-    /// Offset of `element_count` (`u32`, little-endian). Spec §9.
-    pub(crate) const ELEMENT_COUNT: usize = 0;
 }

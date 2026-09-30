@@ -168,14 +168,14 @@ fn simple_hole_cylinder_rows_refuse_collection_limit() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         scan.planes.outlines.push(crate::surface::OutlinePlane {
             surface_id: id,
             origin: [0.0, 0.0, z],
             normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
             u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
         scan.planes
             .envelopes
@@ -203,7 +203,7 @@ fn simple_hole_cylinder_rows_refuse_collection_limit() {
             reversed: false,
             boundary_type: crate::surface::BoundaryType::Code00,
             next_surface: 0,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         });
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -337,7 +337,7 @@ fn circular_sweep_limit_scan(two_cap: bool) -> crate::container::ContainerScan<'
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     if two_cap {
         scan.surfaces

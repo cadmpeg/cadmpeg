@@ -355,7 +355,7 @@ fn primitive_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
             };
             // Compact exponent byte is remapped into the IEEE high byte; the
             // four-byte argument is assembled, not a contiguous in-order window.
-            let value = scalar::be_f32([ieee_high, *b1, *b2, *b3]) as f64;
+            let value = f64::from(scalar::be_f32([ieee_high, *b1, *b2, *b3]));
             Some((value, offset + 4))
         }
         _ => None,

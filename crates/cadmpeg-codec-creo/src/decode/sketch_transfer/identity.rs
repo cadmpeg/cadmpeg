@@ -465,7 +465,7 @@ mod tests {
         ];
         let mut total = 0u64;
         for (field, operation) in fields {
-            total += field.len() as u64;
+            total += cadmpeg_core::decode::u64_from_index(field.len());
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();
             policy.limits.max_retained_bytes = total - 1;
@@ -516,7 +516,8 @@ mod tests {
         };
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = "offset:9".len() as u64 - 1;
+        policy.limits.max_retained_bytes =
+            cadmpeg_core::decode::u64_from_index("offset:9".len()) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
@@ -545,7 +546,7 @@ mod tests {
         let expected = format!("opaque:offset:{}", segment.offset);
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+        policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(expected.len()) - 1;
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
             .expect("empty root");
         assert!(
@@ -613,7 +614,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         }
     }
 
@@ -622,7 +623,7 @@ mod tests {
             center_id: 1,
             radius_ref: 2,
             external_id,
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         }
     }
 

@@ -605,7 +605,7 @@ fn active_datum_cylinder_envelope_decodes_direct_and_split_forms() {
     {
         let mut data = b"srf_array\0\xf8\x01".to_vec();
         data.extend([
-            id as u8,
+            u8::try_from(id).expect("fixture value fits u8"),
             0x24,
             3,
             if reversed { 0xf6 } else { 1 },

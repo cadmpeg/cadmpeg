@@ -1479,7 +1479,7 @@ where
                         let mut runs = Vec::new();
                         while let Some(child) = scope.values.get(next_index).filter(|child| {
                             child.attribute_id == value.attribute_id
-                                && child.depth == value.depth.saturating_add(1)
+                                && value.depth.checked_add(1) == Some(child.depth)
                         }) {
                             let Some(bytes) = data.get(child.payload.clone()) else {
                                 break;

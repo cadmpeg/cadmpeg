@@ -1072,7 +1072,7 @@ fn curve_expression_source_ordinal_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_activation_value_refuses_before_text() {
-    let prior = ("0".len() + "source_assignment_ordinal".len()) as u64;
+    let prior = cadmpeg_core::decode::u64_from_index("0".len() + "source_assignment_ordinal".len());
     let error = with_retained_limit(prior, quantity_property_result)
         .expect_err("activation text follows the ordinal property");
     assert!(
@@ -1083,9 +1083,9 @@ fn curve_expression_activation_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_canonical_value_refuses_before_text() {
-    let prior =
-        ("0".len() + "source_assignment_ordinal".len() + "active".len() + "activation".len())
-            as u64;
+    let prior = cadmpeg_core::decode::u64_from_index(
+        "0".len() + "source_assignment_ordinal".len() + "active".len() + "activation".len(),
+    );
     let error = with_retained_limit(prior, quantity_property_result)
         .expect_err("canonical value follows the activation property");
     assert!(
@@ -1096,12 +1096,14 @@ fn curve_expression_canonical_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_dimension_value_refuses_before_text() {
-    let prior = ("0".len()
-        + "source_assignment_ordinal".len()
-        + "active".len()
-        + "activation".len()
-        + "3.5".len()
-        + "evaluated_canonical_value".len()) as u64;
+    let prior = cadmpeg_core::decode::u64_from_index(
+        "0".len()
+            + "source_assignment_ordinal".len()
+            + "active".len()
+            + "activation".len()
+            + "3.5".len()
+            + "evaluated_canonical_value".len(),
+    );
     let error = with_retained_limit(prior, quantity_property_result)
         .expect_err("dimension value follows the canonical property");
     assert!(
@@ -1139,7 +1141,7 @@ fn curve_expression_native_kind_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_entity_value_refuses_before_text() {
-    let prior = "CurveFromEquation".len() as u64;
+    let prior = cadmpeg_core::decode::u64_from_index("CurveFromEquation".len());
     let error = with_retained_limit(prior, |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
     })
@@ -1152,7 +1154,7 @@ fn curve_expression_native_entity_value_refuses_before_text() {
 
 #[test]
 fn curve_expression_native_assignment_count_refuses_before_text() {
-    let prior = ("CurveFromEquation".len() + "7".len()) as u64;
+    let prior = cadmpeg_core::decode::u64_from_index("CurveFromEquation".len() + "7".len());
     let error = with_retained_limit(prior, |ctx| {
         super::native_curve_expression_definition(ctx, 7, 1)
     })
@@ -1198,7 +1200,7 @@ fn curve_expression_feature_name_refuses_before_text() {
 
 #[test]
 fn curve_expression_feature_source_tag_refuses_before_text() {
-    let prior = "Curve Equation 7".len() as u64;
+    let prior = cadmpeg_core::decode::u64_from_index("Curve Equation 7".len());
     let error = with_retained_limit(prior, |ctx| super::curve_expression_feature_labels(ctx, 7))
         .expect_err("source tag needs retained text");
     assert!(

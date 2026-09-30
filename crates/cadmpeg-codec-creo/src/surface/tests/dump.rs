@@ -116,7 +116,8 @@ fn decode_transfers_positional_line_extrusion_plane() {
             .copied(),
         Some(1)
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -198,7 +199,8 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
             .copied(),
         Some(1)
     );
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -623,8 +625,9 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset =
-        container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset as u64;
+    let expected_offset = cadmpeg_core::decode::u64_from_index(
+        container::scan_bytes_ok(data.clone()).planes.local_systems[0].offset,
+    );
     let result = EditableDecodeResult::from(
         CreoCodec
             .decode(&mut Cursor::new(data), &DecodeOptions::default())

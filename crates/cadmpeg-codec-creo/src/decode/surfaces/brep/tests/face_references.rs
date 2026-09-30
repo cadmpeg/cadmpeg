@@ -8,21 +8,29 @@ use super::super::BrepFaceReferences;
 
 fn fixture_lengths() -> [u64; 4] {
     [
-        FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)
+        cadmpeg_core::decode::u64_from_index(
+            FaceId::compose(&crate::identity::VISIBGEOM_FACE, 5)
+                .as_str()
+                .len(),
+        ),
+        cadmpeg_core::decode::u64_from_index(
+            ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1)
+                .as_str()
+                .len(),
+        ),
+        cadmpeg_core::decode::u64_from_index(
+            LoopId::compose(&crate::identity::VISIBGEOM_LOOP, 5)
+                .as_str()
+                .len(),
+        ),
+        cadmpeg_core::decode::u64_from_index(
+            LoopId::compose(
+                &crate::identity::VISIBGEOM_LOOP,
+                cadmpeg_ir::ids::IdentityKey::from(5).colon(1),
+            )
             .as_str()
-            .len() as u64,
-        ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1)
-            .as_str()
-            .len() as u64,
-        LoopId::compose(&crate::identity::VISIBGEOM_LOOP, 5)
-            .as_str()
-            .len() as u64,
-        LoopId::compose(
-            &crate::identity::VISIBGEOM_LOOP,
-            cadmpeg_ir::ids::IdentityKey::from(5).colon(1),
-        )
-        .as_str()
-        .len() as u64,
+            .len(),
+        ),
     ]
 }
 

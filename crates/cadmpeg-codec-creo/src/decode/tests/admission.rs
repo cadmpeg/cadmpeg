@@ -355,7 +355,7 @@ fn decode_expands_and_retains_compressed_jpeg_thumbnail() {
         &result.source_fidelity().annotations,
         unknowns[0].id.as_str(),
         "creo:THMB_IMG_MAIN",
-        source_offset as u64,
+        cadmpeg_core::decode::u64_from_index(source_offset),
         "jpeg_thumbnail",
         Exactness::Derived,
     );
@@ -635,8 +635,9 @@ fn decode_annotations_cover_every_emitted_entity() {
             ("ActDatums", datum),
         ],
     );
-    let datum_offset =
-        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload as u64;
+    let datum_offset = cadmpeg_core::decode::u64_from_index(
+        container::scan_bytes_ok(data.clone()).planes.datums[0].offset_in_payload,
+    );
     let mut reader = Cursor::new(data);
     let result = EditableDecodeResult::from(
         CreoCodec
@@ -758,7 +759,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
             .as_array()
             .unwrap()
             .iter()
-            .map(|byte| byte.as_u64().unwrap() as u8)
+            .map(|byte| u8::try_from(byte.as_u64().unwrap()).expect("fixture value fits u8"))
             .collect::<Vec<_>>(),
         b"xProtrusion id 40"
     );
@@ -787,7 +788,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.source_fidelity().annotations,
         "creo:model:feature#40",
         "creo:MdlStatus",
-        scan.features.operations[0].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.operations[0].offset),
         "feature_operation_state_consensus",
         Exactness::Derived,
     );
@@ -816,7 +817,7 @@ fn decode_retains_mdlstatus_states_and_projects_only_agreement() {
         &result.source_fidelity().annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
-        scan.features.operations[1].offset as u64,
+        cadmpeg_core::decode::u64_from_index(scan.features.operations[1].offset),
         "feature_operation_name",
         Exactness::ByteExact,
     );

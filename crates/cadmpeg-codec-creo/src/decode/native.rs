@@ -179,31 +179,42 @@ where
     store_arena(ctx, ir, key, records)
 }
 
+/// Records and provenance fields for one native arena.
+pub(super) struct UniformArena<'a, T> {
+    pub key: &'a str,
+    pub records: &'a [T],
+    pub id: fn(&T) -> &str,
+    pub stream: fn(&T) -> &str,
+    pub offset: fn(&T) -> u64,
+    pub tag: &'a str,
+    pub exactness: Exactness,
+}
+
 /// Emit an arena whose provenance comes entirely from each record's own fields.
-#[expect(clippy::too_many_arguments)]
 pub(super) fn emit_uniform<T: Serialize>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    key: &str,
-    records: &[T],
-    id: fn(&T) -> &str,
-    stream: fn(&T) -> &str,
-    offset: fn(&T) -> u64,
-    tag: &str,
-    exactness: Exactness,
+    arena: &UniformArena<'_, T>,
 ) -> Result<(), CodecError> {
-    emit_arena(ctx, ir, annotations, key, records, |annotations, record| {
-        annotate(
-            ctx,
-            annotations,
-            id(record),
-            stream(record),
-            offset(record),
-            tag,
-            exactness,
-        )
-    })
+    emit_arena(
+        ctx,
+        ir,
+        annotations,
+        arena.key,
+        arena.records,
+        |annotations, record| {
+            annotate(
+                ctx,
+                annotations,
+                (arena.id)(record),
+                (arena.stream)(record),
+                (arena.offset)(record),
+                arena.tag,
+                arena.exactness,
+            )
+        },
+    )
 }
 
 #[cfg(test)]

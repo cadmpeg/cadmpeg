@@ -736,7 +736,7 @@ fn positional_conic_local_system(
 ) -> Option<(usize, cadmpeg_ir::units::FiniteVector<12>)> {
     const MAX_FRAME_BYTES: usize = 12 * 9;
     let first_end = local_start.checked_add(1)?;
-    let last_end = local_start.saturating_add(MAX_FRAME_BYTES).min(body.len());
+    let last_end = local_start.checked_add(MAX_FRAME_BYTES)?.min(body.len());
     let mut candidate = None;
     for end in first_end..=last_end {
         let tail = body.get(end..)?;
@@ -988,19 +988,26 @@ fn line3d_fields(
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
-    let start = close.saturating_sub(8);
-    (start..close).any(|candidate| {
-        let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
-            return false;
-        };
-        if previous != id {
-            return false;
-        }
-        after == close
-            || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
-                && crate::psb::reference_id(payload, after + 1)
-                    .is_ok_and(|(_, reference_end)| reference_end == close))
-    })
+    let Some(prefix) = payload.get(..close) else {
+        return false;
+    };
+    prefix
+        .iter()
+        .enumerate()
+        .rev()
+        .take(8)
+        .any(|(candidate, _)| {
+            let Ok((previous, after)) = crate::psb::reference_id(payload, candidate) else {
+                return false;
+            };
+            if previous != id {
+                return false;
+            }
+            after == close
+                || (payload.get(after) == Some(&crate::psb::token::ENTITY_REF)
+                    && crate::psb::reference_id(payload, after + 1)
+                        .is_ok_and(|(_, reference_end)| reference_end == close))
+        })
 }
 
 /// Decode complete positional `line3d` rows whose endpoint distance equals

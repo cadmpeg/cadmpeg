@@ -76,7 +76,6 @@ mod legacy_family;
 mod legacy_feature;
 mod legacy_geometry;
 mod loop_array;
-#[allow(dead_code)] // Loss catalog is consumed by tests and the writer.
 mod loss;
 mod placement;
 mod primdata;

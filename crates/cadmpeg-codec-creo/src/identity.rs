@@ -272,7 +272,8 @@ mod tests {
             if resource.dimension == ResourceDimension::MaterializedBytes
                 && resource.operation == "creo temporary curve identity"));
         let mut policy = DecodePolicy::service();
-        policy.limits.max_materialized_bytes = "creo:visibgeom:shell#7".len() as u64;
+        policy.limits.max_materialized_bytes =
+            cadmpeg_core::decode::u64_from_index("creo:visibgeom:shell#7".len());
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &policy).expect("limited root admitted");
         let (id, reservation) = compose_scoped::<ShellId>(

@@ -100,7 +100,7 @@ fn empty_section_transfer_preserves_sketch_and_feature() {
 #[test]
 fn sketch_native_reference_refuses_below_retained_limit() {
     let sketch = SketchId::mint("creo:model:sketch#7").expect("valid sketch ID");
-    let need = "creo:featdefs:sketch#7".len() as u64;
+    let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch#7".len());
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = need - 1;
@@ -198,13 +198,15 @@ fn emitted_entity_views_refuse_each_tree_node() {
 #[test]
 fn emitted_entity_views_refuse_nested_identity_and_geometry_copies() {
     let mut policy = DecodePolicy::service();
-    policy.limits.max_retained_bytes = "creo:model:sketch_entity#1".len() as u64 - 1;
+    policy.limits.max_retained_bytes =
+        cadmpeg_core::decode::u64_from_index("creo:model:sketch_entity#1".len()) - 1;
     let error = views_with_policy(&policy).expect_err("first identity copy exceeds cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
             && resource.operation == "creo emitted sketch entity IDs"));
-    policy.limits.max_retained_bytes =
-        ("creo:model:sketch_entity#1".len() * 2 + "native".len() - 1) as u64;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(
+        "creo:model:sketch_entity#1".len() * 2 + "native".len() - 1,
+    );
     let error = views_with_policy(&policy).expect_err("native text exceeds remaining cap");
     assert!(matches!(error, CodecError::ResourceLimit(resource)
         if resource.dimension == ResourceDimension::RetainedBytes
@@ -228,7 +230,7 @@ fn available_parameter_ids_refuse_existing_node_and_identity_copy() {
         if resource.dimension == ResourceDimension::CollectionItems
             && resource.operation == "creo available parameter ID nodes"));
     policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-    policy.limits.max_retained_bytes = id.as_str().len() as u64 - 1;
+    policy.limits.max_retained_bytes = cadmpeg_core::decode::u64_from_index(id.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
     let error = available_parameter_ids(&ctx, [&id], BTreeSet::new())
         .expect_err("existing parameter identity exceeds cap");

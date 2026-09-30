@@ -1284,7 +1284,7 @@ mod tests {
             entity_id: 7,
             sense: 0,
         };
-        let need = "creo:featdefs:sketch_entity#917:7".len() as u64;
+        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:7".len());
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
         policy.limits.max_retained_bytes = need - 1;
@@ -1413,7 +1413,7 @@ mod tests {
         let sketch = SketchId::mint("creo:model:sketch#917").expect("valid test fixture");
         let arena = DecodeArena::new();
         let mut policy = DecodePolicy::service();
-        let need = "creo:featdefs:sketch_entity#917:12".len() as u64;
+        let need = cadmpeg_core::decode::u64_from_index("creo:featdefs:sketch_entity#917:12".len());
         policy.limits.max_retained_bytes = need - 1;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root");
         let error = section_point_locus_admitted(&ctx, &definition, &sketch, 7)
@@ -1631,7 +1631,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let skamp = |id, kind, items| crate::feature::definitions::FeatureSkamp {
             id,
@@ -1639,7 +1639,7 @@ mod tests {
             flags: 0,
             status: 0,
             items,
-            offset: id as usize,
+            offset: usize::try_from(id).expect("fixture index fits usize"),
         };
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -1980,7 +1980,7 @@ mod tests {
             radius2_ref: None,
             external_id,
             body: Vec::new(),
-            offset: external_id as usize,
+            offset: usize::try_from(external_id).expect("fixture index fits usize"),
         };
         let definition = crate::feature::definitions::FeatureDefinition {
             identity: crate::feature::definitions::DefinitionIdentity::Parsed {
@@ -2065,7 +2065,7 @@ mod tests {
                 radius2_ref: None,
                 external_id,
                 body: Vec::new(),
-                offset: external_id as usize,
+                offset: usize::try_from(external_id).expect("fixture index fits usize"),
             }
         };
         let item =

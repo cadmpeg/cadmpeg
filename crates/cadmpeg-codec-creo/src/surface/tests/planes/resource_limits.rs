@@ -479,8 +479,10 @@ fn plane_corner_limit_error(collection_limit: bool) -> cadmpeg_core::CodecError 
     .expect("corner parser fits service limits");
     assert_eq!(service.iter().filter(|token| token.offset >= 12).count(), 6);
     let before_corner = service.iter().filter(|token| token.offset < 12);
-    let prior_items = before_corner.clone().count() as u64;
-    let prior_bytes = before_corner.map(|token| token.raw.len() as u64).sum();
+    let prior_items = cadmpeg_core::decode::u64_from_index(before_corner.clone().count());
+    let prior_bytes = before_corner
+        .map(|token| cadmpeg_core::decode::u64_from_index(token.raw.len()))
+        .sum();
     let collection_items = if collection_limit {
         prior_items
     } else {

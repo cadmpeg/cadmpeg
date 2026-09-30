@@ -276,9 +276,23 @@ pub(super) struct SketchSegmentTransferCoverage {
 
 impl SketchSegmentTransferCoverage {
     /// Records decoded and missing rows for a segment table.
-    pub(super) fn record_table_rows(&mut self, decoded: usize, expected: usize) {
-        self.decoded_rows += decoded;
-        self.missing_rows += expected.saturating_sub(decoded);
+    pub(super) fn record_table_rows(
+        &mut self,
+        decoded: usize,
+        expected: usize,
+    ) -> Result<(), CodecError> {
+        let missing = expected.checked_sub(decoded).ok_or_else(|| {
+            CodecError::malformed("decoded sketch rows exceed the declared count")
+        })?;
+        self.decoded_rows = self
+            .decoded_rows
+            .checked_add(decoded)
+            .ok_or_else(|| CodecError::malformed("decoded sketch row count exceeds usize"))?;
+        self.missing_rows = self
+            .missing_rows
+            .checked_add(missing)
+            .ok_or_else(|| CodecError::malformed("missing sketch row count exceeds usize"))?;
+        Ok(())
     }
 
     /// Records decoded rows in one segment family.
@@ -344,12 +358,16 @@ pub(in crate::decode) struct DesignConstraintTransferCoverage {
 }
 
 impl DesignConstraintTransferCoverage {
-    pub(super) fn typed(&self) -> usize {
-        self.transferred.saturating_sub(self.native)
+    pub(super) fn typed(&self) -> Result<usize, CodecError> {
+        self.transferred.checked_sub(self.native).ok_or_else(|| {
+            CodecError::malformed("native constraint count exceeds transferred count")
+        })
     }
 
-    pub(super) fn active_typed(&self) -> usize {
-        self.active.saturating_sub(self.active_native)
+    pub(super) fn active_typed(&self) -> Result<usize, CodecError> {
+        self.active.checked_sub(self.active_native).ok_or_else(|| {
+            CodecError::malformed("native constraint count exceeds transferred count")
+        })
     }
 }
 
@@ -496,7 +514,11 @@ pub(super) fn curve_transfer_coverage(
         charged_set_insert(ctx, &mut unknown_ids, id, "creo unknown curve ID nodes")?;
     }
     let mut coverage = CurveTransferCoverage::default();
-    coverage.record_ambiguous_rows(rows.len().saturating_sub(unique_rows.len()));
+    coverage.record_ambiguous_rows(
+        rows.len()
+            .checked_sub(unique_rows.len())
+            .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
+    );
     for row in unique_rows {
         coverage.record_source_row(ctx, row.type_byte)?;
         if transferred_ids.contains(&row.id) {
@@ -596,7 +618,11 @@ pub(super) fn surface_transfer_coverage(
         charged_set_insert(ctx, &mut unknown_ids, id, "creo unknown surface ID nodes")?;
     }
     let mut coverage = SurfaceTransferCoverage::default();
-    coverage.record_ambiguous_rows(rows.len().saturating_sub(unique_rows.len()));
+    coverage.record_ambiguous_rows(
+        rows.len()
+            .checked_sub(unique_rows.len())
+            .ok_or_else(|| CodecError::malformed("unique row count exceeds source row count"))?,
+    );
     for row in unique_rows {
         coverage.record_source_row(row.kind);
         if transferred.iter().any(|(id, kinds)| {
@@ -624,5 +650,43 @@ pub(super) fn surface_variant(kind: crate::surface::SurfaceKind) -> Option<&'sta
             crate::surface::ExtrusionVariant::TabulatedCylinder,
         ) => Some("tabulated_cylinder"),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DesignConstraintTransferCoverage, SketchSegmentTransferCoverage};
+    use cadmpeg_core::CodecError;
+
+    #[test]
+    fn sketch_row_coverage_refuses_overfull_table() {
+        let mut coverage = SketchSegmentTransferCoverage::default();
+        assert!(matches!(
+            coverage.record_table_rows(2, 1),
+            Err(CodecError::Malformed(_))
+        ));
+        assert_eq!(coverage.decoded_rows(), 0);
+        assert_eq!(coverage.missing_rows(), 0);
+    }
+
+    #[test]
+    fn typed_constraint_coverage_refuses_native_count_above_total() {
+        let coverage = DesignConstraintTransferCoverage {
+            native: 1,
+            ..Default::default()
+        };
+        assert!(matches!(coverage.typed(), Err(CodecError::Malformed(_))));
+    }
+
+    #[test]
+    fn active_typed_constraint_coverage_refuses_native_count_above_total() {
+        let coverage = DesignConstraintTransferCoverage {
+            active_native: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            coverage.active_typed(),
+            Err(CodecError::Malformed(_))
+        ));
     }
 }

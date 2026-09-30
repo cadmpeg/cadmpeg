@@ -721,7 +721,7 @@ fn class_942_sheet_extrusion_uses_linear_cap_extent_evaluation() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     scan.surfaces.rows.extend([row(31), row(32), row(33)]);
     let plane = |id, z| Surface {
@@ -814,8 +814,8 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
 
             entity_id,
             prefixed: true,
-            offset: entity_id as usize,
-            end_offset: entity_id as usize,
+            offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+            end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
         };
     let table = crate::feature::entity::FeatureEntityTable::new(
         17,
@@ -837,7 +837,7 @@ fn feature_surface_transitions_require_complete_unique_predecessor_chains() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let rows = vec![row(11, 3), row(12, 4), row(201, 17), row(202, 17)];
 
@@ -889,8 +889,8 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
 
         entity_id,
         prefixed: true,
-        offset: entity_id as usize,
-        end_offset: entity_id as usize,
+        offset: usize::try_from(entity_id).expect("fixture index fits usize"),
+        end_offset: usize::try_from(entity_id).expect("fixture index fits usize"),
     };
     let table = |entries: Vec<crate::feature::entity::FeatureEntityTableEntry>, surface_ids| {
         crate::feature::entity::FeatureEntityTable::new(
@@ -909,7 +909,7 @@ fn draft_neutral_plane_requires_one_owned_class_209_plane() {
         reversed: false,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut scan = crate::container::scan_bytes_ok(Vec::new());
     scan.features
@@ -996,7 +996,7 @@ fn thicken_plane_offsets_require_parallel_agreeing_oriented_distances() {
         reversed,
         boundary_type: crate::surface::BoundaryType::Code00,
         next_surface: 0,
-        offset: id as usize,
+        offset: usize::try_from(id).expect("fixture index fits usize"),
     };
     let mut rows = vec![
         row(11, true),

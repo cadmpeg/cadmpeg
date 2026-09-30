@@ -746,7 +746,7 @@ pub(in crate::decode) fn reconcile_support_apex_cone_parameter_branches(
                 annotations,
                 &surface.id,
                 "VisibGeom",
-                row.offset as u64,
+                cadmpeg_core::decode::u64_from_index(row.offset),
                 "support_apex_cone_pcurve_branch",
                 Exactness::Derived,
             )?;
@@ -1634,7 +1634,7 @@ pub(in crate::decode) fn transfer_analytic_pcurve_carriers(
             annotations,
             &id,
             "VisibGeom",
-            offset as u64,
+            cadmpeg_core::decode::u64_from_index(offset),
             "analytic_pcurve_carrier",
             Exactness::Derived,
         )?;

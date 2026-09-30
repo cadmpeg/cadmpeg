@@ -88,7 +88,10 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let scan = container::scan_bytes(ctx, root.window())?;
     let classification = crate::dialect::classify(ctx, &scan)?;
     // Admit section identities before model construction.
-    ctx.charge_entities(scan.framing.sections.len() as u64, "admit Creo sections")?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(scan.framing.sections.len()),
+        "admit Creo sections",
+    )?;
     let BuiltIr {
         mut ir,
         annotations,

@@ -208,14 +208,21 @@ pub(in super::super) fn circular_pcurve(
     record: &dyn std::fmt::Display,
     refusal: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Option<PcurveGeometry>, cadmpeg_core::CodecError> {
-    const MAX_CIRCULAR_PCURVE_SEGMENTS: usize = 100_000;
+    const MAX_CIRCULAR_PCURVE_SEGMENTS: f64 = 100_000.0;
     let span = end_angle - start_angle;
     let count = (span.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0);
-    if !count.is_finite() || count > MAX_CIRCULAR_PCURVE_SEGMENTS as f64 {
+    if !count.is_finite() || count > MAX_CIRCULAR_PCURVE_SEGMENTS {
         return Ok(None);
     }
-    let segment_count = count as usize;
-    let step = span / segment_count as f64;
+    let Some(segment_count) = cadmpeg_core::convert::truncate_f64_to_usize(count) else {
+        return Ok(None);
+    };
+    let step = span
+        / cadmpeg_core::convert::f64_from_index(segment_count).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed(
+                "Creo pcurve segment index cannot be represented exactly",
+            )
+        })?;
     let Some(pole_count) = segment_count.checked_mul(2).and_then(|n| n.checked_add(1)) else {
         return Ok(None);
     };
@@ -231,7 +238,12 @@ pub(in super::super) fn circular_pcurve(
     let mut weights = Vec::new();
     ctx.reserve_vec(&mut weights, pole_count, "creo circular pcurve weights")?;
     for segment in 0..segment_count {
-        let first = start_angle + segment as f64 * step;
+        let first = start_angle
+            + cadmpeg_core::convert::f64_from_index(segment).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Creo pcurve segment index cannot be represented exactly",
+                )
+            })? * step;
         let second = first + step;
         let middle = 0.5 * (first + second);
         let middle_weight = (0.5 * step).cos();
@@ -257,7 +269,17 @@ pub(in super::super) fn circular_pcurve(
     ctx.reserve_vec(&mut knots, knot_count, "creo circular pcurve knots")?;
     knots.extend([0.0; 3]);
     for boundary in 1..segment_count {
-        knots.extend([boundary as f64 / segment_count as f64; 2]);
+        knots.extend(
+            [cadmpeg_core::convert::f64_from_index(boundary).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Creo pcurve segment index cannot be represented exactly",
+                )
+            })? / cadmpeg_core::convert::f64_from_index(segment_count).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed(
+                    "Creo pcurve segment index cannot be represented exactly",
+                )
+            })?; 2],
+        );
     }
     knots.extend([1.0; 3]);
     let mut weighted = Vec::new();
@@ -1286,14 +1308,40 @@ pub(in super::super) fn profile_strictly_contains(
                 accumulate(pair[0], pair[1]);
             }
         } else if let Some((center, radius, start, delta)) = profile_arc(segment) {
-            let pieces = (delta.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0) as usize;
+            let Some(pieces) = cadmpeg_core::convert::truncate_f64_to_usize(
+                (delta.abs() / std::f64::consts::FRAC_PI_2).ceil().max(1.0),
+            ) else {
+                return Ok(false);
+            };
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(pieces),
                 "creo profile arc winding pieces",
             )?;
             for piece in 0..pieces {
-                let first = start + delta * piece as f64 / pieces as f64;
-                let second = start + delta * (piece + 1) as f64 / pieces as f64;
+                let first = start
+                    + delta
+                        * cadmpeg_core::convert::f64_from_index(piece).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo winding segment index cannot be represented exactly",
+                            )
+                        })?
+                        / cadmpeg_core::convert::f64_from_index(pieces).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo winding segment index cannot be represented exactly",
+                            )
+                        })?;
+                let second = start
+                    + delta
+                        * cadmpeg_core::convert::f64_from_index(piece + 1).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo winding segment index cannot be represented exactly",
+                            )
+                        })?
+                        / cadmpeg_core::convert::f64_from_index(pieces).ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "Creo winding segment index cannot be represented exactly",
+                            )
+                        })?;
                 accumulate(
                     [
                         center[0] + radius * first.cos(),

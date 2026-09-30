@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-coverage counters for transferred features and numeric carriers.
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     edge_treatments::RadiusSpec, holes::HoleKind, BooleanOp, EdgeSelection, ExtrudeExtent,
@@ -973,8 +974,9 @@ pub(super) struct LegacyNumericCoverage {
 }
 
 pub(super) fn legacy_numeric_coverage<K, T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[crate::legacy::ValueRecord<K>],
-) -> LegacyNumericCoverage
+) -> Result<LegacyNumericCoverage, CodecError>
 where
     K: crate::legacy::LegacyCode<Payload = crate::legacy::NumericPayload<T>>,
 {
@@ -986,9 +988,12 @@ where
         }
         counts.elements = counts
             .elements
-            .saturating_add(record.payload.element_count());
+            .checked_add(record.payload.element_count())
+            .ok_or_else(|| {
+                ctx.refuse_codec_limit("creo legacy numeric element count", u64::MAX, u64::MAX)
+            })?;
     }
-    counts
+    Ok(counts)
 }
 
 #[cfg(test)]
