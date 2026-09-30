@@ -159,7 +159,8 @@ impl DecodeBudget {
             ResourceDimension::MaterializedBytes,
             ResourceFailure::AllocationFailed,
             self.materialized_allowance(),
-            self.materialized.get().saturating_sub(charged),
+            // The successful charge is still live when allocation fails.
+            self.materialized.get() - charged,
             charged,
             operation,
         )
@@ -257,7 +258,8 @@ impl DecodeBudget {
             ResourceDimension::CollectionItems,
             ResourceFailure::AllocationFailed,
             self.policy.limits.max_collection_items,
-            self.collection_items.get().saturating_sub(charged),
+            // The successful charge is still live when allocation fails.
+            self.collection_items.get() - charged,
             requested,
             operation,
         )
