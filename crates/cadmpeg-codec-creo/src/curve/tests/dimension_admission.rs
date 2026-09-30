@@ -342,3 +342,37 @@ fn dimension_arithmetic_preserves_service_values() {
     ));
     assert_eq!(result.constraints.len(), 1);
 }
+
+fn dimension_conversion_result(name: &str) -> Result<Option<Vec<crate::curve::RelationDimension>>, CodecError> {
+    use crate::curve::{CurveExpressionEquation, CurveExpressionSolveBlock, CurveExpressionValue, SolveUnknown};
+    let mut expression = name.to_owned();
+    for _ in 0..8 {
+        expression = format!("({expression}^127)");
+    }
+    let block = CurveExpressionSolveBlock {
+        equations: vec![CurveExpressionEquation {
+            left: expression,
+            right: "1".to_owned(),
+            dependencies: vec![name.to_owned()],
+            offset: 0,
+        }],
+        assignments: Vec::new(),
+        unknowns: vec![SolveUnknown { name: "x".to_owned(), solution: None }],
+        offset: 0,
+        for_offset: 1,
+    };
+    let values = BTreeMap::from([("length".to_owned(), CurveExpressionValue::Length(1.0))]);
+    crate::decode::with_test_decode_ctx(|ctx| crate::curve::infer_solve_variable_dimensions(ctx, &block, &values, &[None], RelationEvaluationContext::default()))
+}
+
+#[test]
+fn dimension_inference_refuses_inexact_integer_coefficient() {
+    let error = dimension_conversion_result("x").expect_err("127 to the eighth power is not exact in f64");
+    assert!(matches!(error, CodecError::Malformed(_)));
+}
+
+#[test]
+fn dimension_inference_refuses_inexact_integer_constant() {
+    let error = dimension_conversion_result("length").expect_err("127 to the eighth power is not exact in f64");
+    assert!(matches!(error, CodecError::Malformed(_)));
+}

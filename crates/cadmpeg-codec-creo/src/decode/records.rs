@@ -895,7 +895,7 @@ pub(super) fn feature_entity_reference_records(
             id,
             source_entity_id: reference.source_entity_id,
             target_entity_id: reference.target_entity_id,
-            target_resolved: (reference.target_entity_id as usize) < scan.features.entities.len(),
+            target_resolved: cadmpeg_core::decode::index_from_u32(reference.target_entity_id) < scan.features.entities.len(),
             offset: reference.offset,
         });
     }
@@ -2769,7 +2769,8 @@ impl Serialize for ScalarTokens<'_> {
             Self::Empty => serializer.collect_seq(std::iter::empty::<&[u8]>()),
             Self::Present(tokens) => serializer.collect_seq(tokens.iter()),
             Self::Missing(count) => {
-                serializer.collect_seq(std::iter::repeat_n(&[] as &[u8], *count))
+                let empty: &[u8] = &[];
+                serializer.collect_seq(std::iter::repeat_n(empty, *count))
             }
         }
     }
