@@ -2851,6 +2851,7 @@ fn build_geometry_ir(
         &sketch_lanes,
     )?;
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
+        ctx,
         &mut sketch_entities,
         &mut sketches,
         &ir.model.features,

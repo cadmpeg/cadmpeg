@@ -684,7 +684,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         markers_by_id.insert(marker.id(), marker);
     }
     let marker_transforms =
-        marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+        marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let mut transforms = HashMap::new();
     for (feature, sketch_id) in &sketches_by_feature {
         let mut circles = Vec::new();
@@ -717,7 +717,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             candidates.extend_from_slice(existing);
             candidates
         } else if let Some(sketch) = sketches.iter().find(|sketch| sketch.id == **sketch_id) {
-            dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
+            dimensioned_circle_surface_transforms(ctx, sketch, surfaces, &circles, QUANTUM)?
         } else { Vec::new() };
         let candidates = if let Some(sketch) = sketches.iter().find(|sketch| sketch.id == **sketch_id) {
             marker_transforms_with_frame_fallback(candidates, sketch, QUANTUM)
@@ -1369,6 +1369,7 @@ fn reconcile_direct_circle_dimension_carriers(
 /// Materialize marker-only circles whose radial witnesses have exact radial
 /// dimensions, including repeated circles constrained to the same radius.
 pub(crate) fn project_marker_dimensioned_circles(
+    ctx: &DecodeContext<'_>,
     entities: &mut Vec<SketchEntity>,
     sketches: &mut [Sketch],
     features: &[cadmpeg_ir::features::Feature],
@@ -1378,7 +1379,7 @@ pub(crate) fn project_marker_dimensioned_circles(
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
-    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
     let radial_records_by_lane = lanes
         .iter()
         .map(|lane| {

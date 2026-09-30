@@ -3523,11 +3523,12 @@ fn marker_line_entities_inner(
 }
 
 pub(super) fn profile_loci_by_marker(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, Vec<SketchLocus>> {
+) -> Result<HashMap<String, Vec<SketchLocus>>, cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1e-8;
     let qualified_point_markers = lanes
@@ -3575,7 +3576,7 @@ pub(super) fn profile_loci_by_marker(
         .map(|entity| (entity.id(), &entity.geometry))
         .collect::<HashMap<_, _>>();
     let transforms =
-        marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
+        marker_transform_candidates_by_feature(ctx, features, sketches, sketch_entities, lanes)?;
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -3935,7 +3936,7 @@ pub(super) fn profile_loci_by_marker(
         }
         result.extend(additions);
     }
-    result
+    Ok(result)
 }
 
 pub(super) fn unique_linked_endpoint_locus(
@@ -4030,11 +4031,12 @@ fn point_on_quantized_segment(point: (i64, i64), start: GridPoint, end: GridPoin
 }
 
 pub(super) fn marker_transform_candidates_by_feature(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
-) -> HashMap<String, Vec<MarkerTransform>> {
+) -> Result<HashMap<String, Vec<MarkerTransform>>, cadmpeg_core::CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1e-8;
 
@@ -4150,9 +4152,9 @@ pub(super) fn marker_transform_candidates_by_feature(
                 }
                 points
             };
-            let direct = compatible_marker_transform_candidates(&directly_bound);
-            let primary = compatible_marker_transform_candidates(&compatible(true));
-            let fallback = compatible_marker_transform_candidates(&compatible(false));
+            let direct = compatible_marker_transform_candidates(ctx, &directly_bound)?;
+            let primary = compatible_marker_transform_candidates(ctx, &compatible(true))?;
+            let fallback = compatible_marker_transform_candidates(ctx, &compatible(false))?;
             let candidates = if direct.len() == 1 {
                 direct
             } else if primary.len() == 1 || fallback.is_empty() {
@@ -4172,7 +4174,7 @@ pub(super) fn marker_transform_candidates_by_feature(
             }
         }
     }
-    result
+    Ok(result)
 }
 
 fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> Vec<Point2> {

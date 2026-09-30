@@ -26,6 +26,8 @@ use std::collections::{BTreeMap, HashMap};
 
 #[test]
 fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first = SketchEntityId::mint("synthetic:test:id#first").unwrap();
     let second = SketchEntityId::mint("synthetic:test:id#second").unwrap();
@@ -112,7 +114,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         sketch_entities: vec![marker_a, marker_b, marker_c, display, reference.clone()],
     };
 
-    let joins = profile_loci_by_marker(&[feature], &[], &entities, std::slice::from_ref(&lane));
+    let joins = profile_loci_by_marker(&resource_ctx, &[feature], &[], &entities, std::slice::from_ref(&lane)).expect("transform resource admission");
     assert!(joins.contains_key("marker-a"));
     assert!(joins.contains_key("marker-b"));
     assert!(joins.contains_key("marker-c"));
@@ -619,6 +621,8 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
 
 #[test]
 fn line_handle_interior_points_identify_profile_entities() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let line_ids = [
         "synthetic:test:id#horizontal",
@@ -708,7 +712,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         sketch_entities: markers,
     };
 
-    let joins = profile_loci_by_marker(&[feature], &[], &entities, std::slice::from_ref(&lane));
+    let joins = profile_loci_by_marker(&resource_ctx, &[feature], &[], &entities, std::slice::from_ref(&lane)).expect("transform resource admission");
     for (marker, entity) in [
         ("horizontal-marker", &line_ids[0]),
         ("vertical-marker", &line_ids[1]),
@@ -830,6 +834,8 @@ fn curve_handles_reject_point_geometry() {
 
 #[test]
 fn symmetry_invariant_marker_identifies_profile_entity() {
+    let resource_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &resource_arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let circle = SketchEntityId::mint("synthetic:test:id#circle").unwrap();
     let entity = SketchEntity::new(
@@ -898,7 +904,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
 
     let mut entities = vec![entity];
     entities.extend(points);
-    let joins = profile_loci_by_marker(&[feature], &[], &entities, &[lane]);
+    let joins = profile_loci_by_marker(&resource_ctx, &[feature], &[], &entities, &[lane]).expect("transform resource admission");
     assert_eq!(
         joins["circle-marker"],
         vec![cadmpeg_ir::sketches::SketchLocus::Entity(circle)]
