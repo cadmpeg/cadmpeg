@@ -4669,27 +4669,21 @@ fn snapshot_active_configuration(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Res
         ctx.charge_collection_items(1, "snapshot SLDPRT configuration parameter")?;
         parameter_values.insert(id, value);
     }
-    let feature_states = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
-                    evaluation: if feature.suppressed.unwrap_or(false) {
-                        cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {}
-                    } else {
-                        cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                            outputs: feature.evaluation.outputs().iter().cloned().collect(),
-                        }
-                    },
-                    dependencies: feature.dependencies.clone(),
-                    definition: feature.evaluation.definition().clone(),
-                },
-            )
-        })
-        .collect();
+    const FEATURE_SNAPSHOT: &str = "retain SLDPRT configuration feature snapshot";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(ir.model.features.len()), FEATURE_SNAPSHOT)?;
+    let key_bytes = ir.model.features.iter().try_fold(0u64, |bytes, feature| bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len())))
+        .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?;
+    let mut feature_states = BTreeMap::new();
+    for feature in &ir.model.features {
+        ctx.charge_work(key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()))
+            .and_then(|bytes| bytes.checked_mul(8)).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(ir.model.features.len()).checked_mul(64)?))
+            .ok_or_else(|| ctx.refuse_codec_limit(FEATURE_SNAPSHOT, u64::MAX - 1, u64::MAX))?, FEATURE_SNAPSHOT)?;
+        ctx.charge_collection_items(1, FEATURE_SNAPSHOT)?;
+        let id = cadmpeg_ir::features::FeatureId::mint(copy_retained_string(ctx, feature.id.as_str(), FEATURE_SNAPSHOT)?)
+            .map_err(CodecError::malformed)?;
+        let state = feature.configuration_state_charged(ctx, FEATURE_SNAPSHOT)?;
+        feature_states.insert(id, state);
+    }
     let configuration = &mut ir.model.configurations[configuration_index];
     configuration.parameter_values = parameter_values;
     configuration.feature_states = feature_states;

@@ -711,3 +711,5 @@ selection_field_deserializer!(deserialize_local_occurrences, "occurrences");
 
 #[cfg(test)]
 mod tests;
+
+mod charged_copy;

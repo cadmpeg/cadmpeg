@@ -22,3 +22,4 @@ mod partition_merge;
 mod pcurves;
 mod round_trip;
 mod sketch_losses;
+mod feature_snapshots;

@@ -69,16 +69,66 @@ impl<'features> ConfigurationDefinitions<'features> {
 }
 
 fn apply_configuration_state(
-    feature: &mut cadmpeg_ir::features::Feature,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, feature: &mut cadmpeg_ir::features::Feature,
     state: &cadmpeg_ir::features::ConfigurationFeatureState,
-) {
-    let evaluation = cadmpeg_ir::features::FeatureEvaluation::new(
-        state.definition.clone(),
-        state.evaluation.outputs().iter().cloned().collect(),
-    );
-    feature.suppressed = Some(state.evaluation.is_suppressed());
-    feature.dependencies.clone_from(&state.dependencies);
-    feature.evaluation = evaluation;
+) -> Result<(), cadmpeg_core::CodecError> {
+    let state = state.try_clone_charged(ctx, "retain SLDPRT configuration feature state")?;
+    let (outputs, suppressed) = match state.evaluation {
+        ConfigurationEvaluation::Suppressed {} => (cadmpeg_ir::features::DistinctMembers::default(), true),
+        ConfigurationEvaluation::Active { outputs } => (outputs, false),
+    };
+    feature.suppressed = Some(suppressed);
+    feature.dependencies = state.dependencies;
+    feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::new(state.definition, outputs);
+    Ok(())
+}
+
+fn copy_configuration_features(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, features: &[cadmpeg_ir::features::Feature],
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "retain SLDPRT configuration features";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(features.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(std::mem::size_of::<cadmpeg_ir::features::Feature>()))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    let mut copied = Vec::new();
+    ctx.reserve_collection_vec(&mut copied, features.len(), OPERATION)?;
+    for feature in features { copied.push(feature.try_clone_charged(ctx, OPERATION)?); }
+    Ok(copied)
+}
+
+fn copy_configuration_state_features(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>, features: &[cadmpeg_ir::features::Feature],
+    states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
+) -> Result<Vec<cadmpeg_ir::features::Feature>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "retain SLDPRT evaluated configuration features";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(states.len()), OPERATION)?;
+    let key_bytes = states.keys().try_fold(0u64, |bytes, key| bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.as_str().len())))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut copied = Vec::new();
+    for feature in features {
+        ctx.charge_work(key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()))
+            .and_then(|bytes| bytes.checked_mul(8)).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(states.len()).checked_mul(64)?))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        let Some(state) = states.get(&feature.id) else { continue; };
+        ctx.reserve_collection_vec(&mut copied, 1, OPERATION)?;
+        let mut feature = feature.try_clone_charged(ctx, OPERATION)?;
+        apply_configuration_state(ctx, &mut feature, state)?;
+        copied.push(feature);
+    }
+    Ok(copied)
+}
+
+fn charge_configuration_state_lookup(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    states: &BTreeMap<FeatureId, cadmpeg_ir::features::ConfigurationFeatureState>,
+    id: &FeatureId,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "match SLDPRT configuration feature state";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(states.len()), OPERATION)?;
+    let bytes = states.keys().try_fold(cadmpeg_core::decode::u64_from_index(id.as_str().len()), |bytes, key| bytes.checked_add(cadmpeg_core::decode::u64_from_index(key.as_str().len())))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(bytes.checked_mul(8).and_then(|work| work.checked_add(cadmpeg_core::decode::u64_from_index(states.len()).checked_mul(64)?))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)
 }
 
 fn insert_configuration_value<K: Ord, V>(
@@ -243,7 +293,7 @@ pub(crate) fn project_configuration_design_states(
     pmi_dimensions: &[crate::records::PmiDimension],
     form_padding: Option<usize>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut resolved_base_features = ir.model.features.clone();
+    let mut resolved_base_features = copy_configuration_features(ctx, &ir.model.features)?;
     crate::resolved_features::operations::bind_extrusion_operations(
         ctx,
         &mut resolved_base_features,
@@ -420,17 +470,18 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
             continue;
         };
         let Some(configuration_index) =
-            configuration_index_for_slot(&ir.model.configurations, slot_index)
+            configuration_index_for_slot(ctx, &ir.model.configurations, slot_index)?
         else {
             continue;
         };
         let states = &ir.model.configurations[configuration_index].feature_states;
-        let mut features = ir.model.features.clone();
+        let mut features = copy_configuration_features(ctx, &ir.model.features)?;
         for feature in &mut features {
+            charge_configuration_state_lookup(ctx, states, &feature.id)?;
             let Some(state) = states.get(&feature.id) else {
                 continue;
             };
-            apply_configuration_state(feature, state);
+            apply_configuration_state(ctx, feature, state)?;
         }
         crate::resolved_features::projections::project_compact_edge_selections(
             ctx,
@@ -440,6 +491,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
         )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
+            charge_configuration_state_lookup(ctx, states, &feature.id)?;
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
@@ -466,19 +518,8 @@ pub(crate) fn bind_configuration_topology_selections(
             .bodies
             .is_some();
         let scoped_lanes = &lanes[lane_index..=lane_index];
-        let mut features = {
-            let states = &ir.model.configurations[configuration_index].feature_states;
-            ir.model
-                .features
-                .iter()
-                .filter_map(|feature| {
-                    let state = states.get(&feature.id)?;
-                    let mut feature = feature.clone();
-                    apply_configuration_state(&mut feature, state);
-                    Some(feature)
-                })
-                .collect::<Vec<_>>()
-        };
+        let states = &ir.model.configurations[configuration_index].feature_states;
+        let mut features = copy_configuration_state_features(ctx, &ir.model.features, states)?;
         if body_membership_resolved {
             let topology_selection_inputs = crate::history::selections::TopologySelectionInputs {
                 bodies: &ir.model.bodies,
@@ -507,6 +548,7 @@ pub(crate) fn bind_configuration_topology_selections(
         )?;
         let states = &mut ir.model.configurations[configuration_index].feature_states;
         for feature in features {
+            charge_configuration_state_lookup(ctx, states, &feature.id)?;
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
@@ -560,17 +602,7 @@ pub(crate) fn project_configuration_sketch_states(
         let surfaces = configuration_surface_carriers(ctx, ir, configuration_index)?;
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
-        let mut features = ir
-            .model
-            .features
-            .iter()
-            .filter_map(|feature| {
-                let state = states.get(&feature.id)?;
-                let mut feature = feature.clone();
-                apply_configuration_state(&mut feature, state);
-                Some(feature)
-            })
-            .collect::<Vec<_>>();
+        let mut features = copy_configuration_state_features(ctx, &ir.model.features, states)?;
         inherit_configuration_reference_plane_semantics(ctx, &mut features, &ir.model.features)?;
         let mut reusable_spatial_sketches = ConfigurationIdentitySet::new(
             "index SLDPRT configuration spatial sketches", "match SLDPRT configuration spatial sketch",
@@ -1515,9 +1547,7 @@ pub(super) fn configuration_lane_assignments(
     let mut result = Vec::new();
     for (slot_index, lane_indices) in lanes_by_configuration {
         let [lane_index] = lane_indices.as_slice() else { continue; };
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configurations.len()), "match SLDPRT configuration lane identities")?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configurations.len()), "match SLDPRT configuration lane identities")?;
-        if let Some(configuration_index) = configuration_index_for_slot(configurations, slot_index) {
+        if let Some(configuration_index) = configuration_index_for_slot(ctx, configurations, slot_index)? {
             ctx.reserve_collection_vec(&mut result, 1, "collect SLDPRT configuration lane assignments")?;
             result.push((configuration_index, *lane_index));
         }
@@ -1526,21 +1556,32 @@ pub(super) fn configuration_lane_assignments(
 }
 
 fn configuration_index_for_slot(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     configurations: &[DesignConfiguration],
     slot_index: u32,
-) -> Option<usize> {
+) -> Result<Option<usize>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "match SLDPRT configuration lane identities";
+    for configuration in configurations {
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(configuration.properties.len()).checked_mul(128)
+            .and_then(|work| work.checked_add(8)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        for (key, value) in &configuration.properties {
+            let work = key.as_str().len().checked_add(value.len()).and_then(|bytes| bytes.checked_add(2)).and_then(|bytes| bytes.checked_mul(16))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+        }
+    }
     let mut explicit = configurations.iter().enumerate().filter(|(_, configuration)| {
         configuration.properties.get("id").and_then(|value| value.parse::<u32>().ok()) == Some(slot_index)
     }).map(|(index, _)| index);
     if let Some(index) = explicit.next() {
-        return explicit.next().is_none().then_some(index);
+        return Ok(explicit.next().is_none().then_some(index));
     }
     let mut fallback = configurations.iter().enumerate().filter(|(_, configuration)| {
         configuration.properties.get("id").and_then(|value| value.parse::<u32>().ok()).is_none()
             && configuration.ordinal == slot_index
     }).map(|(index, _)| index);
-    let index = fallback.next()?;
-    fallback.next().is_none().then_some(index)
+    let Some(index) = fallback.next() else { return Ok(None); };
+    Ok(fallback.next().is_none().then_some(index))
 }
 
 pub(crate) fn unresolved_configuration_lanes(
