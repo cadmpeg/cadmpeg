@@ -357,7 +357,10 @@ fn fence_text(text: &str) -> String {
 }
 
 /// Turn one validated table into the checked-in `layout.rs` source.
-pub(crate) fn emit_layout_rs(file: &LayoutFile, source_root: &std::path::Path) -> Result<String, Vec<String>> {
+pub(crate) fn emit_layout_rs(
+    file: &LayoutFile,
+    source_root: &std::path::Path,
+) -> Result<String, Vec<String>> {
     let reads = read_set::layout_reads(source_root).map_err(|error| vec![error])?;
     emit_layout_source(file, &reads).map_err(|failure| match failure {
         EmitFailure::Invalid(errors) => errors,
@@ -484,8 +487,7 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             }
         }
 
-        if fields_out.is_empty() && !reads.contains(&record.name, "LEN")
-        {
+        if fields_out.is_empty() && !reads.contains(&record.name, "LEN") {
             continue;
         }
         writeln!(
@@ -526,10 +528,7 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             writeln!(modules, "/// ```")?;
         }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
-        if let Some(size) = record
-            .size
-            .filter(|_| reads.contains(&record.name, "LEN"))
-        {
+        if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
             writeln!(
                 modules,
                 "    /// Record length in bytes. Spec §{}.",
@@ -669,8 +668,10 @@ mod tests {
     use crate::LayoutFile;
 
     #[test]
-    fn layout_emission_filters_records_values_tokens_and_test_reads() -> Result<(), Box<dyn std::error::Error>> {
-        let file: LayoutFile = toml::from_str(r#"
+    fn layout_emission_filters_records_values_tokens_and_test_reads(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let file: LayoutFile = toml::from_str(
+            r#"
 schema = 1
 format = "demo"
 spec = "demo.md"
@@ -717,10 +718,12 @@ name = "unused tag"
 note = "tag"
 section = "1"
 anchor = "tag"
-"#)?;
+"#,
+        )?;
         let temporary = tempfile::tempdir()?;
         std::fs::write(temporary.path().join("lib.rs"), "use crate::layout::{header as h, token}; const M: u8 = h::MAGIC_VALUE; const T: u8 = token::USED_TAG; #[cfg(test)] mod tests { const L: usize = super::h::LEN; }")?;
-        let rendered = emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        let rendered =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
         assert!(rendered.contains("pub(crate) const MAGIC_VALUE: u8 = 7;"));
         assert!(rendered.contains("pub(crate) const USED_TAG: u8 = 1;"));
         assert!(rendered.contains("#[cfg(test)]\n    pub(crate) const LEN: usize = 2;"));
