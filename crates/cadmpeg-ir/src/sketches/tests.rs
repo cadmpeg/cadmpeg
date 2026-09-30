@@ -1476,6 +1476,8 @@ fn planar_placement_admits_nonunit_perpendicular_axes_at_both_boundaries() {
 
 #[test]
 fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() {
+    use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
+
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -1483,7 +1485,6 @@ fn sketch_profile_collection_rejects_empty_chains_and_rolls_back_failed_edits() 
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    use crate::sketches::{SketchEntityId, SketchEntityUse, SketchProfiles};
 
     let usage = SketchEntityUse {
         entity: SketchEntityId::mint("synthetic:test:sketch-entity#profile").unwrap(),

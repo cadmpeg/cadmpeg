@@ -287,7 +287,7 @@ fn compact_body_retention_mode(
         return Ok(None);
     };
     ctx.charge_work(
-        u64_from_index(scan_end.checked_sub(start).unwrap_or(0))
+        u64_from_index((start..scan_end).len())
             .checked_mul(u64_from_index(HEADER_LEN))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
@@ -338,7 +338,7 @@ fn compact_body_state_ids(
         return Ok(result);
     };
     ctx.charge_work(
-        u64_from_index(scan_end.checked_sub(start).unwrap_or(0))
+        u64_from_index((start..scan_end).len())
             .checked_mul(u64_from_index(HEADER_LEN))
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
@@ -953,7 +953,8 @@ pub(super) fn compact_surface_selections(
                 parent,
                 ordinal,
                 offset: u64_from_index(offset),
-                selector: lane.native_payload[offset.checked_sub(8).unwrap_or(0)],
+                selector: lane.native_payload
+                    [offset.checked_sub(8).map_or(0, std::convert::identity)],
                 kind: match endpoint_selector {
                     Some(endpoint_selector) => {
                         crate::records::FeatureInputSurfaceSelectionKind::ExtrusionEndpoint {
@@ -1287,6 +1288,8 @@ fn operation_surface_selection_candidates(
         return Ok(candidates);
     }
     if operation == FeatureClass::SplitFace {
+        const OPERATION: &str = "project SLDPRT split surface identity paths";
+
         ctx.charge_work(
             u64_from_index(lane.classes.len())
                 .checked_mul(2)
@@ -1302,7 +1305,6 @@ fn operation_surface_selection_candidates(
         let Some(object_source) = object_source else {
             return Ok(Vec::new());
         };
-        const OPERATION: &str = "project SLDPRT split surface identity paths";
         let mut candidates = Vec::new();
         for identity in generated_surface_identities(ctx, lane)? {
             ctx.charge_work(1, OPERATION)?;
@@ -1312,7 +1314,7 @@ fn operation_surface_selection_candidates(
                 continue;
             };
             if component_source(first) != Some(object_source)
-                || !component_source(last).is_some_and(|source| source != object_source)
+                || component_source(last).is_none_or(|source| source == object_source)
                 || last.local_id.is_none()
             {
                 continue;
@@ -1769,6 +1771,12 @@ fn cosmetic_thread_component_edge_wrapper_at(payload: &[u8], body: usize) -> boo
         && View::u32_le_at(payload, body + component_edge::COMPONENT_COUNT_COPY) == Some(count)
 }
 
+#[derive(Debug, PartialEq)]
+pub(super) struct CylinderMarkerReference(
+    pub usize,
+    pub Option<Vec<FeatureInputComponentPathEntry>>,
+);
+
 pub(super) fn cosmetic_thread_cylinder_marker_reference(
     ctx: &DecodeContext<'_>,
     feature: &crate::records::Feature,
@@ -1776,7 +1784,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
     object_start: usize,
     object_end: usize,
     cylinder_reference_tokens: &HashSet<u16>,
-) -> Result<Vec<(usize, Option<Vec<FeatureInputComponentPathEntry>>)>, cadmpeg_core::CodecError> {
+) -> Result<Vec<CylinderMarkerReference>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT cosmetic thread cylinder markers";
     let diameter_tail = cosmetic_thread_diameter_child_tail(ctx, feature, lane)?;
     let mut markers = Vec::new();
@@ -1825,7 +1833,7 @@ pub(super) fn cosmetic_thread_cylinder_marker_reference(
             Some(components) => Some(components),
             None => compact_edge_component_path_at(ctx, &lane.native_payload, marker)?,
         };
-        references.push((marker, components));
+        references.push(CylinderMarkerReference(marker, components));
     }
     Ok(references)
 }
@@ -1964,6 +1972,8 @@ fn component_face_reference_at_impl(
     include_compact_frame: bool,
     allow_flagged_operation_frame: bool,
 ) -> Result<Option<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
+
     const OPERATION: &str = "decode SLDPRT component face reference";
     ctx.charge_work(
         u64_from_index(nested_face::COMPONENT_MARKER)
@@ -1971,7 +1981,6 @@ fn component_face_reference_at_impl(
             .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?,
         OPERATION,
     )?;
-    const NESTED_FACE_CLASS: &[u8] = b"moFaceRef_c";
     let marker_offsets = (|| {
         let token = View::u16_le_at(payload, body_offset)?;
         let flags = payload.get(body_offset + 6..body_offset + 8)?;
@@ -3186,7 +3195,9 @@ pub(crate) fn compact_edge_selection_at(
     if let Some(ids) = compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)? {
         consider(ids)?;
     }
-    for (components, _) in compact_edge_component_path_candidates(ctx, payload, marker, count)? {
+    for ComponentPathReference(components, _) in
+        compact_edge_component_path_candidates(ctx, payload, marker, count)?
+    {
         let mut ids = Vec::new();
         for component in components {
             ctx.charge_work(1, OPERATION)?;
@@ -3246,7 +3257,8 @@ pub(crate) fn compact_edge_component_path_at(
         }
         return Ok(Some(components));
     }
-    Ok(compact_edge_component_path(ctx, payload, marker, count)?.map(|(components, _)| components))
+    Ok(compact_edge_component_path(ctx, payload, marker, count)?
+        .map(|ComponentPathReference(components, _)| components))
 }
 
 fn compact_component_reference_list_at(
@@ -3368,13 +3380,15 @@ fn compact_component_reference_list(
     Ok((!require_distinct_framing || has_reference_framing).then_some(references))
 }
 
+#[derive(Debug)]
+pub(super) struct VariableFilletControl(pub String, pub Vec<Vec<FeatureInputComponentPathEntry>>);
+
 pub(super) fn variable_fillet_control_references(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     feature: &crate::records::Feature,
     lane: &FeatureInputLane,
     object_end: usize,
-) -> Result<Option<Vec<(String, Vec<Vec<FeatureInputComponentPathEntry>>)>>, cadmpeg_core::CodecError>
-{
+) -> Result<Option<Vec<VariableFilletControl>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "collect SLDPRT variable fillet controls";
     if !feature.kind.eq_ignore_ascii_case("VarFillet") {
         return Ok(None);
@@ -3455,7 +3469,7 @@ pub(super) fn variable_fillet_control_references(
         )?;
         name_text.push_str(&name.value);
         ctx.reserve_collection_vec(&mut result, 1, OPERATION)?;
-        result.push((name_text, references));
+        result.push(VariableFilletControl(name_text, references));
         start = marker;
     }
     Ok((!result.is_empty()).then_some(result))
@@ -3543,12 +3557,15 @@ pub(super) fn compact_component_path_end_at(
     })
 }
 
+#[derive(Debug, PartialEq)]
+pub(super) struct ComponentPathReference(pub Vec<FeatureInputComponentPathEntry>, pub Option<u32>);
+
 fn compact_edge_component_path(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
     count: usize,
-) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, CodecError> {
+) -> Result<Option<ComponentPathReference>, CodecError> {
     let mut candidates =
         compact_edge_component_path_candidates(ctx, payload, marker, count)?.into_iter();
     let candidate = candidates.next();
@@ -3564,7 +3581,7 @@ fn compact_edge_component_path_candidates(
     payload: &[u8],
     marker: usize,
     count: usize,
-) -> Result<Vec<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, CodecError> {
+) -> Result<Vec<ComponentPathReference>, CodecError> {
     const OPERATION: &str = "decode SLDPRT edge path candidates";
     let component_paths = |entry_count| -> Result<
         Vec<(Vec<FeatureInputComponentPathEntry>, usize)>,
@@ -3637,11 +3654,11 @@ fn compact_edge_component_path_candidates(
     let mut candidates = Vec::new();
     for candidate in terminal_paths
         .into_iter()
-        .map(|(components, _, source)| (components, Some(source)))
+        .map(|(components, _, source)| ComponentPathReference(components, Some(source)))
         .chain(
             full_paths
                 .into_iter()
-                .map(|(components, _)| (components, None)),
+                .map(|(components, _)| ComponentPathReference(components, None)),
         )
     {
         let mut duplicate = false;
@@ -3718,7 +3735,9 @@ pub(crate) fn compact_edge_owner_feature_at(
     let owner_source = if compact_component_reference_list_at(ctx, payload, marker)?.is_some() {
         None
     } else {
-        let Some((_, owner)) = compact_edge_component_path(ctx, payload, marker, count)? else {
+        let Some(ComponentPathReference(_, owner)) =
+            compact_edge_component_path(ctx, payload, marker, count)?
+        else {
             return Ok(None);
         };
         owner
@@ -3780,7 +3799,7 @@ pub(crate) fn surface_selection_terminal_feature_at(
 ) -> Result<Option<String>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT surface selection terminal";
     if let Some(source) = compact_single_face_reference_record_at(ctx, payload, marker)?
-        .and_then(|(_, source)| source)
+        .and_then(|ComponentPathReference(_, source)| source)
     {
         let mut found = None;
         for feature in features {
@@ -3905,7 +3924,11 @@ fn compact_component_path_with_layout(
     if bounded_len(
         u64_from_index(count),
         entry_length,
-        payload.len().checked_sub(cursor).unwrap_or(0),
+        if cursor <= payload.len() {
+            payload.len() - cursor
+        } else {
+            0
+        },
     )
     .is_none()
     {
@@ -4068,7 +4091,11 @@ fn compact_sparse_component_path(
     if bounded_len(
         u64_from_index(count),
         16,
-        payload.len().checked_sub(cursor).unwrap_or(0),
+        if cursor <= payload.len() {
+            payload.len() - cursor
+        } else {
+            0
+        },
     )
     .is_none()
     {
@@ -4527,12 +4554,11 @@ pub(super) fn coordinate_marker_local_links(
             return None;
         }
         let mut links = [0; 2];
-        let mut count = 0;
         let mut selector = None;
         for index in 0..=2 {
             let start = offset.checked_add(86 + index * 12)?;
             if payload.get(start..start + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff] {
-                return (count != 0).then_some((links, count, selector?));
+                return (index != 0).then_some((links, index, selector?));
             }
             if index == 2 {
                 return None;
@@ -4550,7 +4576,6 @@ pub(super) fn coordinate_marker_local_links(
             }
             selector = Some(tag);
             links[index] = View::u16_le_at(cell, 2)?;
-            count += 1;
         }
         None
     })();

@@ -16,7 +16,6 @@ fn assert_source_route_refusal(source: &[u8], container_only: bool, dimension: R
     let mut options = DecodeOptions {
         container_only,
         policy: DecodePolicy::service(),
-        ..DecodeOptions::default()
     };
     let expected = crate::SldprtCodec
         .decode(&mut Cursor::new(source), &options)
@@ -28,7 +27,7 @@ fn assert_source_route_refusal(source: &[u8], container_only: bool, dimension: R
     let set_limit = |options: &mut DecodeOptions, limit| match dimension {
         ResourceDimension::CollectionItems => options.policy.limits.max_collection_items = limit,
         ResourceDimension::MaterializedBytes => {
-            options.policy.limits.max_materialized_bytes = limit
+            options.policy.limits.max_materialized_bytes = limit;
         }
         ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
         _ => panic!("unexpected baseline hash limit"),

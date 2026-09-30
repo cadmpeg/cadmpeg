@@ -511,7 +511,7 @@ fn raw_native_resource_refusals_keep_the_caller_dimension() {
             ResourceDimension::CollectionItems => policy.limits.max_collection_items = 2,
             ResourceDimension::RetainedBytes => {
                 policy.limits.max_retained_bytes =
-                    u64::try_from(2 + id.len() + 3 + json.len()).unwrap()
+                    u64::try_from(2 + id.len() + 3 + json.len()).unwrap();
             }
             ResourceDimension::RecursionDepth => policy.limits.max_recursion_depth = 1,
             _ => panic!("unsupported raw-native test dimension"),

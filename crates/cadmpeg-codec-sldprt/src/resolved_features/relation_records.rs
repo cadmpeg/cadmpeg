@@ -475,7 +475,7 @@ pub(super) fn relation_instances(
             groups.push(RelationGroup {
                 feature_ref,
                 family: *family,
-                class_ref: *class_ref,
+                class_ref,
                 operands: &scalar.operands,
                 scalars: ctx.alloc_filled(
                     1,
@@ -3019,22 +3019,22 @@ fn bind_relation_geometry_operands(
         )?;
         match relation.family {
             FeatureInputRelationFamily::PointPointDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), None)?
+                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), None)?;
             }
             FeatureInputRelationFamily::PointPointHorizontalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(true))?
+                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(true))?;
             }
             FeatureInputRelationFamily::PointPointVerticalDistance => {
-                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(false))?
+                bind_dynamic_point_relation(ctx, relation, &entities, target.get(), Some(false))?;
             }
             FeatureInputRelationFamily::PointLineDistance => {
-                bind_dynamic_point_line_relation(ctx, relation, &entities, target.get())?
+                bind_dynamic_point_line_relation(ctx, relation, &entities, target.get())?;
             }
             FeatureInputRelationFamily::LineLineDistance => {
-                bind_dynamic_line_relation(relation, &entities, target.get(), false)
+                bind_dynamic_line_relation(relation, &entities, target.get(), false);
             }
             FeatureInputRelationFamily::Angle => {
-                bind_dynamic_line_relation(relation, &entities, target.get(), true)
+                bind_dynamic_line_relation(relation, &entities, target.get(), true);
             }
             FeatureInputRelationFamily::CircleDiameter => {}
         }

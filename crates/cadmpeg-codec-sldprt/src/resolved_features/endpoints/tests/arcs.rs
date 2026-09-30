@@ -1174,14 +1174,15 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
-    let (endpoints, center) = current_wide_arc_direct_markers(
-        &cadmpeg_test_support::service_decode_context(),
-        &payload,
-        &entities[0],
-        &markers,
-    )
-    .unwrap()
-    .expect("direct endpoint IDs");
+    let crate::resolved_features::endpoints::CurrentWideArc(endpoints, center) =
+        current_wide_arc_direct_markers(
+            &cadmpeg_test_support::service_decode_context(),
+            &payload,
+            &entities[0],
+            &markers,
+        )
+        .unwrap()
+        .expect("direct endpoint IDs");
     assert_eq!(
         endpoints
             .iter()

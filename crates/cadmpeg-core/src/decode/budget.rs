@@ -698,7 +698,7 @@ mod tests {
         policy.limits.max_work_units = 8;
         let session = DecodeBudget::new(policy, 1);
         let parent = WorkBudget::for_session(3, &session)
-            .with_session_work_scale(std::num::NonZeroU64::new(4).unwrap());
+            .with_session_work_scale(std::num::NonZeroU64::new(4).expect("nonzero work scale"));
         let child = parent.session_child_slice(1);
         assert!(child.charge());
         assert_eq!(session.work.get(), 4);
@@ -710,7 +710,7 @@ mod tests {
         assert_eq!(session.work.get(), 8);
         assert!(!parent.charge());
         assert!(parent.exhausted());
-        let failure = session.fused().unwrap();
+        let failure = session.fused().expect("session work refusal");
         assert_eq!(failure.dimension, super::ResourceDimension::WorkUnits);
         assert_eq!(failure.used, 8);
         assert_eq!(failure.additional, 4);

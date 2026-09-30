@@ -1354,7 +1354,12 @@ fn hole_profile_parameter_fallback_requires_no_dimension_content() {
         .insert(cadmpeg_core::nonblank_literal!("depth"), "9".into());
     let construction = hole_sketch_construction(&profile).expect("fallback hole dimensions");
     assert_eq!(construction.diameter.get(), 5.0);
-    assert_eq!(construction.depth.map(|depth| depth.get()), Some(9.0));
+    assert_eq!(
+        construction
+            .depth
+            .map(cadmpeg_ir::scalar::PositiveLength::get),
+        Some(9.0)
+    );
     profile
         .content
         .push(FeatureContent::Dimension("missing".into()));

@@ -448,7 +448,9 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
     if legacy_wide_profile_roster_curve(payload, offset) {
         return coordinate_roster_curve_endpoint_markers(ctx, payload, curve, markers);
     }
-    if let Some((endpoints, _)) = current_wide_arc_direct_markers(ctx, payload, curve, markers)? {
+    if let Some(CurrentWideArc(endpoints, _)) =
+        current_wide_arc_direct_markers(ctx, payload, curve, markers)?
+    {
         return copy_endpoint_markers(ctx, &endpoints);
     }
     if curve.kind() == SketchInputKind::Arc
@@ -1054,12 +1056,15 @@ fn legacy_compact_direct_endpoint_markers<'a>(
     }
 }
 
+#[derive(Debug)]
+struct CurrentWideArc<'a>([&'a SketchInputEntity; 2], [f64; 2]);
+
 fn current_wide_arc_direct_markers<'a>(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Result<Option<([&'a SketchInputEntity; 2], [f64; 2])>, CodecError> {
+) -> Result<Option<CurrentWideArc<'a>>, CodecError> {
     const OPERATION: &str = "resolve SLDPRT direct wide arc";
     ctx.charge_work(512, OPERATION)?;
     let raw = (|| {
@@ -1096,7 +1101,7 @@ fn current_wide_arc_direct_markers<'a>(
         )?;
         ctx.charge_work(128, OPERATION)?;
     }
-    let direct = (|| {
+    let direct = {
         let resolve = |indices: [u32; 2]| {
             let endpoints = indices.map(|index| {
                 let mut matches = markers.iter().copied().filter(|marker| {
@@ -1114,7 +1119,7 @@ fn current_wide_arc_direct_markers<'a>(
             Some([endpoints[0]?, endpoints[1]?])
         };
         resolve(raw)
-    })();
+    };
     let Some(direct) = direct else {
         return Ok(None);
     };
@@ -1144,7 +1149,7 @@ fn current_wide_arc_direct_markers<'a>(
         &candidates,
         EPS_ENDPOINTS_CURRENT_WIDE_ARC_DIRECT_MARKERS_E9,
     )?;
-    Ok(center.map(|center| (direct, [center.u, center.v])))
+    Ok(center.map(|center| CurrentWideArc(direct, [center.u, center.v])))
 }
 
 fn wide_direct_line_endpoint_markers<'a>(
@@ -1348,9 +1353,9 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     }
 }
 
-fn unique_marker_pair<'a>(
-    candidates: [Option<[&'a SketchInputEntity; 2]>; 2],
-) -> Option<[&'a SketchInputEntity; 2]> {
+fn unique_marker_pair(
+    candidates: [Option<[&SketchInputEntity; 2]>; 2],
+) -> Option<[&SketchInputEntity; 2]> {
     let mut candidates = candidates.into_iter().flatten();
     let first = candidates.next()?;
     match candidates.next() {
@@ -1813,9 +1818,11 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
     let mut raw = Vec::new();
     let mut has_code_two_point = false;
     let mut has_embedded_geometry = false;
-    let last = owner_offset
-        .checked_sub(LEGACY_SKETCH_MARKER.len())
-        .unwrap_or(0);
+    let last = if owner_offset >= LEGACY_SKETCH_MARKER.len() {
+        owner_offset - LEGACY_SKETCH_MARKER.len()
+    } else {
+        0
+    };
     if let Some(span) = last.checked_sub(first) {
         charge_endpoint_work(ctx, span, 1024, OPERATION)?;
     }
@@ -2533,7 +2540,7 @@ pub(super) fn implicit_profile_chain_closure_endpoints(
             unresolved = Some(candidate);
         }
     }
-    if ambiguous || !unresolved.is_some_and(|candidate| candidate.id() == curve.id()) {
+    if ambiguous || unresolved.is_none_or(|candidate| candidate.id() != curve.id()) {
         return Ok(None);
     }
     let mut markers_by_id = HashMap::new();
@@ -2861,7 +2868,7 @@ pub(super) fn coordinate_roster_arc_center(
     for endpoint in resolved_endpoints {
         charge_endpoint_work(ctx, endpoint.id().len(), 16, OPERATION)?;
     }
-    if let Some((endpoints, center)) =
+    if let Some(CurrentWideArc(endpoints, center)) =
         current_wide_arc_direct_markers(ctx, payload, curve, markers)?
     {
         let matches = (resolved_endpoints[0].id() == endpoints[0].id()

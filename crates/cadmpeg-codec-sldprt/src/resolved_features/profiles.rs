@@ -87,11 +87,12 @@ pub(crate) fn bind_sketch_profiles(
     lanes: &[FeatureInputLane],
     annotations: &mut Annotations,
 ) -> Result<(), CodecError> {
+    const OPERATION: &str = "bind SLDPRT sketch profiles";
+
     let declared_carriers =
         declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(ctx, histories)?;
-    const OPERATION: &str = "bind SLDPRT sketch profiles";
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
@@ -266,14 +267,18 @@ pub(crate) fn bind_sketch_profiles(
     Ok(())
 }
 
+#[derive(Debug)]
+pub(super) struct CircleCarrier(pub [f64; 2], pub f64);
+
 fn declared_entity_handle_circular_carriers(
     ctx: &DecodeContext<'_>,
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
-) -> Result<HashMap<String, Vec<([f64; 2], f64)>>, CodecError> {
-    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
+) -> Result<HashMap<String, Vec<CircleCarrier>>, CodecError> {
     const OPERATION: &str = "collect SLDPRT declared circular carriers";
+
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let mut parameters_by_id = HashMap::new();
     for parameter in parameters {
         ctx.charge_work(u64_from_index(parameter.id.as_str().len()), OPERATION)?;
@@ -283,7 +288,7 @@ fn declared_entity_handle_circular_carriers(
             .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
         parameters_by_id.insert(&parameter.id, parameter);
     }
-    let mut carriers = HashMap::<String, Vec<([f64; 2], f64)>>::new();
+    let mut carriers = HashMap::<String, Vec<CircleCarrier>>::new();
     for lane in lanes {
         for relation in lane
             .relation_instances
@@ -337,7 +342,7 @@ fn declared_entity_handle_circular_carriers(
             }
             if let Some(votes) = carriers.get_mut(relation.feature_ref.as_str()) {
                 ctx.reserve_collection_vec(votes, 1, OPERATION)?;
-                votes.push((coordinates.get(), encoded_radius));
+                votes.push(CircleCarrier(coordinates.get(), encoded_radius));
             }
         }
     }
@@ -359,7 +364,7 @@ fn copy_profile_text(
 pub(super) fn nested_profile_contains_declared_circular_carriers(
     sketch: &Sketch,
     entities: &[SketchEntity],
-    declared: &[([f64; 2], f64)],
+    declared: &[CircleCarrier],
 ) -> bool {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
@@ -367,7 +372,7 @@ pub(super) fn nested_profile_contains_declared_circular_carriers(
     let Some(transform) = sketch_frame_marker_transform(sketch, QUANTUM) else {
         return true;
     };
-    declared.iter().all(|([u, v], radius)| {
+    declared.iter().all(|CircleCarrier([u, v], radius)| {
         let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
         let Some((center_u, center_v)) = transform.apply(native) else {
             return true;
@@ -4332,11 +4337,11 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -4365,8 +4370,8 @@ mod detached_legacy_sketch_tests {
             &mut Vec::new(),
             &mut Vec::new(),
             &[],
-            &[history.clone()],
-            &[lane.clone()],
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
             &mut annotations.clone(),
         )
         .unwrap();
@@ -4502,11 +4507,11 @@ mod detached_legacy_sketch_tests {
             ordinal: 0,
             name: None,
             suppressed: None,
-            dependencies: Default::default(),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
             source_properties: BTreeMap::new(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             native_ref: Some("feature".into()),
             evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
                 FeatureDefinition::Operation(FeatureOperation::Sketch {

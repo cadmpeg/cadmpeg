@@ -1370,7 +1370,7 @@ fn complete_nurbs_surface_starts<'session>(
     let start_bytes = start_count
         .checked_mul(std::mem::size_of::<FinitePoint2>())
         .ok_or_else(|| scratch::allocation_failed(start_count, "IR surface start bytes"))?;
-    let _start_scratch =
+    let start_scratch =
         budget.reserve_scratch(u64_from_index(start_bytes), "IR surface parameter starts")?;
     let mut starts = Vec::new();
     scratch::reserve_exact(&mut starts, start_count, "IR surface parameter starts")?;
@@ -1378,7 +1378,7 @@ fn complete_nurbs_surface_starts<'session>(
         (lower <= best_distance + final_tolerance).then_some(parameters)
     }));
     starts.extend(best_upper_parameters);
-    Ok((!starts.is_empty()).then_some((starts, _start_scratch)))
+    Ok((!starts.is_empty()).then_some((starts, start_scratch)))
 }
 
 fn solve_nurbs_surface_parameter(

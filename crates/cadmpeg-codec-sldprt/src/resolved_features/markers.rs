@@ -436,12 +436,15 @@ fn clone_spatial_sketch_id(
         .map_err(|_| CodecError::malformed("cannot copy SLDPRT spatial sketch identity"))
 }
 
+#[derive(Debug, Default)]
+struct SpatialLineVertices(usize, Vec<usize>, Vec<FinitePoint3>);
+
 fn spatial_line_vertices_charged(
     ctx: &DecodeContext<'_>,
     histories: &[crate::records::FeatureHistory],
     record: &crate::records::Feature,
     lane: &FeatureInputLane,
-) -> Result<Option<(usize, Vec<usize>, Vec<FinitePoint3>)>, CodecError> {
+) -> Result<Option<SpatialLineVertices>, CodecError> {
     let Some(name) = feature_object_name(record, lane) else {
         return Ok(None);
     };
@@ -467,7 +470,7 @@ fn spatial_line_vertices_charged(
         && vertices
             .chunks_exact(2)
             .all(|vertices| vertices[0] != vertices[1]))
-    .then_some((start, offsets, vertices)))
+    .then_some(SpatialLineVertices(start, offsets, vertices)))
 }
 
 pub(super) fn marker_spatial_coordinate_offset(payload: &[u8], offset: usize) -> Option<usize> {
@@ -1048,14 +1051,11 @@ pub(super) fn admit_sketch_input_entities(
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
-            let ordinal = match u32::try_from(ordinal) {
-                Ok(ordinal) => ordinal,
-                Err(_) => {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
                     return Err(CodecError::Malformed(crate::text_admission::format_retained(ctx,
                         format_args!("SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"),
                         "report SLDPRT marker count",
                     )?));
-                }
             };
             let id = crate::text_admission::format_retained(ctx,
                 format_args!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),

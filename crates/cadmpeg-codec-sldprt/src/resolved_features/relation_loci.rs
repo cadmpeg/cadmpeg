@@ -159,7 +159,7 @@ pub(super) fn linked_midpoint_operands(
         };
         match linked_marker.kind() {
             SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
-                point = Some(locus)
+                point = Some(locus);
             }
             SketchInputKind::LineOrCircle | SketchInputKind::Arc if entity.is_none() => {
                 entity = Some(match locus {
@@ -524,32 +524,44 @@ pub(super) fn typed_relation_definition(
         ctx,
         relation,
         parameter,
-        sketch,
-        sketch_entities,
+        crate::resolved_features::relation_loci::SketchRelationEntities {
+            sketch,
+            sketch_entities,
+        },
         markers_by_id,
         loci_by_marker,
         None,
     )
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct SketchRelationEntities<'a> {
+    pub sketch: &'a SketchId,
+    pub sketch_entities: &'a [SketchEntity],
+}
+
 pub(super) fn typed_relation_definition_with_profile_axis(
     ctx: &DecodeContext<'_>,
     relation: &FeatureInputRelationInstance,
     parameter: Option<&cadmpeg_ir::features::DesignParameter>,
-    sketch: &SketchId,
-    sketch_entities: &[SketchEntity],
+    profile: SketchRelationEntities<'_>,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
 ) -> Result<Option<SketchConstraintDefinitionInput>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "retain SLDPRT relation parameter identity";
+
     use FeatureInputRelationFamily::{
         Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
+    let SketchRelationEntities {
+        sketch,
+        sketch_entities,
+    } = profile;
     let Some(parameter) = parameter else {
         return Ok(None);
     };
-    const OPERATION: &str = "retain SLDPRT relation parameter identity";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(parameter.id.as_str().len())
             .checked_mul(4)
@@ -859,7 +871,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             let second = curve(1)?;
             Ok(match (first, second) {
                 (Some(first), None) => { let Some(partner) = unique_partner(&first)? else { return Ok(None); }; Some((first, partner)) },
-                (None, Some(second)) => match unique_partner(&second)? { Some(partner) => Some((partner, second)), None => None },
+                (None, Some(second)) => unique_partner(&second)?.map(|partner| (partner, second)),
                 _ => None,
             })
             })()?,
@@ -1325,12 +1337,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                                 resolved_or_none!(unique_marker_line_distance_entity(
                                     ctx,
                                     marker.id(),
-                                    sketch,
+                                    SketchRelationEntities {
+                                        sketch,
+                                        sketch_entities
+                                    },
                                     &known,
                                     parameter,
-                                    sketch_entities,
                                     markers_by_id,
-                                    loci_by_marker,
+                                    loci_by_marker
                                 )?)
                             } else {
                                 resolved_or_none!(unique_profile_line_distance_entity(
@@ -1350,12 +1364,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                                 resolved_or_none!(unique_marker_line_distance_entity(
                                     ctx,
                                     marker.id(),
-                                    sketch,
+                                    SketchRelationEntities {
+                                        sketch,
+                                        sketch_entities
+                                    },
                                     &known,
                                     parameter,
-                                    sketch_entities,
                                     markers_by_id,
-                                    loci_by_marker,
+                                    loci_by_marker
                                 )?)
                             } else {
                                 resolved_or_none!(unique_profile_line_distance_entity(
@@ -1502,6 +1518,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             })
         }
         CircleDiameter => {
+            const SCAN: &str = "scan SLDPRT dimensional circle identities";
+
             if let Some(entities) = repeated_dimensioned_circular_entities(
                 ctx,
                 relation,
@@ -1525,7 +1543,6 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     None => return Ok(None),
                 }));
             }
-            const SCAN: &str = "scan SLDPRT dimensional circle identities";
             ctx.charge_work(
                 cadmpeg_core::decode::u64_from_index(sketch_entities.len()),
                 SCAN,
@@ -1641,6 +1658,8 @@ fn solver_line_entity(
     sketch: &SketchId,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT solver line identity";
+
     let Some(operand) = relation.operands.get(index) else {
         return Ok(None);
     };
@@ -1648,7 +1667,6 @@ fn solver_line_entity(
     if !relation_uses_solver_line_operand(relation, index) {
         return Ok(None);
     }
-    const OPERATION: &str = "select SLDPRT solver line identity";
     if let Some(entity_ref) = operand.entity_ref.as_deref() {
         let mut selected = None;
         for entity in sketch_entities {
@@ -2483,13 +2501,18 @@ fn unique_profile_line_distance_entity(
 fn unique_marker_line_distance_entity(
     ctx: &DecodeContext<'_>,
     marker: &str,
-    sketch: &SketchId,
+    profile: SketchRelationEntities<'_>,
     known: &SketchEntityId,
     parameter: &cadmpeg_ir::features::DesignParameter,
-    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "locate SLDPRT dimensioned line marker";
+    let SketchRelationEntities {
+        sketch,
+        sketch_entities,
+    } = profile;
+
     let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) = parameter.value.as_ref()
     else {
         return Ok(None);
@@ -2497,7 +2520,6 @@ fn unique_marker_line_distance_entity(
     let Some(marker_locus) = marker_point_locus(ctx, marker, markers_by_id, loci_by_marker)? else {
         return Ok(None);
     };
-    const OPERATION: &str = "locate SLDPRT dimensioned line marker";
     for entity in sketch_entities {
         charge_relation_identity_work(
             ctx,
@@ -2770,12 +2792,13 @@ fn unique_dynamic_marker_point_pair(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     profile_axis: Option<ProfileAxis>,
 ) -> Result<Option<(SketchLocus, SketchLocus)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT dynamic point pairs";
+
     let (known_first, known_second) = known;
     let Some(cadmpeg_ir::features::ParameterValue::Length(expected)) = parameter.value.as_ref()
     else {
         return Ok(None);
     };
-    const OPERATION: &str = "select SLDPRT dynamic point pairs";
     let measure = |first: &SketchLocus,
                    second: &SketchLocus|
      -> Result<Option<f64>, cadmpeg_core::CodecError> {
@@ -3418,6 +3441,8 @@ fn dynamic_line_operand_candidates(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
     sketch_entities: &[SketchEntity],
 ) -> Result<Vec<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "filter SLDPRT dynamic line operand candidates";
+
     let mut entities = if let Some(entity) =
         solver_line_entity(ctx, relation, index, sketch, sketch_entities)?
     {
@@ -3433,7 +3458,6 @@ fn dynamic_line_operand_candidates(
     } else {
         Vec::new()
     };
-    const OPERATION: &str = "filter SLDPRT dynamic line operand candidates";
     let mut write = 0;
     for read in 0..entities.len() {
         let mut valid = false;
@@ -3593,12 +3617,7 @@ fn dynamic_entity_has_marker_identity(
         .as_deref()
         .into_iter()
         .chain(entity.geometry_ref.as_deref())
-        .chain(
-            entity
-                .endpoint_refs
-                .iter()
-                .map(|reference| reference.as_str()),
-        )
+        .chain(entity.endpoint_refs.iter().map(std::string::String::as_str))
     {
         ctx.charge_work(
             source_bytes
@@ -4579,6 +4598,8 @@ fn marker_center_dimensioned_entity(
     sketch_entities: &[SketchEntity],
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT marker-centered dimensioned circle";
+
     let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
         return Ok(None);
     };
@@ -4587,7 +4608,6 @@ fn marker_center_dimensioned_entity(
         Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return Ok(None),
     };
-    const OPERATION: &str = "select SLDPRT marker-centered dimensioned circle";
     let center_entity = unique_profile_entity(ctx, sketch, sketch_entities, OPERATION, |entity| {
         charge_relation_identity_work(
             ctx,
@@ -4634,6 +4654,8 @@ fn unique_dimensioned_circle_entity(
     sketch_entities: &[SketchEntity],
     parameter: &cadmpeg_ir::features::DesignParameter,
 ) -> Result<Option<SketchEntityId>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "select SLDPRT dimensioned circle";
+
     let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = parameter.value.as_ref() else {
         return Ok(None);
     };
@@ -4642,7 +4664,6 @@ fn unique_dimensioned_circle_entity(
         Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.get() * 0.5,
         None => return Ok(None),
     };
-    const OPERATION: &str = "select SLDPRT dimensioned circle";
     let selected = unique_profile_entity(ctx, sketch, sketch_entities, OPERATION, |entity| {
         let radius = match entity.geometry.definition() {
             SketchGeometryDefinition::Circle { radius, .. }
@@ -5463,6 +5484,11 @@ pub(super) fn profile_loci_by_marker(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<String, Vec<SketchLocus>>, cadmpeg_core::CodecError> {
+    const BUILD_OPERATION: &str = "build SLDPRT profile marker loci";
+    const RESULT_OPERATION: &str = "build SLDPRT native marker locus results";
+    const ENDPOINT_OPERATION: &str = "build SLDPRT endpoint marker locus results";
+    const GROUP_OPERATION: &str = "group SLDPRT transformed profile markers";
+
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1e-8;
     const INDEX_OPERATION: &str = "index SLDPRT profile marker identities";
@@ -5569,7 +5595,6 @@ pub(super) fn profile_loci_by_marker(
         |key: &&str| key.len(),
         "index SLDPRT nonpoint profile carriers",
     )?;
-    const BUILD_OPERATION: &str = "build SLDPRT profile marker loci";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(sketch_entities.len()),
         BUILD_OPERATION,
@@ -5647,7 +5672,6 @@ pub(super) fn profile_loci_by_marker(
             ));
         }
     }
-    const RESULT_OPERATION: &str = "build SLDPRT native marker locus results";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(markers_by_id.len())
             .checked_add(cadmpeg_core::decode::u64_from_index(
@@ -5776,7 +5800,6 @@ pub(super) fn profile_loci_by_marker(
         loci.push(role.copy_locus(ctx, entity.id(), RESULT_OPERATION)?);
         result.insert(marker, loci);
     }
-    const ENDPOINT_OPERATION: &str = "build SLDPRT endpoint marker locus results";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(sketch_entities.len())
             .checked_add(cadmpeg_core::decode::u64_from_index(
@@ -5899,7 +5922,6 @@ pub(super) fn profile_loci_by_marker(
             canonicalize_physical_loci(ctx, loci, sketch_entities, QUANTUM)?;
         }
     }
-    const GROUP_OPERATION: &str = "group SLDPRT transformed profile markers";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(sketches_by_feature.len())
             .checked_add(cadmpeg_core::decode::u64_from_index(transforms.len()))

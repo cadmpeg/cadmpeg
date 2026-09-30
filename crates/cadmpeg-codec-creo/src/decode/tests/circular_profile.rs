@@ -181,7 +181,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
         &resource_arena,
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
-    .unwrap();
+    .expect("admitted circular profile fixture");
     let mut ir = CadIr::empty();
     ir.model.sketches.push(Sketch {
         id: SketchId::mint("creo:model:sketch#offset:40".to_string()).expect("valid test fixture"),
@@ -214,7 +214,7 @@ fn section_profile_prefers_a_resolved_sketch_chain() {
                 reversed: false,
             },
         )
-        .unwrap();
+        .expect("admitted circular profile fixture");
     assert_eq!(
         section_profile_ref(&ir, "creo:featdefs:sketch#offset:40".to_string()),
         ProfileRef::Planar(PlanarProfileRef::Sketch(

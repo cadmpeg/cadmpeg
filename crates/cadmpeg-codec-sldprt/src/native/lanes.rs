@@ -265,10 +265,9 @@ pub(crate) fn expected_lanes_charged<'a>(
 
 fn copy_feature_ref(
     ctx: &DecodeContext<'_>,
-    feature: &Option<String>,
+    feature: Option<&str>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
     feature
-        .as_deref()
         .map(|feature| {
             let mut copy = String::new();
             crate::text_admission::reserve_retained_string(
@@ -317,7 +316,7 @@ fn expected_lane_pairs_impl<'a>(
             .iter_mut()
             .zip(&actual_lane.sketch_entities)
         {
-            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
             expected.links = None;
         }
         for (expected, actual) in expected_lane
@@ -325,10 +324,10 @@ fn expected_lane_pairs_impl<'a>(
             .iter_mut()
             .zip(&actual_lane.references)
         {
-            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
         }
         for (expected, actual) in expected_lane.scalars.iter_mut().zip(&actual_lane.scalars) {
-            expected.feature_ref = copy_feature_ref(ctx, &actual.feature_ref)?;
+            expected.feature_ref = copy_feature_ref(ctx, actual.feature_ref.as_deref())?;
         }
         finalize_lane_bindings(ctx, &native.feature_histories, expected_lane)?;
     }

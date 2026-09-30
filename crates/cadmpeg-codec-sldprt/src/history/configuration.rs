@@ -1147,6 +1147,8 @@ fn inherit_configuration_hole_semantics(
     base_definition: &FeatureDefinition,
     inherit_placements: bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "copy SLDPRT configuration hole construction";
+
     let FeatureDefinition::Operation(FeatureOperation::Hole {
         profile,
         profile_filter,
@@ -1163,7 +1165,6 @@ fn inherit_configuration_hole_semantics(
     else {
         return Ok(());
     };
-    const OPERATION: &str = "copy SLDPRT configuration hole construction";
     let mut construction = shape.construction().try_clone_charged(ctx, OPERATION)?;
     let mut exit_kind = *shape.exit_kind();
     let mut diameter = shape.diameter();

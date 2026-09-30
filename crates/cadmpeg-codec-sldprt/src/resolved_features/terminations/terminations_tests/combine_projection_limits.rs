@@ -76,11 +76,11 @@ fn combine_projection_error(policy: DecodePolicy) -> cadmpeg_core::CodecError {
         ordinal,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties: BTreeMap::new(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         native_ref: Some(native.into()),
         evaluation: FeatureEvaluation::from_definition(definition),
     };

@@ -1146,11 +1146,13 @@ fn dynamic_axis_distance_uses_the_mapped_profile_axis() {
             &cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
-            &sketch,
-            &[first.clone(), second.clone()],
+            crate::resolved_features::relation_loci::SketchRelationEntities {
+                sketch: &sketch,
+                sketch_entities: &[first.clone(), second.clone()]
+            },
             &markers_by_id,
             &HashMap::new(),
-            Some(ProfileAxis::U),
+            Some(ProfileAxis::U)
         )
         .unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance {

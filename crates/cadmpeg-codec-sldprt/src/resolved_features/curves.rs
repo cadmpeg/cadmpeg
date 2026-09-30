@@ -128,6 +128,25 @@ pub(super) fn resolve_two_center_semicircle_profile(
     entities: &mut Vec<SketchEntity>,
     tolerance: f64,
 ) -> Result<(), CodecError> {
+    fn order_endpoints(
+        center: Point2,
+        refs: [&str; 2],
+        endpoints: [Point2; 2],
+        perpendicular: Point2,
+    ) -> ([&str; 2], [Point2; 2]) {
+        let signed = endpoints.map(|point| {
+            (
+                (point.u - center.u) * perpendicular.u + (point.v - center.v) * perpendicular.v,
+                point,
+            )
+        });
+        if signed[0].0 > signed[1].0 {
+            ([refs[0], refs[1]], [signed[0].1, signed[1].1])
+        } else {
+            ([refs[1], refs[0]], [signed[1].1, signed[0].1])
+        }
+    }
+
     let mut records = Vec::new();
     for marker in markers {
         if usize::try_from(marker.offset())
@@ -266,24 +285,6 @@ pub(super) fn resolve_two_center_semicircle_profile(
         || (second_radial.u * direction.u + second_radial.v * direction.v).abs() > tolerance
     {
         return Ok(());
-    }
-    fn order_endpoints<'a>(
-        center: Point2,
-        refs: [&'a str; 2],
-        endpoints: [Point2; 2],
-        perpendicular: Point2,
-    ) -> ([&'a str; 2], [Point2; 2]) {
-        let signed = endpoints.map(|point| {
-            (
-                (point.u - center.u) * perpendicular.u + (point.v - center.v) * perpendicular.v,
-                point,
-            )
-        });
-        if signed[0].0 > signed[1].0 {
-            ([refs[0], refs[1]], [signed[0].1, signed[1].1])
-        } else {
-            ([refs[1], refs[0]], [signed[1].1, signed[0].1])
-        }
     }
     let (first_refs, first_endpoints) = order_endpoints(first.2, first.3, first.4, perpendicular);
     let (second_refs, second_endpoints) =
@@ -1932,9 +1933,7 @@ pub(super) fn indexed_rectangle_from_line_cycle(
         }
     }
     Ok((|| {
-        let Some(endpoint_space) = records.first().map(RectangleLineRecord::endpoint_space) else {
-            return None;
-        };
+        let endpoint_space = records.first().map(RectangleLineRecord::endpoint_space)?;
         if records
             .iter()
             .any(|record| record.endpoint_space() != endpoint_space)
@@ -2602,7 +2601,7 @@ pub(super) fn compact_line_region_addresses(
     }
     let mut addresses = ctx.alloc_filled(count, 0u16, "collect SLDPRT compact region addresses")?;
     let mut entry_token = None;
-    for index in 0..count {
+    for (index, slot) in addresses.iter_mut().enumerate() {
         let Some(entry) = header.checked_add(4 + index * 12) else {
             return Ok(None);
         };
@@ -2620,7 +2619,7 @@ pub(super) fn compact_line_region_addresses(
         let Some(address) = View::u16_le_at(payload, entry + 2) else {
             return Ok(None);
         };
-        addresses[index] = address;
+        *slot = address;
     }
     ctx.charge_work(count as u64, "validate SLDPRT compact region addresses")?;
     let mut seen = ctx.alloc_filled(count, false, "validate SLDPRT compact region addresses")?;

@@ -383,16 +383,18 @@ pub(crate) fn scan_bytes(bytes: &[u8]) -> ContainerScan<'_> {
         );
     }
     let version = native_version(bytes);
-    let (blocks, directory, cache_cells) = match walk_native_markers(
+    let NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+    } = walk_native_markers(
         bytes,
-        ScanAdmission::Probe,
+        &ScanAdmission::Probe,
         |off| Ok(try_block(bytes, off)),
         |off| Ok(try_cache_cell(bytes, off)),
         |off| Ok(try_directory_entry(bytes, off)),
-    ) {
-        Ok(frames) => frames,
-        Err(_) => (Vec::new(), Vec::new(), Vec::new()),
-    };
+    )
+    .unwrap_or_default();
 
     completed_scan(bytes, version, blocks, directory, cache_cells, Vec::new())
 }
@@ -416,7 +418,7 @@ fn completed_scan(
     let solidworks = scan_solidworks_envelopes(
         scan.sections()
             .map(|section| (section.name(), section.payload())),
-        ScanAdmission::Probe,
+        &ScanAdmission::Probe,
     )
     .unwrap_or_default();
     scan.solidworks = solidworks;
@@ -443,7 +445,7 @@ fn completed_scan_charged<'a>(
     let solidworks = scan_solidworks_envelopes(
         scan.sections()
             .map(|section| (section.name(), section.payload())),
-        ScanAdmission::Decode(ctx),
+        &ScanAdmission::Decode(ctx),
     )?;
     scan.solidworks = solidworks;
     Ok(scan)
@@ -492,13 +494,20 @@ impl ScanAdmission<'_, '_> {
     }
 }
 
+#[derive(Default)]
+struct NativeMarkers {
+    blocks: Vec<Block>,
+    directory: Vec<DirectoryEntry>,
+    cache_cells: Vec<CacheCell>,
+}
+
 fn walk_native_markers(
     bytes: &[u8],
-    admission: ScanAdmission<'_, '_>,
+    admission: &ScanAdmission<'_, '_>,
     mut try_one_block: impl FnMut(usize) -> Result<Option<RawBlock>, CodecError>,
     mut try_one_cell: impl FnMut(usize) -> Result<Option<CacheCell>, CodecError>,
     mut try_one_directory: impl FnMut(usize) -> Result<Option<DirectoryEntry>, CodecError>,
-) -> Result<(Vec<Block>, Vec<DirectoryEntry>, Vec<CacheCell>), CodecError> {
+) -> Result<NativeMarkers, CodecError> {
     let mut blocks = Vec::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
@@ -523,7 +532,11 @@ fn walk_native_markers(
         }
         i += 1;
     }
-    Ok((blocks, directory, cache_cells))
+    Ok(NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+    })
 }
 
 fn compound_stream(
@@ -568,9 +581,13 @@ pub(crate) fn scan<'a>(
     }
     let bytes = root.window();
     let version = native_version(bytes);
-    let (blocks, directory, cache_cells) = walk_native_markers(
+    let NativeMarkers {
+        blocks,
+        directory,
+        cache_cells,
+    } = walk_native_markers(
         bytes,
-        ScanAdmission::Decode(ctx),
+        &ScanAdmission::Decode(ctx),
         |off| try_block_budgeted(ctx, root, off),
         |off| try_cache_cell_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
         |off| try_directory_entry_with(bytes, off, |raw| nibble_swap_name_charged(ctx, raw)),
@@ -1500,7 +1517,7 @@ impl ManifestActiveConfiguration {
 
 fn scan_solidworks_envelopes<'a>(
     sections: impl IntoIterator<Item = (Option<&'a str>, &'a [u8])>,
-    admission: ScanAdmission<'_, '_>,
+    admission: &ScanAdmission<'_, '_>,
 ) -> Result<SolidWorksEnvelopeScan, CodecError> {
     let mut scan = SolidWorksEnvelopeScan::default();
     for (section, payload) in sections {
@@ -1513,7 +1530,7 @@ fn scan_solidworks_envelopes<'a>(
         let root = document.root_element();
         if is_features_manifest_name(section) && root.tag_name().name() == "swSolidWorks" {
             scan.manifest_active_configuration
-                .merge(manifest_active_configuration_in(&admission, &document)?);
+                .merge(manifest_active_configuration_in(admission, &document)?);
         }
         if root.tag_name().name().contains("Keywords") {
             for configuration in document
@@ -1669,7 +1686,7 @@ pub(crate) fn first_solidworks_envelope<'a>(
 ) -> Option<SolidWorksEnvelope> {
     scan_solidworks_envelopes(
         payloads.into_iter().map(|payload| (None, payload)),
-        ScanAdmission::Probe,
+        &ScanAdmission::Probe,
     )
     .ok()
     .and_then(|scan| scan.first)

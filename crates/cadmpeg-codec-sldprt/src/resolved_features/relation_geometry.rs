@@ -1030,14 +1030,14 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
-            let native_ref = if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
+            let native_ref = if matches!(marker.kind(), SketchInputKind::Relation(_)) {
+                None
+            } else {
                 Some(crate::text_admission::format_retained(
                     ctx,
                     format_args!("{}", marker.id()),
                     "copy SLDPRT relation-line native reference",
                 )?)
-            } else {
-                None
             };
             let geometry_ref = if matches!(marker.kind(), SketchInputKind::Relation(_)) {
                 Some(crate::text_admission::format_retained(
@@ -3353,6 +3353,8 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
+            const ENTITY_SORT: &str = "sort SLDPRT planar relation entities";
+
             let existing = constraints_by_native_ref.get(relation.id.as_str()).copied();
             if existing.is_some_and(|index| {
                 !matches!(
@@ -3395,7 +3397,6 @@ pub(crate) fn project_relation_bindings(
                     entities.push(entity);
                 }
             }
-            const ENTITY_SORT: &str = "sort SLDPRT planar relation entities";
             let count = cadmpeg_core::decode::u64_from_index(entities.len());
             ctx.charge_work(count, ENTITY_SORT)?;
             let max_bytes = entities
@@ -3434,8 +3435,10 @@ pub(crate) fn project_relation_bindings(
                             ctx,
                             relation,
                             parameter,
-                            sketch,
-                            sketch_entities,
+                            crate::resolved_features::relation_loci::SketchRelationEntities {
+                                sketch,
+                                sketch_entities,
+                            },
                             &markers_by_id,
                             &loci_by_marker,
                             Some(profile_axis),
@@ -3933,10 +3936,14 @@ pub(super) fn relation_display_scalar_for_parameter<'a>(
     let Some(&first) = scalars.first() else {
         return Ok(None);
     };
-    if scalars
-        .windows(2)
-        .any(|pair| pair[1].ordinal != pair[0].ordinal.checked_add(1).unwrap_or(u32::MAX))
-    {
+    if scalars.windows(2).any(|pair| {
+        pair[1].ordinal
+            != if pair[0].ordinal == u32::MAX {
+                pair[0].ordinal
+            } else {
+                pair[0].ordinal + 1
+            }
+    }) {
         return Ok(None);
     }
     let Some(first_name) = lane
@@ -4207,13 +4214,6 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_point_relation_projects_graph_resolved_operands() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            b"relation test",
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         use cadmpeg_ir::sketches::{Sketch, SketchLocus, SketchPlacement};
         use cadmpeg_ir::{
             features::{
@@ -4223,6 +4223,14 @@ mod relation_geometry_tests {
             scalar::Length,
         };
         use std::collections::BTreeMap;
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test",
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
 
         let sketch = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
@@ -4406,13 +4414,6 @@ mod relation_geometry_tests {
 
     #[test]
     fn solver_line_relation_prefers_marker_endpoint_join() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            b"relation test",
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         use cadmpeg_ir::math::{Point3, Vector3};
         use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
         use cadmpeg_ir::{
@@ -4423,9 +4424,17 @@ mod relation_geometry_tests {
             scalar::Length,
         };
         use std::collections::BTreeMap;
-
         const FEATURE: &str = "feature-native";
         const LANE: &str = "lane#test";
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test",
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+
         let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
         let feature = Feature {
             id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -4725,7 +4734,7 @@ mod relation_geometry_tests {
             )
             .with_construction(true)
         };
-        let generated = vec![
+        let generated = [
             line(
                 "synthetic:test:id#roster-4",
                 Point2::new(-13.0, 3.0),
@@ -4766,13 +4775,6 @@ mod relation_geometry_tests {
 
     #[test]
     fn spatial_point_line_relation_uses_unique_tagged_marker_roster() {
-        let arena = cadmpeg_core::decode::DecodeArena::new();
-        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-            b"relation test",
-            &arena,
-            &cadmpeg_core::decode::DecodePolicy::service(),
-        )
-        .unwrap();
         use cadmpeg_ir::sketches::{
             SpatialSketch, SpatialSketchConstraintDefinitionInput, SpatialSketchGeometryDefinition,
             SpatialSketchId,
@@ -4785,7 +4787,6 @@ mod relation_geometry_tests {
             scalar::Length,
         };
         use std::collections::BTreeMap;
-
         fn marker(
             payload: &mut [u8],
             offset: usize,
@@ -4819,9 +4820,17 @@ mod relation_geometry_tests {
             marker = marker.with_test_identity(Some(object_index), marker.local_id());
             marker
         }
-
         const FEATURE: &str = "synthetic:test:id#feature";
         const LANE: &str = "lane";
+
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            b"relation test",
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+
         let source_position = Point3::new(0.0, 16.0, 12.0);
 
         let mut payload = vec![0u8; 800];

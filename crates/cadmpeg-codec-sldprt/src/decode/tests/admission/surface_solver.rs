@@ -85,7 +85,7 @@ fn assert_surface_solver_route_limit(dimension: ResourceDimension) {
     let expected = decoded.ir().clone();
     let set_limit = |options: &mut DecodeOptions, limit| match dimension {
         ResourceDimension::MaterializedBytes => {
-            options.policy.limits.max_materialized_bytes = limit
+            options.policy.limits.max_materialized_bytes = limit;
         }
         ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
         _ => panic!("unexpected surface-solver route dimension"),

@@ -157,9 +157,10 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[88..92].copy_from_slice(&2u32.to_le_bytes());
     payload[138..158].fill(0);
     payload[158..162].copy_from_slice(&101u32.to_le_bytes());
-    let (path, terminal_source) = compact_single_face_reference_record_at(&path_ctx, &payload, 100)
-        .expect("component path resource admission")
-        .expect("required invariant");
+    let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
+        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
+            .expect("component path resource admission")
+            .expect("required invariant");
     assert_eq!(path.len(), 1);
     assert_eq!(terminal_source, Some(101));
 
@@ -171,9 +172,10 @@ fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
     payload[158..162].copy_from_slice(&9u32.to_le_bytes());
     payload[162..186].fill(0);
     payload[186..190].copy_from_slice(&101u32.to_le_bytes());
-    let (path, terminal_source) = compact_single_face_reference_record_at(&path_ctx, &payload, 100)
-        .expect("component path resource admission")
-        .expect("required invariant");
+    let crate::resolved_features::selections::ComponentPathReference(path, terminal_source) =
+        compact_single_face_reference_record_at(&path_ctx, &payload, 100)
+            .expect("component path resource admission")
+            .expect("required invariant");
     assert_eq!(path.len(), 2);
     assert_eq!(path[1].local_id, Some(9));
     assert_eq!(terminal_source, Some(101));

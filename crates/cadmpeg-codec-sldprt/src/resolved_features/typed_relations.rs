@@ -618,6 +618,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
     }
     Ok(Some(match group {
         MarkerRelationGroup::SingleEntity(single) => {
+            const ENTITY_OPERATION: &str = "resolve SLDPRT exact marker entities";
+
             let axes = single.axes();
             if let Some((same_coordinate, _)) = axes {
                 if let Some([first, second]) = axis_relation_point_loci(
@@ -687,7 +689,6 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
                 loci_by_marker,
                 MarkerEntityFilter::All,
             )?;
-            const ENTITY_OPERATION: &str = "resolve SLDPRT exact marker entities";
             charge_relation_marker_links(ctx, marker, markers_by_id, ENTITY_OPERATION)?;
             let mut exact_entities = Vec::new();
             for link in marker.links() {
@@ -907,9 +908,10 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             SketchConstraintDefinitionInput::EllipseAngle { entity, angle }
         }
         MarkerRelationGroup::Binary(binary) => {
+            const BINARY_OPERATION: &str = "resolve SLDPRT binary marker entities";
+
             let owner_entities =
                 relation_owner_curve_entities(ctx, marker, markers_by_id, loci_by_marker)?;
-            const BINARY_OPERATION: &str = "resolve SLDPRT binary marker entities";
             charge_relation_marker_links(ctx, marker, markers_by_id, BINARY_OPERATION)?;
             let mut forward_entities = Vec::new();
             for link in marker.links() {
@@ -1143,6 +1145,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
         }
         MarkerRelationGroup::AtIntersection => {
+            const OPERATION: &str = "resolve SLDPRT marker intersection operands";
+
             if sketch_entities.is_empty() {
                 return Ok(Some(native()?));
             }
@@ -1150,7 +1154,6 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             else {
                 return Ok(Some(native()?));
             };
-            const OPERATION: &str = "resolve SLDPRT marker intersection operands";
             let mut point = None;
             let mut entities = Vec::new();
             for locus in loci {
@@ -1215,6 +1218,8 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             }
         }
         MarkerRelationGroup::Symmetric => {
+            const OPERATION: &str = "resolve SLDPRT symmetric marker operands";
+
             if sketch_entities.is_empty() {
                 return Ok(Some(native()?));
             }
@@ -1222,7 +1227,6 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             else {
                 return Ok(Some(native()?));
             };
-            const OPERATION: &str = "resolve SLDPRT symmetric marker operands";
             let mut axis = None;
             let mut points = Vec::new();
             for locus in loci {
@@ -1835,7 +1839,7 @@ struct AxisRelationPointCollection<'a> {
     locus_bytes: u64,
 }
 
-impl<'a> AxisRelationPointCollection<'a> {
+impl AxisRelationPointCollection<'_> {
     fn append(&mut self, ctx: &DecodeContext<'_>, locus: SketchLocus) -> Result<(), CodecError> {
         const OPERATION: &str = "collect SLDPRT axis relation point loci";
         let bytes = u64_from_index(locus_entity(&locus).as_str().len());
@@ -2024,7 +2028,7 @@ fn collect_axis_relation_point_loci<'a>(
                     markers_by_id,
                     loci_by_marker,
                     collection,
-                )?
+                )?;
             }
             SketchInputKind::Relation(_) => collect_axis_relation_point_loci(
                 ctx,
@@ -2312,6 +2316,8 @@ fn typed_binary_relation_is_inactive(
     definition: &SketchConstraintDefinitionInput,
     sketch_entities: &[SketchEntity],
 ) -> Result<Option<bool>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT binary relation activity";
+
     use crate::records::SketchRelationKind::{
         Collinear, Concentric, Coradial, Equal, Parallel, Perpendicular, Tangent,
     };
@@ -2325,7 +2331,6 @@ fn typed_binary_relation_is_inactive(
     else {
         return Ok(None);
     };
-    const OPERATION: &str = "resolve SLDPRT binary relation activity";
     let Some(first) = find_profile_entity(ctx, sketch_entities, first, OPERATION)? else {
         return Ok(None);
     };

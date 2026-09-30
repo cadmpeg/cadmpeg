@@ -264,7 +264,7 @@ fn reference_cells_refuse_collection_limit() {
     let mut limited_policy = DecodePolicy::service();
     limited_policy.limits.max_collection_items = 0;
     let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
-    let error = reference_cells_charged(&limited, &[scalar.clone()], &[]).unwrap_err();
+    let error = reference_cells_charged(&limited, std::slice::from_ref(&scalar), &[]).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(limit)
         if limit.dimension == ResourceDimension::CollectionItems
             && limit.operation == "collect SLDPRT reference cells"));
@@ -272,7 +272,7 @@ fn reference_cells_refuse_collection_limit() {
     let (service, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
     assert_eq!(
-        reference_cells_charged(&service, &[scalar.clone()], &[]).unwrap(),
+        reference_cells_charged(&service, std::slice::from_ref(&scalar), &[]).unwrap(),
         vec![crate::records::FeatureInputReference {
             id: scalar.operands[0].reference_ref.clone(),
             parent: scalar.parent,

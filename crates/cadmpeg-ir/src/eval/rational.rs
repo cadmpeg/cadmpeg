@@ -74,7 +74,7 @@ impl Homogeneous {
         let Some(minimum) = values
             .iter()
             .filter_map(|value| value.values[3])
-            .map(|weight| weight.exponent())
+            .map(crate::math::sum::ScaledValue::exponent)
             .min()
         else {
             return Ok(None);
@@ -82,7 +82,7 @@ impl Homogeneous {
         let Some(maximum) = values
             .iter()
             .filter_map(|value| value.values[3])
-            .map(|weight| weight.exponent())
+            .map(crate::math::sum::ScaledValue::exponent)
             .max()
         else {
             return Ok(None);

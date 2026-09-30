@@ -367,7 +367,7 @@ fn regeneration_order(
         "sldprt feature regeneration indegree",
     )?;
     let mut tree_parent_by_child = HashMap::new();
-    for feature in features.iter() {
+    for feature in features {
         let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
             feature.evaluation.definition()
         else {
@@ -405,7 +405,7 @@ fn regeneration_order(
     }
     for (consumer, feature) in features.iter().enumerate() {
         let mut predecessors = HashSet::new();
-        for predecessor in feature.dependencies.iter() {
+        for predecessor in &feature.dependencies {
             ctx.charge_work(1, "collect SLDPRT feature predecessors")?;
             add_regeneration_predecessor(ctx, &mut predecessors, predecessor)?;
         }
@@ -582,16 +582,25 @@ fn copy_output_body_id(
 /// the ordered, non-metadata Keywords feature records. A resolved ordinal adds
 /// that body to the corresponding feature's outputs. An ordinal that is absent
 /// or ambiguous across history records is ignored.
+#[derive(Clone, Copy)]
+pub(crate) struct FeatureOutputSources<'a> {
+    pub face_producers: &'a [(String, u32)],
+    pub body_modifiers: &'a [(String, u32)],
+}
+
 pub(crate) fn derive_feature_outputs(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     histories: &[FeatureHistory],
-    face_producers: &[(String, u32)],
-    body_modifiers: &[(String, u32)],
+    sources: FeatureOutputSources<'_>,
     faces: &[Face],
     shells: &[cadmpeg_ir::topology::Shell],
     regions: &[cadmpeg_ir::topology::Region],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let FeatureOutputSources {
+        face_producers,
+        body_modifiers,
+    } = sources;
     let mut feature_ids_by_ordinal = HashMap::<u32, Option<&str>>::new();
     for history in histories {
         let mut ordinal = 0_u32;
@@ -879,10 +888,10 @@ mod tests {
             name: None,
             suppressed: None,
             dependencies: DistinctMembers::default(),
-            source_properties: Default::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
-            source_content: Default::default(),
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
             evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
                 FeatureOperation::DatumOffsetPlane {
                     reference: None,
@@ -936,7 +945,7 @@ mod tests {
         let histories = [FeatureHistory {
             id: "history".into(),
             part_name: None,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             content: Vec::new(),
             configurations: Vec::new(),
             features: vec![crate::history::tests::feature("native", Some("700"), 0)],
@@ -956,8 +965,10 @@ mod tests {
             &ctx,
             &mut projected,
             &histories,
-            &[],
-            &body_modifiers,
+            crate::history::bind::FeatureOutputSources {
+                face_producers: &[],
+                body_modifiers: &body_modifiers,
+            },
             &[],
             &[],
             &[],
@@ -1017,13 +1028,13 @@ mod tests {
             configuration: None,
             visible: None,
             placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved {},
-            profiles: Default::default(),
+            profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: None,
         }];
         let histories = [FeatureHistory {
             id: "history".into(),
             part_name: None,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             content: Vec::new(),
             configurations: Vec::new(),
             features: vec![crate::history::tests::feature("native", None, 0)],

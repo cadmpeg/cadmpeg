@@ -241,7 +241,9 @@ pub(super) fn scan_carriers(
         out.insert(ctx, Carrier::Curve(carrier))?;
     }
     out.sweeps = sweep::scan_sweep_carriers(ctx, body)?;
-    (out.blends, out.blend_support_pairs) = blend::scan(ctx, body)?;
+    let blend::BlendCarriers { blends, pairs } = blend::scan(ctx, body)?;
+    out.blends = blends;
+    out.blend_support_pairs = pairs;
     out.offsets = offset::scan(ctx, body)?;
     for intersection in
         intersection::scan_intersection_carriers(ctx, body, &mut lane_refusals)?.into_values()

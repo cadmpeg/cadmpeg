@@ -316,6 +316,8 @@ mod tests {
 
     #[test]
     fn helix_fit_preserves_small_model_units() {
+        const RELATIVE_ERROR: f64 = 1e-10;
+
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
@@ -323,7 +325,6 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        const RELATIVE_ERROR: f64 = 1e-10;
         for scale in [1e-8, 1.0, 1e8] {
             let points = (0..=16)
                 .map(|index| {

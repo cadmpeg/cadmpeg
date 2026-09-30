@@ -459,6 +459,8 @@ fn native_body_state_validation_limit_refuses_before_state_ids() {
 
 #[test]
 fn native_edge_validation_collection_limit_refuses_before_candidates() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     let reference_arena = cadmpeg_core::decode::DecodeArena::new();
     let (reference_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -466,7 +468,6 @@ fn native_edge_validation_collection_limit_refuses_before_candidates() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let mut lane = emitter_models()
         .iter()
@@ -656,6 +657,8 @@ fn native_validation_retained_limit_reaches_caller() {
 
 #[test]
 fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
     let identity_arena = cadmpeg_core::decode::DecodeArena::new();
     let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -663,7 +666,6 @@ fn native_generated_surface_validation_limit_refuses_before_identity_rows() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 
     let class_name = "moWzdHoleSurfIdRep_c";
     let prefix = [0xc3, 0x80, 0xc5, 0x00];
@@ -797,7 +799,7 @@ fn native_history_class_validation_limit_refuses_before_lookup_maps() {
     )
     .unwrap_err();
     assert!(matches!(
-        cadmpeg_core::CodecError::from(error),
+        error,
         cadmpeg_core::CodecError::ResourceLimit(limit)
             if limit.dimension == ResourceDimension::CollectionItems
                 && limit.operation == "validate SLDPRT history class candidates"

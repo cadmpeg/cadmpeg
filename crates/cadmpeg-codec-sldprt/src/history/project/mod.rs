@@ -284,7 +284,7 @@ pub(crate) fn project_feature_model(
             let mut by_source = HashMap::new();
             let mut native_by_source = HashMap::new();
             for (source, binding) in &source_bindings {
-                let Some((native, neutral)) = binding else {
+                let Some(SourceBinding { native, neutral }) = binding else {
                     continue;
                 };
                 insert_projected_map(
@@ -543,6 +543,35 @@ pub(super) fn bind_offset_plane_references(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
+    fn canonical_plane_id<'a>(
+        ctx: &DecodeContext<'_>,
+        id: &'a FeatureId,
+        parents: &'a HashMap<FeatureId, FeatureId>,
+    ) -> Result<&'a FeatureId, CodecError> {
+        let mut current = id;
+        let mut visited = HashSet::new();
+        loop {
+            ctx.charge_work(1, "walk SLDPRT zero offset plane parents")?;
+            if visited.contains(current) {
+                break;
+            }
+            ctx.charge_collection_items(1, "walk SLDPRT zero offset plane parents")?;
+            visited.try_reserve(1).map_err(|_| {
+                ctx.refuse_codec_limit(
+                    "walk SLDPRT zero offset plane parents",
+                    u64::MAX - 1,
+                    u64::MAX,
+                )
+            })?;
+            visited.insert(current);
+            let Some(parent) = parents.get(current) else {
+                break;
+            };
+            current = parent;
+        }
+        Ok(current)
+    }
+
     fn history_key(feature: &cadmpeg_ir::features::Feature) -> Option<&str> {
         feature
             .native_ref
@@ -717,34 +746,6 @@ pub(super) fn bind_offset_plane_references(
                 "index SLDPRT zero offset plane parents",
             )?;
         }
-    }
-    fn canonical_plane_id<'a>(
-        ctx: &DecodeContext<'_>,
-        id: &'a FeatureId,
-        parents: &'a HashMap<FeatureId, FeatureId>,
-    ) -> Result<&'a FeatureId, CodecError> {
-        let mut current = id;
-        let mut visited = HashSet::new();
-        loop {
-            ctx.charge_work(1, "walk SLDPRT zero offset plane parents")?;
-            if visited.contains(current) {
-                break;
-            }
-            ctx.charge_collection_items(1, "walk SLDPRT zero offset plane parents")?;
-            visited.try_reserve(1).map_err(|_| {
-                ctx.refuse_codec_limit(
-                    "walk SLDPRT zero offset plane parents",
-                    u64::MAX - 1,
-                    u64::MAX,
-                )
-            })?;
-            visited.insert(current);
-            let Some(parent) = parents.get(current) else {
-                break;
-            };
-            current = parent;
-        }
-        Ok(current)
     }
     for feature in features.iter_mut() {
         ctx.charge_work(1, "validate SLDPRT offset plane references")?;
@@ -1164,10 +1165,10 @@ fn bind_native_construction_features(
             result = (|| {
                 match definition {
                     FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
-                        bind(profile, dependencies)?
+                        bind(profile, dependencies)?;
                     }
                     FeatureDefinition::Operation(FeatureOperation::Wrap { profile, .. }) => {
-                        bind_planar(profile, dependencies)?
+                        bind_planar(profile, dependencies)?;
                     }
                     FeatureDefinition::Operation(FeatureOperation::Revolve {
                         construction,
@@ -1304,10 +1305,15 @@ pub(crate) fn custom_property_attributes(
     Ok(attributes)
 }
 
+struct SourceBinding<'a> {
+    native: &'a str,
+    neutral: FeatureId,
+}
+
 fn unique_source_bindings<'a>(
     ctx: &DecodeContext<'_>,
     history: &'a FeatureHistory,
-) -> Result<HashMap<FeatureSource, Option<(&'a str, FeatureId)>>, CodecError> {
+) -> Result<HashMap<FeatureSource, Option<SourceBinding<'a>>>, CodecError> {
     let mut bindings = HashMap::new();
     for feature in &history.features {
         ctx.charge_work(1, "scan SLDPRT unique feature sources")?;
@@ -1329,10 +1335,10 @@ fn unique_source_bindings<'a>(
                 u64::MAX,
             )
         })?;
-        let binding = (
-            feature.id.as_str(),
-            neutral_feature_id_charged(ctx, &feature.id)?,
-        );
+        let binding = SourceBinding {
+            native: feature.id.as_str(),
+            neutral: neutral_feature_id_charged(ctx, &feature.id)?,
+        };
         bindings.insert(source, Some(binding));
     }
     Ok(bindings)
@@ -1393,7 +1399,7 @@ pub(crate) fn incomplete_history_reference_features(
                         .ok()
                         .and_then(|reference| sources.get(&reference))
                         .and_then(Option::as_ref)
-                        .is_none_or(|(_, dependency)| dependency == &owner_id)
+                        .is_none_or(|binding| binding.neutral == owner_id)
                 });
             if duplicate_source
                 || (parent_requested && !parent_resolved)
@@ -1646,9 +1652,8 @@ fn project_definition(
         ));
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
-        return Ok(project_offset_plane(ctx, feature, by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_offset_plane(ctx, feature, by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
         return Ok(FeatureDefinition::Operation(
@@ -1656,25 +1661,24 @@ fn project_definition(
         ));
     }
     if class == Some(FeatureClass::ReferencePlane) {
-        return project_datum_plane(feature).map(Ok).unwrap_or_else(|| {
-            if feature.properties.contains_key("NativeRole") {
-                native_definition(ctx, feature)
-            } else {
-                Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
-                    family: UnresolvedFamily::DatumPlane,
-                }))
-            }
-        });
+        return project_datum_plane(feature).map_or_else(
+            || {
+                if feature.properties.contains_key("NativeRole") {
+                    native_definition(ctx, feature)
+                } else {
+                    Ok(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+                        family: UnresolvedFamily::DatumPlane,
+                    }))
+                }
+            },
+            Ok,
+        );
     }
     if class == Some(FeatureClass::ReferenceAxis) {
-        return Ok(project_datum_axis(feature)
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_datum_axis(feature).map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::ReferencePoint) {
-        return Ok(project_datum_point(feature)
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_datum_point(feature).map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::CoordinateSystem) {
         return Ok(project_datum_coordinate_system(feature).unwrap_or(
@@ -1684,37 +1688,31 @@ fn project_definition(
         ));
     }
     if class == Some(FeatureClass::EquationCurve) {
-        return Ok(project_equation_curve(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_equation_curve(ctx, feature)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::ProjectedCurve) {
-        return Ok(project_projected_curve(ctx, feature, native_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_projected_curve(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::CompositeCurve) {
-        return Ok(project_composite_curve(ctx, feature, native_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_composite_curve(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     if class == Some(FeatureClass::Helix) {
         return Ok(match project_helix(feature) {
             Some(definition) => definition,
             None => project_native_axis_helix(ctx, feature)?
-                .map(Ok)
-                .unwrap_or_else(|| native_definition(ctx, feature))?,
+                .map_or_else(|| native_definition(ctx, feature), Ok)?,
         });
     }
     if class == Some(FeatureClass::Wrap) {
-        return Ok(project_wrap(ctx, feature, native_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?);
+        return project_wrap(ctx, feature, native_by_source)?
+            .map_or_else(|| native_definition(ctx, feature), Ok);
     }
     Ok(if class == Some(FeatureClass::Extrude) {
         project_extrude(ctx, feature, native_by_source, features_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Fillet) {
         project_fillet(ctx, feature)?
     } else if class == Some(FeatureClass::Chamfer) {
@@ -1734,41 +1732,25 @@ fn project_definition(
     } else if class == Some(FeatureClass::ExtendSurface) {
         project_extend_surface(ctx, feature)?
     } else if class == Some(FeatureClass::RuledSurface) {
-        project_ruled_surface(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_ruled_surface(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Draft) {
         project_draft(ctx, feature)?
     } else if class == Some(FeatureClass::SplitFace) {
-        project_split_face(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_split_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Combine) {
-        project_combine(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_combine(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::CutWithSurface) {
         project_cut_with_surface(ctx, feature)?
     } else if class == Some(FeatureClass::DeleteBody) {
-        project_delete_body(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_delete_body(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::DeleteFace) {
-        project_delete_face(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_delete_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::ReplaceFace) {
-        project_replace_face(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_replace_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::MoveFace) {
-        project_move_face(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_move_face(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::MoveBody) {
-        project_move_body(ctx, feature)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        project_move_body(ctx, feature)?.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Dome) {
         project_dome(ctx, feature)?
     } else if class == Some(FeatureClass::Flex) {
@@ -1777,22 +1759,17 @@ fn project_definition(
         project_scale(ctx, feature)?
     } else if class == Some(FeatureClass::Hole) {
         project_hole(ctx, feature, features_by_source, history_features)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(ctx, feature, native_by_source)?
     } else if class == Some(FeatureClass::Pattern) {
-        projected_pattern
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+        projected_pattern.map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Sweep) {
         project_sweep(ctx, feature, native_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Loft) {
         project_loft(ctx, feature, native_by_source)?
-            .map(Ok)
-            .unwrap_or_else(|| native_definition(ctx, feature))?
+            .map_or_else(|| native_definition(ctx, feature), Ok)?
     } else if class == Some(FeatureClass::Rib) {
         project_rib(ctx, feature, native_by_source)?
     } else {

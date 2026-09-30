@@ -601,8 +601,10 @@ pub(crate) fn dimensions(
             source.native_id().as_str(),
             annotations,
             losses,
-            &mut records,
-            &mut seen,
+            DimensionOutput {
+                records: &mut records,
+                seen: &mut seen,
+            },
         )?;
     }
     ctx.stable_sort_by(
@@ -634,8 +636,10 @@ pub(crate) fn parse_payload(
         "sldprt:block#pmi-payload",
         &mut annotations,
         losses,
-        &mut records,
-        &mut seen,
+        DimensionOutput {
+            records: &mut records,
+            seen: &mut seen,
+        },
     )?;
     ctx.stable_sort_by(
         &mut records,
@@ -646,6 +650,11 @@ pub(crate) fn parse_payload(
     Ok(records)
 }
 
+struct DimensionOutput<'a> {
+    records: &'a mut Vec<PmiDimension>,
+    seen: &'a mut HashSet<String>,
+}
+
 fn collect_dimensions(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -653,9 +662,9 @@ fn collect_dimensions(
     parent: &str,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
-    records: &mut Vec<PmiDimension>,
-    seen: &mut HashSet<String>,
+    output: DimensionOutput<'_>,
 ) -> Result<(), CodecError> {
+    let DimensionOutput { records, seen } = output;
     ctx.charge_work(payload.len() as u64, "scan SLDPRT PMI candidates")?;
     for (guid, offset) in candidate_maps(payload) {
         let (mut normalized, _reservation) = crate::text_admission::reserve_scoped_string(

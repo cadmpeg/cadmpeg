@@ -192,11 +192,12 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 }
                 let mut seeds = Vec::<cadmpeg_ir::features::FeatureId>::new();
-                for offset in 0..object
-                    .len()
-                    .checked_sub(COMPACT_EDGE_VECTOR_MARKER.len())
-                    .unwrap_or(0)
-                {
+                let scan_end = if object.len() >= COMPACT_EDGE_VECTOR_MARKER.len() {
+                    object.len() - COMPACT_EDGE_VECTOR_MARKER.len()
+                } else {
+                    0
+                };
+                for offset in 0..scan_end {
                     ctx.charge_work(16, "scan SLDPRT mirror pattern seed paths")?;
                     if object.get(offset..offset + COMPACT_EDGE_VECTOR_MARKER.len())
                         != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())

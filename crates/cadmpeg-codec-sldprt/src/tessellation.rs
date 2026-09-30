@@ -870,7 +870,7 @@ fn persistent_surface_references(
             ctx.refuse_codec_limit("decode display-list reference text", u64::MAX - 1, u64::MAX)
         })?;
         let mut malformed_text = false;
-        for character in std::char::decode_utf16(units.into_iter()) {
+        for character in std::char::decode_utf16(units) {
             if let Ok(character) = character {
                 text.push(character);
             } else {
@@ -1844,6 +1844,12 @@ fn closed_planar_circle(
     })
 }
 
+#[derive(Clone, Copy)]
+struct BoundaryTolerance {
+    tolerance: f64,
+    sampling_tolerance: f64,
+}
+
 fn planar_boundary_samples(
     ctx: &DecodeContext<'_>,
     curve: &CurveGeometry,
@@ -1851,9 +1857,12 @@ fn planar_boundary_samples(
     end: Point3,
     surface: &SurfaceGeometry,
     frame: PlaneFrame,
-    tolerance: f64,
-    sampling_tolerance: f64,
+    limits: BoundaryTolerance,
 ) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+    let BoundaryTolerance {
+        tolerance,
+        sampling_tolerance,
+    } = limits;
     match curve {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
             Ok(Some((vec![frame.project(start)], 0.0)))
@@ -1907,8 +1916,10 @@ fn planar_boundary_samples(
                 span,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance,
+                },
             )
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
@@ -1963,8 +1974,10 @@ fn planar_boundary_samples(
                 span,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance,
+                },
             )
         }
         _ => Ok(None),
@@ -1988,9 +2001,12 @@ impl PlanarArc {
         span: f64,
         surface: &SurfaceGeometry,
         frame: PlaneFrame,
-        tolerance: f64,
-        sampling_tolerance: f64,
+        limits: BoundaryTolerance,
     ) -> Result<Option<(Vec<Point2>, f64)>, cadmpeg_core::CodecError> {
+        let BoundaryTolerance {
+            tolerance,
+            sampling_tolerance,
+        } = limits;
         let radius = self.first_radius.max(self.second_radius);
         let (segments, boundary_tolerance) = planar_arc_segments(span, radius, sampling_tolerance);
         let solved_surface = require_some!(surface.solved());
@@ -2143,8 +2159,10 @@ fn planar_trim(
                 end,
                 surface,
                 frame,
-                tolerance,
-                sampling_tolerance,
+                crate::tessellation::BoundaryTolerance {
+                    tolerance,
+                    sampling_tolerance
+                }
             )?);
             ctx.reserve_collection_vec(
                 &mut polygon,
@@ -2189,10 +2207,9 @@ fn planar_trim(
                 && circles
                     .iter()
                     .all(|circle| circle_inside_polygon(outer, *circle, sampling_tolerance))
+                && outer_index.replace(index).is_some()
             {
-                if outer_index.replace(index).is_some() {
-                    return Ok(None);
-                }
+                return Ok(None);
             }
         }
         let outer_index = require_some!(outer_index);
@@ -2843,7 +2860,11 @@ fn triangulate_polygon(
     let scale = point_distance(first, second)
         .max(point_distance(second, third))
         .max(point_distance(third, first));
-    if !(signed_area_twice(first, second, third).abs() > tolerance * scale) {
+    if signed_area_twice(first, second, third)
+        .abs()
+        .partial_cmp(&(tolerance * scale))
+        != Some(std::cmp::Ordering::Greater)
+    {
         return Ok(None);
     }
     ctx.reserve_collection_vec(&mut triangles, 1, "collect SLDPRT planar polygon triangles")?;
@@ -3021,10 +3042,9 @@ fn circular_outer_and_holes(
         ctx.charge_work(1, "test SLDPRT circular trim outer")?;
         if circles.iter().enumerate().all(|(inner_index, inner)| {
             index == inner_index || circle_inside_circle(*outer, *inner, tolerance)
-        }) {
-            if outer_index.replace(index).is_some() {
-                return Ok(None);
-            }
+        }) && outer_index.replace(index).is_some()
+        {
+            return Ok(None);
         }
     }
     let Some(outer_index) = outer_index else {

@@ -429,7 +429,6 @@ fn paired_object_loci_select_a_congruent_bore_pattern() {
     ];
 
     let paired = paired_object_locus_markers(&lane, "position")
-        .into_iter()
         .map(|(marker, _)| marker.id())
         .collect::<Vec<_>>();
     assert_eq!(paired, ["first", "second", "paired-duplicate"]);

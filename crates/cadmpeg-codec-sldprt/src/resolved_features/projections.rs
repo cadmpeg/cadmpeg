@@ -131,7 +131,7 @@ pub(super) fn bind_circular_profile_by_dimension(
             }
         }
         let Some(SketchGeometryDefinition::Circle { radius, .. }) =
-            geometry.map(|geometry| geometry.definition())
+            geometry.map(cadmpeg_ir::SketchGeometry::definition)
         else {
             continue;
         };
@@ -588,7 +588,11 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             names_by_owner.insert((owner_copy, name_copy));
         }
-        let next = parameter.ordinal.checked_add(1).unwrap_or(u32::MAX);
+        let next = if parameter.ordinal == u32::MAX {
+            parameter.ordinal
+        } else {
+            parameter.ordinal + 1
+        };
         if let Some(current) = next_ordinals.get_mut(owner) {
             *current = (*current).max(next);
         } else {
@@ -632,9 +636,8 @@ pub(crate) fn synthesize_display_relation_parameters<'a>(
             };
             let owner = &feature.id;
             let current_ordinal = next_ordinals.get(owner).copied().unwrap_or(0);
-            let next_ordinal = match current_ordinal.checked_add(1) {
-                Some(next) => next,
-                None => continue,
+            let Some(next_ordinal) = current_ordinal.checked_add(1) else {
+                continue;
             };
             if let Some(ordinal) = next_ordinals.get_mut(owner) {
                 *ordinal = next_ordinal;
@@ -833,8 +836,9 @@ pub(crate) fn type_display_relation_parameters(
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     const OPERATION: &str = "group SLDPRT display relation families";
+
+    let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
     let mut families = HashMap::<&cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         ctx.charge_work(1, OPERATION)?;
@@ -947,11 +951,9 @@ pub(crate) fn project_compact_body_selections(
         let mut duplicate = false;
         for selection in lanes.iter().flat_map(|lane| &lane.body_selections) {
             ctx.charge_work(1, OPERATION)?;
-            if selection.feature_ref == native_ref {
-                if selected.replace(selection).is_some() {
-                    duplicate = true;
-                    break;
-                }
+            if selection.feature_ref == native_ref && selected.replace(selection).is_some() {
+                duplicate = true;
+                break;
             }
         }
         let Some(selection) = selected.filter(|_| !duplicate) else {
@@ -1141,7 +1143,7 @@ pub(crate) fn project_compact_edge_selections(
                                     .map(|group| std::mem::replace(&mut group.edges, EdgeSelection::Unresolved)),
                             _ => None,
                         };
-                        for (radius, selections) in radius_groups {
+                        for RadiusSelectionGroup(radius, selections) in radius_groups {
                             let edges = if unresolved_edges {
                                 projected_edges(&selections)?
                             } else {
@@ -1203,14 +1205,16 @@ pub(crate) fn project_compact_edge_selections(
     Ok(())
 }
 
+#[derive(Debug)]
+struct RadiusSelectionGroup<'a>(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>);
+
 fn variable_fillet_radius_groups<'a>(
     ctx: &DecodeContext<'_>,
     feature_ref: &str,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
     selections: &[&'a FeatureInputEdgeSelection],
-) -> Result<Option<Vec<(RadiusSpec, Vec<&'a FeatureInputEdgeSelection>)>>, cadmpeg_core::CodecError>
-{
+) -> Result<Option<Vec<RadiusSelectionGroup<'a>>>, cadmpeg_core::CodecError> {
     const OPERATION: &str = "project SLDPRT variable fillet radii";
     let charge_sort = |len: usize| {
         let levels = if len > 1 { len.ilog2() + 1 } else { 1 };
@@ -1319,7 +1323,10 @@ fn variable_fillet_radius_groups<'a>(
             else {
                 return Ok(None);
             };
-            return Ok(Some(vec![(RadiusSpec::Variable { points }, selections)]));
+            return Ok(Some(vec![RadiusSelectionGroup(
+                RadiusSpec::Variable { points },
+                selections,
+            )]));
         }
     }
 
@@ -1353,7 +1360,7 @@ fn variable_fillet_radius_groups<'a>(
         else {
             continue;
         };
-        for (name, references) in controls {
+        for super::selections::VariableFilletControl(name, references) in controls {
             let mut vertices = references
                 .iter()
                 .flat_map(|reference| reference.iter())
@@ -1499,7 +1506,10 @@ fn variable_fillet_radius_groups<'a>(
         else {
             return Ok(None);
         };
-        return Ok(Some(vec![(RadiusSpec::Variable { points }, selections)]));
+        return Ok(Some(vec![RadiusSelectionGroup(
+            RadiusSpec::Variable { points },
+            selections,
+        )]));
     }
     if control_names.len() != parameter_names.len()
         || !parameter_names
@@ -1600,7 +1610,10 @@ fn variable_fillet_radius_groups<'a>(
         .ok() else {
             return Ok(None);
         };
-        result.push((RadiusSpec::Variable { points }, selections));
+        result.push(RadiusSelectionGroup(
+            RadiusSpec::Variable { points },
+            selections,
+        ));
     }
     Ok(Some(result))
 }
@@ -1611,6 +1624,8 @@ pub(crate) fn project_compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const ALIAS_OPERATION: &str = "project SLDPRT face aliases";
+
     enum SelectionSlot<'a> {
         Face(&'a mut cadmpeg_ir::features::FaceSelection),
         Vertex(&'a mut cadmpeg_ir::features::VertexSelection),
@@ -1680,6 +1695,8 @@ pub(crate) fn project_compact_surface_selections(
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| {
                 'feature_edit: {
+                    const OPERATION: &str = "project SLDPRT surface face and vertex slots";
+
                     let Some(native_ref) = native_ref else {
                         break 'feature_edit;
                     };
@@ -1779,6 +1796,8 @@ pub(crate) fn project_compact_surface_selections(
                     if let FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, .. }) =
                         definition
                     {
+                        const OPERATION: &str = "project SLDPRT SplitFace selections";
+
                         if !matches!(
                             targets,
                             cadmpeg_ir::features::FaceSelection::Unresolved
@@ -1786,7 +1805,6 @@ pub(crate) fn project_compact_surface_selections(
                         ) {
                             break 'feature_edit;
                         }
-                        const OPERATION: &str = "project SLDPRT SplitFace selections";
                         let native = compact_surface_selection_set_value(ctx, feature_selections)?;
                         let mut faces = Vec::new();
                         let mut complete = true;
@@ -2171,7 +2189,6 @@ pub(crate) fn project_compact_surface_selections(
                         .and_then(|producer| feature_ids_by_native.get(producer))
                         .zip(component)
                         .and_then(|(feature, component)| Some((feature, component.local_id?)));
-                    const OPERATION: &str = "project SLDPRT surface face and vertex slots";
                     match slot {
                         SelectionSlot::Face(faces) => {
                             if matches!(
@@ -2254,7 +2271,6 @@ pub(crate) fn project_compact_surface_selections(
         });
         edit_result?;
     }
-    const ALIAS_OPERATION: &str = "project SLDPRT face aliases";
     let mut face_aliases = HashMap::new();
     for feature in features.iter() {
         ctx.charge_work(1, ALIAS_OPERATION)?;
@@ -2864,6 +2880,9 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
     faces: &[Face],
     surfaces: &[Surface],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "index SLDPRT cosmetic thread history features";
+    const ID_OPERATION: &str = "index SLDPRT cosmetic thread feature IDs";
+
     let input_work = [features.len(), histories.len(), faces.len(), surfaces.len()]
         .into_iter()
         .try_fold(0u64, |work, count| {
@@ -2877,7 +2896,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
             )
         })?;
     ctx.charge_work(input_work, "find unique SLDPRT cylindrical face")?;
-    const OPERATION: &str = "index SLDPRT cosmetic thread history features";
     let mut native_features = HashMap::new();
     let mut history_features = Vec::new();
     for native_feature in histories.iter().flat_map(|history| &history.features) {
@@ -2892,7 +2910,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         ctx.reserve_collection_vec(&mut history_features, 1, OPERATION)?;
         history_features.push(native_feature);
     }
-    const ID_OPERATION: &str = "index SLDPRT cosmetic thread feature IDs";
     let mut feature_ids_by_native = HashMap::new();
     let mut scoped_ids = Vec::new();
     for feature in features.iter() {
@@ -2933,6 +2950,10 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
         let mut edit_result: Result<(), cadmpeg_core::CodecError> = Ok(());
         feature.evaluation.edit(|definition, _| {
             edit_result = (|| {
+                const REFERENCE_OPERATION: &str = "collect SLDPRT cosmetic thread references";
+                const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
+                const GENERATED_OPERATION: &str = "resolve SLDPRT cosmetic thread generated face";
+
                 let Some(native_ref) = native_ref else {
                     return Ok(());
                 };
@@ -2954,7 +2975,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                 ) {
                     return Ok(());
                 }
-                const REFERENCE_OPERATION: &str = "collect SLDPRT cosmetic thread references";
                 let format_reference_key = |lane_key: &str, offset: u64| {
                     let digits = if offset == 0 {
                         1
@@ -3013,13 +3033,14 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     }
                 }
                 for lane in lanes {
+                    const TOKEN_OPERATION: &str = "collect SLDPRT cosmetic thread cylinder tokens";
+
                     let Some((_, start, end)) = feature_object_byte_ranges(ctx, histories, lane)?
                         .get(native_feature.id.as_str())
                         .copied()
                     else {
                         continue;
                     };
-                    const TOKEN_OPERATION: &str = "collect SLDPRT cosmetic thread cylinder tokens";
                     let mut cylinder_tokens = HashSet::new();
                     for class in &lane.classes {
                         ctx.charge_work(1, TOKEN_OPERATION)?;
@@ -3052,14 +3073,16 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         .id
                         .rsplit_once('#')
                         .map_or(lane.id.as_str(), |(_, key)| key);
-                    for (marker, components) in cosmetic_thread_cylinder_marker_reference(
-                        ctx,
-                        native_feature,
-                        lane,
-                        start,
-                        end,
-                        &cylinder_tokens,
-                    )? {
+                    for super::selections::CylinderMarkerReference(marker, components) in
+                        cosmetic_thread_cylinder_marker_reference(
+                            ctx,
+                            native_feature,
+                            lane,
+                            start,
+                            end,
+                            &cylinder_tokens,
+                        )?
+                    {
                         let offset = u64::try_from(marker).map_err(|_| {
                             ctx.refuse_codec_limit(REFERENCE_OPERATION, u64::MAX - 1, u64::MAX)
                         })?;
@@ -3070,7 +3093,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                         references.push((key, components.map(std::borrow::Cow::Owned), None));
                     }
                 }
-                const NATIVE_OPERATION: &str = "format SLDPRT cosmetic thread cylinder references";
                 let count = u64::try_from(references.len()).map_err(|_| {
                     ctx.refuse_codec_limit(NATIVE_OPERATION, u64::MAX - 1, u64::MAX)
                 })?;
@@ -3126,7 +3148,6 @@ pub(crate) fn project_unbound_cosmetic_thread_faces(
                     }
                     Some(native)
                 };
-                const GENERATED_OPERATION: &str = "resolve SLDPRT cosmetic thread generated face";
                 let mut generated = None;
                 let mut complete = true;
                 for (_, components, explicit_producer) in &references {

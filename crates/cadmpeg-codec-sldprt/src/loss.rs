@@ -382,7 +382,6 @@ impl SldprtLossCode {
 /// attribute of the record whose lanes do not pair, followed by the pairing's
 /// own refusal. The B-rep model carries the absence of one carrier, so the
 /// refusal is a loss and the decode continues.
-#[must_use]
 pub(crate) fn spline_lane_refusal(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     record: impl std::fmt::Display,

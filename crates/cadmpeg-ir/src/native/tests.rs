@@ -928,6 +928,12 @@ fn a_non_finite_f32_record_field_is_refused_by_its_path() {
 
 #[test]
 fn native_arena_charged_load_preserves_values_and_error_context() {
+    #[derive(Debug, serde::Deserialize)]
+    struct Record {
+        id: crate::ids::Identity,
+        value: u32,
+    }
+
     use crate::native::{NativeConvertError, NativeNamespace};
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
@@ -947,11 +953,6 @@ fn native_arena_charged_load_preserves_values_and_error_context() {
         records
     );
 
-    #[derive(Debug, serde::Deserialize)]
-    struct Record {
-        id: crate::ids::Identity,
-        value: u32,
-    }
     let first = namespace.arenas()["records"][0]
         .to_typed_charged::<Record>(&ctx)
         .unwrap();

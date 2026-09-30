@@ -300,10 +300,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     };
     let index = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: std::slice::from_ref(&face),
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[(222, 22)],
         &[(333, 33)],
         &[(444, 44)],
@@ -354,10 +356,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     };
     let active_with_alternate = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        &[face.clone(), qualified_alternate],
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: &[face.clone(), qualified_alternate],
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[(222, 22)],
         &[],
         &[],
@@ -378,10 +382,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
     };
     let index = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        &[collision],
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: &[collision],
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[],
         &[],
         &[],
@@ -396,10 +402,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
 
     let sequence_wins = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: std::slice::from_ref(&face),
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[],
         &[(11, 33)],
         &[],
@@ -414,10 +422,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
 
     let unresolved = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: std::slice::from_ref(&face),
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[(11, 999)],
         &[],
         &[],
@@ -427,16 +437,18 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
 
     let conflicting = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        &[
-            face.clone(),
-            Face {
-                id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
-                ..face.clone()
-            },
-        ],
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: &[
+                face.clone(),
+                Face {
+                    id: FaceId::mint("sldprt:brep:face#23").expect("identity grammar"),
+                    ..face.clone()
+                },
+            ],
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[(77, 22), (77, 23)],
         &[],
         &[],
@@ -446,10 +458,12 @@ fn cad_identifier_resolves_each_primary_topology_kind_and_rejects_collisions() {
 
     let conflicting_families = TopologyIdentityIndex::from_model(
         &ctx,
-        std::slice::from_ref(&body),
-        std::slice::from_ref(&face),
-        std::slice::from_ref(&edge),
-        std::slice::from_ref(&vertex),
+        crate::swift::PrimaryTopology {
+            bodies: std::slice::from_ref(&body),
+            faces: std::slice::from_ref(&face),
+            edges: std::slice::from_ref(&edge),
+            vertices: std::slice::from_ref(&vertex),
+        },
         &[(88, 22)],
         &[(88, 33)],
         &[],
@@ -481,8 +495,19 @@ fn topology_index_limit_error(
     set_limit(&mut policy.limits);
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty root fits policy");
-    TopologyIdentityIndex::from_model(&ctx, &[body], &[], &[], &[], &[], &[], &[])
-        .expect_err("topology index must refuse")
+    TopologyIdentityIndex::from_model(
+        &ctx,
+        crate::swift::PrimaryTopology {
+            bodies: &[body],
+            faces: &[],
+            edges: &[],
+            vertices: &[],
+        },
+        &[],
+        &[],
+        &[],
+    )
+    .expect_err("topology index must refuse")
 }
 
 #[test]

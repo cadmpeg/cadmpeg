@@ -1564,7 +1564,7 @@ fn overlapping_endpoint_index_bases_use_the_marker_roster() {
     );
     let (reversed, ambiguous) = super::resolve_indexed_marker_candidates(
         &cadmpeg_test_support::service_decode_context(),
-        (pairs.into_iter().rev()).into_iter().map(Ok),
+        pairs.into_iter().rev().map(Ok),
     )
     .unwrap();
     assert!(!ambiguous);
