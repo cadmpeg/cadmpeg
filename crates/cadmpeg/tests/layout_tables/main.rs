@@ -1421,7 +1421,7 @@ fn generated_layout_code_matches_the_tables() {
             "{}: format must match the mapping key",
             table.display()
         );
-        let rendered = match emit_layout_rs(&file) {
+        let rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);
