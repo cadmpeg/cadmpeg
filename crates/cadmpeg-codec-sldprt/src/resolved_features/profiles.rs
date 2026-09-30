@@ -3300,7 +3300,7 @@ mod detached_legacy_sketch_tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
-    fn compact_profile_projection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+    pub(super) fn compact_profile_projection_fixture() -> (FeatureHistory, FeatureInputLane, cadmpeg_ir::features::Feature) {
         use crate::layout::constructed_reference_plane_matrix_frame;
         let history = FeatureHistory {
             id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(),
@@ -3349,6 +3349,11 @@ mod detached_legacy_sketch_tests {
                 }),
             ),
         };
+        (history, lane, feature)
+    }
+
+    fn compact_profile_projection_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+        let (history, lane, feature) = compact_profile_projection_fixture();
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -4291,3 +4296,6 @@ mod detached_legacy_sketch_tests {
         assert_eq!(lines[1], (Point2::new(5.0, 0.0), Point2::new(5.0, 1.0)));
     }
 }
+
+#[cfg(test)]
+mod compact_cycle_tests;
