@@ -925,3 +925,36 @@ fn a_non_finite_f32_record_field_is_refused_by_its_path() {
         "{message}"
     );
 }
+
+#[test]
+fn native_arena_charged_load_preserves_values_and_error_context() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use crate::native::{NativeConvertError, NativeNamespace};
+
+    let records = [
+        serde_json::json!({"id": "test:native:record#first", "value": 7,
+            "payload": [null, true, false, 1.25, "line\nquoted\"", {"nested": [1, 2]}]}),
+        serde_json::json!({"id": "test:native:record#refused", "value": "invalid"}),
+    ];
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut namespace = NativeNamespace::default();
+    namespace.set_arena(&ctx, "records", &records).unwrap();
+    assert_eq!(namespace.arena_as_charged::<serde_json::Value>(&ctx, "records").unwrap(), records);
+
+    #[derive(Debug, serde::Deserialize)]
+    struct Record {
+        id: crate::ids::Identity,
+        value: u32,
+    }
+    let first = namespace.arenas()["records"][0].to_typed_charged::<Record>(&ctx).unwrap();
+    assert_eq!(first.id.as_str(), "test:native:record#first");
+    assert_eq!(first.value, 7);
+    let NativeConvertError::Arena { arena, source } = namespace.arena_as_charged::<Record>(&ctx, "records").unwrap_err()
+    else { panic!("arena error context"); };
+    assert_eq!(arena, "records");
+    let NativeConvertError::ReadRecord { id, source } = *source
+    else { panic!("record error context"); };
+    assert_eq!(id.as_str(), "test:native:record#refused");
+    assert!(source.is_data());
+}

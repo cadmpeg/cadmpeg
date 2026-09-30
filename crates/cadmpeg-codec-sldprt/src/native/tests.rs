@@ -1702,3 +1702,5 @@ fn native_load_refuses_an_object_name_offset_the_payload_does_not_state() {
         );
     }
 }
+
+mod typed_load_limits;
