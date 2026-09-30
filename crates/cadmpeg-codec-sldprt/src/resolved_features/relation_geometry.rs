@@ -13,7 +13,7 @@ use super::operands::{
 use super::relation_loci::{
     line_line_angle, line_line_distance, marker_point_locus,
     marker_transform_candidates_by_feature, point_line_distance_value, profile_axis_for_relation,
-    profile_loci_by_marker, profile_locus_point, relation_constraint_is_inactive,
+    profile_loci_by_marker, profile_locus_point_charged, relation_constraint_is_inactive,
     relation_operand_marker, same_dimension_angle, same_dimension_length,
     typed_relation_definition, typed_relation_definition_with_profile_axis,
     unoriented_line_line_angle,
@@ -2041,7 +2041,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             {
                 continue;
             }
-            let Some(known_point) = profile_locus_point(&known, entities) else {
+            let Some(known_point) = profile_locus_point_charged(ctx, &known, entities, "resolve SLDPRT profile locus")? else {
                 continue;
             };
             let mut candidates = entities
@@ -2766,10 +2766,11 @@ pub(crate) fn project_relation_bindings(
                     &loci_by_marker,
                 )?,
             };
-            let typed_definition = typed_definition.filter(|definition| {
-                !(reference_parameter
-                    && relation_constraint_is_inactive(parameter, definition, sketch_entities))
-            });
+            let typed_definition = match typed_definition {
+                Some(definition) if reference_parameter
+                    && relation_constraint_is_inactive(ctx, parameter, &definition, sketch_entities)? => None,
+                definition => definition,
+            };
             let definition = if let Some(definition) = typed_definition {
                 definition
             } else {
@@ -2801,7 +2802,7 @@ pub(crate) fn project_relation_bindings(
                     operands,
                 }
             };
-            let active = relation_constraint_is_inactive(parameter, &definition, sketch_entities)
+            let active = relation_constraint_is_inactive(ctx, parameter, &definition, sketch_entities)?
                 .then_some(false);
             let has_display_scalar =
                 relation_display_scalar_for_parameter(ctx, relation, lane)?.is_some();
@@ -2888,7 +2889,7 @@ pub(crate) fn project_relation_bindings(
                 continue;
             };
             let active =
-                marker_relation_is_inactive(marker, &definition, sketch_entities).then_some(false);
+                marker_relation_is_inactive(ctx, marker, &definition, sketch_entities)?.then_some(false);
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
             else {

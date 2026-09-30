@@ -409,11 +409,11 @@ fn locus_relations_require_matching_evaluated_geometry() {
         definition,
         SketchConstraintDefinitionInput::CoincidentLoci { .. }
     ));
-    assert!(marker_relation_is_inactive(
+    assert!(marker_relation_is_inactive(&cadmpeg_test_support::service_decode_context(), 
         &coincident,
         &definition,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
-    ));
+    ).unwrap());
     first.clone_from(&entity(
         "synthetic:test:id#first",
         SketchGeometry::try_from(SketchGeometryDefinition::Point {
