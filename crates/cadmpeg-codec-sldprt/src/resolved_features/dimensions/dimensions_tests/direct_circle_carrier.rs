@@ -115,8 +115,16 @@ fn native_entity(sketch: &SketchId, id: &str, native_ref: &str) -> SketchEntity 
     .with_native_ref(Some(native_ref.into()))
 }
 
-#[test]
-fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
+struct DirectCircleFixture {
+    sketch_id: SketchId,
+    typed_id: SketchEntityId,
+    feature: Feature,
+    lane: FeatureInputLane,
+    entities: Vec<SketchEntity>,
+    sketches: Vec<Sketch>,
+}
+
+fn direct_circle_fixture() -> DirectCircleFixture {
     let feature_ref = "feature";
     let marker_ref = "circle-marker";
     let relation_ref = "circle-dimension";
@@ -139,8 +147,8 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
     .with_geometry_ref(Some(relation_ref.into()));
     let native = native_entity(&sketch_id, native_id.as_str(), marker_ref);
     let other = native_entity(&sketch_id, other_id.as_str(), "other-marker");
-    let mut entities = vec![typed, native, other];
-    let mut sketches = vec![sketch(
+    let entities = vec![typed, native, other];
+    let sketches = vec![sketch(
         &sketch_id,
         vec![
             vec![
@@ -160,13 +168,21 @@ fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
         ],
     )];
 
+    DirectCircleFixture { sketch_id, typed_id, feature, lane, entities, sketches }
+}
+
+#[test]
+fn exact_direct_circle_dimension_replaces_only_its_native_carrier() {
+    let DirectCircleFixture { sketch_id, typed_id, feature, lane, mut entities, mut sketches } = direct_circle_fixture();
+
     reconcile_direct_circle_dimension_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     assert!(!entities.iter().any(|entity| entity.id().clone()
         == SketchEntityId::mint("synthetic:test:id#native-circle").unwrap()));
@@ -198,16 +214,44 @@ fn direct_circle_dimension_without_typed_replacement_keeps_native_carrier() {
     let mut sketches = vec![sketch(&sketch_id, Vec::new())];
 
     reconcile_direct_circle_dimension_carriers(
+        &cadmpeg_test_support::service_decode_context(),
         &mut entities,
         &mut sketches,
         &sketch_id,
         feature.native_ref.as_deref().expect("feature reference"),
         std::slice::from_ref(&lane),
-    );
+    ).unwrap();
 
     assert_eq!(entities.len(), 1);
     assert!(matches!(
         *entities[0].geometry.definition(),
         SketchGeometryDefinition::Native { .. }
     ));
+}
+
+#[test]
+fn marker_circle_projection_refuses_retained_limit() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let DirectCircleFixture { typed_id, feature, lane, mut entities, mut sketches, .. } = direct_circle_fixture();
+    super::super::project_marker_dimensioned_circles(
+        &service, &mut entities, &mut sketches, &[feature], &[], &[lane],
+    ).unwrap();
+    assert_eq!(entities.len(), 2);
+    assert!(entities.iter().any(|entity| entity.id() == &typed_id));
+    assert_eq!(sketches[0].profiles.len(), 2);
+    assert_eq!(sketches[0].profiles[0].len(), 1);
+    assert_eq!(sketches[0].profiles[0][0].entity, typed_id);
+
+    let DirectCircleFixture { feature, lane, mut entities, mut sketches, .. } = direct_circle_fixture();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_retained_bytes = 0;
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = super::super::project_marker_dimensioned_circles(
+        &limited, &mut entities, &mut sketches, &[feature], &[], &[lane],
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::RetainedBytes
+            && limit.operation == "copy SLDPRT circle carrier entity identity"));
 }
