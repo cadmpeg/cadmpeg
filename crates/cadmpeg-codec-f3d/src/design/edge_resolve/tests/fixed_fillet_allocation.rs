@@ -40,13 +40,7 @@ fn assert_fixed_fillet_refusal(operation: &'static str, variable: bool, complete
         } else {
             std::slice::from_ref(&identity)
         };
-        match project_fixed_fillet(
-            &scope,
-            std::slice::from_ref(&selection_group),
-            operands,
-            identities,
-            Some(&ctx),
-        ) {
+        match project_fixed_fillet(&scope, std::slice::from_ref(&selection_group), operands, identities, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected fixed Fillet refusal at {operation}: {other:?}"),

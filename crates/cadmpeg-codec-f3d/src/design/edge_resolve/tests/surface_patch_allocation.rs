@@ -40,15 +40,7 @@ fn assert_surface_patch_refusal(operation: &'static str, retained: bool, contrad
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match resolved_surface_patch_edge_group(
-            &group,
-            std::slice::from_ref(&group),
-            &operands,
-            &[],
-            Some(7),
-            &feature_id,
-            Some(&ctx),
-        ) {
+        match resolved_surface_patch_edge_group(&group, std::slice::from_ref(&group), &operands, &[], Some(7), &feature_id, &ctx) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             other => panic!("expected surface patch refusal at {operation}: {other:?}"),

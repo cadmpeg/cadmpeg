@@ -31,19 +31,9 @@ fn assert_reference_assignment_refusal(operation: &'static str, route: u8) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = match route {
-            0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(
-                &[&first, &second],
-                Some(&ctx),
-            ),
-            1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(
-                &[&first, &second],
-                Some(&ctx),
-            ),
-            _ => crate::design::edge_resolve::unique_deleted_reference_assignment(
-                &references,
-                &deleted,
-                Some(&ctx),
-            ),
+            0 => crate::design::edge_resolve::changed_reference_edge_group_candidates(&[&first, &second], &ctx),
+            1 => crate::design::edge_resolve::deleted_reference_edge_group_candidates(&[&first, &second], &ctx),
+            _ => crate::design::edge_resolve::unique_deleted_reference_assignment(&references, &deleted, &ctx),
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,

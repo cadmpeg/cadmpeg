@@ -20,9 +20,9 @@ fn assert_radius_refusal(operation: &'static str, identity_route: bool) {
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if identity_route {
-            radius_edge_identity_group_candidates(&[&persistent], 3.0, Some(&ctx))
+            radius_edge_identity_group_candidates(&[&persistent], 3.0, &ctx)
         } else {
-            crate::design::edge_resolve::radius_edge_group_candidates(&[&recipe], 3.0, Some(&ctx))
+            crate::design::edge_resolve::radius_edge_group_candidates(&[&recipe], 3.0, &ctx)
         };
         match result {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
