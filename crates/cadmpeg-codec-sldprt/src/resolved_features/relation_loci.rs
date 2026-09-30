@@ -4064,77 +4064,71 @@ pub(super) fn profile_loci_by_marker(
     }
 
     for marker in markers_by_id.values().copied() {
-        if marker.kind() != SketchInputKind::LineOrCircle || result.contains_key(marker.id()) {
-            continue;
-        }
+        const PAIR_OPERATION: &str = "resolve SLDPRT endpoint marker profile entity";
+        ctx.charge_work(1, PAIR_OPERATION)?;
+        if marker.kind() != SketchInputKind::LineOrCircle { continue; }
+        ctx.charge_work(result_key_byte_bound.checked_add(cadmpeg_core::decode::u64_from_index(marker.id().len()))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+        if result.contains_key(marker.id()) { continue; }
         let endpoints = line_endpoint_markers(ctx, marker, &markers_by_id)?;
-        let (Some(feature), [first, second]) =
-            (marker.feature_ref.as_deref(), endpoints.as_slice())
-        else {
-            continue;
-        };
-        let (Some(sketch_id), Some(first), Some(second)) = (
-            sketches_by_feature.get(feature),
-            first.coordinates_m,
-            second.coordinates_m,
-        ) else {
-            continue;
-        };
-        let first_native = quantize(
-            Point2::new(first[0] * NATIVE_TO_IR, first[1] * NATIVE_TO_IR),
-            QUANTUM,
-        );
-        let second_native = quantize(
-            Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR),
-            QUANTUM,
-        );
-        let endpoint_pairs = transforms
-            .get(feature)
-            .into_iter()
-            .flatten()
-            .filter_map(|transform| {
-                Some((
-                    transform.apply(first_native)?,
-                    transform.apply(second_native)?,
-                ))
-            })
-            .collect::<HashSet<_>>();
-        if endpoint_pairs.is_empty() {
-            continue;
-        }
-        let mut matches = HashSet::new();
+        let (Some(feature), [first, second]) = (marker.feature_ref.as_deref(), endpoints.as_slice()) else { continue; };
+        ctx.charge_work(feature_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.len()))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+        let (Some(sketch_id), Some(first), Some(second)) = (sketches_by_feature.get(feature), first.coordinates_m, second.coordinates_m) else { continue; };
+        ctx.charge_work(128, PAIR_OPERATION)?;
+        let first_native = quantize(Point2::new(first[0] * NATIVE_TO_IR, first[1] * NATIVE_TO_IR), QUANTUM);
+        let second_native = quantize(Point2::new(second[0] * NATIVE_TO_IR, second[1] * NATIVE_TO_IR), QUANTUM);
+        ctx.charge_work(transform_key_bytes.checked_add(cadmpeg_core::decode::u64_from_index(feature.len()))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+        let candidates = transforms.get(feature).map(Vec::as_slice).unwrap_or_default();
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(candidates.len()).checked_mul(128)
+            .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+        let endpoint_pairs = collect_profile_locus_set(ctx, candidates.iter().filter_map(|transform| {
+            Some((transform.apply(first_native)?, transform.apply(second_native)?))
+        }), |_| 128, PAIR_OPERATION)?;
+        if endpoint_pairs.is_empty() { continue; }
+        let mut selected: Option<&SketchEntityId> = None;
         let mut complete = true;
         for (start, end) in endpoint_pairs {
-            let candidates = sketch_entities
-                .iter()
-                .filter(|entity| entity.sketch == **sketch_id)
-                .filter_map(|entity| {
-                    let SketchGeometryDefinition::Line {
-                        start: candidate_start,
-                        end: candidate_end,
-                    } = *entity.geometry.definition()
-                    else {
-                        return None;
-                    };
-                    let candidate_start = quantize(candidate_start.get(), QUANTUM);
-                    let candidate_end = quantize(candidate_end.get(), QUANTUM);
-                    ((candidate_start == start && candidate_end == end)
-                        || (candidate_start == end && candidate_end == start))
-                        .then_some(entity.id().clone())
-                })
-                .collect::<Vec<_>>();
-            let [entity] = candidates.as_slice() else {
-                complete = false;
-                break;
-            };
-            matches.insert(entity.clone());
+            ctx.charge_work(sketch_key_bytes.checked_mul(4)
+                .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+            let mut candidate = None;
+            for entity in sketch_entities {
+                ctx.charge_work(256, PAIR_OPERATION)?;
+                if entity.sketch != **sketch_id { continue; }
+                let SketchGeometryDefinition::Line { start: candidate_start, end: candidate_end } = entity.geometry.definition() else { continue; };
+                let candidate_start = quantize(candidate_start.get(), QUANTUM);
+                let candidate_end = quantize(candidate_end.get(), QUANTUM);
+                if (candidate_start == start && candidate_end == end) || (candidate_start == end && candidate_end == start) {
+                    if candidate.is_some() { complete = false; break; }
+                    candidate = Some(entity.id());
+                }
+            }
+            let Some(candidate) = candidate else { complete = false; break; };
+            if !complete { break; }
+            if let Some(previous) = selected {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(previous.as_str().len())
+                    .checked_add(cadmpeg_core::decode::u64_from_index(candidate.as_str().len())).and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+                if previous != candidate { complete = false; break; }
+            } else {
+                selected = Some(candidate);
+            }
         }
         if complete {
-            if let [entity] = matches.into_iter().collect::<Vec<_>>().as_slice() {
-                result.insert(
-                    marker.id().to_string(),
-                    vec![SketchLocus::Entity(entity.clone())],
-                );
+            if let Some(entity) = selected {
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.id().len()).checked_mul(4).and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(PAIR_OPERATION, u64::MAX - 1, u64::MAX))?, PAIR_OPERATION)?;
+                let key = ctx.format_retained(format_args!("{}", marker.id()), PAIR_OPERATION)?;
+                reserve_profile_locus_map_slot(ctx, &mut result, &key, result_key_byte_bound,
+                    cadmpeg_core::decode::u64_from_index(key.len()), PAIR_OPERATION)?;
+                let mut loci = Vec::new();
+                ctx.reserve_collection_vec(&mut loci, 1, PAIR_OPERATION)?;
+                loci.push(super::transforms::SketchLocusRole::Entity.copy_locus(ctx, entity, PAIR_OPERATION)?);
+                result.insert(key, loci);
             }
         }
     }
