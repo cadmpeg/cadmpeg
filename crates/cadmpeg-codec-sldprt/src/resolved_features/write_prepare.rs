@@ -8,7 +8,7 @@ use super::markers::{
     spatial_vertex_offsets,
 };
 use super::names::{class_declarations, object_names};
-use super::scalars::{feature_object_name, named_scalars};
+use super::scalars::{feature_object_name, named_scalars_charged};
 use super::sketch_write::{patch_line_profiles, same_sketch_point, sketch_brep};
 use super::transforms::{locus_entity, sketch_entity_locus_points};
 use super::typed_relations::{sketch_entity_contains_point, symmetric_loci_match_axis};
@@ -1465,7 +1465,7 @@ fn source_less_lanes(
         )?;
         lane.classes = class_declarations(&ctx, &lane.native_payload, &lane.id)?;
         lane.names = object_names(&ctx, &lane.native_payload, &lane.id)?;
-        lane.scalars = named_scalars(&lane.native_payload, &lane.id, &lane.names);
+        lane.scalars = named_scalars_charged(&ctx, &lane.native_payload, &lane.id, &lane.names)?;
         lane.relation_bindings = relation_bindings_charged(&ctx, &lane.id, &lane.classes, &lane.scalars)?;
         lane.references = reference_cells_charged(&ctx, &lane.scalars, &lane.classes)?;
         lane.sketch_entities = admit_sketch_input_entities(&ctx, &lane.native_payload, &lane.id)?;
