@@ -120,10 +120,12 @@ pub(super) fn encode_design_bulkstream(
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &decode_arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let decode_ctx = &decode_ctx;
+
     let (_, projected_parameters) =
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            None,
-            &crate::design::feature_project::ProjectInputs {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
@@ -142,8 +144,7 @@ pub(super) fn encode_design_bulkstream(
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
-            },
-        )?;
+            })?;
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(
             "neutral F3D parameters must equal the projection of native Design parameters".into(),
@@ -760,15 +761,11 @@ fn encode_sketch_nurbs(
 }
 
 fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    let decoded = crate::design::decode::sketch::decode_sketch_text_record(
-        None,
-        &text.raw_bytes,
-        "Design/BulkStream.dat",
-        text.class_tag.clone(),
-        text.class_version,
-        text.record_index,
-        0,
-    )?
+    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&text.raw_bytes, &decode_arena, &cadmpeg_core::decode::DecodePolicy::default())?;
+    let decode_ctx = &decode_ctx;
+
+    let decoded = crate::design::decode::sketch::decode_sketch_text_record(decode_ctx, &text.raw_bytes, "Design/BulkStream.dat", text.class_tag.clone(), text.class_version, text.record_index, 0)?
     .ok_or_else(|| {
         CodecError::malformed(format_args!("invalid raw sketch-text record {}", text.id))
     })?;

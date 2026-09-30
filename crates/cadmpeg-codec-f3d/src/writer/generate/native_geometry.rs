@@ -4596,18 +4596,12 @@ fn native_conic_interval_curve(
     let pole_count = doubled.checked_add(1).ok_or_else(too_large)?;
     let knot_count = doubled.checked_add(4).ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
-    let mut control_points = Vec::new();
-    let mut weights = Vec::new();
-    let mut knots = Vec::new();
-    control_points
-        .try_reserve_exact(pole_count)
-        .and_then(|()| weights.try_reserve_exact(pole_count))
-        .and_then(|()| knots.try_reserve_exact(knot_count))
-        .map_err(|error| {
-            CodecError::NotImplemented(format!(
-                "source-less F3D conic interval cannot allocate its NURBS payload: {error}"
-            ))
-        })?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut control_points = ctx.collection_vec(pole_count, "f3d generated conic control points")?;
+    let mut weights = ctx.collection_vec(pole_count, "f3d generated conic weights")?;
+    let mut knots = ctx.collection_vec(knot_count, "f3d generated conic knots")?;
     let point = |angle: f64, scale: f64| {
         let major_scale = major_radius * angle.cos() * scale;
         let minor_scale = minor_radius * angle.sin() * scale;
@@ -4659,6 +4653,23 @@ mod native_interval_curve_tests {
     } else {
         4_294_967_295.0
     };
+
+    #[test]
+    fn generated_conic_interval_refuses_default_collection_limit() {
+        let circle = SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0), 5.0,
+            ).unwrap(),
+        );
+        let error = native_interval_curve(&circle, [0.0, 1.0e9]).unwrap_err();
+        assert!(matches!(error, CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems
+                && limit.operation == "f3d generated conic control points"));
+        let normal = native_interval_curve(&circle, [0.0, std::f64::consts::PI]).unwrap();
+        assert_eq!(normal.degree(), 2);
+        assert_eq!(normal.control_points().len(), 5);
+    }
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4854,7 +4865,12 @@ mod native_interval_curve_tests {
                 assert_eq!(decoded.ir().model.procedural_surfaces.len(), 1);
             } else {
                 let error = result.expect_err("unallocatable conic interval must be refused");
-                assert!(error.to_string().contains("conic"), "{error}");
+                if let CodecError::ResourceLimit(limit) = &error {
+                    assert_eq!(limit.operation, "f3d generated conic control points");
+                    assert_eq!(limit.dimension, cadmpeg_core::decode::ResourceDimension::CollectionItems);
+                } else {
+                    assert!(error.to_string().contains("conic"), "{error}");
+                }
                 assert_eq!(output, [0x93, 0x2a]);
             }
         }
