@@ -933,6 +933,10 @@ fn component_face_reference_accepts_compact_body_frame() {
 
 #[test]
 fn fillet_face_candidates_require_three_ordered_role_three_paths() {
+    let candidates_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (candidates_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &candidates_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0; 700];
     let signature = [0x34, 0x80, 1, 0, 1, 0, 0, 0, 2, 0, 0, 0];
     for (body, base) in [(18, 1u32), (220, 11), (420, 21)] {
@@ -972,7 +976,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = fillet_face_selection_candidates(&lane, 0, 700);
+    let candidates = fillet_face_selection_candidates(&candidates_ctx, &lane, 0, 700).unwrap();
     assert_eq!(candidates.len(), 3);
     assert_eq!(
         candidates
@@ -992,7 +996,7 @@ fn fillet_face_candidates_require_three_ordered_role_three_paths() {
 
     let mut incomplete = lane.clone();
     incomplete.native_payload.truncate(403);
-    assert!(fillet_face_selection_candidates(&incomplete, 0, 403).is_empty());
+    assert!(fillet_face_selection_candidates(&candidates_ctx, &incomplete, 0, 403).unwrap().is_empty());
 }
 
 #[test]
@@ -1323,6 +1327,10 @@ fn component_vector_preserves_identifierless_lineage_hops() {
 
 #[test]
 fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
+    let candidates_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (candidates_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &candidates_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = Vec::new();
     let append_vector = |payload: &mut Vec<u8>, selector: u8, source: u32, terminal: u32| {
         payload.extend(7u32.to_le_bytes());
@@ -1347,7 +1355,7 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
     append_vector(&mut payload, 4, 218, 12);
     payload.extend([0; 4]);
 
-    let candidates = planar_surface_selection_candidates(&payload, 0, payload.len());
+    let candidates = planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len()).unwrap();
     assert_eq!(candidates.len(), 2);
     assert_eq!(candidates[0].1.len(), 4);
     assert_eq!(
@@ -1369,12 +1377,12 @@ fn planar_surface_candidates_keep_only_defining_type_two_vectors() {
 
     payload[4] = 0x7f;
     assert_eq!(
-        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len()).unwrap().len(),
         2
     );
     payload[5] = 3;
     assert_eq!(
-        planar_surface_selection_candidates(&payload, 0, payload.len()).len(),
+        planar_surface_selection_candidates(&candidates_ctx, &payload, 0, payload.len()).unwrap().len(),
         1
     );
 }
@@ -1417,6 +1425,10 @@ fn counted_surface_path_preserves_tagged_and_anonymous_nodes() {
 
 #[test]
 fn face_reference_plane_owns_its_counted_surface_path() {
+    let candidates_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (candidates_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &candidates_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let identity_arena = cadmpeg_core::decode::DecodeArena::new();
     let (identity_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[], &identity_arena, &cadmpeg_core::decode::DecodePolicy::service(),
@@ -1489,7 +1501,7 @@ fn face_reference_plane_owns_its_counted_surface_path() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = face_reference_plane_selection_candidates(&lane, 0, lane.native_payload.len());
+    let candidates = face_reference_plane_selection_candidates(&candidates_ctx, &lane, 0, lane.native_payload.len()).unwrap();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].0, marker);
     assert_eq!(
@@ -1541,6 +1553,10 @@ fn face_reference_plane_owns_its_counted_surface_path() {
 
 #[test]
 fn face_reference_plane_accepts_a_component_face_path() {
+    let candidates_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (candidates_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &candidates_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let class_name = "moCompFace_c";
     let class_offset = 0;
     let body_offset = class_offset + 6 + class_name.len();
@@ -1585,7 +1601,7 @@ fn face_reference_plane_accepts_a_component_face_path() {
         sketch_entities: Vec::new(),
     };
 
-    let candidates = face_reference_plane_selection_candidates(&lane, 0, lane.native_payload.len());
+    let candidates = face_reference_plane_selection_candidates(&candidates_ctx, &lane, 0, lane.native_payload.len()).unwrap();
     assert_eq!(candidates.len(), 1);
     assert_eq!(candidates[0].0, marker);
     assert_eq!(

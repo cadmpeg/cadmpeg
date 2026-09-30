@@ -683,7 +683,7 @@ pub(super) fn compact_surface_selections(
                 candidates
             }
             NativeClassKind::Fillet if feature.input_class.as_deref() == Some("Fillet_c") => {
-                fillet_face_selection_candidates(lane, start, end)
+                fillet_face_selection_candidates(ctx, lane, start, end)?
             }
             NativeClassKind::Fillet => continue,
             NativeClassKind::MirrorPattern => {
@@ -710,10 +710,10 @@ pub(super) fn compact_surface_selections(
                 candidates
             }
             NativeClassKind::ReferencePlane => {
-                face_reference_plane_selection_candidates(lane, start, end)
+                face_reference_plane_selection_candidates(ctx, lane, start, end)?
             }
             NativeClassKind::PlanarSurface => {
-                planar_surface_selection_candidates(&lane.native_payload, start, end)
+                planar_surface_selection_candidates(ctx, &lane.native_payload, start, end)?
             }
             NativeClassKind::Operation(operation) => operation_surface_selection_candidates(
                 ctx, operation,
@@ -813,136 +813,140 @@ fn compact_extrusion_endpoint_selector_for_marker(
 }
 
 fn fillet_face_selection_candidates(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT full round fillet surface candidates";
     // A full-round Fillet_c carries center, first-side, and second-side face
     // carriers in that order. Other role-03 counts are different fillet
     // constructions and remain outside this projection.
-    let mut class_bodies = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moCompFace_c")
-        .filter_map(|class| {
-            let class_offset = usize::try_from(class.offset).ok()?;
-            if !(start..end).contains(&class_offset) {
-                return None;
-            }
-            let body = class_offset.checked_add(6 + class.name.len())?;
-            let token = View::u16_le_at(&lane.native_payload, body)?;
-            is_class_token(token).then_some((body, token))
-        })
-        .collect::<Vec<_>>();
+    let mut class_bodies = Vec::new();
+    for class in &lane.classes {
+        ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if class.name != "moCompFace_c" { continue; }
+        let Some(class_offset) = usize::try_from(class.offset).ok() else { continue; };
+        if !(start..end).contains(&class_offset) { continue; }
+        let Some(body) = class_offset.checked_add(6 + class.name.len()) else { continue; };
+        let Some(token) = View::u16_le_at(&lane.native_payload, body).filter(|token| is_class_token(*token)) else { continue; };
+        ctx.reserve_collection_vec(&mut class_bodies, 1, OPERATION)?;
+        class_bodies.push((body, token));
+    }
+    let levels = if class_bodies.len() > 1 { class_bodies.len().ilog2() + 1 } else { 1 };
+    ctx.charge_work(u64_from_index(class_bodies.len()).checked_mul(u64::from(levels) + 1)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     class_bodies.sort_unstable();
     class_bodies.dedup();
-
     let mut candidates = Vec::new();
-    for (body, token) in class_bodies {
-        let token = token.to_le_bytes();
-        for offset in body..end.saturating_sub(6) {
-            let body_header = lane.native_payload.get(offset..offset + 6);
-            if offset != body
-                && (body_header.and_then(|header| header.get(..2)) != Some(token.as_slice())
-                    || body_header.and_then(|header| header.get(2..6)) != Some(&[2, 0, 0, 0]))
-            {
-                continue;
+    if let Some(scan_end) = end.checked_sub(6) {
+        for (body, token) in class_bodies {
+            let token = token.to_le_bytes();
+            for offset in body..scan_end {
+                ctx.charge_work(6, OPERATION)?;
+                let header = lane.native_payload.get(offset..offset + 6);
+                if offset != body && (header.and_then(|header| header.get(..2)) != Some(token.as_slice())
+                    || header.and_then(|header| header.get(2..6)) != Some(&[2, 0, 0, 0])) { continue; }
+                let Some((marker, components)) = component_face_reference_at_for_full_round_fillet(&lane.native_payload, offset) else { continue; };
+                let Some(selector) = marker.checked_sub(8).and_then(|start| lane.native_payload.get(start..marker - 4)) else { continue; };
+                if !is_component_vector_selector_for_role(selector, 3) { continue; }
+                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                candidates.push((marker, components));
             }
-            let Some((marker, components)) =
-                component_face_reference_at_for_full_round_fillet(&lane.native_payload, offset)
-            else {
-                continue;
-            };
-            let Some(selector) = lane.native_payload.get(marker - 8..marker - 4) else {
-                continue;
-            };
-            if !is_component_vector_selector_for_role(selector, 3) {
-                continue;
-            }
-            candidates.push((marker, components));
         }
     }
-    candidates.sort_by_key(|(offset, _)| *offset);
-    candidates.dedup();
-    if candidates.len() == 3 {
-        candidates
-    } else {
-        Vec::new()
-    }
+    order_surface_candidates(ctx, &mut candidates, OPERATION)?;
+    Ok(if candidates.len() == 3 { candidates } else { Vec::new() })
 }
 
 fn planar_surface_selection_candidates(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     start: usize,
     end: usize,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    (start..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-        .filter_map(|marker| {
-            let selector = payload.get(marker.checked_sub(8)?..marker - 4)?;
-            (is_component_vector_selector_for_role(selector, 2))
-                .then(|| component_vector_path_at(payload, marker))
-                .flatten()
-                .map(|components| (marker, components))
-        })
-        .collect()
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT planar surface candidates";
+    let mut candidates = Vec::new();
+    if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
+        for marker in start..scan_end {
+            ctx.charge_work(4, OPERATION)?;
+            let Some(selector) = marker.checked_sub(8).and_then(|start| payload.get(start..marker - 4)) else { continue; };
+            if !is_component_vector_selector_for_role(selector, 2) { continue; }
+            if let Some(components) = component_vector_path_at(payload, marker) {
+                ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                candidates.push((marker, components));
+            }
+        }
+    }
+    Ok(candidates)
 }
 
 fn face_reference_plane_selection_candidates(
+    ctx: &DecodeContext<'_>,
     lane: &FeatureInputLane,
     start: usize,
     end: usize,
-) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let data_classes = lane
-        .classes
-        .iter()
-        .filter(|class| {
-            class.name == "moFaceRefPlnData_c"
-                && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset)
-        })
-        .collect::<Vec<_>>();
-    let mut candidates = if let [data_class] = data_classes.as_slice() {
-        let Some(body) = usize::try_from(data_class.offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(6 + data_class.name.len()))
-        else {
-            return Vec::new();
-        };
-        (body..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
-            .filter(|marker| {
-                lane.native_payload
-                    .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
-                    == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
-            })
-            .filter_map(|marker| {
-                counted_surface_component_path_at(&lane.native_payload, marker)
-                    .map(|components| (marker, components))
-            })
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    candidates.extend(
-        lane.classes
-            .iter()
-            .filter(|class| {
-                class.name == "moCompFace_c"
-                    && usize::try_from(class.offset)
-                        .ok()
-                        .is_some_and(|offset| (start..end).contains(&offset))
-            })
-            .filter_map(|class| {
-                let class_offset = usize::try_from(class.offset).ok()?;
-                let body = class_offset.checked_add(6 + class.name.len())?;
-                component_face_reference_at(&lane.native_payload, body)
-            }),
-    );
-    candidates.sort_by_key(|(offset, _)| *offset);
-    candidates.dedup();
-    if candidates.len() == 1 {
-        candidates
-    } else {
-        Vec::new()
+) -> Result<Vec<(usize, Vec<FeatureInputComponentPathEntry>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT reference plane surface candidates";
+    ctx.charge_work(u64_from_index(lane.classes.len()), OPERATION)?;
+    let mut data_classes = lane.classes.iter().filter(|class| class.name == "moFaceRefPlnData_c"
+        && (u64_from_index(start)..u64_from_index(end)).contains(&class.offset));
+    let mut candidates = Vec::new();
+    if let (Some(data_class), None) = (data_classes.next(), data_classes.next()) {
+        let Some(body) = usize::try_from(data_class.offset).ok()
+            .and_then(|offset| offset.checked_add(6 + data_class.name.len())) else { return Ok(Vec::new()); };
+        if let Some(scan_end) = end.checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) {
+            for marker in body..scan_end {
+                ctx.charge_work(16, OPERATION)?;
+                if lane.native_payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len()) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+                if let Some(components) = counted_surface_component_path_at(&lane.native_payload, marker) {
+                    ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+                    candidates.push((marker, components));
+                }
+            }
+        }
     }
+    for class in &lane.classes {
+        ctx.charge_work(u64_from_index(class.name.len()).checked_add(1)
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        if class.name != "moCompFace_c" { continue; }
+        let Some(offset) = usize::try_from(class.offset).ok().filter(|offset| (start..end).contains(offset)) else { continue; };
+        if let Some(candidate) = offset.checked_add(6 + class.name.len())
+            .and_then(|body| component_face_reference_at(&lane.native_payload, body)) {
+            ctx.reserve_collection_vec(&mut candidates, 1, OPERATION)?;
+            candidates.push(candidate);
+        }
+    }
+    order_surface_candidates(ctx, &mut candidates, OPERATION)?;
+    Ok(if candidates.len() == 1 { candidates } else { Vec::new() })
+}
+
+fn order_surface_candidates(
+    ctx: &DecodeContext<'_>,
+    candidates: &mut Vec<(usize, Vec<FeatureInputComponentPathEntry>)>,
+    operation: &'static str,
+) -> Result<(), CodecError> {
+    let mut indexed = Vec::new();
+    ctx.reserve_collection_vec(&mut indexed, candidates.len(), operation)?;
+    let levels = if candidates.len() > 1 { candidates.len().ilog2() + 1 } else { 1 };
+    let work = u64_from_index(candidates.len()).checked_mul(u64::from(levels) + 2)
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(work, operation)?;
+    for (index, (offset, components)) in candidates.drain(..).enumerate() {
+        indexed.push((offset, components, index));
+    }
+    indexed.sort_unstable_by_key(|(offset, _, index)| (*offset, *index));
+    for pair in indexed.windows(2) {
+        let work = u64_from_index(pair[0].1.len()).checked_add(u64_from_index(pair[1].1.len()))
+            .and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(work, operation)?;
+    }
+    indexed.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
+    ctx.reserve_precharged_vec(candidates, indexed.len(), operation)?;
+    for (offset, components, _) in indexed { candidates.push((offset, components)); }
+    Ok(())
 }
 
 fn operation_surface_selection_candidates(
