@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::bind_extrude_selection_geometry;
 use crate::design::decode::operands::bind_extrude_selection_identities;
@@ -142,7 +142,10 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .unwrap()
     .expect("compact sketch-profile operand");
     assert_eq!(compact.scope_reference_ordinal, 2);
-    assert_eq!(compact.paired_byte_offset(), u64_from_index(compact_paired_at));
+    assert_eq!(
+        compact.paired_byte_offset(),
+        u64_from_index(compact_paired_at)
+    );
 
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
@@ -173,7 +176,10 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     .transpose()
     .unwrap()
     .expect("omitted-ordinal sketch-profile operand");
-    assert_eq!(omitted.paired_byte_offset(), u64_from_index(omitted_paired_at));
+    assert_eq!(
+        omitted.paired_byte_offset(),
+        u64_from_index(omitted_paired_at)
+    );
 }
 
 #[test]
@@ -670,7 +676,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         u64_from_index(identity_at)
     );
     assert_eq!(compact_operand.next_record_index(), 109);
-    assert_eq!(compact_operand.next_byte_offset(), u64_from_index(compact_next_at));
+    assert_eq!(
+        compact_operand.next_byte_offset(),
+        u64_from_index(compact_next_at)
+    );
 
     let mut curve_identity = bytes[..identity_at].to_vec();
     indexed_header(&mut curve_identity, *b"429", 103);
@@ -704,7 +713,10 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
             .map(|identity| identity.offset),
         Some(u64_from_index(identity_at) + 21)
     );
-    assert_eq!(curve_operand.next_byte_offset(), u64_from_index(curve_next_at));
+    assert_eq!(
+        curve_operand.next_byte_offset(),
+        u64_from_index(curve_next_at)
+    );
 
     let mut class_338_curve_identity = bytes[..identity_at].to_vec();
     class_338_curve_identity[4..7].copy_from_slice(b"338");

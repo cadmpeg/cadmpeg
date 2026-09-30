@@ -1511,7 +1511,7 @@ fn scan_browser_node_identities(
     bytes: &[u8],
 ) -> Result<Vec<ScannedBrowserNodeIdentity>, cadmpeg_core::CodecError> {
     const GUID_CHARS: usize = 36;
-const GUID_CHARS_U32: u32 = 36;
+    const GUID_CHARS_U32: u32 = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = Vec::new();
     let mut at = 0usize;
@@ -1557,7 +1557,7 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use std::io::{Cursor, Write};
 
@@ -1653,7 +1653,10 @@ use cadmpeg_core::decode::{u64_from_index};
         out.extend_from_slice(class_tag.as_bytes());
         out.extend_from_slice(&entity.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
-        out.extend(lp_utf16_bytes(&format!("0_{entity}")).expect("fixture UTF-16 code-unit count fits u32"));
+        out.extend(
+            lp_utf16_bytes(&format!("0_{entity}"))
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
     }
 
     fn body_map_bytes(prefix_len: usize, declared_count: u32, pairs: &[(u64, u64)]) -> Vec<u8> {
@@ -1667,11 +1670,14 @@ use cadmpeg_core::decode::{u64_from_index};
         }
         out.extend_from_slice(&1793u64.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        out.extend(lp_utf16_bytes(if declared_count == 0 {
-            ""
-        } else {
-            "BREP.synthetic.smbh"
-        }).expect("fixture UTF-16 code-unit count fits u32"));
+        out.extend(
+            lp_utf16_bytes(if declared_count == 0 {
+                ""
+            } else {
+                "BREP.synthetic.smbh"
+            })
+            .expect("fixture UTF-16 code-unit count fits u32"),
+        );
         out
     }
 
@@ -1679,7 +1685,9 @@ use cadmpeg_core::decode::{u64_from_index};
         let mut out = Vec::new();
         indexed_header(&mut out, *b"256", 900);
         out.extend(std::iter::repeat_n(0, prefix_len));
-        out.extend_from_slice(&(u32::try_from(pairs.len()).expect("fixture value fits u32")).to_le_bytes());
+        out.extend_from_slice(
+            &(u32::try_from(pairs.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (key, suffix) in pairs {
             out.extend_from_slice(&key.to_le_bytes());
             out.extend_from_slice(&suffix.to_le_bytes());
@@ -1691,7 +1699,9 @@ use cadmpeg_core::decode::{u64_from_index};
             1,
         );
         out.push(0);
-        out.extend(lp_utf16_bytes("BREP.synthetic.smbh").expect("fixture UTF-16 code-unit count fits u32"));
+        out.extend(
+            lp_utf16_bytes("BREP.synthetic.smbh").expect("fixture UTF-16 code-unit count fits u32"),
+        );
         out
     }
 
@@ -1744,7 +1754,10 @@ use cadmpeg_core::decode::{u64_from_index};
             1 => {
                 out.push(1);
                 out.extend_from_slice(&target.to_le_bytes());
-                out.extend_from_slice(&(u32::try_from(target_type.len()).expect("fixture value fits u32")).to_le_bytes());
+                out.extend_from_slice(
+                    &(u32::try_from(target_type.len()).expect("fixture value fits u32"))
+                        .to_le_bytes(),
+                );
                 out.extend_from_slice(target_type.as_bytes());
                 out.extend_from_slice(&[0, 0]);
             }
@@ -2240,8 +2253,9 @@ use cadmpeg_core::decode::{u64_from_index};
             let blob_len = u64_from_index("BREP.synthetic.smbh".len());
             let stream_name = format!("{PREFIX}BulkStream.dat");
             let scope_len = u64_from_index(crate::ids::native_scope(&stream_name).len());
-            let suffix_len =
-                u64_from_index(format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len());
+            let suffix_len = u64_from_index(
+                format!(":design-body-binding#{}", bindings[0].asm_body_key_offset()).len(),
+            );
             {
                 let (items, operation) = (46, "f3d body visibility entries");
                 let arena = DecodeArena::new();
@@ -2402,19 +2416,34 @@ use cadmpeg_core::decode::{u64_from_index};
         let competing_guid = "AAAAAAAA-BBBB-8CCC-9DDD-EEEEEEEEEEEE";
         let mut bytes = Vec::new();
         push_entity_header(&mut bytes, "256", entity);
-        bytes.extend(lp_utf16_bytes(selected_guid).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(
+            lp_utf16_bytes(selected_guid).expect("fixture UTF-16 code-unit count fits u32"),
+        );
         bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-        bytes.extend(lp_utf16_bytes("99999999-8888-8777-A666-555555555555").expect("fixture UTF-16 code-unit count fits u32"));
-        bytes.extend(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID).expect("fixture UTF-16 code-unit count fits u32"));
-        bytes.extend(lp_utf16_bytes("PrismMaterial-001").expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(
+            lp_utf16_bytes("99999999-8888-8777-A666-555555555555")
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
+        bytes.extend(
+            lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
+        bytes.extend(
+            lp_utf16_bytes("PrismMaterial-001").expect("fixture UTF-16 code-unit count fits u32"),
+        );
         push_reference_u64(&mut bytes, 7);
         bytes.push(0);
         push_reference_u64(&mut bytes, entity + 1);
         bytes.extend(lp_utf16_bytes("Body").expect("fixture UTF-16 code-unit count fits u32"));
         bytes.extend_from_slice(&1.0f32.to_le_bytes());
         bytes.extend_from_slice(&[1, 1]);
-        bytes.extend(lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC").expect("fixture UTF-16 code-unit count fits u32"));
-        bytes.extend(lp_utf16_bytes(APPEARANCE_LIBRARY_ID).expect("fixture UTF-16 code-unit count fits u32"));
+        bytes.extend(
+            lp_utf16_bytes("12345678-1234-8234-A234-123456789ABC")
+                .expect("fixture UTF-16 code-unit count fits u32"),
+        );
+        bytes.extend(
+            lp_utf16_bytes(APPEARANCE_LIBRARY_ID).expect("fixture UTF-16 code-unit count fits u32"),
+        );
         let selected_start = bytes.len();
         let selected_offset = push_browser_node(&mut bytes, 100, selected_guid, false, entity);
         let competing_start = bytes.len();

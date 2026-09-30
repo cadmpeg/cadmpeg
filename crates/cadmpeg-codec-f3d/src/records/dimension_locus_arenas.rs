@@ -1,4 +1,4 @@
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{dimension_null_locus_wire, dimensions::DesignDimensionLocusPair};
 use cadmpeg_core::decode::DecodeContext;

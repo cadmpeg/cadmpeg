@@ -7,7 +7,7 @@
 //! settings. Its `ModelingLength` entry carries the display length unit under
 //! the property name `modelingLengthName`.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use cadmpeg_core::container::ContainerRole;
 
@@ -162,7 +162,8 @@ fn decode_modeling_length_unit(
             .filter_map(|at| at.checked_add(HEADER_LEN))
     };
     for count_at in collection_counts(bytes) {
-        let Some(systems) = references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at) else {
+        let Some(systems) = references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at)
+        else {
             continue;
         };
         for system in systems {

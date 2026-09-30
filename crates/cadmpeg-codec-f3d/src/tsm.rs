@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode `TSplines.BlobParts/*.tsm` Form control cages.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -731,14 +731,13 @@ fn build_fan(
 
     let mut gap = None;
     for (index, slot) in fan.iter().enumerate() {
-        if matches!(slot, FanSlot::Slot { face: None, .. })
-            && gap.replace(index).is_some() {
-                return Err(malformed(
-                    ctx,
-                    name,
-                    "vertex half-edge fan has multiple boundary gaps",
-                ));
-            }
+        if matches!(slot, FanSlot::Slot { face: None, .. }) && gap.replace(index).is_some() {
+            return Err(malformed(
+                ctx,
+                name,
+                "vertex half-edge fan has multiple boundary gaps",
+            ));
+        }
     }
     if let Some(gap) = gap {
         let phantom_count = if fan.len() < 4 { 4 - fan.len() } else { 0 };
@@ -1240,8 +1239,12 @@ fn parse(ctx: &DecodeContext<'_>, name: &str, bytes: &[u8]) -> Result<ParsedCage
                         ctx,
                         &mut grip_vertices,
                         GripVertexMarker::Secondary(if vertex >= 0 {
-                            Some(usize::try_from(vertex).map_err(|_| malformed(ctx, name, "secondary grip vertex exceeds address space"))?)
-                        } else { None }),
+                            Some(usize::try_from(vertex).map_err(|_| {
+                                malformed(ctx, name, "secondary grip vertex exceeds address space")
+                            })?)
+                        } else {
+                            None
+                        }),
                         "read T-spline grip vertex markers",
                     )?;
                     require_end(ctx, name, fields, "secondary grip map")?;
@@ -2306,8 +2309,11 @@ ec 0 0\nec 1 0\nec 2 0\nec 3 0\n";
         let source = derived_quad_source();
         parse_cage(source.as_bytes()).expect("fixture derived grip is valid");
         let invalid = source.replace("0m gv 0\n", "0m gv 4294967296\n");
-        let error = parse_cage(invalid.as_bytes()).expect_err("secondary grip index exceeds address space");
-        assert!(error.to_string().contains("secondary grip vertex exceeds address space"));
+        let error =
+            parse_cage(invalid.as_bytes()).expect_err("secondary grip index exceeds address space");
+        assert!(error
+            .to_string()
+            .contains("secondary grip vertex exceeds address space"));
     }
 
     fn symmetry_quad_source() -> String {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::test_support::push_reference;
 use crate::test_support::lp_utf16;
@@ -322,7 +322,9 @@ fn indexed_sketch_fixture() -> (
     const COMPANION: u64 = 60;
 
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let record_prefix = |class_tag: u32, entity_id: u64| {
@@ -1057,14 +1059,18 @@ fn sketch_text_record(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     push_ascii(&mut bytes, "329");
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
     bytes.push(1);
-    bytes.extend_from_slice(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -1117,7 +1123,9 @@ fn sketch_text_record(
 fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
@@ -1212,7 +1220,9 @@ fn txt_tag_sketch_text_record_at_with_rotation(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
@@ -1224,13 +1234,17 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     bytes.extend_from_slice(&0u32.to_le_bytes());
     // The leading block: a reference and a u32 per entry.
     bytes.push(1);
-    bytes.extend_from_slice(&(u32::try_from(frame.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(frame.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in frame {
         push_padded_reference(&mut bytes, *reference);
         bytes.extend_from_slice(&[0; 4]);
     }
     bytes.push(1);
-    bytes.extend_from_slice(&(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -1249,7 +1263,9 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     bytes.extend_from_slice(&anchor.1.to_le_bytes());
     bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
     lp_utf16(&mut bytes, "sketch text");
-    bytes.extend_from_slice(&(u32::try_from(run.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(run.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in run {
         push_padded_reference(&mut bytes, *reference);
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::decode::sketch::parse_sketch_placement_candidates;
@@ -548,7 +548,10 @@ fn legacy_sketch_pair_decodes_its_complete_member_run() {
     );
     assert_eq!(
         members.iter().map(|row| row.offset).collect::<Vec<_>>(),
-        [u64_from_index(paired_at + 46), u64_from_index(paired_at + 57)]
+        [
+            u64_from_index(paired_at + 46),
+            u64_from_index(paired_at + 57)
+        ]
     );
 }
 

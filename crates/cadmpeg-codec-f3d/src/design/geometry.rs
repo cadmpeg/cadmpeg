@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-arrangement and profile-containment computational geometry.
 
-use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to_usize};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use crate::design::profile_select::historical_face_points;
 use crate::records::{
@@ -1560,7 +1560,9 @@ fn profile_use_polyline(
     // intersection witnesses only. Exact output retains source parameter
     // intervals rather than this derived representation.
     let count = if travel.is_finite() {
-        geometric!(truncate_f64_to_usize((travel / target).ceil().clamp(2.0, 256.0)))
+        geometric!(truncate_f64_to_usize(
+            (travel / target).ceil().clamp(2.0, 256.0)
+        ))
     } else {
         256
     };
@@ -2225,7 +2227,10 @@ fn certified_profile_loop(
         }
         previous_end = entity_tubes.last().map(|tube| tube.end);
         if let Some(ctx) = ctx {
-            ctx.charge_collection_items(u64_from_index(entity_tubes.len()), "f3d certified profile tubes")?;
+            ctx.charge_collection_items(
+                u64_from_index(entity_tubes.len()),
+                "f3d certified profile tubes",
+            )?;
             tubes.try_reserve(entity_tubes.len()).map_err(|_| {
                 ctx.refuse_codec_limit("f3d certified profile tubes allocation", 0, 1)
             })?;
@@ -2327,7 +2332,9 @@ fn certified_arc_tubes(
             .map_err(|_| ctx.refuse_codec_limit("f3d certified arc tubes allocation", 0, 1))?;
     }
     for index in 0..count {
-        let parameter = |ordinal: usize| f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float);
+        let parameter = |ordinal: usize| {
+            f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float)
+        };
         let point = |angle: f64| {
             Point2::new(
                 center.u + radius * angle.cos(),
@@ -2432,7 +2439,9 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         return None;
     }
     let count = (travel_bound / target_error).ceil().max(1.0);
-    (count <= MAX_SUBDIVISIONS).then(|| truncate_f64_to_usize(count)).flatten()
+    (count <= MAX_SUBDIVISIONS)
+        .then(|| truncate_f64_to_usize(count))
+        .flatten()
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {

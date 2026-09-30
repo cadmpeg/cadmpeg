@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact mirror scopes and mirror construction binding.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;

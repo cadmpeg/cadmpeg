@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::EPS_EXACT_FIXTURE;
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::work_geometry::exact_work_plane_frame;
 use crate::layout::work_plane_legacy_321_opaque_matrix_frame as work_plane_321_opaque;

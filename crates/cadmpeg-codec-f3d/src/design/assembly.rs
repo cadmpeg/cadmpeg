@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact Design assembly alignments into neutral joints.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::BTreeMap;
 
@@ -654,7 +654,7 @@ fn unique_feature<'a>(features: &'a [Feature], native_ref: &str) -> Option<&'a F
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use crate::records::feature::assembly::{
         DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,

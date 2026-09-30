@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact assembly operand frames, including as-built frames.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::legacy_operand_paths::exact_legacy_class_388_scope;
 use super::shared_frames::marked_record_reference;
@@ -85,7 +85,8 @@ pub(super) fn exact_assembly_operand_frames(
         frame_variant,
         crate::design::assembly::AssemblyOperandFrameVariant::Standard
     ) {
-        let standard_tail_marker_offset = if scope.frame_length() == u64_from_index(class_383_scope::LEN)
+        let standard_tail_marker_offset = if scope.frame_length()
+            == u64_from_index(class_383_scope::LEN)
             && scope.class_tag.as_str() == "383"
             && scope.paired_class_tag.as_str() == "258"
         {

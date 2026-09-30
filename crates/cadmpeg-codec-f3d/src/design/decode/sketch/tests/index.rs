@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::{
     copy_entity_module_text, decode_headers_for_indices_from_stream, entity_meta_scope,

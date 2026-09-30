@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Historical face contexts: every binding stage is complete.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 #[test]
 fn historical_loop_wire_preserves_each_complete_binding_stage() {

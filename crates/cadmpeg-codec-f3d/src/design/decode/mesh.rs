@@ -2008,7 +2008,7 @@ pub(crate) fn decode_mesh_bodies(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     mod placement;
     use super::{
@@ -2338,12 +2338,18 @@ use cadmpeg_core::decode::{u64_from_index};
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(&[1, 1]);
         push_reference(&mut bytes, texture_table_record_index);
         push_indexed_header(&mut bytes, base_class_tag, record_index);
         bytes.extend_from_slice(&[0; 9]);
-        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }
@@ -2360,12 +2366,16 @@ use cadmpeg_core::decode::{u64_from_index};
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(u32::try_from(flags.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(flags.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (guid, value) in flags {
             lp_ascii(&mut bytes, guid);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
-        bytes.extend_from_slice(&(u32::try_from(filenames.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(filenames.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (guid, target) in filenames {
             lp_ascii(&mut bytes, guid);
             push_reference(&mut bytes, *target);
@@ -2447,7 +2457,10 @@ use cadmpeg_core::decode::{u64_from_index};
         let mut bytes = Vec::new();
         push_indexed_header(&mut bytes, class_tag, record_index);
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for body in body_record_indices {
             push_reference(&mut bytes, *body);
         }

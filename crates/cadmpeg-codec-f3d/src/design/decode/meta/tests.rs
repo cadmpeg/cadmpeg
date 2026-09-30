@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::io::{Cursor, Write};
 
@@ -519,7 +519,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     fn typed_binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
         out.push(1);
         out.extend_from_slice(&component.to_le_bytes());
-        out.extend_from_slice(&(u32::try_from(COMPONENT_TYPE_GUID.len()).expect("fixture value fits u32")).to_le_bytes());
+        out.extend_from_slice(
+            &(u32::try_from(COMPONENT_TYPE_GUID.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         out.extend_from_slice(COMPONENT_TYPE_GUID.as_bytes());
         out.extend_from_slice(&[0, 0]);
         out.extend_from_slice(&36_u32.to_le_bytes());
@@ -702,7 +705,9 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         let mut bulk = vec![0xaa, 0xbb, 1];
         bulk.extend_from_slice(&17u64.to_le_bytes());
         if inline_type {
-            bulk.extend_from_slice(&(u32::try_from(TYPE_GUID.len()).expect("fixture value fits u32")).to_le_bytes());
+            bulk.extend_from_slice(
+                &(u32::try_from(TYPE_GUID.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bulk.extend_from_slice(TYPE_GUID.as_bytes());
         }
         bulk.extend_from_slice(&[0, 0]);
@@ -808,7 +813,9 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         for item in timeline.frame().items() {
             assert_eq!(
                 u64::from_le_bytes(
-                    bulk[usize::try_from(item.offset).expect("fixture offset fits address space")..usize::try_from(item.offset).expect("fixture offset fits address space") + 8]
+                    bulk[usize::try_from(item.offset).expect("fixture offset fits address space")
+                        ..usize::try_from(item.offset).expect("fixture offset fits address space")
+                            + 8]
                         .try_into()
                         .expect("timeline target")
                 ),
@@ -817,7 +824,8 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         }
 
         let mut duplicate = bulk.clone();
-        let second_offset = usize::try_from(timeline.frame().items()[1].offset).expect("fixture offset fits address space");
+        let second_offset = usize::try_from(timeline.frame().items()[1].offset)
+            .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
             crate::design::decode::meta::decode_feature_timelines(

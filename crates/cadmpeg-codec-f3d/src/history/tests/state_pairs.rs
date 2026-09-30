@@ -16,18 +16,20 @@ mod treatment;
 
 use crate::history::{
     bind_scope_histories, bodies_intersecting, bound_history_state_pair, bound_scope_history,
-    selection::boundary_edges_in_changes, edge_changes_across_state_chain, edge_recipe_reference_context,
-    EdgeBoundaryContext,
-    effective_scope_previous_history_state_id, selection::entity_selection_edge_candidates,
-    face_changes_across_state_chain, selection::faces_in_topology, historical_edge_axis,
-    selection::historical_edge_context, historical_face_support_contexts, selection::historical_identity_edge,
-    selection::historical_identity_kind, historical_loop_boundary, selection::historical_pattern_identity_axes,
-    selection::historical_pattern_identity_axes_for_selection, selection::historical_selection_identity_kind,
-    historical_topology, history_state_index, selection::incident_loop_counts_satisfy_sides,
-    preceding_support_face_slots, selection::recipe_selector_candidates,
-    resolve_pattern_face_by_surface_radius, selection::snapshot_edge_identity_revision,
-    terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, selection::unique_entity_selection_edge,
-    unique_history_state, unique_history_state_pair, selection::HistoricalIdentityIndex,
+    edge_changes_across_state_chain, edge_recipe_reference_context,
+    effective_scope_previous_history_state_id, face_changes_across_state_chain,
+    historical_edge_axis, historical_face_support_contexts, historical_loop_boundary,
+    historical_topology, history_state_index, preceding_support_face_slots,
+    resolve_pattern_face_by_surface_radius, selection::boundary_edges_in_changes,
+    selection::entity_selection_edge_candidates, selection::faces_in_topology,
+    selection::historical_edge_context, selection::historical_identity_edge,
+    selection::historical_identity_kind, selection::historical_pattern_identity_axes,
+    selection::historical_pattern_identity_axes_for_selection,
+    selection::historical_selection_identity_kind, selection::incident_loop_counts_satisfy_sides,
+    selection::recipe_selector_candidates, selection::snapshot_edge_identity_revision,
+    selection::unique_entity_selection_edge, selection::HistoricalIdentityIndex,
+    terminal_edge_recipe_faces, terminal_edge_recipe_reference_faces, unique_history_state,
+    unique_history_state_pair, EdgeBoundaryContext,
 };
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
@@ -1508,8 +1510,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         None,
         2,
         &reference,
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[7, 99] },
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[7, 98] },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 98],
+        },
         &HashSet::from([7]),
     )
     .unwrap();
@@ -1548,8 +1556,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         None,
         2,
         &reference,
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[7, 99] },
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[7, 98] },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[7, 98],
+        },
         &HashSet::from([7]),
     )
     .unwrap();
@@ -1566,8 +1580,14 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         None,
         2,
         &reference,
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[99] },
-        EdgeBoundaryContext { topology: &topology, boundary_edges: &[98] },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[99],
+        },
+        EdgeBoundaryContext {
+            topology: &topology,
+            boundary_edges: &[98],
+        },
         &HashSet::from([7]),
     )
     .unwrap();

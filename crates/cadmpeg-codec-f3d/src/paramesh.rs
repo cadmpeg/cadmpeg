@@ -2212,8 +2212,8 @@ fn registry_texture_ids(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
-use cadmpeg_core::convert::{f32_from_f64};
+    use cadmpeg_core::convert::f32_from_f64;
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::{
         decode_index_positions as decode_index_positions_charged,
@@ -2405,9 +2405,13 @@ use cadmpeg_core::convert::{f32_from_f64};
         lzma_rs::lzma_compress(&mut std::io::Cursor::new(payload), &mut compressed)
             .expect("compress stream");
         let mut body = Vec::new();
-        body.extend_from_slice(&(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes());
+        body.extend_from_slice(
+            &(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes(),
+        );
         body.extend_from_slice(descriptor);
-        body.extend_from_slice(&(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes());
+        body.extend_from_slice(
+            &(u32::try_from(payload.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         body.push(LZMA_PROPERTIES);
         body.push(LZMA_DICTIONARY_LOG);
         // `lzma_compress` writes the properties byte, the four-byte dictionary
@@ -2422,7 +2426,9 @@ use cadmpeg_core::convert::{f32_from_f64};
 
     fn raw_stream_body(descriptor: &[u8], declared: u32, payload: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();
-        body.extend_from_slice(&(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes());
+        body.extend_from_slice(
+            &(u16::try_from(descriptor.len()).expect("fixture value fits u16")).to_le_bytes(),
+        );
         body.extend_from_slice(descriptor);
         body.extend_from_slice(&declared.to_le_bytes());
         body.extend_from_slice(&[LZMA_PROPERTIES, RAW_STREAM_MODE]);
@@ -2721,7 +2727,12 @@ use cadmpeg_core::convert::{f32_from_f64};
     #[test]
     fn vertex_domain_channel_carries_one_element_per_vertex() {
         let uv = (0..3)
-            .flat_map(|index| [f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.5])
+            .flat_map(|index| {
+                [
+                    f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+                    0.5,
+                ]
+            })
             .flat_map(f32::to_le_bytes)
             .collect::<Vec<_>>();
         let registry = channel_entry(REGISTRY_VERTEX_CHANNEL, Some(3), ELEMENT_PAIR, "r0", None);
@@ -2745,7 +2756,14 @@ use cadmpeg_core::convert::{f32_from_f64};
     #[test]
     fn index_stream_makes_a_channel_corner_domain() {
         let colors = (0..5)
-            .flat_map(|index| [f32_from_f64(f64::from(index)).expect("fixture index fits f32"), 0.0, 0.0, 1.0])
+            .flat_map(|index| {
+                [
+                    f32_from_f64(f64::from(index)).expect("fixture index fits f32"),
+                    0.0,
+                    0.0,
+                    1.0,
+                ]
+            })
             .flat_map(f32::to_le_bytes)
             .collect::<Vec<_>>();
         let registry = channel_entry(

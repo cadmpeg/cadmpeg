@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::direct_face::{
     exact_direct_face_operation, exact_scale_operation,
@@ -134,7 +134,10 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .expect("class-296 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, u64_from_index(compact_move_at + 48));
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_move_at + 48)
+    );
     assert_eq!(decoded.transform_record_index, 91);
     assert_eq!(u32::from(decoded.form), 1);
     assert_eq!(decoded.form_offset, u64_from_index(compact_move_at + 43));
@@ -183,7 +186,10 @@ pub(super) fn fixed_kind_tail_operations(
     )
     .expect("class-433 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, u64_from_index(class_433_move_at + 48));
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(class_433_move_at + 48)
+    );
     assert_eq!(decoded.transform_record_index, 92);
     assert_eq!(u32::from(decoded.form), 5);
 
@@ -1104,8 +1110,10 @@ pub(super) fn fixed_kind_tail_operations(
     extend_boundary[0..4].copy_from_slice(&3u32.to_le_bytes());
     extend_boundary[4..7].copy_from_slice(b"290");
     extend_boundary[7..11].copy_from_slice(&extend_boundary_record_index.to_le_bytes());
-    extend_boundary[21..25]
-        .copy_from_slice(&(u32::try_from(extend_edge_record_indices.len()).expect("fixture value fits u32")).to_le_bytes());
+    extend_boundary[21..25].copy_from_slice(
+        &(u32::try_from(extend_edge_record_indices.len()).expect("fixture value fits u32"))
+            .to_le_bytes(),
+    );
     for (ordinal, record_index) in extend_edge_record_indices.iter().enumerate() {
         let at = 25 + ordinal * 11;
         extend_boundary[at] = 1;
@@ -1178,7 +1186,9 @@ pub(super) fn fixed_kind_tail_operations(
             method_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 2),
             boundary_record_index: extend_boundary_record_index,
             boundary_reference_record_index: 900,
-            boundary_reference_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 6),
+            boundary_reference_offset: u64_from_index(
+                extend_boundary_at + extend_boundary_tail + 6
+            ),
             edge_record_indices: extend_edge_record_indices.to_vec(),
             tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
                 .expect("checked fixture value"),
@@ -1242,7 +1252,9 @@ pub(super) fn fixed_kind_tail_operations(
             support: DesignSurfaceOffsetSupport::BoundaryCarrier {
                 boundary_record_index: extend_boundary_record_index,
                 boundary_reference_record_index: 900,
-                boundary_reference_offset: u64_from_index(extend_boundary_at + extend_boundary_tail + 6),
+                boundary_reference_offset: u64_from_index(
+                    extend_boundary_at + extend_boundary_tail + 6
+                ),
                 edge_record_indices: extend_edge_record_indices.to_vec(),
                 tolerance: cadmpeg_ir::scalar::PositiveReal::new(1.0e-6)
                     .expect("checked fixture value"),

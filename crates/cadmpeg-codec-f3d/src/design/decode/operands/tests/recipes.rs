@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::bind_edge_operand_candidates;
 use crate::design::decode::operands::bind_face_operand_candidates;
@@ -299,7 +299,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(edge_operand.recipe_record_byte_offset(), recipe_record_at);
     assert_eq!(edge_operand.recipe_id, recipe.id);
     assert_eq!(edge_operand.resolved_edge_slot, None);
-    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&105u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7
+        ..usize::try_from(next_at).expect("fixture offset fits address space") + 11]
+        .copy_from_slice(&105u32.to_le_bytes());
     let mut work_point_scope = scope.clone();
     work_point_scope
         .try_edit(|draft| {
@@ -319,7 +321,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("WorkPoint edge recipe operand");
     assert_eq!(work_point_operand.next_record_index, 105);
-    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&107u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7
+        ..usize::try_from(next_at).expect("fixture offset fits address space") + 11]
+        .copy_from_slice(&107u32.to_le_bytes());
     let mut sweep_scope = scope.clone();
     sweep_scope
         .try_edit(|draft| {
@@ -339,7 +343,9 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     )
     .expect("Sweep edge recipe operand");
     assert_eq!(sweep_operand.next_record_index, 107);
-    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7..usize::try_from(next_at).expect("fixture offset fits address space") + 11].copy_from_slice(&160u32.to_le_bytes());
+    bytes[usize::try_from(next_at).expect("fixture offset fits address space") + 7
+        ..usize::try_from(next_at).expect("fixture offset fits address space") + 11]
+        .copy_from_slice(&160u32.to_le_bytes());
     assert_eq!(
         parse_edge_operand(
             &bytes,

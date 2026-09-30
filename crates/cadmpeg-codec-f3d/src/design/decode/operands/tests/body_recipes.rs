@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::body_recipe_operand_end;
 use crate::design::decode::operands::body_recipe_prologue_end;
@@ -466,7 +466,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand with nested recipe records")
         .unwrap();
-    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at + nested.len()));
+    assert_eq!(
+        operand.next_byte_offset(),
+        u64_from_index(next_at + nested.len())
+    );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let archive = crate::test_support::zip_test::f3d_with_configuration(

@@ -4654,7 +4654,11 @@ mod native_interval_curve_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_GENERATED_CURVE: f64 = 1.0e-12;
-    const MAX_INDEX_FLOAT: f64 = if usize::BITS == 64 { 18_446_744_073_709_551_616.0 } else { 4_294_967_295.0 };
+    const MAX_INDEX_FLOAT: f64 = if usize::BITS == 64 {
+        18_446_744_073_709_551_616.0
+    } else {
+        4_294_967_295.0
+    };
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {

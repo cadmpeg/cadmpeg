@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::feature_project::project_parameter_design;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;

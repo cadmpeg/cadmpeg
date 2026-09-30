@@ -29,7 +29,7 @@ impl Class397SymmetricFrame {
             && frame_length == u64_from_index(symmetric::LEN)
             && reference_count_offset == u64_from_index(symmetric::REFERENCE_COUNT)
             && reference_count == index_from_u32(symmetric::REFERENCE_COUNT_VALUE))
-            .then_some(Self(()))
+        .then_some(Self(()))
     }
 
     /// The symmetric-distance extent admitted by this frame grammar.

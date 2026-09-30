@@ -437,7 +437,12 @@ fn spatial_counted_offset_projects_source_and_result_sets_without_metric_pairs()
     ]
     .into_iter()
     .enumerate()
-    .map(|(index, geometry)| entity(u32::try_from(index).expect("fixture value fits u32") + 1, geometry))
+    .map(|(index, geometry)| {
+        entity(
+            u32::try_from(index).expect("fixture value fits u32") + 1,
+            geometry,
+        )
+    })
     .collect::<Vec<_>>();
     let results = [
         (Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)),

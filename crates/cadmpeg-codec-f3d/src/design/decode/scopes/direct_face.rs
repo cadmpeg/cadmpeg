@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact direct-face, move and scale operation scopes.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::parameter_scope::parameter_scope_payload_length;
 use super::point_data::exact_point_data_construction;

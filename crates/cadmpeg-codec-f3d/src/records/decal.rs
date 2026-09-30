@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decal assets and images, the canvas records beside them, and the record header they share.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::{identity::Located, references::DesignClassTag};
 use serde::{Deserialize, Serialize};
@@ -132,7 +132,9 @@ impl DesignDecalAsset {
     }
     fn entity_reference_offset(&self) -> u64 {
         self.byte_offset
-            + u64_from_index(crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE)
+            + u64_from_index(
+                crate::layout::design_decal_image_asset_record::DESIGN_ENTITY_SUFFIX_REFERENCE,
+            )
             + 1
     }
     fn name_offset(&self) -> u64 {
@@ -185,7 +187,9 @@ impl DesignDecalImage {
     ) -> Result<Self, String> {
         scope
             .offset
-            .checked_add(u64_from_index(crate::layout::design_decal_scope_prefix::LEN))
+            .checked_add(u64_from_index(
+                crate::layout::design_decal_scope_prefix::LEN,
+            ))
             .ok_or("asset_reference_offset must belong to a complete Decal scope prefix")?;
         Ok(Self {
             id,
@@ -202,7 +206,9 @@ impl DesignDecalImage {
         self.scope.offset
     }
     fn asset_reference_offset(&self) -> u64 {
-        self.scope.offset + u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1
+        self.scope.offset
+            + u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE)
+            + 1
     }
     fn mapping_mode_offset(&self) -> u64 {
         self.scope.offset + u64_from_index(crate::layout::design_decal_scope_prefix::MAPPING_MODE)
@@ -313,7 +319,9 @@ impl TryFrom<DesignDecalImageWire> for DesignDecalImage {
     fn try_from(wire: DesignDecalImageWire) -> Result<Self, Self::Error> {
         let scope_offset = wire
             .asset_reference_offset
-            .checked_sub(u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1)
+            .checked_sub(
+                u64_from_index(crate::layout::design_decal_scope_prefix::ASSET_REFERENCE) + 1,
+            )
             .ok_or("asset_reference_offset precedes the Decal scope prefix")?;
         let asset = DesignDecalAsset::new(
             [wire.asset_class_tag, wire.name_class_tag],

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Combine operations, their tool bodies and the external body identity they may name.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::identity::Located;
 use crate::records::mesh::DesignRelaxedGuidText;

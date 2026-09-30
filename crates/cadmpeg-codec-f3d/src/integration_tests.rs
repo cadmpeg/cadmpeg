@@ -41,7 +41,8 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
 }
 
 fn assert_valid(result: &EditableDecodeResult) {
-    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone()).expect("resource allocation did not fail");
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("resource allocation did not fail");
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
@@ -530,30 +531,20 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
     let synthesized = decode(f3d_with_smbh(&synthetic_geometry_smbh()));
 
     let replay_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
-                matches!(
-                    path,
-                    cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-                )
-            };
+        matches!(
+            path,
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+        )
+    };
     let synthesize_matches: fn(&cadmpeg_ir::report::export::WritePath) -> bool = |path| {
-                matches!(
-                    path,
-                    cadmpeg_ir::report::export::WritePath::Synthesized { .. }
-                )
-            };
+        matches!(
+            path,
+            cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+        )
+    };
     for (label, result, fidelity, path_matches) in [
-        (
-            "replay",
-            &replayed,
-            true,
-            replay_matches,
-        ),
-        (
-            "synthesize",
-            &synthesized,
-            false,
-            synthesize_matches,
-        ),
+        ("replay", &replayed, true, replay_matches),
+        ("synthesize", &synthesized, false, synthesize_matches),
     ] {
         let plan = plan(result, fidelity, TargetRequest::Inherit)
             .unwrap_or_else(|error| panic!("{label} must plan, got {error}"));

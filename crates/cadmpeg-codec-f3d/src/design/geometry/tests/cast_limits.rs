@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+};
 
 fn rectangle_profiles(offset: f64, transpose: bool) -> usize {
     let sketch = SketchId::mint("f3d:model:sketch#cell-limit").expect("fixture sketch ID");
@@ -11,20 +13,31 @@ fn rectangle_profiles(offset: f64, transpose: bool) -> usize {
         Point2::new(offset + side, 0.0),
         Point2::new(offset + side, 2.0),
         Point2::new(offset, 2.0),
-    ].map(|point| if transpose { Point2::new(point.v, point.u) } else { point });
-    let entities = (0..4).map(|index| {
-        SketchEntity::new(
-            SketchEntityId::mint(&format!("synthetic:test:id#cell-edge-{index}"))
-                .expect("fixture edge ID"),
-            sketch.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                start: points[index],
-                end: points[(index + 1) % 4],
-            }).expect("finite nonzero fixture line"),
-        )
-    }).collect::<Vec<_>>();
+    ]
+    .map(|point| {
+        if transpose {
+            Point2::new(point.v, point.u)
+        } else {
+            point
+        }
+    });
+    let entities = (0..4)
+        .map(|index| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#cell-edge-{index}"))
+                    .expect("fixture edge ID"),
+                sketch.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: points[index],
+                    end: points[(index + 1) % 4],
+                })
+                .expect("finite nonzero fixture line"),
+            )
+        })
+        .collect::<Vec<_>>();
     super::closed_sketch_profiles(None, &sketch, &entities, 1.0)
-        .expect("profile computation has no resource refusal").len()
+        .expect("profile computation has no resource refusal")
+        .len()
 }
 
 #[test]

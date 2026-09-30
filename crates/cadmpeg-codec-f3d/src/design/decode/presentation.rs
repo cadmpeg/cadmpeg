@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use std::collections::HashMap;
 
@@ -697,7 +697,7 @@ fn preceding_lp_utf16(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
@@ -1250,7 +1250,9 @@ use cadmpeg_core::decode::{u64_from_index};
 
         let node_start = bytes.len();
         assert!(bare_presentation_material(&bytes, 15, node_start, entity).is_some());
-        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]).expect("fixture UTF-16 code-unit count fits u32").len();
+        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])
+            .expect("fixture UTF-16 code-unit count fits u32")
+            .len();
         assert!(
             bare_presentation_material(&bytes, 15, node_start - trailer_len, entity,).is_none()
         );

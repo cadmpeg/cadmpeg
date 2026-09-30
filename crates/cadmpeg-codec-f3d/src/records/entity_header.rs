@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The record header every design entity carries: module and base-type tags, segment types and the feature timeline.
 
-use cadmpeg_core::decode::{u64_from_index};
+#[cfg(test)]
+use cadmpeg_core::decode::u64_from_index;
 
 use super::identity::{DesignEntityId, Located, NativeRecordId, ReferenceRun};
 use super::mesh::DesignRelaxedGuidText;

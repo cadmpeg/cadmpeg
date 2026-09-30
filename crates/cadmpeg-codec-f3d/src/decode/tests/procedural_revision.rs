@@ -10,7 +10,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
 
 use cadmpeg_test_support::edit;
 
@@ -29,8 +29,7 @@ use crate::test_support::procedural_test::{
     generated_form_two_par_int_cur, push_optional_value_quartet, push_revision_cl_scale,
 };
 use crate::test_support::smbh_blends_test::{
-    append_generated_variable_blend_side,
-    synthetic_rational_cyl_spl_sur_smbh,
+    append_generated_variable_blend_side, synthetic_rational_cyl_spl_sur_smbh,
     synthetic_ref_cyl_spl_sur_smbh, synthetic_revision_ref_directrix_cyl_spl_sur_smbh,
     synthetic_variable_blend_smbh_with_selector, synthetic_vertex_blend_smbh,
 };
@@ -855,7 +854,11 @@ fn generated_vertex_blends_decode_all_boundary_variants() {
                 .expect("vertex-blend boundary curve")
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                    cadmpeg_ir::math::Point3::new(f64_from_index(ordinal).expect("fixture index is exact in f64"), 2.0, -3.0),
+                    cadmpeg_ir::math::Point3::new(
+                        f64_from_index(ordinal).expect("fixture index is exact in f64"),
+                        2.0,
+                        -3.0,
+                    ),
                     cadmpeg_ir::math::Vector3::new(2.0, -1.0, 4.0)
                         .unit()
                         .unwrap(),

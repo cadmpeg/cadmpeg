@@ -120,7 +120,7 @@ pub(crate) fn build_inspection_summary(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 

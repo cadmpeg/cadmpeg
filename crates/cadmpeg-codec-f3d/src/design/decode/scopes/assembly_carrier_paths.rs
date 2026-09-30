@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use cadmpeg_core::decode::View;
 
@@ -397,7 +397,7 @@ fn exact_class_363_identity_guids(
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{index_from_u32};
+    use cadmpeg_core::decode::index_from_u32;
 
     use super::super::legacy_operand_paths::ASSEMBLY_MARKED_REFERENCE_LEN;
     use super::{
@@ -426,7 +426,9 @@ use cadmpeg_core::decode::{index_from_u32};
 
     fn write_lp_utf16(bytes: &mut [u8], at: usize, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
-        bytes[at..at + 4].copy_from_slice(&(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes[at..at + 4].copy_from_slice(
+            &(u32::try_from(units.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         for (ordinal, unit) in units.into_iter().enumerate() {
             let start = at + 4 + ordinal * 2;
             bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());

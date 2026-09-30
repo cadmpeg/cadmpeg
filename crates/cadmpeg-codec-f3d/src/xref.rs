@@ -8,7 +8,7 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::container::ContainerRole;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::assembly_alignment::exact_assembly_alignment;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
@@ -143,8 +143,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
                 if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
                 {
-                    let entity_reference_offset =
-                        scope.byte_offset().saturating_add(u64_from_index(relative_offset));
+                    let entity_reference_offset = scope
+                        .byte_offset()
+                        .saturating_add(u64_from_index(relative_offset));
                     if let scope::DesignScopePayloadMut::Sketch(slot)
                     | scope::DesignScopePayloadMut::Esquisse(slot)
                     | scope::DesignScopePayloadMut::Skizze(slot)

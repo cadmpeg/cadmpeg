@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_test_support::bytes::{put_u32, put_u64};
 
@@ -900,7 +900,9 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
     bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
     let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -1003,7 +1005,9 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
     bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
     bytes[107..111].copy_from_slice(&1u32.to_le_bytes());
     let references: [u32; 8] = [6645, 6650, 6653, 6656, 6659, 6662, 6665, 6668];
-    bytes.extend_from_slice(&(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(references.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in references {
         bytes.push(1);
         bytes.extend_from_slice(&reference.to_le_bytes());
@@ -1076,7 +1080,10 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
                 bytes[77 + ordinal * 8..85 + ordinal * 8].copy_from_slice(&value.to_le_bytes());
             }
         }
-        bytes.extend_from_slice(&(u32::try_from(reference_members.len()).expect("fixture value fits u32")).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(reference_members.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         for reference in reference_members {
             bytes.push(1);
             bytes.extend_from_slice(&reference.to_le_bytes());

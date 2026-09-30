@@ -10,7 +10,7 @@
 //! expose unique or legacy carrier sets for metadata reporting; model decode
 //! uses the typed Design body-map catalog.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use cadmpeg_core::container::{ContainerRole, EntryStorage, VerbatimLabel};
 
@@ -942,7 +942,7 @@ fn asm_magic_label(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-use cadmpeg_core::decode::{u64_from_index};
+    use cadmpeg_core::decode::u64_from_index;
 
     use super::is_f3d_name;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
@@ -1104,10 +1104,12 @@ use cadmpeg_core::decode::{u64_from_index};
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
         let scan = super::scan(&ctx, root).unwrap();
         let mut limited_policy = DecodePolicy::service();
-        limited_policy.limits.max_retained_bytes = u64_from_index("Design".len()
-            + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
-            + "FusionDesignSegmentType".len()
-            + "Fusion".len());
+        limited_policy.limits.max_retained_bytes = u64_from_index(
+            "Design".len()
+                + "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".len()
+                + "FusionDesignSegmentType".len()
+                + "Fusion".len(),
+        );
         let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &limited_policy).unwrap();
         let Err(error) = scan.parsed_metastream(&limited, name) else {
             panic!("MetaStream cache name must refuse");

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::feature_project::bind_work_point_sketch_point_constructions;
 use crate::layout::work_point_sketch_point_identity as layout;
@@ -51,9 +51,11 @@ fn fixture() -> (
             identity_record_index: record_index + 3,
             identity_record_offset: identity_offset,
             sketch_record_index: 11,
-            sketch_record_index_offset: identity_offset + u64_from_index(layout::SKETCH_RECORD_INDEX),
+            sketch_record_index_offset: identity_offset
+                + u64_from_index(layout::SKETCH_RECORD_INDEX),
             point_persistent_id: 7,
-            point_persistent_id_offset: identity_offset + u64_from_index(layout::POINT_PERSISTENT_ID),
+            point_persistent_id_offset: identity_offset
+                + u64_from_index(layout::POINT_PERSISTENT_ID),
             point_native_id: point_native_id.to_owned(),
             next_record_index: record_index + 4,
             next_byte_offset: identity_offset + u64_from_index(layout::LEN),

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 mod cast_limits;
 
@@ -41,20 +41,22 @@ fn sketch_relation_assembly_refuses_collection_and_retained_limits() {
         ),
         (
             None,
-            Some(u64_from_index(crate::ids::native_scope("BulkStream.dat").len())),
+            Some(u64_from_index(
+                crate::ids::native_scope("BulkStream.dat").len(),
+            )),
             false,
             ResourceDimension::RetainedBytes,
             "f3d sketch relation ID",
         ),
         (
             None,
-            Some(
-                u64_from_index(format!(
+            Some(u64_from_index(
+                format!(
                     "{}:sketch-relation#7",
                     crate::ids::native_scope("BulkStream.dat")
                 )
-                .len()),
-            ),
+                .len(),
+            )),
             false,
             ResourceDimension::RetainedBytes,
             "f3d sketch relation raw bytes",

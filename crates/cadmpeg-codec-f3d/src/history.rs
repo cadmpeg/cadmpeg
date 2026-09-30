@@ -9,7 +9,7 @@
 //! history records while retaining source bytes for records without typed
 //! semantics.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 pub(crate) mod selection;
 

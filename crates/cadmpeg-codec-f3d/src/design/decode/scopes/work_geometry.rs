@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact work-plane, work-axis and joint-origin frames.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
@@ -187,7 +187,10 @@ pub(super) fn exact_work_plane_frame(
                 {
                     (
                         start + 76,
-                        Some((View::u32_le_at(bytes, start + 58)?, u64_from_index(start + 58))),
+                        Some((
+                            View::u32_le_at(bytes, start + 58)?,
+                            u64_from_index(start + 58),
+                        )),
                     )
                 }
                 _ => continue,
@@ -449,7 +452,9 @@ pub(super) fn exact_joint_origin_frame(
                     if candidate
                         .replace(ScopePlacementFrame {
                             transform,
-                            transform_offset: u64_from_index(start + joint_origin_class_337_266::MATRIX),
+                            transform_offset: u64_from_index(
+                                start + joint_origin_class_337_266::MATRIX,
+                            ),
                             reference: None,
                         })
                         .is_some()

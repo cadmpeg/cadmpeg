@@ -2,7 +2,7 @@
 //! History resource-budget unit tests.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::history::{
     history_topology_work_budget_exceeded, HISTORY_TOPOLOGY_WORK_UNITS_PER_ENTRY,
@@ -613,8 +613,9 @@ fn history_record_vector_refuses_collection_limit() {
 fn history_record_id_refuses_retained_limit() {
     let bytes = one_framed_history_record();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes =
-        1 + u64_from_index(std::mem::size_of::<cadmpeg_asm::sab::Token>()) + u64_from_index(bytes.len());
+    policy.limits.max_retained_bytes = 1
+        + u64_from_index(std::mem::size_of::<cadmpeg_asm::sab::Token>())
+        + u64_from_index(bytes.len());
     let error = history_record_with_limits(&bytes, &policy);
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)

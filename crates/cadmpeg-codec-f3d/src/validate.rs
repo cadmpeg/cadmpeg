@@ -9,7 +9,7 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
-use cadmpeg_core::convert::{f64_from_index};
+use cadmpeg_core::convert::f64_from_index;
 
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_distance_layout;
 use crate::design::decode::scopes::extrude::is_class_296_legacy_one_sided_to_face_layout;
@@ -201,7 +201,8 @@ fn valid_class_307_joint_origin_qualifier(
     frame.reference_record_index == *scope_record_index
         && class_tag.as_str() == "307"
         && paired_class_tag.as_str() == "264"
-        && byte_offset.checked_add(u64_from_index(class_307_joint_origin::LEN)) == Some(*paired_byte_offset)
+        && byte_offset.checked_add(u64_from_index(class_307_joint_origin::LEN))
+            == Some(*paired_byte_offset)
         && design_header_matches(
             records_by_index,
             stream,
@@ -2559,7 +2560,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             <= EPS_VALIDATE_VALIDATE_PARAMETER_SCOPES_E8
                         && instances.frames().enumerate().all(|(ordinal, frame)| {
                             let transform = &frame.transform.value;
-                            let (Some(ordinal), Some(divisor)) = (f64_from_index(ordinal), f64_from_index(count - 1)) else {
+                            let (Some(ordinal), Some(divisor)) =
+                                (f64_from_index(ordinal), f64_from_index(count - 1))
+                            else {
                                 return false;
                             };
                             let fraction = ordinal / divisor;
@@ -2929,15 +2932,16 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             } else {
                                 [0, 1]
                             };
-                            let limit_lanes =
-                                limit_order.into_iter().zip([4_u32, 5]).map(|(index, local_ordinal)| {
+                            let limit_lanes = limit_order.into_iter().zip([4_u32, 5]).map(
+                                |(index, local_ordinal)| {
                                     (
                                         limits.owner_record_indices[index],
                                         limits.value_offsets[index],
                                         [limits.minimum(), limits.maximum()][index],
                                         local_ordinal,
                                     )
-                                });
+                                },
+                            );
                             limits.kind == generation.limit_kind()
                                 && alignment_lanes.into_iter().chain(limit_lanes).all(
                                     |(record_index, value_offset, value, local_ordinal)| {
@@ -3825,9 +3829,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope
                             .byte_offset()
                             .saturating_add(u64_from_index(class_296_symmetric::FIRST_SIDE_EXTENT)),
-                        scope
-                            .byte_offset()
-                            .saturating_add(u64_from_index(class_296_symmetric::SECOND_SIDE_EXTENT)),
+                        scope.byte_offset().saturating_add(u64_from_index(
+                            class_296_symmetric::SECOND_SIDE_EXTENT,
+                        )),
                     ])
                 } else {
                     None
@@ -3849,9 +3853,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         scope
                             .byte_offset()
                             .saturating_add(u64_from_index(class_296_two_faces::FIRST_SIDE_EXTENT)),
-                        scope
-                            .byte_offset()
-                            .saturating_add(u64_from_index(class_296_two_faces::SECOND_SIDE_EXTENT)),
+                        scope.byte_offset().saturating_add(u64_from_index(
+                            class_296_two_faces::SECOND_SIDE_EXTENT,
+                        )),
                     ])
                 } else {
                     None
@@ -3871,12 +3875,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .saturating_add(u64_from_index(class_296_legacy_prefix::OPERATION))
                     {
                         Some([
-                            scope
-                                .byte_offset()
-                                .saturating_add(u64_from_index(class_296_legacy_prefix::FIRST_SIDE_EXTENT)),
-                            scope.byte_offset().saturating_add(
-                                u64_from_index(class_296_legacy_to_face::SECOND_SIDE_EXTENT),
-                            ),
+                            scope.byte_offset().saturating_add(u64_from_index(
+                                class_296_legacy_prefix::FIRST_SIDE_EXTENT,
+                            )),
+                            scope.byte_offset().saturating_add(u64_from_index(
+                                class_296_legacy_to_face::SECOND_SIDE_EXTENT,
+                            )),
                         ])
                     } else {
                         None
@@ -3896,12 +3900,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             .saturating_add(u64_from_index(class_296_legacy_prefix::OPERATION))
                     {
                         Some([
-                            scope
-                                .byte_offset()
-                                .saturating_add(u64_from_index(class_296_legacy_prefix::FIRST_SIDE_EXTENT)),
-                            scope.byte_offset().saturating_add(
-                                u64_from_index(class_296_legacy_distance::SECOND_SIDE_EXTENT),
-                            ),
+                            scope.byte_offset().saturating_add(u64_from_index(
+                                class_296_legacy_prefix::FIRST_SIDE_EXTENT,
+                            )),
+                            scope.byte_offset().saturating_add(u64_from_index(
+                                class_296_legacy_distance::SECOND_SIDE_EXTENT,
+                            )),
                         ])
                     } else {
                         None
@@ -7998,9 +8002,9 @@ fn validate_dimension_recipe_records<'a>(
                 && frame_end.is_some_and(|end| recipe.byte_offset < end)
                 && prefix_end == recipe.byte_offset.checked_sub(4)
                 && record.program_offset
-                    == recipe.byte_offset.saturating_add(
-                        u64_from_index(design::construction_recipe_family_name_len(recipe.kind)),
-                    )
+                    == recipe.byte_offset.saturating_add(u64_from_index(
+                        design::construction_recipe_family_name_len(recipe.kind),
+                    ))
         });
         let valid = record.frame_length >= 11
             && !record.prefix_bytes.is_empty()
@@ -8295,7 +8299,8 @@ fn validate_dimension_presentation_frames(
         let operand_start = frame.byte_offset.saturating_add(24);
         let operands_valid = !frame.operands.is_empty()
             && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
-                let start = operand_start.saturating_add((u64_from_index(ordinal)).saturating_mul(15));
+                let start =
+                    operand_start.saturating_add((u64_from_index(ordinal)).saturating_mul(15));
                 operand.geometry_reference_offset == start.saturating_add(1)
                     && operand.role_offset == start.saturating_add(11)
                     && sketch_geometry_indices
@@ -8308,7 +8313,8 @@ fn validate_dimension_presentation_frames(
             && frame.paired_byte_offset > frame.byte_offset
             && frame.frame_length == frame.paired_byte_offset.saturating_sub(frame.byte_offset)
             && frame.presentation_byte_offset
-                == operand_start.saturating_add((u64_from_index(frame.operands.len())).saturating_mul(15))
+                == operand_start
+                    .saturating_add((u64_from_index(frame.operands.len())).saturating_mul(15))
             && frame
                 .presentation_byte_offset
                 .saturating_add(u64_from_index(frame.presentation_bytes.len()))

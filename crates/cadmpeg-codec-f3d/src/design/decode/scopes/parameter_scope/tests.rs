@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::named_parameter_scope_tail_is_valid;
 use super::{copy_sketch_entity_id, first_marked_reference_offsets};

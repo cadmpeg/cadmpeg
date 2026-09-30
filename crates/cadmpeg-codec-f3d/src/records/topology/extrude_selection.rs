@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrude selection groups, operand and face roles, and group members.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use super::fillet::deserialize_historical_binding;
 use super::fillet::HistoricalBinding;

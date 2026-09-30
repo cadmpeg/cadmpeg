@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
-use cadmpeg_core::decode::{u64_from_index};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
@@ -362,10 +362,7 @@ fn copy_work_point_inputs(
     ctx: &DecodeContext<'_>,
     source: &[crate::records::feature::work_geometry::DesignWorkPointInput],
 ) -> Result<Vec<crate::records::feature::work_geometry::DesignWorkPointInput>, CodecError> {
-    ctx.charge_collection_items(
-        u64_from_index(source.len()),
-        "f3d WorkPoint input copy",
-    )?;
+    ctx.charge_collection_items(u64_from_index(source.len()), "f3d WorkPoint input copy")?;
     let mut inputs = Vec::new();
     inputs
         .try_reserve(source.len())

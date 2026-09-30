@@ -2,7 +2,7 @@
 //! Source-less pre-write validators for the neutral `CadIr` and its F3D native
 //! extension.
 
-use cadmpeg_core::decode::{index_from_u32};
+use cadmpeg_core::decode::index_from_u32;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
