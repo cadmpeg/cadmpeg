@@ -1515,6 +1515,11 @@ impl FeatureEvaluation {
         }
     }
 
+    /// Consume the evaluation and return its semantics and produced bodies.
+    pub fn into_parts(self) -> (FeatureDefinition, DistinctMembers<BodyId>) {
+        (self.definition, self.outputs)
+    }
+
     /// Return the neutral construction semantics.
     pub const fn definition(&self) -> &FeatureDefinition {
         &self.definition

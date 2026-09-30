@@ -78,14 +78,20 @@ fn apply_configuration_state(
     feature.evaluation = evaluation;
 }
 
-fn configuration_evaluation(feature: &cadmpeg_ir::features::Feature) -> ConfigurationEvaluation {
-    if feature.suppressed.unwrap_or(false) {
+fn configuration_feature_state(
+    feature: cadmpeg_ir::features::Feature,
+) -> (FeatureId, cadmpeg_ir::features::ConfigurationFeatureState) {
+    let (definition, outputs) = feature.evaluation.into_parts();
+    let evaluation = if feature.suppressed.unwrap_or(false) {
         ConfigurationEvaluation::Suppressed {}
     } else {
-        ConfigurationEvaluation::Active {
-            outputs: feature.evaluation.outputs().iter().cloned().collect(),
-        }
-    }
+        ConfigurationEvaluation::Active { outputs }
+    };
+    (feature.id, cadmpeg_ir::features::ConfigurationFeatureState {
+        evaluation,
+        dependencies: feature.dependencies,
+        definition,
+    })
 }
 
 /// Which side of the codec drives the history-enrichment prefix.
@@ -356,20 +362,7 @@ pub(crate) fn project_configuration_design_states(
                         feature.evaluation.set_definition(definition);
                     }
                 }
-                Ok((
-                    feature.id,
-                    cadmpeg_ir::features::ConfigurationFeatureState {
-                        evaluation: if feature.suppressed.unwrap_or(false) {
-                            cadmpeg_ir::features::ConfigurationEvaluation::Suppressed {}
-                        } else {
-                            cadmpeg_ir::features::ConfigurationEvaluation::Active {
-                                outputs: feature.evaluation.outputs().iter().cloned().collect(),
-                            }
-                        },
-                        dependencies: feature.dependencies,
-                        definition: feature.evaluation.definition().clone(),
-                    },
-                ))
+                Ok(configuration_feature_state(feature))
             })
             .collect::<Result<_, cadmpeg_core::CodecError>>()?;
     }
@@ -420,7 +413,7 @@ pub(crate) fn project_configuration_supplemental_edge_selections(
                 continue;
             };
             state.dependencies = feature.dependencies;
-            state.definition = feature.evaluation.definition().clone();
+            state.definition = feature.evaluation.into_parts().0;
         }
     }
 
@@ -486,9 +479,7 @@ pub(crate) fn bind_configuration_topology_selections(
             let Some(state) = states.get_mut(&feature.id) else {
                 continue;
             };
-            state.evaluation = configuration_evaluation(&feature);
-            state.definition = feature.evaluation.definition().clone();
-            state.dependencies = feature.dependencies;
+            *state = configuration_feature_state(feature).1;
         }
     }
 
@@ -812,9 +803,7 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            state.evaluation = configuration_evaluation(&feature);
-            state.dependencies = feature.dependencies;
-            state.definition = feature.evaluation.definition().clone();
+            *state = configuration_feature_state(feature).1;
         }
     }
     let scoped_configuration_indices = configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?;
@@ -1201,7 +1190,7 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
                 continue;
             };
             state.dependencies = feature.dependencies;
-            state.definition = feature.evaluation.definition().clone();
+            state.definition = feature.evaluation.into_parts().0;
         }
     }
 }
