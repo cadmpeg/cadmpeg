@@ -81,6 +81,27 @@ fn apply_configuration_state(
     feature.evaluation = evaluation;
 }
 
+fn insert_configuration_value<K: Ord, V>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    values: &mut BTreeMap<K, V>,
+    key: K,
+    value: V,
+    key_len: usize,
+    key_bytes: &mut usize,
+) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "collect SLDPRT configuration values";
+    let work = values.len().checked_add(1).and_then(|count| count.checked_mul(key_len))
+        .and_then(|bytes| bytes.checked_add(*key_bytes)).and_then(|bytes| bytes.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+    let bytes = key_bytes.checked_add(key_len)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_collection_items(1, OPERATION)?;
+    values.insert(key, value);
+    *key_bytes = bytes;
+    Ok(())
+}
+
 fn configuration_feature_state(
     feature: cadmpeg_ir::features::Feature,
 ) -> (FeatureId, cadmpeg_ir::features::ConfigurationFeatureState) {
@@ -278,11 +299,15 @@ pub(crate) fn project_configuration_design_states(
             pmi_dimensions,
             &ir.model.features,
         )?;
-        ir.model.configurations[configuration_index].parameter_values =
-            project_parameters(ctx, &projection)?
-                .into_iter()
-                .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
-                .collect();
+        let mut parameter_values = BTreeMap::new();
+        let mut parameter_key_bytes = 0;
+        for parameter in project_parameters(ctx, &projection)? {
+            let Some(value) = parameter.value else { continue; };
+            let key_len = parameter.id.as_str().len();
+            insert_configuration_value(ctx, &mut parameter_values, parameter.id, value,
+                key_len, &mut parameter_key_bytes)?;
+        }
+        ir.model.configurations[configuration_index].parameter_values = parameter_values;
 
         let mut projection = crate::records::charged_clone::clone_histories_charged(
             ctx, histories, "clone SLDPRT configuration feature histories",
@@ -339,9 +364,9 @@ pub(crate) fn project_configuration_design_states(
             scoped_lanes,
         )?;
         restore_configuration_tree_node_definitions(ctx, &mut features, &ir.model.features)?;
-        ir.model.configurations[configuration_index].feature_states = features
-            .into_iter()
-            .map(|mut feature| {
+        let mut feature_states = BTreeMap::new();
+        let mut feature_key_bytes = 0;
+        for mut feature in features {
                 if let Some(base_definition) = base_definitions.get(ctx, &feature.id)? {
                     if matches!(
                         feature.evaluation.definition(),
@@ -365,9 +390,12 @@ pub(crate) fn project_configuration_design_states(
                         feature.evaluation.set_definition(definition);
                     }
                 }
-                Ok(configuration_feature_state(feature))
-            })
-            .collect::<Result<_, cadmpeg_core::CodecError>>()?;
+            let (id, state) = configuration_feature_state(feature);
+            let key_len = id.as_str().len();
+            insert_configuration_value(ctx, &mut feature_states, id, state,
+                key_len, &mut feature_key_bytes)?;
+        }
+        ir.model.configurations[configuration_index].feature_states = feature_states;
     }
 
     Ok(())

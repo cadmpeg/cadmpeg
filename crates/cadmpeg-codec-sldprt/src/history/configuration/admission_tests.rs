@@ -234,3 +234,45 @@ fn configuration_datum_state_projection_refuses_nesting_limit() {
 fn configuration_datum_state_projection_refuses_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_datum);
 }
+
+fn run_design(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{ConfigurationEvaluation, FeatureDefinition, FeatureId, FeatureOperation, ParameterId, ParameterValue};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut feature = crate::history::tests::feature("feature", None, 0);
+    feature.parameters.insert(cadmpeg_core::nonblank_literal!("Length"), "12mm".into());
+    let histories = [crate::records::FeatureHistory {
+        id: "history".into(), part_name: None, properties: std::collections::BTreeMap::new(),
+        content: Vec::new(), configurations: Vec::new(), features: vec![feature],
+    }];
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.configurations.push(design_configuration("design", 0, Some(0), None));
+    super::project_configuration_design_states(
+        &ctx, &mut ir, &histories, &[feature_input_lane("lane", Some("0"))], &[], None,
+    )?;
+    let configuration = &ir.model.configurations[0];
+    assert_eq!(configuration.parameter_values, std::collections::BTreeMap::from([(
+        ParameterId::mint("sldprt:model:parameter#feature:0").unwrap(),
+        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(12.0).unwrap()),
+    )]));
+    assert_eq!(configuration.feature_states.len(), 1);
+    let state = &configuration.feature_states[&FeatureId::mint("sldprt:model:feature#feature").unwrap()];
+    assert_eq!(state.evaluation, ConfigurationEvaluation::Active { outputs: cadmpeg_ir::features::DistinctMembers::default() });
+    assert!(state.dependencies.is_empty());
+    assert_eq!(state.definition, FeatureDefinition::Operation(FeatureOperation::Native {
+        kind: "Custom".into(), parameters: std::collections::BTreeMap::from([(
+            cadmpeg_core::nonblank_literal!("Length"), "12mm".into(),
+        )]),
+    }));
+    Ok(())
+}
+
+#[test]
+fn configuration_design_projection_refuses_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_design);
+}
+
+#[test]
+fn configuration_design_projection_refuses_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
+}
