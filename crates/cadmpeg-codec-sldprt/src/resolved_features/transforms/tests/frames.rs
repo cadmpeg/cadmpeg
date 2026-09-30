@@ -207,14 +207,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -226,14 +226,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let mut horizontal_relation = relation.clone();
     horizontal_relation.family = FeatureInputRelationFamily::PointPointHorizontalDistance;
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &horizontal_relation,
             Some(&parameter),
             &sketch,
             &entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -269,26 +269,26 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let mut directional_parameter = parameter.clone();
     directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
             &directional_entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
     ));
     directional_parameter.value = Some(ParameterValue::Length(Length::new(0.05).unwrap()));
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
             &directional_entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
     ));
     directional_entities[1].geometry = SketchGeometry::try_from(SketchGeometryDefinition::Point {
@@ -297,28 +297,28 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     .unwrap();
     directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
             &directional_entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci { .. })
     ));
 
     let mut ambiguous_entities = entities;
     ambiguous_entities.push(point("synthetic:test:id#other-solved", -5.0));
     for candidate in [&relation, &horizontal_relation] {
-        assert!(typed_relation_definition(
+        assert!(typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             candidate,
             Some(&parameter),
             &sketch,
             &ambiguous_entities,
             &markers,
             &loci,
-        )
+        ).unwrap()
         .is_some());
     }
 
@@ -329,14 +329,14 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
         point("synthetic:test:id#unrelated-b", 15.0),
     ];
     for candidate in [&relation, &horizontal_relation] {
-        assert!(typed_relation_definition(
+        assert!(typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             candidate,
             Some(&parameter),
             &sketch,
             &unrelated_entities,
             &markers,
             &loci,
-        )
+        ).unwrap()
         .is_some());
     }
 }

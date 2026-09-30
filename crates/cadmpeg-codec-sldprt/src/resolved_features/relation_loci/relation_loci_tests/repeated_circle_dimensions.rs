@@ -69,14 +69,14 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: repeated,
             parameter: parameter_id,
@@ -150,14 +150,14 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
     );
 
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::RepeatedDiameter {
             entities: entities.iter().map(|entity| entity.id().clone()).collect(),
             parameter: parameter.id,

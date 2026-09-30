@@ -1476,14 +1476,14 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
         native_ref: Some("scalar".into()),
     };
 
-    let definition = typed_relation_definition(
+    let definition = typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
         &relation,
         Some(&parameter),
         &sketch,
         &entities,
         &markers,
         &loci,
-    )
+    ).unwrap()
     .expect("stored relation operands are authoritative");
     assert!(matches!(
         definition,
@@ -1499,14 +1499,14 @@ fn dimension_preserves_structurally_typed_operands_when_geometry_disagrees() {
     exact_entities[0].native_ref = Some(first.id().to_string());
     exact_entities[1].native_ref = Some(second.id().to_string());
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &exact_entities,
             &markers,
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::DistanceLoci {
             first: SketchLocus::Entity(first),
             second: SketchLocus::Entity(second),
@@ -1580,14 +1580,14 @@ fn line_distance_repairs_distinct_operands_collapsed_to_one_marker() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Distance { entities: pair, .. })
             if pair == entities.iter().map(|entity| entity.id().clone()).collect::<Vec<_>>()
     ));
@@ -1684,14 +1684,14 @@ fn line_distance_uses_an_addressed_point_to_select_the_missing_line() {
     let entities = [known.clone(), intended.clone(), distractor, point];
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &entities,
             &markers,
             &loci,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Distance { entities: pair, .. })
             if pair == vec![intended.id().clone(), known.id().clone()]
     ));

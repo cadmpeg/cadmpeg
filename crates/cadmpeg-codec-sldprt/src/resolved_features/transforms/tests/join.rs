@@ -484,14 +484,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let distance = parameter("synthetic:test:id#distance", None);
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&distance),
             &sketch_id,
             &[],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         Some(cadmpeg_ir::sketches::SketchConstraintDefinitionInput::DistanceLoci {
             parameter,
             ..
@@ -510,14 +510,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ..relation.clone()
     };
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &same_locus_relation,
             Some(&distance),
             &sketch_id,
             &[],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         None
     );
     let circle = FeatureInputRelationInstance {
@@ -533,40 +533,40 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     };
     let radius = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Radius));
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &circle,
             Some(&radius),
             &sketch_id,
             &[],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { parameter, .. })
             if parameter.as_str() == "synthetic:test:id#circle"
     ));
     let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &circle,
             Some(&diameter),
             &sketch_id,
             &[],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Diameter { parameter, .. })
             if parameter.as_str() == "synthetic:test:id#circle"
     ));
     let undisplayed = parameter("synthetic:test:id#circle", None);
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &circle,
             Some(&undisplayed),
             &sketch_id,
             &[],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         None
     );
     let unresolved_circle = FeatureInputRelationInstance {
@@ -586,14 +586,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         .unwrap(),
     );
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &unresolved_circle,
             Some(&radius),
             &sketch_id,
             std::slice::from_ref(&circle_entity),
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Radius { entity, .. })
             if entity == circle_entity.id().clone()
     ));
@@ -607,14 +607,14 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     .with_geometry_ref(circle_entity.geometry_ref.clone())
     .with_endpoint_refs(circle_entity.endpoint_refs.clone());
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &unresolved_circle,
             Some(&radius),
             &sketch_id,
             &[circle_entity, duplicate_circle],
             &markers,
             &joins,
-        ),
+        ).unwrap(),
         None
     );
 }

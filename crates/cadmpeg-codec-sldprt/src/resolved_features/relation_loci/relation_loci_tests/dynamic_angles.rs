@@ -77,14 +77,14 @@ fn dynamic_angle_disambiguates_one_marker_scoped_line_by_angle() {
     };
 
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first_line.clone(), alternate_line, second_line.clone()],
             &markers_by_id,
             &loci_by_marker,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle {
             first: first_line.id().clone(),
             second: second_line.id().clone(),
@@ -128,14 +128,14 @@ fn dynamic_angle_uses_the_unoriented_solver_line_witness() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first, second],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
@@ -173,14 +173,14 @@ fn dynamic_angle_uses_unique_complete_roster_when_no_line_resolves() {
     };
 
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first.clone(), second.clone()],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle {
             first: first.id().clone(),
             second: second.id().clone(),
@@ -239,14 +239,14 @@ fn dynamic_angle_repairs_one_resolved_line_from_the_profile_roster() {
     };
 
     assert_eq!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[known.clone(), partner.clone(), unrelated],
             &markers_by_id,
             &loci_by_marker,
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle {
             first: known.id().clone(),
             second: partner.id().clone(),
@@ -292,14 +292,14 @@ fn dynamic_angle_uses_solver_lines_for_indirect_operand_references() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[first, second],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
@@ -347,14 +347,14 @@ fn dynamic_angle_prefers_an_explicit_line_over_a_conflicting_solver_alias() {
     };
 
     assert!(matches!(
-        typed_relation_definition(
+        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
             &[explicit, conflicting, second],
             &HashMap::new(),
             &HashMap::new(),
-        ),
+        ).unwrap(),
         Some(SketchConstraintDefinitionInput::Angle { .. })
     ));
 }
