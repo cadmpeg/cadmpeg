@@ -1718,6 +1718,10 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_coordinate_marker_carries_two_reverse_relations() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let mut payload = Vec::new();
         append_coordinate_marker(
             &mut payload,
@@ -1730,7 +1734,7 @@ mod source_less_lane_tests {
         append_coordinate_marker_link(&mut payload, 1, 3).expect("required invariant");
 
         assert_eq!(
-            coordinate_marker_local_links(&payload, 0),
+            coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
             Some((vec![2, 3], 0x8386))
         );
         assert!(append_coordinate_marker_link(&mut payload, 1, 4)
@@ -1832,6 +1836,10 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_at_intersection_carries_point_reverse_incidence() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let sketch = generated_sketch();
         let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
@@ -1890,7 +1898,7 @@ mod source_less_lane_tests {
         append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
 
         assert_eq!(
-            coordinate_marker_local_links(&payload, 0),
+            coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
             Some((vec![6], 0x8386))
         );
         assert_eq!(marker_local_links(&payload, 710), Some(([2, 4], 0)));
@@ -1898,6 +1906,10 @@ mod source_less_lane_tests {
 
     #[test]
     fn generated_symmetry_carries_axis_reverse_incidence() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
         let sketch = generated_sketch();
         let mut ir = cadmpeg_ir::CadIr::empty();
         add_sketch_owner(&mut ir, &sketch);
@@ -1957,7 +1969,7 @@ mod source_less_lane_tests {
         append_generated_sketch_markers(&ir, &sketch, &mut payload).expect("required invariant");
 
         assert_eq!(
-            coordinate_marker_local_links(&payload, 284),
+            coordinate_marker_local_links(&link_ctx, &payload, 284).unwrap(),
             Some((vec![5], 0x8386))
         );
         assert_eq!(marker_local_links(&payload, 568), Some(([1, 2], 0)));

@@ -209,6 +209,10 @@ fn local_links_require_the_reference_trailer() {
 
 #[test]
 fn non_coordinate_legacy_profile_line_carries_counted_endpoint_links() {
+    let link_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (link_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &link_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let mut payload = vec![0; 162];
     payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
     payload[5..13].fill(0xff);
@@ -227,7 +231,7 @@ fn non_coordinate_legacy_profile_line_carries_counted_endpoint_links() {
     payload[112..116].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
 
     assert_eq!(
-        coordinate_marker_local_links(&payload, 0),
+        coordinate_marker_local_links(&link_ctx, &payload, 0).unwrap(),
         Some((vec![2, 5], 0x83a9))
     );
 }

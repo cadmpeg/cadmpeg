@@ -3479,9 +3479,11 @@ pub(super) fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16;
 }
 
 pub(super) fn coordinate_marker_local_links(
-    payload: &[u8],
-    offset: usize,
-) -> Option<(Vec<u16>, u16)> {
+    ctx: &DecodeContext<'_>, payload: &[u8], offset: usize,
+) -> Result<Option<(Vec<u16>, u16)>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "decode SLDPRT coordinate marker links";
+    ctx.charge_work(512, OPERATION)?;
+    let parsed = (|| {
     let legacy_geometry_linked_point = payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
         == Some(LEGACY_SKETCH_MARKER)
         && marker_native_code(payload, offset) == Some(1)
@@ -3489,22 +3491,20 @@ pub(super) fn coordinate_marker_local_links(
     if legacy_geometry_linked_point {
         let (_, links) = linked_profile_point(payload, offset)?;
         let selector = links.first()?.0;
-        return Some((
-            links.into_iter().map(|(_, local_id)| local_id).collect(),
-            selector,
-        ));
+        return Some(([links[0].1, links[1].1], 2, selector));
     }
     if marker_coordinates(payload, offset).is_none()
         && !counted_legacy_profile_line_layout(payload, offset)
     {
         return None;
     }
-    let mut links = Vec::with_capacity(2);
+    let mut links = [0; 2];
+    let mut count = 0;
     let mut selector = None;
     for index in 0..=2 {
         let start = offset.checked_add(86 + index * 12)?;
         if payload.get(start..start + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff] {
-            return (!links.is_empty()).then_some((links, selector?));
+            return (count != 0).then_some((links, count, selector?));
         }
         if index == 2 {
             return None;
@@ -3521,9 +3521,16 @@ pub(super) fn coordinate_marker_local_links(
             return None;
         }
         selector = Some(tag);
-        links.push(View::u16_le_at(cell, 2)?);
+        links[index] = View::u16_le_at(cell, 2)?;
+        count += 1;
     }
     None
+    })();
+    let Some((local_ids, count, selector)) = parsed else { return Ok(None); };
+    let mut links = Vec::new();
+    ctx.reserve_collection_vec(&mut links, count, OPERATION)?;
+    links.extend(local_ids.into_iter().take(count));
+    Ok(Some((links, selector)))
 }
 
 fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {

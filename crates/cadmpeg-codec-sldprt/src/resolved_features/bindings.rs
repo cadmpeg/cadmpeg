@@ -1115,12 +1115,16 @@ pub(crate) fn finalize_lane_bindings(
         let Ok(offset) = usize::try_from(entity.offset()) else {
             continue;
         };
-        let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
-            .map(|(links, selector)| (links.to_vec(), selector))
-            .or_else(|| coordinate_marker_local_links(&lane.native_payload, offset))
-        else {
-            continue;
+        ctx.charge_work(128, "decode SLDPRT scalar local links")?;
+        let local_links = if let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset) {
+            let mut links = Vec::new();
+            ctx.reserve_collection_vec(&mut links, local_ids.len(), "decode SLDPRT scalar local links")?;
+            links.extend(local_ids);
+            Some((links, selector))
+        } else {
+            coordinate_marker_local_links(ctx, &lane.native_payload, offset)?
         };
+        let Some((local_ids, selector)) = local_links else { continue; };
         let Some(owner) = &entity.feature_ref else {
             continue;
         };
