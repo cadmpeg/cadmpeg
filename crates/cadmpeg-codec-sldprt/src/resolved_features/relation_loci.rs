@@ -374,7 +374,14 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         .and_then(|work| work.checked_add(1)).ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
     let text = ctx.format_retained(format_args!("{}", parameter.id.as_str()), OPERATION)?;
     let parameter_id = cadmpeg_ir::features::ParameterId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-    let definition = (|| {
+    macro_rules! resolved_or_none {
+        ($candidate:expr) => {
+            match $candidate {
+                Some(value) => value,
+                None => return Ok(None),
+            }
+        };
+    }
     let profile_axis = match relation.family {
         PointPointHorizontalDistance => Some(profile_axis.unwrap_or(ProfileAxis::U)),
         PointPointVerticalDistance => Some(profile_axis.unwrap_or(ProfileAxis::V)),
@@ -382,8 +389,19 @@ pub(super) fn typed_relation_definition_with_profile_axis(
     };
     let marker = |index: usize| relation_operand_marker(relation, index, sketch, markers_by_id);
     let dynamic = relation_uses_dynamic_operands(relation);
-    let point = |index: usize| {
-        sketch_entities
+    let point = |index: usize| -> Result<Option<SketchLocus>, cadmpeg_core::CodecError> {
+        const SCAN: &str = "scan SLDPRT relation point identities";
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch_entities.len()), SCAN)?;
+        let geometry_work = sketch_entities.iter().try_fold(0u64, |work, entity| {
+            cadmpeg_core::decode::u64_from_index(entity.geometry_ref.as_deref().map_or(0, str::len))
+                .checked_add(cadmpeg_core::decode::u64_from_index(relation.id.len()))
+                .and_then(|bytes| bytes.checked_add(1))
+                .and_then(|bytes| bytes.checked_mul(8))
+                .and_then(|bytes| work.checked_add(bytes))
+                .ok_or_else(|| ctx.refuse_codec_limit(SCAN, u64::MAX - 1, u64::MAX))
+        })?;
+        ctx.charge_work(geometry_work, SCAN)?;
+        if let Some(entity) = sketch_entities
             .iter()
             .find(|entity| {
                 entity.geometry_ref.as_deref().is_some_and(|geometry_ref| {
@@ -396,45 +414,59 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     SketchGeometryDefinition::Point { .. }
                 )
             })
-            .map(|entity| SketchLocus::Entity(entity.id().clone()))
-            .or_else(|| {
-                let marker = marker(index)?;
-                if matches!(
-                    relation.operands.get(index).map(|operand| operand.kind),
-                    Some(FeatureInputOperandKind::Native(
-                        NativeOperandTag::TAG_837B | NativeOperandTag::TAG_BC7C
-                    ))
-                ) {
-                    if let Some(locus) = qualified_or_linked_point_locus(
-                        marker,
-                        markers_by_id,
-                        loci_by_marker,
-                        sketch_entities,
-                    ) {
-                        return Some(locus);
-                    }
-                }
-                if let Some(entity) = sketch_entities.iter().find(|entity| {
-                    entity.native_ref.as_deref() == Some(marker)
-                        && matches!(
-                            *entity.geometry.definition(),
-                            SketchGeometryDefinition::Point { .. }
-                        )
-                }) {
-                    return Some(SketchLocus::Entity(entity.id().clone()));
-                }
-                if dynamic && dynamic_point_operand(relation, index) {
-                    dynamic_marker_point_locus(
-                        marker,
-                        sketch,
-                        markers_by_id,
-                        loci_by_marker,
-                        sketch_entities,
-                    )
-                } else {
-                    marker_point_locus(marker, markers_by_id, loci_by_marker)
-                }
-            })
+        {
+            return super::transforms::SketchLocusRole::Entity
+                .copy_locus(ctx, entity.id(), "retain SLDPRT relation point identity")
+                .map(Some);
+        }
+        let Some(marker) = marker(index) else { return Ok(None); };
+        if matches!(
+            relation.operands.get(index).map(|operand| operand.kind),
+            Some(FeatureInputOperandKind::Native(
+                NativeOperandTag::TAG_837B | NativeOperandTag::TAG_BC7C
+            ))
+        ) {
+            if let Some(locus) = qualified_or_linked_point_locus(
+                marker,
+                markers_by_id,
+                loci_by_marker,
+                sketch_entities,
+            ) {
+                return Ok(Some(locus));
+            }
+        }
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(sketch_entities.len()), SCAN)?;
+        let native_work = sketch_entities.iter().try_fold(0u64, |work, entity| {
+            cadmpeg_core::decode::u64_from_index(entity.native_ref.as_deref().map_or(0, str::len))
+                .checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
+                .and_then(|bytes| bytes.checked_add(1))
+                .and_then(|bytes| bytes.checked_mul(4))
+                .and_then(|bytes| work.checked_add(bytes))
+                .ok_or_else(|| ctx.refuse_codec_limit(SCAN, u64::MAX - 1, u64::MAX))
+        })?;
+        ctx.charge_work(native_work, SCAN)?;
+        if let Some(entity) = sketch_entities.iter().find(|entity| {
+            entity.native_ref.as_deref() == Some(marker)
+                && matches!(
+                    *entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                )
+        }) {
+            return super::transforms::SketchLocusRole::Entity
+                .copy_locus(ctx, entity.id(), "retain SLDPRT relation point identity")
+                .map(Some);
+        }
+        Ok(if dynamic && dynamic_point_operand(relation, index) {
+            dynamic_marker_point_locus(
+                marker,
+                sketch,
+                markers_by_id,
+                loci_by_marker,
+                sketch_entities,
+            )
+        } else {
+            marker_point_locus(marker, markers_by_id, loci_by_marker)
+        })
     };
     let curve = |index: usize| {
         solver_line_entity(relation, index, sketch, sketch_entities).or_else(|| {
@@ -443,8 +475,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             })
         })
     };
-    if relation_uses_solver_points(relation) && (point(0).is_none() || point(1).is_none()) {
-        return None;
+    if relation_uses_solver_points(relation) && (point(0)?.is_none() || point(1)?.is_none()) {
+        return Ok(None);
     }
     let dynamic_point_pair = if dynamic {
         match relation.family {
@@ -453,8 +485,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     relation,
                     sketch,
                     parameter,
-                    point(0),
-                    point(1),
+                    point(0)?,
+                    point(1)?,
                     sketch_entities,
                     markers_by_id,
                     loci_by_marker,
@@ -513,7 +545,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)
             }
             PointPointHorizontalDistance | PointPointVerticalDistance => {
-                unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, profile_axis?)
+                unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, resolved_or_none!(profile_axis))
             }
             _ => None,
         }
@@ -521,25 +553,28 @@ pub(super) fn typed_relation_definition_with_profile_axis(
         None
     };
     let dynamic_point_line_pair = if dynamic && relation.family == PointLineDistance {
-        unique_dynamic_marker_point_line_pair(
+        let selected = unique_dynamic_marker_point_line_pair(
             relation,
             sketch,
             parameter,
-            point(0),
+            point(0)?,
             sketch_entities,
             markers_by_id,
             loci_by_marker,
-        )
-        .or_else(|| {
+        );
+        match selected {
+            Some(pair) => Some(pair),
+            None => {
             unique_dynamic_roster_point_line_pair(
                 relation,
                 sketch,
                 parameter,
-                point(0),
+                point(0)?,
                 curve(1),
                 sketch_entities,
             )
-        })
+            }
+        }
     } else {
         None
     };
@@ -641,10 +676,10 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 dynamic_point_pair.is_some()
                     || dynamic_direct_point_pair.is_some()
                     || dynamic_roster_point_pair.is_some()
-                    || (point(0).is_some() && point(1).is_some())
+                    || (point(0)?.is_some() && point(1)?.is_some())
             }
             PointLineDistance => {
-                dynamic_point_line_pair.is_some() || (point(0).is_some() && curve(1).is_some())
+                dynamic_point_line_pair.is_some() || (point(0)?.is_some() && curve(1).is_some())
             }
             LineLineDistance => {
                 dynamic_line_distance_pair.is_some()
@@ -659,13 +694,13 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             CircleDiameter => true,
         };
         if !witnessed {
-            return None;
+            return Ok(None);
         }
     }
-    match relation.family {
+    Ok(match relation.family {
         PointPointDistance => {
-            let first = point(0);
-            let second = point(1);
+            let first = point(0)?;
+            let second = point(1)?;
             let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match dynamic_point_pair
                 .or(dynamic_direct_point_pair)
@@ -674,7 +709,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 Some(pair) => pair,
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
-                    (Some(known), None) => doubled_profile_distance_loci(
+                    (Some(known), None) => resolved_or_none!(doubled_profile_distance_loci(
                         relation,
                         0,
                         1,
@@ -686,8 +721,8 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                     .or_else(|| {
                         let partner = unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?;
                         Some((known, partner))
-                    })?,
-                    (None, Some(known)) => doubled_profile_distance_loci(
+                    })),
+                    (None, Some(known)) => resolved_or_none!(doubled_profile_distance_loci(
                         relation,
                         1,
                         0,
@@ -706,29 +741,29 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                             )?,
                             known,
                         ))
-                    })?,
+                    })),
                     (None, None) => {
-                        unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
+                        resolved_or_none!(unique_profile_distance_loci_pair(sketch, parameter, sketch_entities))
                     }
                 },
             };
             if first == second {
-                return None;
+                return Ok(None);
             }
             if !sketch_entities.is_empty() {
                 let cadmpeg_ir::features::ParameterValue::Length(expected) =
-                    parameter.value.as_ref()?
+                    resolved_or_none!(parameter.value.as_ref())
                 else {
-                    return None;
+                    return Ok(None);
                 };
-                let first_point = profile_locus_point(&first, sketch_entities)?;
-                let second_point = profile_locus_point(&second, sketch_entities)?;
+                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
+                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
                 if !same_relation_dimension_length(
                     (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
                     expected.get(),
                 ) {
                     if dynamic {
-                        return None;
+                        return Ok(None);
                     }
                     let horizontal = same_dimension_length(
                         (second_point.u - first_point.u).abs(),
@@ -742,7 +777,7 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                         operand.kind == FeatureInputOperandKind::Native(NativeOperandTag::TAG_BC7C)
                     });
                     if projected_distance_operands && horizontal != vertical {
-                        return Some(if horizontal {
+                        return Ok(Some(if horizontal {
                             SketchConstraintDefinitionInput::HorizontalDistance {
                                 first,
                                 second,
@@ -754,22 +789,22 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                                 second,
                                 parameter: parameter_id,
                             }
-                        });
+                        }));
                     }
                     if authoritative {
-                        return Some(SketchConstraintDefinitionInput::DistanceLoci {
+                        return Ok(Some(SketchConstraintDefinitionInput::DistanceLoci {
                             first,
                             second,
                             parameter: parameter_id,
-                        });
+                        }));
                     }
-                    (first, second) = unique_repaired_profile_distance_loci_pair(
+                    (first, second) = resolved_or_none!(unique_repaired_profile_distance_loci_pair(
                         sketch,
                         &first,
                         &second,
                         parameter,
                         sketch_entities,
-                    )?;
+                    ));
                 }
             }
             Some(SketchConstraintDefinitionInput::DistanceLoci {
@@ -779,9 +814,9 @@ pub(super) fn typed_relation_definition_with_profile_axis(
             })
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
-            let axis = profile_axis?;
-            let first = point(0);
-            let second = point(1);
+            let axis = resolved_or_none!(profile_axis);
+            let first = point(0)?;
+            let second = point(1)?;
             let authoritative = first.is_some() && second.is_some();
             let (mut first, mut second) = match dynamic_point_pair
                 .or(dynamic_direct_point_pair)
@@ -791,41 +826,41 @@ pub(super) fn typed_relation_definition_with_profile_axis(
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
                     (Some(known), None) => {
-let partner = unique_profile_axis_distance_locus(
+let partner = resolved_or_none!(unique_profile_axis_distance_locus(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
                             axis,
-                        )?;
+                        ));
 (known, partner)
 },
                     (None, Some(known)) => (
-                        unique_profile_axis_distance_locus(
+                        resolved_or_none!(unique_profile_axis_distance_locus(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
                             axis,
-                        )?,
+                        )),
                         known,
                     ),
                     (None, None) => {
-                        unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, axis)?
+                        resolved_or_none!(unique_profile_axis_distance_pair(sketch, parameter, sketch_entities, axis))
                     }
                 },
             };
             if first == second {
-                return None;
+                return Ok(None);
             }
             if !sketch_entities.is_empty() {
                 let cadmpeg_ir::features::ParameterValue::Length(expected) =
-                    parameter.value.as_ref()?
+                    resolved_or_none!(parameter.value.as_ref())
                 else {
-                    return None;
+                    return Ok(None);
                 };
-                let first_point = profile_locus_point(&first, sketch_entities)?;
-                let second_point = profile_locus_point(&second, sketch_entities)?;
+                let first_point = resolved_or_none!(profile_locus_point(&first, sketch_entities));
+                let second_point = resolved_or_none!(profile_locus_point(&second, sketch_entities));
                 let measured = if axis == ProfileAxis::U {
                     (second_point.u - first_point.u).abs()
                 } else {
@@ -833,17 +868,17 @@ let partner = unique_profile_axis_distance_locus(
                 };
                 if !same_relation_dimension_length(measured, expected.get()) {
                     if dynamic {
-                        return None;
+                        return Ok(None);
                     }
                     if !authoritative {
-                        (first, second) = unique_repaired_profile_axis_distance_pair(
+                        (first, second) = resolved_or_none!(unique_repaired_profile_axis_distance_pair(
                             sketch,
                             &first,
                             &second,
                             parameter,
                             sketch_entities,
                             axis,
-                        )?;
+                        ));
                     }
                 }
             }
@@ -862,7 +897,7 @@ let partner = unique_profile_axis_distance_locus(
             })
         }
         PointLineDistance => {
-            let point = point(0);
+            let point = point(0)?;
             let line = curve(1);
             let authoritative = point.is_some() && line.is_some();
             let (mut point, mut line) = match dynamic_point_line_pair {
@@ -870,44 +905,44 @@ let partner = unique_profile_axis_distance_locus(
                 None => match (point, line) {
                     (Some(point), Some(line)) => (point, line),
                     (Some(point), None) => {
-let partner = unique_profile_point_line_entity(
+let partner = resolved_or_none!(unique_profile_point_line_entity(
                             sketch,
                             &point,
                             parameter,
                             sketch_entities,
-                        )?;
+                        ));
 (point, partner)
 },
                     (None, Some(line)) => (
-                        unique_profile_line_point_locus(sketch, &line, parameter, sketch_entities)?,
+                        resolved_or_none!(unique_profile_line_point_locus(sketch, &line, parameter, sketch_entities)),
                         line,
                     ),
                     (None, None) => {
-                        unique_profile_point_line_pair(sketch, parameter, sketch_entities)?
+                        resolved_or_none!(unique_profile_point_line_pair(sketch, parameter, sketch_entities))
                     }
                 },
             };
             let cadmpeg_ir::features::ParameterValue::Length(expected) =
-                parameter.value.as_ref()?
+                resolved_or_none!(parameter.value.as_ref())
             else {
-                return None;
+                return Ok(None);
             };
-            let point_position = profile_locus_point(&point, sketch_entities)?;
-            let line_entity = sketch_entities.iter().find(|entity| entity.id() == &line)?;
+            let point_position = resolved_or_none!(profile_locus_point(&point, sketch_entities));
+            let line_entity = resolved_or_none!(sketch_entities.iter().find(|entity| entity.id() == &line));
             if !point_line_distance_value(point_position, line_entity)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
-                    return None;
+                    return Ok(None);
                 }
                 if !authoritative {
-                    (point, line) = unique_repaired_profile_point_line_pair(
+                    (point, line) = resolved_or_none!(unique_repaired_profile_point_line_pair(
                         sketch,
                         &point,
                         &line,
                         parameter,
                         sketch_entities,
-                    )?;
+                    ));
                 }
             }
             Some(SketchConstraintDefinitionInput::DistanceLoci {
@@ -954,7 +989,7 @@ let partner = unique_profile_point_line_entity(
                     (Some(known), None) => {
 let partner = if let Some(marker) = relation_line_point_marker(relation, 1, markers_by_id)
                         {
-                            unique_marker_line_distance_entity(
+                            resolved_or_none!(unique_marker_line_distance_entity(
                                 marker.id(),
                                 sketch,
                                 &known,
@@ -962,21 +997,21 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                                 sketch_entities,
                                 markers_by_id,
                                 loci_by_marker,
-                            )?
+                            ))
                         } else {
-                            unique_profile_line_distance_entity(
+                            resolved_or_none!(unique_profile_line_distance_entity(
                                 sketch,
                                 &known,
                                 parameter,
                                 sketch_entities,
-                            )?
+                            ))
                         };
 (known, partner)
 },
                     (None, Some(known)) => (
                         if let Some(marker) = relation_line_point_marker(relation, 0, markers_by_id)
                         {
-                            unique_marker_line_distance_entity(
+                            resolved_or_none!(unique_marker_line_distance_entity(
                                 marker.id(),
                                 sketch,
                                 &known,
@@ -984,61 +1019,61 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                                 sketch_entities,
                                 markers_by_id,
                                 loci_by_marker,
-                            )?
+                            ))
                         } else {
-                            unique_profile_line_distance_entity(
+                            resolved_or_none!(unique_profile_line_distance_entity(
                                 sketch,
                                 &known,
                                 parameter,
                                 sketch_entities,
-                            )?
+                            ))
                         },
                         known,
                     ),
                     (None, None) => {
-                        unique_profile_line_distance_pair(sketch, parameter, sketch_entities)?
+                        resolved_or_none!(unique_profile_line_distance_pair(sketch, parameter, sketch_entities))
                     }
                 },
             };
             if first == second {
                 let [first_operand, second_operand] = relation.operands.as_slice() else {
-                    return None;
+                    return Ok(None);
                 };
                 if first_operand.entity_index == second_operand.entity_index {
-                    return None;
+                    return Ok(None);
                 }
-                second = unique_profile_line_distance_entity(
+                second = resolved_or_none!(unique_profile_line_distance_entity(
                     sketch,
                     &first,
                     parameter,
                     sketch_entities,
-                )?;
+                ));
             }
             let cadmpeg_ir::features::ParameterValue::Length(expected) =
-                parameter.value.as_ref()?
+                resolved_or_none!(parameter.value.as_ref())
             else {
-                return None;
+                return Ok(None);
             };
-            let first_line = sketch_entities
+            let first_line = resolved_or_none!(sketch_entities
                 .iter()
-                .find(|entity| entity.id() == &first)?;
-            let second_line = sketch_entities
+                .find(|entity| entity.id() == &first));
+            let second_line = resolved_or_none!(sketch_entities
                 .iter()
-                .find(|entity| entity.id() == &second)?;
+                .find(|entity| entity.id() == &second));
             if !line_line_distance(first_line, second_line)
                 .is_some_and(|measured| same_relation_dimension_length(measured, expected.get()))
             {
                 if dynamic {
-                    return None;
+                    return Ok(None);
                 }
                 if !authoritative {
-                    (first, second) = unique_repaired_profile_line_distance_pair(
+                    (first, second) = resolved_or_none!(unique_repaired_profile_line_distance_pair(
                         sketch,
                         &first,
                         &second,
                         parameter,
                         sketch_entities,
-                    )?;
+                    ));
                 }
             }
             Some(SketchConstraintDefinitionInput::Distance {
@@ -1055,41 +1090,41 @@ let partner = if let Some(marker) = relation_line_point_marker(relation, 1, mark
                 None => match (first, second) {
                     (Some(first), Some(second)) => (first, second),
                     (Some(known), None) => {
-let partner = unique_profile_line_angle_entity(
+let partner = resolved_or_none!(unique_profile_line_angle_entity(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
-                        )?;
+                        ));
 (known, partner)
 },
                     (None, Some(known)) => (
-                        unique_profile_line_angle_entity(
+                        resolved_or_none!(unique_profile_line_angle_entity(
                             sketch,
                             &known,
                             parameter,
                             sketch_entities,
-                        )?,
+                        )),
                         known,
                     ),
                     (None, None) => {
-                        unique_profile_line_angle_pair(sketch, parameter, sketch_entities)?
+                        resolved_or_none!(unique_profile_line_angle_pair(sketch, parameter, sketch_entities))
                     }
                 },
             };
             if first == second {
-                return None;
+                return Ok(None);
             }
-            let cadmpeg_ir::features::ParameterValue::Angle(expected) = parameter.value.as_ref()?
+            let cadmpeg_ir::features::ParameterValue::Angle(expected) = resolved_or_none!(parameter.value.as_ref())
             else {
-                return None;
+                return Ok(None);
             };
-            let first_line = sketch_entities
+            let first_line = resolved_or_none!(sketch_entities
                 .iter()
-                .find(|entity| entity.id() == &first)?;
-            let second_line = sketch_entities
+                .find(|entity| entity.id() == &first));
+            let second_line = resolved_or_none!(sketch_entities
                 .iter()
-                .find(|entity| entity.id() == &second)?;
+                .find(|entity| entity.id() == &second));
             let angle = if dynamic {
                 unoriented_line_line_angle(first_line, second_line)
             } else {
@@ -1097,16 +1132,16 @@ let partner = unique_profile_line_angle_entity(
             };
             if !angle.is_some_and(|measured| same_dimension_angle(measured, expected.get())) {
                 if dynamic {
-                    return None;
+                    return Ok(None);
                 }
                 if !authoritative {
-                    (first, second) = unique_repaired_profile_line_angle_pair(
+                    (first, second) = resolved_or_none!(unique_repaired_profile_line_angle_pair(
                         sketch,
                         &first,
                         &second,
                         parameter,
                         sketch_entities,
-                    )?;
+                    ));
                 }
             }
             Some(SketchConstraintDefinitionInput::Angle {
@@ -1119,7 +1154,7 @@ let partner = unique_profile_line_angle_entity(
             if let Some(entities) =
                 repeated_dimensioned_circular_entities(relation, parameter, sketch, sketch_entities)
             {
-                return Some(match parameter.display {
+                return Ok(Some(match parameter.display {
                     Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
                         SketchConstraintDefinitionInput::RepeatedRadius {
                             entities,
@@ -1132,8 +1167,8 @@ let partner = unique_profile_line_angle_entity(
                             parameter: parameter_id,
                         }
                     }
-                    None => return None,
-                });
+                    None => return Ok(None),
+                }));
             }
             let resolved_entity = sketch_entities
                 .iter()
@@ -1165,30 +1200,30 @@ let partner = unique_profile_line_angle_entity(
                     })
                 });
             let authoritative = resolved_entity.is_some();
-            let entity = resolved_entity
-                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter))?;
+            let entity = resolved_or_none!(resolved_entity
+                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)));
             if !sketch_entities.is_empty() {
                 let cadmpeg_ir::features::ParameterValue::Length(expected) =
-                    parameter.value.as_ref()?
+                    resolved_or_none!(parameter.value.as_ref())
                 else {
-                    return None;
+                    return Ok(None);
                 };
-                let geometry = &sketch_entities
+                let geometry = &resolved_or_none!(sketch_entities
                     .iter()
-                    .find(|candidate| candidate.id() == &entity)?
+                    .find(|candidate| candidate.id() == &entity))
                     .geometry;
                 let radius = match geometry.definition() {
                     SketchGeometryDefinition::Circle { radius, .. }
                     | SketchGeometryDefinition::Arc { radius, .. } => radius.get(),
-                    _ => return None,
+                    _ => return Ok(None),
                 };
                 let expected_radius = match parameter.display {
                     Some(cadmpeg_ir::features::DimensionDisplay::Radius) => expected.get(),
                     Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.get() * 0.5,
-                    None => return None,
+                    None => return Ok(None),
                 };
                 if !same_dimension_length(radius, expected_radius) && !authoritative {
-                    return None;
+                    return Ok(None);
                 }
             }
             match parameter.display {
@@ -1207,9 +1242,7 @@ let partner = unique_profile_line_angle_entity(
                 None => None,
             }
         }
-    }
-    })();
-    Ok(definition)
+    })
 }
 
 fn solver_line_entity(
