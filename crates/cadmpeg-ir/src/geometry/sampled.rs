@@ -485,6 +485,32 @@ impl PolylineSamples<FiniteReal, FinitePoint3> {
 }
 
 impl PolylineCurve {
+    /// Copy the admitted samples without changing their parameter witness.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let work = self.samples.count().checked_mul(32)
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+        let samples = match &self.samples {
+            PolylineSamples::Unparameterized { points } => {
+                let mut copied = Vec::new();
+                ctx.reserve_collection_vec(&mut copied, points.len(), operation)?;
+                copied.extend_from_slice(points.as_slice());
+                PolylineSamples::Unparameterized { points: copied.try_into().map_err(cadmpeg_core::CodecError::malformed)? }
+            }
+            PolylineSamples::Parameterized { vertices } => {
+                let mut copied = Vec::new();
+                ctx.reserve_collection_vec(&mut copied, vertices.len(), operation)?;
+                copied.extend_from_slice(vertices.as_slice());
+                PolylineSamples::Parameterized { vertices: copied.try_into().map_err(cadmpeg_core::CodecError::malformed)? }
+            }
+        };
+        Ok(Self { samples, chordal_deflection: self.chordal_deflection })
+    }
+
     /// Build from admitted sample scalars and points, checking only the
     /// sample count, computed deviation, and parameter order.
     pub fn from_checked_samples(

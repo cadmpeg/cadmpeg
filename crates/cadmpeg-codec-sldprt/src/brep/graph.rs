@@ -454,14 +454,15 @@ fn copy_curve_carrier_geometry(
     geometry: &CurveGeometry,
 ) -> Result<CurveGeometry, cadmpeg_core::CodecError> {
     if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = geometry {
-        ctx.charge_collection_items(nurbs.knots().as_slice().len() as u64, "copy Parasolid curve knots")?;
-        ctx.charge_collection_items(nurbs.pole_count() as u64, "copy Parasolid curve poles")?;
-        let copied = nurbs.try_clone().map_err(|_| {
-            ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX)
-        })?;
+        let work = nurbs.knots().as_slice().len().checked_add(nurbs.pole_count()).and_then(|count| count.checked_mul(32))
+            .ok_or_else(|| ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), "copy Parasolid NURBS curve")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(nurbs.knots().as_slice().len()), "copy Parasolid curve knots")?;
+        ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(nurbs.pole_count()), "copy Parasolid curve poles")?;
+        let copied = nurbs.try_clone().map_err(|_| ctx.refuse_codec_limit("copy Parasolid NURBS curve", u64::MAX - 1, u64::MAX))?;
         Ok(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(copied)))
     } else {
-        Ok(geometry.clone())
+        geometry.try_clone_charged(ctx, "copy Parasolid curve geometry")
     }
 }
 
