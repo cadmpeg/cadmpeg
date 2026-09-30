@@ -3726,60 +3726,63 @@ pub(super) fn profile_loci_by_marker(
             ));
         }
     }
-    let mut result = sketch_entities
-        .iter()
-        .filter_map(|entity| {
-            let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
-                (
-                    marker,
-                    matches!(
-                        *entity.geometry.definition(),
-                        SketchGeometryDefinition::Point { .. }
-                    ) && native_point_markers_with_nonpoint_carrier.contains(marker.as_str()),
-                )
-            } else {
-                let reference = entity.geometry_ref.as_ref().filter(|reference| {
-                    reference.starts_with("sldprt:feature-input:sketch-entity#")
-                })?;
-                (
-                    reference,
-                    matches!(
-                        *entity.geometry.definition(),
-                        SketchGeometryDefinition::Point { .. }
-                    ),
-                )
-            };
-            markers_by_id.contains_key(marker.as_str()).then(|| {
-                let locus = if entity.id().as_str().contains("sketch-entity#compact:")
-                    && matches!(
-                        *entity.geometry.definition(),
-                        SketchGeometryDefinition::Line { .. }
-                    ) {
-                    SketchLocus::Start(entity.id().clone())
-                } else if markers_by_id.get(marker.as_str()).is_some_and(|marker| {
-                    matches!(
-                        marker.kind(),
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-                }) && matches!(
-                    *entity.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                        | SketchGeometryDefinition::Arc { .. }
-                        | SketchGeometryDefinition::Ellipse { .. }
-                ) {
-                    SketchLocus::Center(entity.id().clone())
-                } else {
-                    SketchLocus::Entity(entity.id().clone())
-                };
-                let marker = if qualified_point {
-                    qualified_point_marker_key(marker)
-                } else {
-                    marker.clone()
-                };
-                (marker, vec![locus])
-            })
-        })
-        .collect::<HashMap<String, Vec<SketchLocus>>>();
+    const RESULT_OPERATION: &str = "build SLDPRT native marker locus results";
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(markers_by_id.len())
+        .checked_add(cadmpeg_core::decode::u64_from_index(native_point_markers_with_nonpoint_carrier.len()))
+        .ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?, RESULT_OPERATION)?;
+    let marker_key_bytes = markers_by_id.keys().try_fold(0u64, |sum, marker| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let carrier_key_bytes = native_point_markers_with_nonpoint_carrier.iter().try_fold(0u64, |sum, marker| {
+        sum.checked_add(cadmpeg_core::decode::u64_from_index(marker.len()))
+    }).ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let result_key_byte_bound = cadmpeg_core::decode::u64_from_index(markers_by_id.len())
+        .checked_mul(cadmpeg_core::decode::u64_from_index(":qualified-point".len()))
+        .and_then(|bytes| bytes.checked_add(marker_key_bytes)).and_then(|bytes| bytes.checked_mul(2))
+        .ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?;
+    let mut result = HashMap::<String, Vec<SketchLocus>>::new();
+    for entity in sketch_entities {
+        ctx.charge_work(marker_key_bytes.checked_add(carrier_key_bytes)
+            .and_then(|bytes| bytes.checked_add(cadmpeg_core::decode::u64_from_index(entity.id().as_str().len())))
+            .and_then(|bytes| bytes.checked_add(cadmpeg_core::decode::u64_from_index(entity.native_ref.as_deref().map_or(0, str::len))))
+            .and_then(|bytes| bytes.checked_add(cadmpeg_core::decode::u64_from_index(entity.geometry_ref.as_deref().map_or(0, str::len))))
+            .and_then(|bytes| bytes.checked_mul(4)).and_then(|work| work.checked_add(64))
+            .ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?, RESULT_OPERATION)?;
+        let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
+            (marker, matches!(*entity.geometry.definition(), SketchGeometryDefinition::Point { .. })
+                && native_point_markers_with_nonpoint_carrier.contains(marker.as_str()))
+        } else {
+            let Some(reference) = entity.geometry_ref.as_ref().filter(|reference| {
+                reference.starts_with("sldprt:feature-input:sketch-entity#")
+            }) else { continue; };
+            (reference, matches!(*entity.geometry.definition(), SketchGeometryDefinition::Point { .. }))
+        };
+        if !markers_by_id.contains_key(marker.as_str()) { continue; }
+        let role = if entity.id().as_str().contains("sketch-entity#compact:")
+            && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Line { .. }) {
+            super::transforms::SketchLocusRole::Start
+        } else if markers_by_id.get(marker.as_str()).is_some_and(|marker| {
+            matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint)
+        }) && matches!(*entity.geometry.definition(), SketchGeometryDefinition::Circle { .. }
+            | SketchGeometryDefinition::Arc { .. } | SketchGeometryDefinition::Ellipse { .. }) {
+            super::transforms::SketchLocusRole::Center
+        } else {
+            super::transforms::SketchLocusRole::Entity
+        };
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(marker.len()).checked_add(32).and_then(|work| work.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(RESULT_OPERATION, u64::MAX - 1, u64::MAX))?, RESULT_OPERATION)?;
+        let marker = if qualified_point {
+            ctx.format_retained(format_args!("{marker}:qualified-point"), RESULT_OPERATION)?
+        } else {
+            ctx.format_retained(format_args!("{marker}"), RESULT_OPERATION)?
+        };
+        reserve_profile_locus_map_slot(ctx, &mut result, &marker, result_key_byte_bound,
+            cadmpeg_core::decode::u64_from_index(marker.len()), RESULT_OPERATION)?;
+        let mut loci = Vec::new();
+        ctx.reserve_collection_vec(&mut loci, 1, RESULT_OPERATION)?;
+        loci.push(role.copy_locus(ctx, entity.id(), RESULT_OPERATION)?);
+        result.insert(marker, loci);
+    }
     let mut endpoint_marker_keys = HashSet::new();
     for entity in sketch_entities {
         let [start, end] = entity.endpoint_refs.as_slice() else {
