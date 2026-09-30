@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-#![allow(clippy::items_after_test_module)]
 //! Project parameter-design features and dispatch per feature family.
 
 use cadmpeg_core::decode::u64_from_index;
