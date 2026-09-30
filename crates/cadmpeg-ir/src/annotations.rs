@@ -293,7 +293,16 @@ impl AnnotationBuilder {
         stream: &StreamHandle,
         offset: u64,
     ) -> ProvenanceNote<'_> {
-        let id = id.to_string();
+        self.note_owned(id.to_string(), stream, offset)
+    }
+
+    /// Record source location without allocating or formatting another identity.
+    pub fn note_owned(
+        &mut self,
+        id: String,
+        stream: &StreamHandle,
+        offset: u64,
+    ) -> ProvenanceNote<'_> {
         let provenance = match self.annotations.provenance.entry(id) {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(
                 AnnotationProvenance::annotation(stream.0.clone(), offset, None),
@@ -313,7 +322,11 @@ impl AnnotationBuilder {
     /// Set entity-level exactness. Byte-exact entries are removed to preserve
     /// the table's sparse absent-means-byte-exact representation.
     pub fn exactness(&mut self, id: impl Display, exactness: Exactness) -> &mut Self {
-        let id = id.to_string();
+        self.exactness_owned(id.to_string(), exactness)
+    }
+
+    /// Set entity exactness with an already allocated identity.
+    pub fn exactness_owned(&mut self, id: String, exactness: Exactness) -> &mut Self {
         let fields = match self.annotations.exactness.remove(&id) {
             Some(
                 ExactnessNote::Entity { mut fields, .. }
@@ -627,6 +640,24 @@ mod tests {
         assert_eq!(provenance.stream(), "f3d:Breps.BlobParts/body.smbh");
         assert_eq!(provenance.offset, 42);
         assert_eq!(provenance.tag.as_deref(), Some("body"));
+    }
+
+    #[test]
+    fn owned_annotation_keys_preserve_note_and_exactness_semantics() {
+        let stream = StreamHandle::new(crate::stream_name!("native-stream"));
+        let mut formatted = AnnotationBuilder::new();
+        let mut owned = AnnotationBuilder::new();
+        for (offset, exactness) in [(7, Exactness::Derived), (11, Exactness::ByteExact)] {
+            formatted.note("entity", &stream, offset).tag("tag");
+            formatted.exactness("entity", exactness);
+            owned.note_owned(String::from("entity"), &stream, offset).tag("tag");
+            owned.exactness_owned(String::from("entity"), exactness);
+        }
+        let owned = owned.build();
+        assert_eq!(owned, formatted.build());
+        assert_eq!(owned.provenance["entity"].offset, 11);
+        assert_eq!(owned.provenance["entity"].tag.as_deref(), Some("tag"));
+        assert!(owned.exactness().is_empty());
     }
 
     #[test]

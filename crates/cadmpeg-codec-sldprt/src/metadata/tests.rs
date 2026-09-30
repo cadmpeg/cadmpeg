@@ -72,6 +72,44 @@ fn metadata_annotation_route_refuses_collection_growth() {
 }
 
 #[test]
+fn metadata_annotation_route_refuses_work_at_minimum_admission() {
+    let payload = br"<swSolidWorks><SW_UnitsLinear>1</SW_UnitsLinear></swSolidWorks>";
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = container::scan_bytes(&source);
+    let arena = DecodeArena::new();
+    let run = |policy: &DecodePolicy| {
+        let (ctx, _) = DecodeContext::from_root_bytes(&source, &arena, policy).unwrap();
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        super::attributes(&ctx, &scan, &mut annotations).map(|attributes| (attributes, annotations))
+    };
+    let expected = run(&DecodePolicy::service()).unwrap();
+    assert!(!expected.0.is_empty());
+    assert!(!expected.1.provenance.is_empty());
+    let admitted = |policy: &DecodePolicy| match run(policy) {
+        Ok(actual) => { assert_eq!(actual, expected); true }
+        Err(CodecError::ResourceLimit(limit)) => { assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false }
+        Err(error) => panic!("unexpected metadata annotation error: {error}"),
+    };
+    let mut policy = DecodePolicy::service();
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        policy.limits.max_work_units = upper;
+        if admitted(&policy) { break; }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        policy.limits.max_work_units = middle;
+        if admitted(&policy) { upper = middle; } else { lower = middle + 1; }
+    }
+    assert!(upper > 0);
+    policy.limits.max_work_units = upper; assert!(admitted(&policy));
+    policy.limits.max_work_units = upper - 1; assert!(!admitted(&policy));
+}
+
+#[test]
 fn transformed_reference_plane_requires_fixed_prefix() {
     let mut source = sldprt_with_body(&triangle_body());
     let mut payload = b"moTransRefPlaneData_c".to_vec();
