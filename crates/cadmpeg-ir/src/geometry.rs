@@ -151,6 +151,54 @@ pub enum SolvedSurfaceGeometry {
 }
 
 impl SolvedSurfaceGeometry {
+    /// Copy the solved carrier and its nested basis under the caller's limits.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        ctx.charge_work(1, operation)?;
+        match self {
+            Self::Plane(value) => Ok(Self::Plane(*value)),
+            Self::Cylinder(value) => Ok(Self::Cylinder(*value)),
+            Self::Cone(value) => Ok(Self::Cone(*value)),
+            Self::Sphere(value) => Ok(Self::Sphere(*value)),
+            Self::Torus(value) => Ok(Self::Torus(*value)),
+            Self::Nurbs(value) => {
+                let count = value.u_knots().as_slice().len().checked_add(value.v_knots().as_slice().len())
+                    .and_then(|count| count.checked_add(value.u_count()))
+                    .and_then(|count| value.u_count().checked_mul(value.v_count()).and_then(|poles| count.checked_add(poles)))
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                let work = count.checked_mul(32)
+                    .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.u_knots().as_slice().len()), operation)?;
+                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.v_knots().as_slice().len()), operation)?;
+                ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.u_count()), operation)?;
+                for _ in 0..value.u_count() {
+                    ctx.charge_collection_items(cadmpeg_core::decode::u64_from_index(value.v_count()), operation)?;
+                }
+                let copied = value.try_clone().map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+                Ok(Self::Nurbs(copied))
+            }
+            Self::Polygonal(value) => Ok(Self::Polygonal(value.try_clone_charged(ctx, operation)?)),
+            Self::Transformed(value) => {
+                let _depth = ctx.enter_nested(operation)?;
+                let basis = value.basis().try_clone_charged(ctx, operation)?;
+                ctx.charge_collection_items(1, operation)?;
+                Ok(Self::Transformed(PlacedSurface::try_new(Box::new(basis), *value.transform())
+                    .map_err(cadmpeg_core::CodecError::malformed)?))
+            }
+            Self::Unknown { record } => {
+                let record = record.as_ref().map(|id| {
+                    UnknownId::mint(copy_geometry_identity(ctx, id.as_str(), operation)?)
+                        .map_err(cadmpeg_core::CodecError::malformed)
+                }).transpose()?;
+                Ok(Self::Unknown { record })
+            }
+        }
+    }
+
     /// Placements enclosing the leaf of this carrier's inline basis chain.
     ///
     /// [`PlacedSurface`] stores its own depth, so this reads one field and
@@ -271,6 +319,23 @@ pub enum SurfaceGeometry {
 }
 
 impl SurfaceGeometry {
+    /// Copy the geometry and every owned carrier payload under the caller's limits.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        match self {
+            Self::Solved(geometry) => Ok(Self::Solved(geometry.try_clone_charged(ctx, operation)?)),
+            Self::Procedural { construction, cache } => {
+                let id = ProceduralSurfaceId::mint(copy_geometry_identity(ctx, construction.as_str(), operation)?)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                let cache = cache.as_ref().map(|geometry| geometry.try_clone_charged(ctx, operation)).transpose()?;
+                Ok(Self::Procedural { construction: id, cache })
+            }
+        }
+    }
+
     /// Construction that owns this carrier, when it is procedural.
     #[must_use]
     pub const fn procedural_construction(&self) -> Option<&ProceduralSurfaceId> {
@@ -316,6 +381,32 @@ pub struct Surface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+}
+
+impl Surface {
+    /// Copy the carrier, retained identity and source metadata under caller limits.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let id = SurfaceId::mint(copy_geometry_identity(ctx, self.id.as_str(), operation)?)
+            .map_err(cadmpeg_core::CodecError::malformed)?;
+        let geometry = self.geometry.try_clone_charged(ctx, operation)?;
+        let source_object = self.source_object.as_ref().map(|source| source.try_clone_charged(ctx, operation)).transpose()?;
+        Ok(Self { id, geometry, source_object })
+    }
+}
+
+fn copy_geometry_identity(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    id: &str,
+    operation: &'static str,
+) -> Result<String, cadmpeg_core::CodecError> {
+    let work = id.len().checked_mul(4).and_then(|len| len.checked_add(1))
+        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+    ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+    ctx.format_retained(format_args!("{id}"), operation)
 }
 
 /// The analytic or free-form shape of a 3D curve carrier established without a

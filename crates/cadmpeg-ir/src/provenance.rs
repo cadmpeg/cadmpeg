@@ -239,6 +239,35 @@ pub struct SourceObjectAssociation {
     pub instance_path: Vec<String>,
 }
 
+impl SourceObjectAssociation {
+    /// Copy source identity and display text under the caller's limits.
+    pub fn try_clone_charged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        operation: &'static str,
+    ) -> Result<Self, cadmpeg_core::CodecError> {
+        let text = |value: &str| {
+            let work = value.len().checked_mul(4).and_then(|len| len.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+            ctx.format_retained(format_args!("{value}"), operation)
+        };
+        let object_id = cadmpeg_core::text::NonBlankString::new(text(self.object_id.as_str())?)
+            .ok_or_else(|| cadmpeg_core::CodecError::malformed("invalid decoded source object ID"))?;
+        let name = self.name.as_deref().map(text).transpose()?;
+        let layer = self.layer.as_deref().map(text).transpose()?;
+        let mut instance_path = Vec::new();
+        ctx.reserve_collection_vec(&mut instance_path, self.instance_path.len(), operation)?;
+        for id in &self.instance_path {
+            instance_path.push(text(id)?);
+        }
+        Ok(Self {
+            format: self.format, object_id, name, color: self.color,
+            visible: self.visible, layer, instance_path,
+        })
+    }
+}
+
 crate::units::named_field!(
     deserialize_object_id,
     cadmpeg_core::text::NonBlankString,

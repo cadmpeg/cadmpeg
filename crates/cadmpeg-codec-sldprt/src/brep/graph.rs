@@ -428,6 +428,12 @@ fn copy_surface_carrier_geometry(
     geometry: &SurfaceGeometry,
 ) -> Result<SurfaceGeometry, cadmpeg_core::CodecError> {
     if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = geometry {
+        let count = nurbs.u_knots().as_slice().len().checked_add(nurbs.v_knots().as_slice().len())
+            .and_then(|count| count.checked_add(nurbs.u_count()))
+            .and_then(|count| nurbs.u_count().checked_mul(nurbs.v_count()).and_then(|poles| count.checked_add(poles)))
+            .and_then(|count| count.checked_mul(32))
+            .ok_or_else(|| ctx.refuse_codec_limit("copy Parasolid NURBS surface", u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(count), "copy Parasolid NURBS surface")?;
         ctx.charge_collection_items(nurbs.u_knots().as_slice().len() as u64, "copy Parasolid surface u knots")?;
         ctx.charge_collection_items(nurbs.v_knots().as_slice().len() as u64, "copy Parasolid surface v knots")?;
         ctx.charge_collection_items(nurbs.u_count() as u64, "copy Parasolid surface pole rows")?;
@@ -439,7 +445,7 @@ fn copy_surface_carrier_geometry(
         })?;
         Ok(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(copied)))
     } else {
-        Ok(geometry.clone())
+        geometry.try_clone_charged(ctx, "copy Parasolid surface geometry")
     }
 }
 

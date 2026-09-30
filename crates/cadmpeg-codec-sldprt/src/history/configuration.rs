@@ -2,6 +2,9 @@
 //! Configuration-lane enrichment and design-state projection.
 
 #[cfg(test)]
+mod admission_tests;
+
+#[cfg(test)]
 mod lane_tests;
 
 use crate::records::FeatureHistory;
@@ -526,7 +529,7 @@ pub(crate) fn project_configuration_sketch_states(
     for (configuration_index, lane_index) in
         configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?
     {
-        let surfaces = configuration_surface_carriers(ir, configuration_index);
+        let surfaces = configuration_surface_carriers(ctx, ir, configuration_index)?;
         let scoped_lanes = &lanes[lane_index..=lane_index];
         let states = &ir.model.configurations[configuration_index].feature_states;
         let mut features = ir
@@ -1195,52 +1198,103 @@ pub(crate) fn inherit_configuration_reference_plane_states(ir: &mut cadmpeg_ir::
     }
 }
 
+struct ConfigurationCarrierIds<'id, T> {
+    ids: HashSet<&'id T>,
+    key_bytes: usize,
+}
+
+impl<'id, T: Eq + std::hash::Hash> ConfigurationCarrierIds<'id, T> {
+    fn new() -> Self {
+        Self { ids: HashSet::new(), key_bytes: 0 }
+    }
+
+    fn insert(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &'id T,
+        text: &str,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        const OPERATION: &str = "index SLDPRT configuration surface ancestry";
+        let bytes = self.key_bytes.checked_add(text.len())
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        let work = bytes.checked_add(1).and_then(|bytes| bytes.checked_mul(4))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        self.ids.try_reserve(1)
+            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        self.ids.insert(id);
+        self.key_bytes = bytes;
+        Ok(())
+    }
+
+    fn contains(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: &T,
+        text: &str,
+    ) -> Result<bool, cadmpeg_core::CodecError> {
+        const OPERATION: &str = "match SLDPRT configuration surface ancestry";
+        let work = self.key_bytes.checked_add(text.len()).and_then(|bytes| bytes.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+        Ok(self.ids.contains(id))
+    }
+}
+
 fn configuration_surface_carriers(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     configuration_index: usize,
-) -> Vec<cadmpeg_ir::geometry::Surface> {
+) -> Result<Vec<cadmpeg_ir::geometry::Surface>, cadmpeg_core::CodecError> {
+    const OPERATION: &str = "copy SLDPRT configuration surface carriers";
     let configuration = &ir.model.configurations[configuration_index];
     let Some(body_ids) = configuration.bodies.as_deref() else {
-        // An unresolved body membership record does not establish an empty
-        // configuration. The neutral model is the only established geometry
-        // carrier available until the source partition is resolved.
-        return ir.model.surfaces.clone();
+        // Unresolved membership uses every neutral surface carrier.
+        let mut surfaces = Vec::new();
+        ctx.reserve_collection_vec(&mut surfaces, ir.model.surfaces.len(), OPERATION)?;
+        for surface in &ir.model.surfaces {
+            surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
+        }
+        return Ok(surfaces);
     };
-    let body_ids = body_ids.iter().collect::<HashSet<_>>();
-    let region_ids = ir
-        .model
-        .bodies
-        .iter()
-        .filter(|body| body_ids.contains(&body.id))
-        .flat_map(|body| &body.regions)
-        .collect::<HashSet<_>>();
-    let shell_ids = ir
-        .model
-        .regions
-        .iter()
-        .filter(|region| region_ids.contains(&region.id))
-        .flat_map(|region| &region.shells)
-        .collect::<HashSet<_>>();
-    let face_ids = ir
-        .model
-        .shells
-        .iter()
-        .filter(|shell| shell_ids.contains(&shell.id))
-        .flat_map(cadmpeg_ir::topology::Shell::faces)
-        .collect::<HashSet<_>>();
-    let surface_ids = ir
-        .model
-        .faces
-        .iter()
-        .filter(|face| face_ids.contains(&face.id))
-        .map(|face| &face.surface)
-        .collect::<HashSet<_>>();
-    ir.model
-        .surfaces
-        .iter()
-        .filter(|surface| surface_ids.contains(&surface.id))
-        .cloned()
-        .collect()
+    let mut bodies = ConfigurationCarrierIds::new();
+    for id in body_ids { bodies.insert(ctx, id, id.as_str())?; }
+    let mut regions = ConfigurationCarrierIds::new();
+    for body in &ir.model.bodies {
+        if bodies.contains(ctx, &body.id, body.id.as_str())? {
+            for id in &body.regions { regions.insert(ctx, id, id.as_str())?; }
+        }
+    }
+    let mut shells = ConfigurationCarrierIds::new();
+    for region in &ir.model.regions {
+        if regions.contains(ctx, &region.id, region.id.as_str())? {
+            for id in &region.shells { shells.insert(ctx, id, id.as_str())?; }
+        }
+    }
+    let mut faces = ConfigurationCarrierIds::new();
+    for shell in &ir.model.shells {
+        if shells.contains(ctx, &shell.id, shell.id.as_str())? {
+            for id in shell.faces() { faces.insert(ctx, id, id.as_str())?; }
+        }
+    }
+    let mut surface_ids = ConfigurationCarrierIds::new();
+    for face in &ir.model.faces {
+        if faces.contains(ctx, &face.id, face.id.as_str())? {
+            surface_ids.insert(ctx, &face.surface, face.surface.as_str())?;
+        }
+    }
+    let mut surfaces = Vec::new();
+    for surface in &ir.model.surfaces {
+        if surface_ids.contains(ctx, &surface.id, surface.id.as_str())? {
+            let work = surfaces.len().checked_add(1).and_then(|count| count.checked_mul(std::mem::size_of::<cadmpeg_ir::geometry::Surface>()))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            ctx.reserve_collection_vec(&mut surfaces, 1, OPERATION)?;
+            surfaces.push(surface.try_clone_charged(ctx, OPERATION)?);
+        }
+    }
+    Ok(surfaces)
 }
 
 /// Give configuration-local numeric overrides the kind established by their
