@@ -232,3 +232,96 @@ fn relation_point_projection_refuses_work_limit() {
         if limit.dimension == ResourceDimension::WorkUnits
             && limit.operation == "index SLDPRT relation-point sketches"));
 }
+
+fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition};
+    use crate::records::{SketchInputEntity, SketchInputKind, SketchInputLink, SketchInputLinks};
+    let sketch = SketchId::mint("synthetic:test:id#owned-sketch").unwrap();
+    let mut entities = Vec::new();
+    let mut markers = Vec::new();
+    for (name, start, end) in [
+        ("first", Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)),
+        ("second", Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)),
+    ] {
+        let mut entity = SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#owned-line-{name}-with-retained-identity")).unwrap(),
+            sketch.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
+        );
+        entity.native_ref = Some(name.into());
+        entities.push(entity);
+        markers.push(SketchInputEntity::new(name, "lane", 0, 0, SketchInputKind::LineOrCircle));
+    }
+    let mut point = SketchInputEntity::new("linked-point", "lane", 0, 0, SketchInputKind::Point);
+    point.links = SketchInputLinks::new(0, vec![
+        SketchInputLink { local_id: 1, entity_ref: "first".into() },
+        SketchInputLink { local_id: 2, entity_ref: "second".into() },
+    ]);
+    markers.push(point);
+    let mut lane = relation_lane();
+    lane.relation_instances.clear();
+    lane.sketch_entities = markers;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut constraints = Vec::new();
+    project_relation_bindings(&ctx, &mut constraints, &[], &[], &entities, &[], &[lane])?;
+    assert!(constraints.is_empty());
+    Ok(())
+}
+
+fn assert_owned_loci_refusal(dimension: ResourceDimension) {
+    let set_limit = |policy: &mut DecodePolicy, limit: u64| match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = limit,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = limit,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = limit,
+        _ => panic!("unexpected owned locus budget dimension"),
+    };
+    project_owned_loci_with_policy(&DecodePolicy::service()).unwrap();
+    let mut upper = 1u64;
+    loop {
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, upper);
+        match project_owned_loci_with_policy(&policy) {
+            Ok(()) => break,
+            Err(CodecError::ResourceLimit(limit)) => assert_eq!(limit.dimension, dimension),
+            Err(error) => panic!("unexpected projection error: {error}"),
+        }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    let mut lower = 0;
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        let mut policy = DecodePolicy::service();
+        set_limit(&mut policy, middle);
+        match project_owned_loci_with_policy(&policy) {
+            Ok(()) => upper = middle,
+            Err(CodecError::ResourceLimit(limit)) => {
+                assert_eq!(limit.dimension, dimension);
+                lower = middle + 1;
+            }
+            Err(error) => panic!("unexpected projection error: {error}"),
+        }
+    }
+    assert!(upper > 0);
+    let mut policy = DecodePolicy::service();
+    set_limit(&mut policy, upper);
+    project_owned_loci_with_policy(&policy).unwrap();
+    set_limit(&mut policy, upper - 1);
+    assert!(matches!(project_owned_loci_with_policy(&policy), Err(CodecError::ResourceLimit(limit)) if limit.dimension == dimension));
+}
+
+#[test]
+fn planar_relation_owned_loci_refuse_collection_limit() {
+    assert_owned_loci_refusal(ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn planar_relation_owned_loci_refuse_retained_limit() {
+    assert_owned_loci_refusal(ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn planar_relation_owned_loci_refuse_work_limit() {
+    assert_owned_loci_refusal(ResourceDimension::WorkUnits);
+}

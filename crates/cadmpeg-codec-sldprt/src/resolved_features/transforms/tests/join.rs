@@ -727,6 +727,8 @@ fn line_handle_interior_points_identify_profile_entities() {
 
 #[test]
 fn coordinate_less_point_handle_selects_one_shared_endpoint() {
+    const EPS_ENDPOINT_QUANTIZATION: f64 = 1.0e-8;
+    let ctx = cadmpeg_test_support::service_decode_context();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first_id = SketchEntityId::mint("synthetic:test:id#first").unwrap();
     let second_id = SketchEntityId::mint("synthetic:test:id#second").unwrap();
@@ -784,7 +786,7 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     let entities = HashMap::from([(first.id(), &first), (second.id(), &second)]);
 
     assert_eq!(
-        unique_linked_endpoint_locus(&point, &markers, &loci, &entities, 1.0e-8),
+        unique_linked_endpoint_locus(&ctx, &point, &markers, &loci, &entities, EPS_ENDPOINT_QUANTIZATION).unwrap(),
         Some(SketchLocus::End(first_id))
     );
 
@@ -796,7 +798,7 @@ fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     .unwrap();
     let entities = HashMap::from([(first.id(), &first), (ambiguous.id(), &ambiguous)]);
     assert_eq!(
-        unique_linked_endpoint_locus(&point, &markers, &loci, &entities, 1.0e-8),
+        unique_linked_endpoint_locus(&ctx, &point, &markers, &loci, &entities, EPS_ENDPOINT_QUANTIZATION).unwrap(),
         None
     );
 }
