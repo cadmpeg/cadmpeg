@@ -418,13 +418,7 @@ native: &[
             parameter("A", 41, "Half", "Width / 2"),
             parameter("B", 40, "Width", "2 mm"),
         ],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });

@@ -2030,15 +2030,11 @@ fn combine_recipe_family_tool_slots(
             reference.form,
             design.id.value.as_str(),
         );
-        ctx.admit_btree_entry(&families, &key, "index F3D Combine tool families")?;
-        let family = families.entry(key).or_default();
-
-        ctx.reserve_vec(family, 1, "collect F3D Combine family members")?;
-        family.push((
+        ctx.push_btree_group(&mut families, key, (
             selector,
             resolved,
             reference.preceding_body_slots.as_slice(),
-        ));
+        ), "index F3D Combine tool families", "collect F3D Combine family members")?;
     }
 
     let mut selected = BTreeSet::new();
@@ -4509,14 +4505,7 @@ pub(crate) fn bind_scope_histories(
             continue;
         };
         let key = (stream, state_id, scope.previous_history_state_id());
-        if !groups.contains_key(&key) {
-
-            decode.reserve_map(&mut groups, 1, "index F3D scope history groups")?;
-        }
-        let members = groups.entry(key).or_default();
-
-        decode.reserve_vec(members, 1, "collect F3D scope history group members")?;
-        members.push(index);
+        decode.push_hash_group(&mut groups, key, index, "index F3D scope history groups", "collect F3D scope history group members")?;
     }
     for members in groups.values() {
         let mut candidate_histories = HashSet::new();
@@ -6329,14 +6318,7 @@ fn profile_face_group_cardinality_candidates(
             continue;
         };
         if bindings.next().is_none() {
-            if !faces_by_carrier.contains_key(&carrier) {
-
-                decode.reserve_map(&mut faces_by_carrier, 1, "index F3D profile face carriers")?;
-            }
-            let faces = faces_by_carrier.entry(carrier).or_default();
-
-            decode.reserve_vec(faces, 1, "collect F3D profile carrier faces")?;
-            faces.push(face);
+            decode.push_hash_group(&mut faces_by_carrier, carrier, face, "index F3D profile face carriers", "collect F3D profile carrier faces")?;
         }
     }
     let mut candidates = faces_by_carrier
@@ -7674,14 +7656,7 @@ fn treatment_face_supports(
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
         for edge in edges {
-            if !adjacent_faces.contains_key(edge) {
-
-                decode.reserve_map(&mut adjacent_faces, 1, "index F3D adjacent treatment edges")?;
-            }
-            let faces = adjacent_faces.entry(*edge).or_default();
-
-            decode.reserve_vec(faces, 1, "collect F3D adjacent treatment faces")?;
-            faces.push(*face);
+            decode.push_hash_group(&mut adjacent_faces, *edge, *face, "index F3D adjacent treatment edges", "collect F3D adjacent treatment faces")?;
         }
     }
     let mut selected = Vec::new();

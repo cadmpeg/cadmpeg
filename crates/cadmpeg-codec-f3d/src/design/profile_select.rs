@@ -1803,14 +1803,7 @@ fn unique_multi_face_deleted_carrier_family(
         if bindings.next().is_some() {
             return Ok(None);
         }
-        if !families.contains_key(&carrier) {
-            {
-
-                ctx.reserve_map(&mut families, 1, "f3d deleted carrier family index")?;
-            }
-        }
-        let family = families.entry(carrier).or_default();
-        ctx.push_vec(family, face, "f3d deleted carrier family face")?;
+        ctx.push_hash_group(&mut families, carrier, face, "f3d deleted carrier family index", "f3d deleted carrier family face")?;
     }
     let mut candidates = families.into_values().filter(|faces| faces.len() > 1);
     let Some(mut faces) = candidates.next() else {

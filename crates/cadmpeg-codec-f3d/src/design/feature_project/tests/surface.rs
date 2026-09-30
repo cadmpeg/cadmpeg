@@ -39,14 +39,7 @@ fn dispatcher_projects_perpendicular_surface_extend() {
 let scopes = &[scope];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });

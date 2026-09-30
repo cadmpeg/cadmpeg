@@ -229,8 +229,7 @@ pub(crate) fn project_unresolved_component_insert_occurrences(
         ctx.reserve_vec(&mut occurrences, 1, "f3d unresolved component occurrence")?;
         let occurrence_id =
             crate::design::identity::neutral_component_insert_occurrence_id(ctx, scope)?;
-        let feature_occurrence_id = cadmpeg_ir::ids::OccurrenceId::mint(ctx.copy_retained_text(occurrence_id.as_str(), "f3d unresolved component feature occurrence id")?)
-        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let feature_occurrence_id = occurrence_id.try_clone_for_decode(ctx, "f3d unresolved component feature occurrence id")?;
         let name = ctx.copy_retained_text(&construction.neutron_role, "f3d unresolved component name")?;
         let native_ref =
             ctx.copy_retained_text(&scope.id, "f3d unresolved component native reference")?;

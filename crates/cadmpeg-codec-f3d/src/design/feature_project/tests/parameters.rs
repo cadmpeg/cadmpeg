@@ -50,13 +50,7 @@ let scopes = &[];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
 native: &[half, width],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -118,13 +112,7 @@ let scopes = &[];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
 native: &native,
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -199,13 +187,7 @@ native: &[
             parameter(24, 4, &format!("{name} / 2 + sin(30 deg) + 10 mm"), "Half"),
             parameter(25, 5, "mm + 1", "BareUnitName"),
         ],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -317,11 +299,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: &[parameter],
 owners: &[owner],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -392,11 +369,6 @@ crate::design::feature_project::project_parameter_design_with_edge_identities(ct
 native: &[parameter],
 owners: &[owner],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -538,11 +510,6 @@ owners: &[
             owner(33, 32, 203),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -687,11 +654,6 @@ owners: &[
             owner(84, 32, 85),
         ],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -770,13 +732,7 @@ let scopes = &[scope];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
 native: &[parameter],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });

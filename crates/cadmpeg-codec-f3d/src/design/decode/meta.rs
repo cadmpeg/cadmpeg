@@ -813,12 +813,7 @@ pub(crate) fn decode_feature_timelines(
         let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
         for design_type in &meta.types {
             for entity_id in design_type.entities.values() {
-                if !type_guids_by_entity.contains_key(entity_id) {
-
-                    ctx.reserve_map(&mut type_guids_by_entity, 1, "index F3D timeline entity")?;
-                }
-                let type_guids = type_guids_by_entity.entry(*entity_id).or_default();
-                ctx.push_vec(type_guids, design_type.type_guid.as_str(), "index F3D timeline type GUID")?;
+                ctx.push_hash_group(&mut type_guids_by_entity, *entity_id, design_type.type_guid.as_str(), "index F3D timeline entity", "index F3D timeline type GUID")?;
             }
         }
         let mut source_ordinal = 0_u32;

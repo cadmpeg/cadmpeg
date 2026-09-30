@@ -71,14 +71,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 let scopes = &scopes;
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -128,14 +121,7 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
 let scopes = &[scale];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -180,14 +166,7 @@ fn dispatcher_projects_referenced_work_plane_frame() {
 let scopes = &[referenced];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -294,14 +273,7 @@ fn dispatcher_projects_three_point_work_plane_vertices() {
 let scopes = &[plane];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -405,14 +377,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 let scopes = &scopes;
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
@@ -543,25 +508,10 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     .unwrap();
     let scopes = vec![predecessor, point];
     let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("authored WorkPoint timeline");
     let predecessor = features
         .iter()
@@ -935,13 +885,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
 let scopes = &scopes;
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
 construction_groups: &groups,
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
 placements: std::slice::from_ref(&placement),
 timelines: &timelines,
 ..Default::default()

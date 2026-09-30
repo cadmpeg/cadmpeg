@@ -731,14 +731,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
 let scopes = std::slice::from_ref(&axis_scope);
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-native: &[],
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });

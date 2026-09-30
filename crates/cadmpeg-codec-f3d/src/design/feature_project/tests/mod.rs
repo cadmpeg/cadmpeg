@@ -65,25 +65,10 @@ fn project_single_scope_with_context(
     )
     .unwrap();
     crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: std::slice::from_ref(scope),
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        })
+..Default::default()
+})
 }
 
 #[test]

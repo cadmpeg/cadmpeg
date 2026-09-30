@@ -190,24 +190,10 @@ fn assert_projected_fillet_limit(
     let assignment = variable_assignment();
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
-        owners: &[],
         scopes: std::slice::from_ref(&scope),
-        timelines: &[],
-        construction_groups: &[],
         fillet_radius_groups: std::slice::from_ref(&assignment),
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let mut found = false;
     for limit in 0..128 {
         let arena = DecodeArena::new();
@@ -263,24 +249,9 @@ fn fillet_single_radius_scope_id_refuses_retained_limit() {
     let controls = [(0, &radius)];
     let inputs = crate::design::feature_project::ProjectInputs {
         native: std::slice::from_ref(&radius),
-        owners: &[],
         scopes: std::slice::from_ref(&scope),
-        timelines: &[],
-        construction_groups: &[],
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let native_scope = crate::ids::native_stream(&scope.id).unwrap();
     for limit in 0..128 {
         let mut policy = DecodePolicy::default();

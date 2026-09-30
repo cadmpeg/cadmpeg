@@ -173,23 +173,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let definition = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
         .unwrap()
         .expect("typed EdgeFlange definition");
@@ -273,23 +259,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let offset_inputs = crate::design::feature_project::ProjectInputs {
         native: &offset_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: std::slice::from_ref(&group),
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let offset_definition =
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&offset_scope, &offset_inputs, decode_ctx))
             .unwrap()
@@ -351,23 +323,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let multi_inputs = crate::design::feature_project::ProjectInputs {
         native: &parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let multi_definition =
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &multi_inputs, decode_ctx))
             .unwrap()
@@ -436,23 +394,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let per_edge_inputs = crate::design::feature_project::ProjectInputs {
         native: &per_edge_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let per_edge_definition =
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &per_edge_inputs, decode_ctx))
             .unwrap()
@@ -473,23 +417,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let distinct_inputs = crate::design::feature_project::ProjectInputs {
         native: &distinct_parameters,
         owners: &owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     assert!(
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &distinct_inputs, decode_ctx))
             .unwrap()
@@ -538,23 +468,9 @@ fn edge_flange_scope_projects_a_typed_two_sided_neutral_flange() {
     let two_sided_inputs = crate::design::feature_project::ProjectInputs {
         native: &two_sided_parameters,
         owners: &two_sided_owners,
-        scopes: &[],
-        timelines: &[],
         construction_groups: &multi_groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let two_sided_definition =
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&multi_scope, &two_sided_inputs, decode_ctx))
             .unwrap()
@@ -838,22 +754,10 @@ fn edge_flange_to_object_fixture(
         } else {
             &[]
         },
-        timelines: &[],
         construction_groups: &groups,
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
         entity_selection_operands: &target_selections,
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     let definition = crate::design::feature_project::project_edge_flange(&scope, &inputs, ctx)?;
     Ok(definition.map(|definition| (definition, target_scope)))
 }
@@ -989,25 +893,8 @@ fn edge_flange_scope_without_a_width_parameter_keeps_its_native_form() {
     }
 
     let inputs = crate::design::feature_project::ProjectInputs {
-        native: &[],
-        owners: &[],
-        scopes: &[],
-        timelines: &[],
-        construction_groups: &[],
-        fillet_radius_groups: &[],
-        edge_operands: &[],
-        edge_identity_operands: &[],
-        edge_treatment_vertex_operands: &[],
-        entity_selection_operands: &[],
-        curve_identities: &[],
-        face_operands: &[],
-        body_recipe_operands: &[],
-        legacy_loft_body_carriers: &[],
-        placements: &[],
-        body_bindings: &[],
-        component_naming_spaces: &[],
-        histories: &[],
-    };
+..Default::default()
+};
     assert!(
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_edge_flange(&scope, &inputs, decode_ctx))
             .unwrap()
@@ -1414,23 +1301,9 @@ fn hem_scope_projects_each_decoded_owner_layout() {
         let inputs = crate::design::feature_project::ProjectInputs {
             native: &parameters,
             owners: &owners,
-            scopes: &[],
-            timelines: &[],
             construction_groups: &groups,
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        };
+..Default::default()
+};
         crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_hem(&scope, &inputs, decode_ctx))
             .unwrap()
             .expect("typed Hem definition")

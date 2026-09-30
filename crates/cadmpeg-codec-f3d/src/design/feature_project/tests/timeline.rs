@@ -169,25 +169,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     let authored = timeline(vec![100, 150, 200]);
     let project = |timeline: &DesignFeatureTimeline| {
         crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-                native: &[],
-                owners: &[],
                 scopes: &scopes,
                 timelines: std::slice::from_ref(timeline),
-                construction_groups: &[],
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[],
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
-            }))
+..Default::default()
+}))
     };
     let (features, _) = project(&authored).expect("exact authored order");
     let earlier_feature = features
@@ -247,25 +232,10 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     )
     .unwrap();
     let error = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: &[authored, second],
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect_err("independent nonempty timelines have no total order");
     assert!(error
         .to_string()
@@ -376,21 +346,8 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             owners: std::slice::from_ref(&owner),
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("timeline-listed feature projection through one internal scope");
 
     assert_eq!(features.len(), 2);
@@ -476,25 +433,10 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     )
     .unwrap();
     let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("one authored datum envelope");
 
     let [feature] = features.as_slice() else {
@@ -530,25 +472,10 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
     )
     .unwrap();
     let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: std::slice::from_ref(&directly_listed),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("directly listed datum target");
     let [feature] = features.as_slice() else {
         panic!("expected one directly listed datum feature");
@@ -678,25 +605,10 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
     )
     .unwrap();
     let result = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }));
+..Default::default()
+}));
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -766,25 +678,10 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
     )
     .unwrap();
     let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
-            native: &[],
-            owners: &[],
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("ambiguous internal state chain remains unresolved");
 
     let successor = features
@@ -993,21 +890,8 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             owners: &owners,
             scopes: &scopes,
             timelines: std::slice::from_ref(&timeline),
-            construction_groups: &[],
-            fillet_radius_groups: &[],
-            edge_operands: &[],
-            edge_identity_operands: &[],
-            edge_treatment_vertex_operands: &[],
-            entity_selection_operands: &[],
-            curve_identities: &[],
-            face_operands: &[],
-            body_recipe_operands: &[],
-            legacy_loft_body_carriers: &[],
-            placements: &[],
-            body_bindings: &[],
-            component_naming_spaces: &[],
-            histories: &[],
-        }))
+..Default::default()
+}))
     .expect("authored cross-family timeline");
     let predecessor = features
         .iter()
@@ -1464,21 +1348,8 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
                 owners,
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-                construction_groups: &[],
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[],
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
-            });
+..Default::default()
+});
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -1698,24 +1569,10 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
                 native: &native,
-                owners: &[],
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-                construction_groups: &[],
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[],
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
-            });
+..Default::default()
+});
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -1788,25 +1645,10 @@ fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
-                native: &[],
-                owners: &[],
                 scopes: &scopes,
                 timelines: std::slice::from_ref(&timeline),
-                construction_groups: &[],
-                fillet_radius_groups: &[],
-                edge_operands: &[],
-                edge_identity_operands: &[],
-                edge_treatment_vertex_operands: &[],
-                entity_selection_operands: &[],
-                curve_identities: &[],
-                face_operands: &[],
-                body_recipe_operands: &[],
-                legacy_loft_body_carriers: &[],
-                placements: &[],
-                body_bindings: &[],
-                component_naming_spaces: &[],
-                histories: &[],
-            });
+..Default::default()
+});
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation

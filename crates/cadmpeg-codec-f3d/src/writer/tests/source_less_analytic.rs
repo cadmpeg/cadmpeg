@@ -947,13 +947,7 @@ let scopes = &[];
 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
 crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
 native: &f3d_native(&source_less).design_parameters,
-owners: &[],
 scopes,
-construction_groups: &[],
-fillet_radius_groups: &[],
-edge_operands: &[],
-face_operands: &[],
-placements: &[],
 timelines: &timelines,
 ..Default::default()
 }).expect("test projection has a synthetic exact timeline") });
