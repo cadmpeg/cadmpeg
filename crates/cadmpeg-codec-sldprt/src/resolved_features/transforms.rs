@@ -710,7 +710,11 @@ impl SketchLocusRole {
         entity: &SketchEntityId,
         operation: &'static str,
     ) -> Result<SketchLocus, cadmpeg_core::CodecError> {
-        let entity = copy_locus_entity(ctx, entity, operation)?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity.as_str().len())
+            .checked_mul(4).and_then(|work| work.checked_add(1))
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
+        let text = ctx.format_retained(format_args!("{}", entity.as_str()), operation)?;
+        let entity = SketchEntityId::mint(text).map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("invalid decoded sketch entity identity: {error}")))?;
         Ok(match self {
             Self::Entity => SketchLocus::Entity(entity),
             Self::Start => SketchLocus::Start(entity),
@@ -739,18 +743,6 @@ pub(super) fn sketch_entity_loci(entity: &SketchEntity) -> Vec<(Point2, SketchLo
         };
         (point, locus)
     }).collect()
-}
-
-pub(super) fn copy_locus_entity(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    entity: &SketchEntityId,
-    operation: &'static str,
-) -> Result<SketchEntityId, cadmpeg_core::CodecError> {
-    ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity.as_str().len())
-        .checked_mul(4).and_then(|work| work.checked_add(1))
-        .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
-    let text = ctx.format_retained(format_args!("{}", entity.as_str()), operation)?;
-    SketchEntityId::mint(text).map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("invalid decoded sketch entity identity: {error}")))
 }
 
 pub(super) fn sketch_entity_locus_points(
