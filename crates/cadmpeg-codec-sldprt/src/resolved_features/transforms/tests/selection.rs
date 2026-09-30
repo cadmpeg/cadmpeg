@@ -804,6 +804,8 @@ fn marker_kinds_disambiguate_axis_swaps() {
 
 #[test]
 fn symmetric_frames_require_the_same_dimensioned_circle_set() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let identity = MarkerTransform {
         axes: Axes::Aligned {
             swap: false,
@@ -822,6 +824,7 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
     };
     assert_eq!(
         dimensioned_circle_transform(
+            &ctx,
             &[swap, identity],
             &[
                 (
@@ -833,11 +836,12 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
                     crate::resolved_features::grid::GridCoordinate::Cell(5)
                 )
             ]
-        ),
+        ).expect("transform resource admission"),
         Some(identity)
     );
     assert_eq!(
         dimensioned_circle_transform(
+            &ctx,
             &[identity, swap],
             &[
                 (
@@ -849,13 +853,15 @@ fn symmetric_frames_require_the_same_dimensioned_circle_set() {
                     crate::resolved_features::grid::GridCoordinate::Cell(7)
                 )
             ]
-        ),
+        ).expect("transform resource admission"),
         None
     );
 }
 
 #[test]
 fn cylinder_centers_resolve_dimensioned_circle_frame() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service()).unwrap();
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#sketch").unwrap(),
         name: None,
@@ -897,7 +903,7 @@ fn cylinder_centers_resolve_dimensioned_circle_frame() {
         .collect::<Vec<_>>();
     let candidates = dimensioned_circle_surface_transforms(&sketch, &surfaces, &circles, 1.0);
     let transform =
-        dimensioned_circle_transform(&candidates, &circles).expect("required invariant");
+        dimensioned_circle_transform(&ctx, &candidates, &circles).expect("transform resource admission").expect("required invariant");
     let transformed = circles
         .iter()
         .map(|(center, _)| transform.apply(*center).expect("required invariant"))

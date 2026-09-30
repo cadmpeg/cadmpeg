@@ -851,12 +851,14 @@ fn rotated_sketch_frame_projects_native_plane_coordinates() {
     );
 }
 
-#[test]
-fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
-    ).unwrap();
+struct DimensionedCircleFixture {
+    entities: Vec<SketchEntity>,
+    feature: Feature,
+    parameter: DesignParameter,
+    lane: FeatureInputLane,
+}
+
+fn dimensioned_circle_fixture() -> DimensionedCircleFixture {
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
@@ -876,7 +878,7 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         ),
         native_ref: Some("feature-native".into()),
     };
-    let mut entities = vec![
+    let entities = vec![
         SketchEntity::new(
             SketchEntityId::mint("synthetic:test:id#horizontal").unwrap(),
             sketch.clone(),
@@ -960,6 +962,17 @@ fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
         native_ref: Some("circle-scalar".into()),
         dependencies: cadmpeg_ir::features::DistinctMembers::default(),
     };
+
+    DimensionedCircleFixture { entities, feature, parameter, lane }
+}
+
+#[test]
+fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        b"relation test", &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
+    let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
 
     project_dimensioned_sketch_geometry(
         &ctx,
@@ -1536,4 +1549,44 @@ fn numerical_ranges_sketch_matrix_refuses_unrepresentable_axes() {
             accepted
         );
     }
+}
+
+fn assert_dimensioned_circle_projection_refusal(dimension: cadmpeg_core::decode::ResourceDimension) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
+
+    let arena = DecodeArena::new();
+    let (service, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
+    project_dimensioned_sketch_geometry(&service, &mut entities, &[], &[], &[feature], &[parameter], &[lane]).unwrap();
+    assert!(matches!(entities[2].geometry.definition(),
+        SketchGeometryDefinition::Circle { center, radius }
+            if *center == Point2::new(15.0, 40.0) && Length::from(*radius) == Length::new(4.0).unwrap()));
+    assert!(!entities[2].construction);
+
+    let DimensionedCircleFixture { mut entities, feature, parameter, lane } = dimensioned_circle_fixture();
+    let mut policy = DecodePolicy::service();
+    match dimension {
+        ResourceDimension::CollectionItems => policy.limits.max_collection_items = 0,
+        ResourceDimension::RetainedBytes => policy.limits.max_retained_bytes = 0,
+        ResourceDimension::WorkUnits => policy.limits.max_work_units = 0,
+        _ => panic!("unsupported circular projection test dimension"),
+    }
+    let (limited, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let error = project_dimensioned_sketch_geometry(&limited, &mut entities, &[], &[], &[feature], &[parameter], &[lane]).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit) if limit.dimension == dimension));
+}
+
+#[test]
+fn dimensioned_sketch_projection_refuses_collection_limit() {
+    assert_dimensioned_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::CollectionItems);
+}
+
+#[test]
+fn dimensioned_sketch_projection_refuses_retained_limit() {
+    assert_dimensioned_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::RetainedBytes);
+}
+
+#[test]
+fn dimensioned_sketch_projection_refuses_work_limit() {
+    assert_dimensioned_circle_projection_refusal(cadmpeg_core::decode::ResourceDimension::WorkUnits);
 }
