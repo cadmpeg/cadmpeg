@@ -153,14 +153,7 @@ fn assert_retained_refusal(
     };
     policy.limits.max_retained_bytes = u64::try_from(preceding + required_bytes - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = super::super::project_work_point_construction(
-        Some(&ctx),
-        &scope(),
-        construction,
-        &[],
-        edge_operands,
-        scope_ids,
-    );
+    let result = super::super::project_work_point_construction(&ctx, &scope(), construction, &[], edge_operands, scope_ids);
     assert!(
         matches!(result, Err(CodecError::ResourceLimit(ref failure))
         if failure.operation == operation && failure.dimension == ResourceDimension::RetainedBytes),

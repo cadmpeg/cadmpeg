@@ -43,7 +43,7 @@ fn move_body_group_id_refuses_retained_limit() {
     let (arena, policy) = context(0, ResourceDimension::RetainedBytes);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(project_move(Some(&ctx), &scope, std::slice::from_ref(&body_group)),
+        matches!(project_move(&ctx, &scope, std::slice::from_ref(&body_group)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d Move body group id")
@@ -61,7 +61,7 @@ fn remove_body_group_id_refuses_retained_limit() {
     let (arena, policy) = context(0, ResourceDimension::RetainedBytes);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(project_remove_body(Some(&ctx), &scope, std::slice::from_ref(&body_group)),
+        matches!(project_remove_body(&ctx, &scope, std::slice::from_ref(&body_group)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes
                 && failure.operation == "f3d RemoveBody group id")
@@ -100,7 +100,7 @@ fn surface_stitch_group_refuses_collection_limit() {
     let (scope, stitch_group) = stitch_fixture();
     let (arena, policy) = context(0, ResourceDimension::CollectionItems);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project_surface_stitch(Some(&ctx), &scope,
+    assert!(matches!(project_surface_stitch(&ctx, &scope,
         std::slice::from_ref(&stitch_group)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::CollectionItems
@@ -112,7 +112,7 @@ fn surface_stitch_native_id_refuses_retained_limit() {
     let (scope, stitch_group) = stitch_fixture();
     let (arena, policy) = context(0, ResourceDimension::RetainedBytes);
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(project_surface_stitch(Some(&ctx), &scope,
+    assert!(matches!(project_surface_stitch(&ctx, &scope,
         std::slice::from_ref(&stitch_group)),
         Err(CodecError::ResourceLimit(failure))
             if failure.dimension == ResourceDimension::RetainedBytes

@@ -29,9 +29,7 @@ fn assert_numeric_text_refusal(operation: &'static str, unit: &str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            Some(&ctx),
-            &crate::design::feature_project::ProjectInputs {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
                 native: std::slice::from_ref(&parameter),
                 owners: &[],
                 scopes: &[],
@@ -50,8 +48,7 @@ fn assert_numeric_text_refusal(operation: &'static str, unit: &str) {
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        )
+            })
     };
     for limit in 0..4096 {
         match run(limit) {

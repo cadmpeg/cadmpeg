@@ -149,7 +149,7 @@ fn long_coil_matrix_projects_as_explicit_placement() {
     let owned = owned_parameters(&parameters);
 
     let FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. }) =
-        project_coil(None, &scope, &owned, &[])
+        crate::test_support::with_decode_context(|decode_ctx| project_coil(decode_ctx, &scope, &owned, &[]))
             .unwrap()
             .expect("typed long Coil")
     else {
@@ -183,7 +183,7 @@ fn assert_coil_retained_refusal(
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
-            project_coil(Some(&ctx), scope, &owned, groups),
+            project_coil(&ctx, scope, &owned, groups),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation
@@ -204,7 +204,7 @@ fn coil_native_placement_id_refuses_retained_limit() {
         slot.as_mut().unwrap().coil_transform = None;
     }
     let owned = owned_parameters(&parameters);
-    let definition = project_coil(None, &scope, &owned, &[]).unwrap().unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_coil(decode_ctx, &scope, &owned, &[])).unwrap().unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::Coil { construction, .. })
@@ -273,7 +273,7 @@ fn coil_boolean_target_group_id_refuses_retained_limit() {
     }
     let group = coil_body_group();
     let owned = owned_parameters(&parameters);
-    let definition = project_coil(None, &scope, &owned, std::slice::from_ref(&group))
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_coil(decode_ctx, &scope, &owned, std::slice::from_ref(&group)))
         .unwrap()
         .unwrap();
     assert!(matches!(

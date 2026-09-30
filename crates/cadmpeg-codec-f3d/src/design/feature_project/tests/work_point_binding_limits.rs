@@ -134,21 +134,15 @@ fn assert_refusal(operation: &'static str, spatial: bool) {
         policy.limits.max_retained_bytes = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut features = [feature.clone()];
-        let result = bind_work_point_sketch_point_constructions(
-            Some(&ctx),
-            &mut features,
-            std::slice::from_ref(&scope),
-            if spatial {
+        let result = bind_work_point_sketch_point_constructions(&ctx, &mut features, std::slice::from_ref(&scope), if spatial {
                 &[]
             } else {
                 std::slice::from_ref(&planar)
-            },
-            if spatial {
+            }, if spatial {
                 std::slice::from_ref(&spatial_entity)
             } else {
                 &[]
-            },
-        );
+            });
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -194,13 +188,7 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
     use cadmpeg_ir::features::{DatumPointConstruction, SketchPointSelection};
     let (scope, feature, planar, spatial) = fixture();
     let mut planar_features = [feature.clone()];
-    bind_work_point_sketch_point_constructions(
-        None,
-        &mut planar_features,
-        std::slice::from_ref(&scope),
-        std::slice::from_ref(&planar),
-        &[],
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_work_point_sketch_point_constructions(decode_ctx, &mut planar_features, std::slice::from_ref(&scope), std::slice::from_ref(&planar), &[]))
     .unwrap();
     assert!(matches!(planar_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {
@@ -210,13 +198,7 @@ fn work_point_sketch_binding_preserves_planar_and_spatial_selections() {
         } if sketch == &planar.sketch && point == planar.id()
             && native == "f3d:Design/BulkStream.dat:design-record#42")));
     let mut spatial_features = [feature];
-    bind_work_point_sketch_point_constructions(
-        None,
-        &mut spatial_features,
-        std::slice::from_ref(&scope),
-        &[],
-        std::slice::from_ref(&spatial),
-    )
+    crate::test_support::with_decode_context(|decode_ctx| bind_work_point_sketch_point_constructions(decode_ctx, &mut spatial_features, std::slice::from_ref(&scope), &[], std::slice::from_ref(&spatial)))
     .unwrap();
     assert!(matches!(spatial_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DatumPoint {

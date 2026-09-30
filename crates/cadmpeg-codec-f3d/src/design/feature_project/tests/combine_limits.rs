@@ -55,7 +55,7 @@ fn assert_refusal(operation: &'static str, dimension: ResourceDimension, multipl
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match project_combine(Some(&ctx), &scope, STREAM) {
+        match project_combine(&ctx, &scope, STREAM) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>
             {

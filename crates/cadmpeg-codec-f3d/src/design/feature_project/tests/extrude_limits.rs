@@ -141,7 +141,7 @@ fn assert_profile_fallback(
     let scope = scope();
     let parameters = parameters();
     let owned = [(0, &parameters[0]), (1, &parameters[1])];
-    let definition = project_extrude(None, &scope, &owned, groups, &[], &[], &[])
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_extrude(decode_ctx, &scope, &owned, groups, &[], &[], &[]))
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -156,7 +156,7 @@ fn assert_profile_fallback(
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
-            project_extrude(Some(&ctx), &scope, &owned, groups, &[], &[], &[]),
+            project_extrude(&ctx, &scope, &owned, groups, &[], &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation
@@ -212,7 +212,7 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
     ))
     .unwrap();
     let owned = [(0, &side_offset), (1, &taper)];
-    let definition = project_extrude(None, &scope, &owned, &groups, &[], &[], &[])
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project_extrude(decode_ctx, &scope, &owned, &groups, &[], &[], &[]))
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -225,7 +225,7 @@ fn assert_face_fallback(role: DesignConstructionOperandRole, operation: &'static
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         if matches!(
-            project_extrude(Some(&ctx), &scope, &owned, &groups, &[], &[], &[]),
+            project_extrude(&ctx, &scope, &owned, &groups, &[], &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == operation

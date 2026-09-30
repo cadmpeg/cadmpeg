@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse Form cage references and bind committed neutral cages.
 
-use super::{copy_feature_identity, insert_feature_map, push_feature_item};
 use crate::container::ContainerScan;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::ids::{self, native_stream};
@@ -26,10 +25,8 @@ fn distinct_form_cage_ids<T: Eq + Hash>(
         if distinct.contains(id) {
             return Ok(false);
         }
-        ctx.charge_collection_items(1, "f3d form cage uniqueness index")?;
-        distinct
-            .try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit("f3d form cage uniqueness index", 0, 1))?;
+
+        ctx.reserve_set(&mut distinct, 1, "f3d form cage uniqueness index")?;
         // discarded-value: the duplicate case returned above.
         let _ = distinct.insert(id);
     }
@@ -41,8 +38,8 @@ fn push_form_cage_id(
     ids: &mut Vec<cadmpeg_ir::ids::SubdId>,
     id: &cadmpeg_ir::ids::SubdId,
 ) -> Result<(), CodecError> {
-    let copy = copy_feature_identity(Some(ctx), id.as_str(), "f3d form cage id")?;
-    push_feature_item(Some(ctx), ids, copy, "f3d form resolved cage")
+    let copy = (id).try_clone_for_decode(ctx, "f3d form cage id")?;
+    (ctx).push_vec(ids, copy, "f3d form resolved cage")
 }
 
 /// Replace a resolved Form scope's native definition with its committed cages.
@@ -110,7 +107,7 @@ pub(crate) fn bind_form_cages(
                     push_form_cage_id(ctx, &mut resolved, &cage.id)?;
                 }
                 if valid && !resolved.is_empty() && distinct_form_cage_ids(ctx, &resolved)? {
-                    let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+                    let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
                     if let Some(feature) =
                         features.iter_mut().find(|feature| feature.id == feature_id)
                     {
@@ -171,7 +168,7 @@ pub(crate) fn bind_form_cages(
                 && resolved.len() == cages.len()
                 && distinct_form_cage_ids(ctx, &resolved)?
             {
-                let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+                let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
                 if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id)
                 {
                     if matches!(
@@ -200,7 +197,7 @@ pub(crate) fn bind_form_cages(
             && cages.len() == 1
             && cage_counts.as_slice() == [1]
         {
-            let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+            let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
             if let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) {
                 if matches!(
                     feature.evaluation.definition(),
@@ -254,7 +251,7 @@ pub(crate) fn bind_form_cages(
         if !distinct_form_cage_ids(ctx, &resolved)? {
             continue;
         }
-        let feature_id = crate::design::identity::neutral_feature_id(Some(ctx), scope)?;
+        let feature_id = crate::design::identity::neutral_feature_id(ctx, scope)?;
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
@@ -883,14 +880,9 @@ fn form_cage_objects(
     let Some((count, mut cursor)) = parsed else {
         return Ok(None);
     };
-    ctx.charge_collection_items(
-        u64::try_from(count).map_err(|_| ctx.refuse_codec_limit("f3d form cage object", 0, 1))?,
-        "f3d form cage object",
-    )?;
+
     let mut objects = Vec::new();
-    objects
-        .try_reserve(count)
-        .map_err(|_| ctx.refuse_codec_limit("f3d form cage object", 0, 1))?;
+    ctx.reserve_vec(&mut objects, count, "f3d form cage object")?;
     for _ in 0..count {
         if bytes.get(cursor) != Some(&1) {
             return Ok(None);
@@ -928,10 +920,10 @@ fn form_cage_lists(
             .map(Vec::len)
             .or_else(|| legacy_form_cage_count(bytes, records, record_index, scope_record_index));
         if let Some(objects) = objects {
-            push_feature_item(Some(ctx), &mut lists, objects, "f3d form cage list")?;
+            (ctx).push_vec(&mut lists, objects, "f3d form cage list")?;
         }
         if let Some(count) = count {
-            push_feature_item(Some(ctx), &mut counts, count, "f3d form cage count")?;
+            (ctx).push_vec(&mut counts, count, "f3d form cage count")?;
         }
     }
     Ok((lists, counts))
@@ -1004,7 +996,7 @@ fn form_cage_surfaces(
         let Some(surface) = form_cage_surface(bytes, records, *object, scope_record_index) else {
             return Ok(None);
         };
-        push_feature_item(Some(ctx), &mut surfaces, surface, "f3d form cage surface")?;
+        (ctx).push_vec(&mut surfaces, surface, "f3d form cage surface")?;
     }
     Ok(Some(surfaces))
 }
@@ -1036,12 +1028,7 @@ fn form_cage_serializers(
     let mut offsets = Vec::new();
     for (_, record_offsets) in records.records() {
         for offset in record_offsets {
-            push_feature_item(
-                Some(ctx),
-                &mut offsets,
-                *offset,
-                "f3d form serializer offset",
-            )?;
+            (ctx).push_vec(&mut offsets, *offset, "f3d form serializer offset")?;
         }
     }
     offsets.sort_unstable();
@@ -1102,9 +1089,7 @@ fn form_cage_serializers(
             continue;
         };
         let mut entry_name = String::new();
-        entry_name.try_reserve_exact(utf8_len).map_err(|_| {
-            ctx.refuse_codec_limit("f3d form serializer name materialization", 0, 1)
-        })?;
+DecodeContext::reserve_admitted_string(&mut entry_name, utf8_len, "f3d form serializer name materialization")?;
         let mut view = View::over_retained(raw_name);
         for decoded in std::char::decode_utf16(std::iter::from_fn(|| view.u16_le())) {
             let character = decoded.map_err(|_| {
@@ -1147,19 +1132,8 @@ fn form_cage_serializers(
                     .map_err(|_| ctx.refuse_codec_limit("f3d form serializer entry name", 0, 1))?,
                 "f3d form serializer entry name",
             )?;
-            insert_feature_map(
-                Some(ctx),
-                &mut entries,
-                surface,
-                FormCageEntry::Unique(entry_name),
-                "f3d form serializer entry index",
-            )?;
-            push_feature_item(
-                Some(ctx),
-                &mut ordered,
-                surface,
-                "f3d form serializer order",
-            )?;
+            (ctx).insert_hash_map(&mut entries, surface, FormCageEntry::Unique(entry_name), "f3d form serializer entry index")?;
+            (ctx).push_vec(&mut ordered, surface, "f3d form serializer order")?;
         }
     }
     Ok(FormCageSerializers { ordered, entries })

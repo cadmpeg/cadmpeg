@@ -41,8 +41,8 @@ fn work_point_history_state_keys_are_history_qualified() {
     };
 
     assert_ne!(
-        graph.state_key(None, &scope_a, 7).unwrap(),
-        graph.state_key(None, &scope_b, 7).unwrap()
+        crate::test_support::with_decode_context(|ctx| graph.state_key(ctx, &scope_a, 7)).unwrap(),
+        crate::test_support::with_decode_context(|ctx| graph.state_key(ctx, &scope_b, 7)).unwrap()
     );
 }
 
@@ -99,10 +99,10 @@ fn history_state_predecessors_are_component_qualified() {
         naming_space(10, "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"),
         naming_space(20, "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb"),
     ];
-    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &naming_spaces, &[]).unwrap();
+    let graph = crate::test_support::with_decode_context(|decode_ctx| ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &naming_spaces, &[])).unwrap();
 
-    let predecessor = graph
-        .predecessor(None, &second, |_| true)
+    let predecessor = crate::test_support::with_decode_context(|decode_ctx| graph
+        .predecessor(decode_ctx, &second, |_| true))
         .expect("component-qualified state chain");
     let crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor) = predecessor
     else {
@@ -168,9 +168,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
     };
     let authored = timeline(vec![100, 150, 200]);
     let project = |timeline: &DesignFeatureTimeline| {
-        project_parameter_design_with_edge_identities(
-            None,
-            &crate::design::feature_project::ProjectInputs {
+        crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
                 scopes: &scopes,
@@ -189,8 +187,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        )
+            }))
     };
     let (features, _) = project(&authored).expect("exact authored order");
     let earlier_feature = features
@@ -223,11 +220,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         authored.context_record_index,
     )
     .unwrap();
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(
-        None,
-        &scopes,
-        &[unrelated, authored.clone()],
-    )
+    let ordinals = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals(decode_ctx, &scopes, &[unrelated, authored.clone()]))
     .expect("an unrelated timeline does not shift this stream");
     assert_eq!(ordinals[&(stream, 100)], 0);
     assert_eq!(ordinals[&(stream, 200)], 2);
@@ -253,9 +246,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         authored.context_record_index,
     )
     .unwrap();
-    let error = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let error = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -274,8 +265,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect_err("independent nonempty timelines have no total order");
     assert!(error
         .to_string()
@@ -381,9 +371,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         },
     )
     .unwrap();
-    let (features, parameters) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, parameters) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: std::slice::from_ref(&parameter),
             owners: std::slice::from_ref(&owner),
             scopes: &scopes,
@@ -402,8 +390,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("timeline-listed feature projection through one internal scope");
 
     assert_eq!(features.len(), 2);
@@ -488,9 +475,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -509,8 +494,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("one authored datum envelope");
 
     let [feature] = features.as_slice() else {
@@ -545,9 +529,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
         directly_listed.context_record_index,
     )
     .unwrap();
-    let (features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -566,8 +548,7 @@ fn feature_projection_uses_the_timeline_position_of_an_assembly_datum_envelope()
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("directly listed datum target");
     let [feature] = features.as_slice() else {
         panic!("expected one directly listed datum feature");
@@ -634,11 +615,7 @@ fn feature_projection_rejects_multiple_datum_envelope_positions() {
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let result = crate::design::feature_project::authored_scope_ordinals(
-        None,
-        &scopes,
-        std::slice::from_ref(&timeline),
-    );
+    let result = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals(decode_ctx, &scopes, std::slice::from_ref(&timeline)));
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -700,9 +677,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let result = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let result = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -721,8 +696,7 @@ fn feature_projection_rejects_a_cyclic_internal_scope_history() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    );
+        }));
     assert!(matches!(
         result,
         Err(cadmpeg_core::CodecError::Malformed(_))
@@ -791,9 +765,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
         std::num::NonZeroU64::new(2).unwrap(),
     )
     .unwrap();
-    let (features, _) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, _) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &[],
             owners: &[],
             scopes: &scopes,
@@ -812,8 +784,7 @@ fn feature_projection_does_not_invent_an_ambiguous_internal_dependency() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("ambiguous internal state chain remains unresolved");
 
     let successor = features
@@ -839,7 +810,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
     );
     second.feature_ordinal = std::num::NonZeroU32::new(2).expect("nonzero ordinal");
     let scopes = vec![second.clone(), first.clone()];
-    let ordinals = crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[])
+    let ordinals = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals(decode_ctx, &scopes, &[]))
         .expect("complete family ordinals carry exact order");
     assert_eq!(ordinals[&(stream, first.record_index)], 0);
     assert_eq!(ordinals[&(stream, second.record_index)], 1);
@@ -853,7 +824,7 @@ fn timeline_less_feature_family_uses_complete_family_ordinals() {
         })
         .unwrap();
     let mixed_scopes = vec![first, mixed];
-    let error = crate::design::feature_project::authored_scope_ordinals(None, &mixed_scopes, &[])
+    let error = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals(decode_ctx, &mixed_scopes, &[]))
         .expect_err("mixed families have no timeline-independent total order");
     assert!(error
         .to_string()
@@ -877,12 +848,12 @@ fn authored_scope_validation_orders_independent_streams_separately() {
     let scopes = vec![first, second];
 
     let ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(None, &scopes, &[])
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals_per_stream(decode_ctx, &scopes, &[]))
             .expect("independent stream-local orders");
     assert_eq!(ordinals.len(), 2);
     assert!(ordinals.values().all(|ordinal| *ordinal == 0));
     assert!(matches!(
-        crate::design::feature_project::authored_scope_ordinals(None, &scopes, &[]),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::authored_scope_ordinals(decode_ctx, &scopes, &[])),
         Err(cadmpeg_core::CodecError::NotImplemented(_))
     ));
 }
@@ -1017,9 +988,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let (features, parameters) = project_parameter_design_with_edge_identities(
-        None,
-        &crate::design::feature_project::ProjectInputs {
+    let (features, parameters) = crate::test_support::with_decode_context(|decode_ctx| project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
             native: &parameters,
             owners: &owners,
             scopes: &scopes,
@@ -1038,8 +1007,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
             body_bindings: &[],
             component_naming_spaces: &[],
             histories: &[],
-        },
-    )
+        }))
     .expect("authored cross-family timeline");
     let predecessor = features
         .iter()
@@ -1142,10 +1110,7 @@ fn assert_feature_dependency_index_refusal(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match super::super::ensure_feature_dependencies_precede(
-            Some(&ctx),
-            std::slice::from_ref(&feature),
-        ) {
+        match super::super::ensure_feature_dependencies_precede(&ctx, std::slice::from_ref(&feature)) {
             Err(CodecError::ResourceLimit(failure)) if failure.operation == operation => return,
             Err(CodecError::ResourceLimit(_)) => {}
             Ok(()) => panic!("expected {operation} refusal, got success"),
@@ -1218,13 +1183,9 @@ fn assert_authored_ordinal_refusal(operation: &'static str, with_timeline: bool,
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let result = if per_stream {
-            crate::design::feature_project::authored_scope_ordinals_per_stream(
-                Some(&ctx),
-                &scopes,
-                timelines,
-            )
+            crate::design::feature_project::authored_scope_ordinals_per_stream(&ctx, &scopes, timelines)
         } else {
-            crate::design::feature_project::authored_scope_ordinals(Some(&ctx), &scopes, timelines)
+            crate::design::feature_project::authored_scope_ordinals(&ctx, &scopes, timelines)
         };
         match result {
             Err(CodecError::ResourceLimit(failure))
@@ -1313,7 +1274,7 @@ fn assert_history_graph_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match ScopeHistoryGraph::new(Some(&ctx), &scopes, &[], &[], &[], &[]) {
+        match ScopeHistoryGraph::new(&ctx, &scopes, &[], &[], &[], &[]) {
             Err(cadmpeg_core::CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension
@@ -1363,12 +1324,12 @@ fn history_lookup_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let graph = crate::test_support::with_decode_context(|decode_ctx| ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = graph.state_key(Some(&ctx), &scopes[1], 8).unwrap_err();
+    let error = graph.state_key(&ctx, &scopes[1], 8).unwrap_err();
     assert!(matches!(error, CodecError::ResourceLimit(failure)
         if failure.dimension == ResourceDimension::RetainedBytes
             && failure.operation == "f3d history lookup stream"));
@@ -1379,12 +1340,12 @@ fn predecessor_stream_refuses_retained_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let graph = crate::test_support::with_decode_context(|decode_ctx| ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| true) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| true) else {
         panic!("expected predecessor stream refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1397,12 +1358,12 @@ fn predecessor_visited_scope_refuses_collection_limit() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
     use cadmpeg_core::CodecError;
     let scopes = history_graph_limit_fixture();
-    let graph = ScopeHistoryGraph::new(None, &scopes, &[], &[], &[], &[]).unwrap();
+    let graph = crate::test_support::with_decode_context(|decode_ctx| ScopeHistoryGraph::new(decode_ctx, &scopes, &[], &[], &[], &[])).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_collection_items = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let Err(error) = graph.predecessor(Some(&ctx), &scopes[1], |_| false) else {
+    let Err(error) = graph.predecessor(&ctx, &scopes[1], |_| false) else {
         panic!("expected predecessor visited-scope refusal");
     };
     assert!(matches!(error, CodecError::ResourceLimit(failure)
@@ -1498,9 +1459,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            Some(&ctx),
-            &crate::design::feature_project::ProjectInputs {
+        let result = project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
                 native: &native,
                 owners,
                 scopes: &scopes,
@@ -1519,8 +1478,7 @@ fn assert_projected_feature_refusal(operation: &'static str, retained: bool) {
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        );
+            });
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -1738,9 +1696,7 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            Some(&ctx),
-            &crate::design::feature_project::ProjectInputs {
+        let result = project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
                 native: &native,
                 owners: &[],
                 scopes: &scopes,
@@ -1759,8 +1715,7 @@ fn assert_expression_dependency_refusal(operation: &'static str, retained: bool)
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        );
+            });
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
@@ -1832,9 +1787,7 @@ fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
             policy.limits.max_collection_items = limit;
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let result = project_parameter_design_with_edge_identities(
-            Some(&ctx),
-            &crate::design::feature_project::ProjectInputs {
+        let result = project_parameter_design_with_edge_identities(&ctx, &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
                 scopes: &scopes,
@@ -1853,8 +1806,7 @@ fn assert_history_dependency_refusal(operation: &'static str, retained: bool) {
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        );
+            });
         match result {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation

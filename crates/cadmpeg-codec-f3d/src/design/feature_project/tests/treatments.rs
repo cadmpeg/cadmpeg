@@ -177,9 +177,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     )
     .unwrap();
     let project = |selection: &DesignEntitySelectionOperand| {
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            None,
-            &crate::design::feature_project::ProjectInputs {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
                 scopes: std::slice::from_ref(&scope),
@@ -198,8 +196,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        )
+            }))
         .expect("authored Draft timeline")
     };
 
@@ -288,16 +285,13 @@ fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
     let radius = parameter(3, "MidRadius", Some("mm"), 0.4);
     let position = parameter(4, "MidParams", None, 0.25);
     let weight = parameter(5, "TangencyWeight", None, 0.75);
-    let (points, tangency_weight) = crate::design::feature_project::variable_fillet_law(
-        None,
-        &[
+    let (points, tangency_weight) = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[
             (0, &start),
             (1, &end),
             (2, &radius),
             (3, &position),
             (4, &weight),
-        ],
-    )
+        ]))
     .unwrap()
     .expect("complete variable Fillet law");
     assert_eq!(
@@ -347,7 +341,7 @@ fn variable_fillet_law_accepts_omitted_tangency_weight() {
     let start = parameter(1, "StartRadius", Some("mm"), 0.2);
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let (points, tangency_weight) =
-        crate::design::feature_project::variable_fillet_law(None, &[(0, &start), (1, &end)])
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)]))
             .unwrap()
             .expect("variable Fillet law without an explicit weight");
     assert_eq!(
@@ -389,10 +383,7 @@ fn variable_fillet_law_rejects_duplicate_tangency_weights() {
     let end = parameter(2, "EndRadius", Some("mm"), 0.4);
     let weight_one = parameter(3, "TangencyWeight", None, 0.5);
     let weight_two = parameter(4, "TangencyWeight", None, 0.75);
-    assert!(crate::design::feature_project::variable_fillet_law(
-        None,
-        &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two),]
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end), (2, &weight_one), (3, &weight_two),]))
     .unwrap()
     .is_none());
 }
@@ -876,13 +867,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut patch_group = group(100, 0, vec![200]);
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &patch_scope,
-            std::slice::from_ref(&patch_group),
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -913,13 +898,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     second_patch_group.operand_role =
         DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &patch_scope,
-            &[patch_group.clone(), second_patch_group.clone()],
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group.clone()], &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -965,13 +944,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .unwrap()
     };
     let identities = vec![edge_identity(200, 100, 17), edge_identity(201, 101, 18)];
-    let resolved = crate::design::feature_project::project_surface_patch(
-        None,
-        &patch_scope,
-        &[patch_group.clone(), second_patch_group],
-        &[],
-        &identities,
-    )
+    let resolved = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, &[patch_group.clone(), second_patch_group], &[], &identities))
     .unwrap()
     .expect("resolved multi-group SurfacePatch path");
     let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
@@ -1002,13 +975,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::PROFILE);
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &patch_scope,
-            std::slice::from_ref(&patch_group),
-            &[],
-            &[],
-        ).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
             boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
                 cadmpeg_ir::features::PathRef::Native(ref native)
@@ -1027,13 +994,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         })
         .unwrap();
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &patch_scope,
-            std::slice::from_ref(&patch_group),
-            &[],
-            &[],
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
         .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
@@ -1053,13 +1014,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     }
     patch_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
     assert!(matches!(
-        crate::design::feature_project::project_surface_patch(
-            None,
-            &patch_scope,
-            std::slice::from_ref(&patch_group),
-            &[],
-            &[],
-        )
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
         .unwrap(),
         Some(FeatureDefinition::Operation(
             FeatureOperation::FilledSurface { .. }
@@ -1074,13 +1029,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(crate::design::feature_project::project_surface_patch(
-        None,
-        &patch_scope,
-        std::slice::from_ref(&patch_group),
-        &[],
-        &[],
-    )
+    assert!(crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
     .unwrap()
     .is_none());
 
@@ -1106,13 +1055,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
                 .collect(),
         )
         .unwrap();
-    let grouped_projection = crate::design::feature_project::project_surface_patch(
-        None,
-        &patch_scope,
-        std::slice::from_ref(&patch_group),
-        &[],
-        &[],
-    )
+    let grouped_projection = crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_surface_patch(decode_ctx, &patch_scope, std::slice::from_ref(&patch_group), &[], &[]))
     .unwrap();
     assert!(matches!(
         grouped_projection,
@@ -1143,7 +1086,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let mut cell = group(300, 3, vec![301]);
     cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
     assert!(matches!(
-        crate::design::feature_project::project_boundary_fill(None, &fill_scope, &[tools.clone(), cell.clone()]).unwrap(),
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_boundary_fill(decode_ctx, &fill_scope, &[tools.clone(), cell.clone()])).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
             tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
             cells: ref cell_selections,
@@ -1334,13 +1277,7 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
             histories: &[],
         };
         assert!(matches!(
-            crate::design::feature_project::project_fillet_arm(
-                None,
-                &inputs,
-                &scope,
-                &parameters,
-                "f3d:native"
-            ),
+            crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_fillet_arm(decode_ctx, &inputs, &scope, &parameters, "f3d:native")),
             Ok(FeatureDefinition::Operation(
                 FeatureOperation::Native { .. }
             ))
@@ -1365,7 +1302,7 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     let end = parameter("EndRadius", 1.0);
     assert!(crate::design::feature_project::design_length(&start).is_none());
     assert!(
-        crate::design::feature_project::variable_fillet_law(None, &[(0, &start), (1, &end)])
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::variable_fillet_law(decode_ctx, &[(0, &start), (1, &end)]))
             .unwrap()
             .is_none()
     );

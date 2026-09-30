@@ -62,7 +62,7 @@ fn assert_variable_law_limit(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::variable_fillet_law(Some(&ctx), &controls),
+        if matches!(crate::design::feature_project::variable_fillet_law(&ctx, &controls),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension == ResourceDimension::CollectionItems)
@@ -134,8 +134,7 @@ fn assert_resolved_assignment_limit(operation: &'static str) {
         let mut policy = DecodePolicy::default();
         policy.limits.max_collection_items = limit;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::resolved_fillet_assignments(
-            Some(&ctx), &[&assignment], &controls),
+        if matches!(crate::design::feature_project::resolved_fillet_assignments(&ctx, &[&assignment], &controls),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation
                     && failure.dimension == ResourceDimension::CollectionItems)
@@ -219,8 +218,7 @@ fn assert_projected_fillet_limit(
             _ => unreachable!(),
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::project_fillet_arm(
-            Some(&ctx), &inputs, &scope, &controls, native_scope),
+        if matches!(crate::design::feature_project::project_fillet_arm(&ctx, &inputs, &scope, &controls, native_scope),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension)
         {
@@ -289,8 +287,7 @@ fn fillet_single_radius_scope_id_refuses_retained_limit() {
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::project_fillet_arm(
-            Some(&ctx), &inputs, &scope, &controls, native_scope),
+        if matches!(crate::design::feature_project::project_fillet_arm(&ctx, &inputs, &scope, &controls, native_scope),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d Fillet single radius edge scope ID")
@@ -313,8 +310,7 @@ fn face_selection_native_fallback_refuses_retained_limit() {
         policy.limits.max_retained_bytes = limit;
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(crate::design::feature_project::project_face_selection(
-            Some(&ctx), &scope, &group, &[], &[]),
+        if matches!(crate::design::feature_project::project_face_selection(&ctx, &scope, &group, &[], &[]),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == ResourceDimension::RetainedBytes
                     && failure.operation == "f3d face selection native fallback")

@@ -117,7 +117,7 @@ fn assert_normalization_refusal(
         }
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut copy = parameters.clone();
-        if matches!(normalize_parameter_ordinals(Some(&ctx), &mut copy, &owners),
+        if matches!(normalize_parameter_ordinals(&ctx, &mut copy, &owners),
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension)
         {
@@ -212,7 +212,7 @@ fn assert_cycle_collection_refusal(limit: u64, operation: &'static str) {
     policy.limits.max_collection_items = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(cyclic_parameter_components(Some(&ctx), &parameters, &unresolved),
+        matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == operation
                 && failure.dimension == ResourceDimension::CollectionItems)
@@ -305,7 +305,7 @@ fn assert_cycle_work_refusal(limit: u64, operation: &'static str) {
     policy.limits.max_work_units = limit;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     assert!(
-        matches!(cyclic_parameter_components(Some(&ctx), &parameters, &unresolved),
+        matches!(cyclic_parameter_components(&ctx, &parameters, &unresolved),
         Err(CodecError::ResourceLimit(failure))
             if failure.operation == operation
                 && failure.dimension == ResourceDimension::WorkUnits)

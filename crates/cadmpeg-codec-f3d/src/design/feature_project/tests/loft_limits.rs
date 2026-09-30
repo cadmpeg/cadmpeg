@@ -34,7 +34,7 @@ fn loft_input(
 }
 
 fn project(
-    ctx: Option<&DecodeContext<'_>>,
+    ctx: &DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
@@ -57,7 +57,7 @@ fn assert_loft_limit_with_roles(
     has_point: bool,
 ) {
     let (scope, groups) = loft_input(roles);
-    let definition = project(None, &scope, &groups).unwrap().unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups)).unwrap().unwrap();
     assert!(matches!(definition,
         FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
             if sections.len() == 2
@@ -72,7 +72,7 @@ fn assert_loft_limit_with_roles(
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        if matches!(project(Some(&ctx), &scope, &groups),
+        if matches!(project(&ctx, &scope, &groups),
             Err(CodecError::ResourceLimit(failure))
                 if failure.dimension == dimension && failure.operation == operation
         ) {

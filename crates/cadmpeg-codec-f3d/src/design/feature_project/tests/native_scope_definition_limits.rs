@@ -38,7 +38,7 @@ fn assert_refusal(operation: &'static str, dimension: ResourceDimension) {
         }
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        match native_scope_definition(Some(&ctx), &scope, &[(0, &parameter)]) {
+        match native_scope_definition(&ctx, &scope, &[(0, &parameter)]) {
             Err(CodecError::ResourceLimit(failure))
                 if failure.operation == operation && failure.dimension == dimension =>
             {
@@ -80,7 +80,7 @@ fn native_parameter_property_refuses_collection_limit() {
 fn native_parameter_restated_key_keeps_refusal() {
     let (scope, parameter) = fixture();
     let error =
-        native_scope_definition(None, &scope, &[(0, &parameter), (1, &parameter)]).unwrap_err();
+        crate::test_support::with_decode_context(|decode_ctx| native_scope_definition(decode_ctx, &scope, &[(0, &parameter), (1, &parameter)])).unwrap_err();
     assert!(error
         .to_string()
         .contains("states the property Length a second time"));
@@ -98,10 +98,10 @@ fn native_scope_kind_refuses_retained_limit() {
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = u64::try_from(kind.len() - 1).unwrap();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    assert!(matches!(native_scope_definition(Some(&ctx), &scope, &[]),
+    assert!(matches!(native_scope_definition(&ctx, &scope, &[]),
         Err(CodecError::ResourceLimit(failure)) if failure.operation == "f3d native feature kind"
             && failure.dimension == ResourceDimension::RetainedBytes));
-    let definition = native_scope_definition(None, &scope, &[]).unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| native_scope_definition(decode_ctx, &scope, &[])).unwrap();
     assert!(
         matches!(definition, cadmpeg_ir::features::FeatureDefinition::Operation(
         cadmpeg_ir::features::FeatureOperation::Native {
