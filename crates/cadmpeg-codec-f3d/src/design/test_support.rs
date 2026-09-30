@@ -192,3 +192,37 @@ pub(super) fn assembly_operand_frame_fixture(scope_record_index: u32) -> Vec<u8>
     bytes[644..648].copy_from_slice(&scope_record_index.to_le_bytes());
     bytes
 }
+
+/// Build exact timeline frames for fixture scopes in their supplied order.
+pub(crate) fn synthetic_feature_timelines(scopes: &[crate::records::feature::scope::DesignParameterScope]) -> Vec<crate::records::entity_header::DesignFeatureTimeline> {
+    let mut streams = Vec::<(&str, Vec<crate::records::identity::Located<u64>>)>::new();
+    for scope in scopes {
+        let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
+        let item = crate::records::identity::Located {
+            value: u64::from(scope.record_index),
+            offset: 0,
+        };
+        if let Some((_, items)) = streams
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
+            items.push(item);
+        } else {
+            streams.push((stream, vec![item]));
+        }
+    }
+    streams
+        .into_iter()
+        .map(|(stream, items)| {
+            crate::records::entity_header::DesignFeatureTimeline::try_new(
+                crate::ids::native_design_feature_timeline_id_in_stream(stream, 0),
+                crate::records::entity_header::DesignTimelineFrame::test_items(0, items),
+                crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+                std::num::NonZeroU64::new(1).unwrap(),
+                0,
+                std::num::NonZeroU64::new(1).unwrap(),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>()
+}

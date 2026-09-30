@@ -11,7 +11,6 @@ use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::sketch_project::project_sketch_design;
 use crate::design::test_support::parameter_record;
 use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
@@ -410,20 +409,25 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         parameter.source_ordinal = record_index;
         parameter
     };
-    let (_, parameters) = project_parameter_design(
-        &[
+    let (_, parameters) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[
             parameter("A", 40, "Width", "1 mm"),
             parameter("A", 41, "Half", "Width / 2"),
             parameter("B", 40, "Width", "2 mm"),
         ],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let half = parameters
         .iter()
         .find(|parameter| parameter.name == "Half")

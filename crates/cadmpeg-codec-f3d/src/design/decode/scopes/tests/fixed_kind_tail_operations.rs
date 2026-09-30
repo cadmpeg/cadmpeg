@@ -10,7 +10,6 @@ use crate::design::decode::scopes::solid_primitive::exact_solid_primitive;
 use crate::design::decode::scopes::surfaces::{
     exact_surface_extend_operation, exact_surface_offset_operation,
 };
-use crate::design::feature_project::project_parameter_design;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::extrude::{
@@ -1184,16 +1183,21 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = Some(operation);
     }
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&extend_scope),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&extend_scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,
@@ -1251,16 +1255,21 @@ pub(super) fn fixed_kind_tail_operations(
     {
         *slot = Some(operation);
     }
-    let (features, _) = project_parameter_design(
-        &[],
-        &[],
-        std::slice::from_ref(&extend_scope),
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&extend_scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &[],
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         features.as_slice(), [Feature {
             evaluation,

@@ -2,7 +2,6 @@
 use super::project_dimension_constraints;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::dimensions::unresolved_parameter_expression_dependency_count;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_record;
 use crate::ids::neutral_parameter_id_parts;
 use crate::ids::neutral_sketch_id;
@@ -1151,7 +1150,21 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
         parameter("A", 2, "Width + External", "Half"),
         parameter("B", 1, "1 mm", "External"),
     ];
-    let (_, mut projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+    let (_, mut projected) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &native,
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert_eq!(
         crate::test_support::with_decode_context(|decode_ctx| unresolved_parameter_expression_dependency_count(decode_ctx, &native, &projected)).unwrap(),
         0
@@ -1193,7 +1206,21 @@ fn assert_expression_audit_limit(operation: &'static str) {
         parameter("A", 2, "Width + External", "Half"),
         parameter("B", 1, "1 mm", "External"),
     ];
-    let (_, projected) = project_parameter_design(&native, &[], &[], &[], &[], &[], &[], &[]);
+    let (_, projected) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &[];
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &native,
+owners: &[],
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let mut found = false;
     for limit in 0..64 {
         let arena = DecodeArena::new();

@@ -4,7 +4,6 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
 use crate::design::face_resolve::resolved_body_recipe_shape;
 use crate::design::feature_project::project_extrude;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK;
 use crate::design::profile_select::bind_extrude_profile_selections;
 use crate::design::test_support::parameter_owner_frame;
@@ -535,16 +534,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() { crate::te
         })
         .unwrap();
     let scopes = vec![sketch_scope, scope.clone()];
-    let (mut features, _) = project_parameter_design(
-        std::slice::from_ref(&owned_along),
-        std::slice::from_ref(&owner),
-        &scopes,
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&placement),
-    );
+    let (mut features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: std::slice::from_ref(&owned_along),
+owners: std::slice::from_ref(&owner),
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: std::slice::from_ref(&placement),
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let sketches = [cadmpeg_ir::sketches::Sketch {
         id: neutral_sketch_id(&placement),
         name: None,
@@ -584,16 +588,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() { crate::te
         [sketch_feature.id.clone()]
     );
 
-    let (mut spatial_features, _) = project_parameter_design(
-        std::slice::from_ref(&owned_along),
-        std::slice::from_ref(&owner),
-        &scopes,
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&placement),
-    );
+    let (mut spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: std::slice::from_ref(&owned_along),
+owners: std::slice::from_ref(&owner),
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: std::slice::from_ref(&placement),
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
         id: neutral_spatial_sketch_id(&placement),
         name: None,
@@ -649,16 +658,21 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() { crate::te
         [spatial_feature.id.clone()]
     );
 
-    let (mut open_spatial_features, _) = project_parameter_design(
-        std::slice::from_ref(&owned_along),
-        std::slice::from_ref(&owner),
-        &scopes,
-        &[],
-        &[],
-        &[],
-        &[],
-        std::slice::from_ref(&placement),
-    );
+    let (mut open_spatial_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = &scopes;
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: std::slice::from_ref(&owned_along),
+owners: std::slice::from_ref(&owner),
+scopes,
+construction_groups: &[],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: std::slice::from_ref(&placement),
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let open_spatial_sketch = cadmpeg_ir::sketches::SpatialSketch {
         id: neutral_spatial_sketch_id(&placement),
         name: None,

@@ -3,7 +3,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::parameters::parse_parameter_owner;
-use crate::design::feature_project::project_parameter_design;
 use crate::design::test_support::parameter_owner_frame;
 use crate::design::test_support::parameter_record;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -687,16 +686,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             chord_length_parameter_record_index: 121,
         }
     );
-    let (chord_features, _) = project_parameter_design(
-        &chord_parameters,
-        &chord_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[..1],
-        &chord_assignments,
-        &[],
-        &[],
-        &[],
-    );
+    let (chord_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &chord_parameters,
+owners: &chord_owners,
+scopes,
+construction_groups: &operand_groups[..1],
+fillet_radius_groups: &chord_assignments,
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         chord_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -730,16 +734,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         chord_only_assignments[0].tangency_weight_parameter_record_index,
         None
     );
-    let (chord_only_features, _) = project_parameter_design(
-        &chord_only_parameters,
-        &chord_only_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[..1],
-        &chord_only_assignments,
-        &[],
-        &[],
-        &[],
-    );
+    let (chord_only_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &chord_only_parameters,
+owners: &chord_only_owners,
+scopes,
+construction_groups: &operand_groups[..1],
+fillet_radius_groups: &chord_only_assignments,
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         chord_only_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -774,16 +783,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             offset_two_parameter_record_index: 151,
         }
     );
-    let (asymmetric_features, _) = project_parameter_design(
-        &asymmetric_parameters,
-        &asymmetric_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[..1],
-        &asymmetric_assignments,
-        &[],
-        &[],
-        &[],
-    );
+    let (asymmetric_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &asymmetric_parameters,
+owners: &asymmetric_owners,
+scopes,
+construction_groups: &operand_groups[..1],
+fillet_radius_groups: &asymmetric_assignments,
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     assert!(matches!(
         asymmetric_features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Fillet { groups })
@@ -803,16 +817,21 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         .lost_edge_references
         .push("f3d:native/BulkStream.dat:lost-edge-reference#1".into());
 
-    let (features, _) = project_parameter_design(
-        &parameters,
-        &owners,
-        std::slice::from_ref(&scope),
-        &operand_groups,
-        &assignments,
-        &[],
-        &[],
-        &[],
-    );
+    let (features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &parameters,
+owners: &owners,
+scopes,
+construction_groups: &operand_groups,
+fillet_radius_groups: &assignments,
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         features[0].evaluation.definition()
     else {
@@ -1121,16 +1140,21 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
         &variable_owners,
         &variable_parameters,
     );
-    let (variable_features, _) = project_parameter_design(
-        &variable_parameters,
-        &variable_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[1..],
-        &variable_assignments,
-        &[],
-        &[],
-        &[],
-    );
+    let (variable_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &variable_parameters,
+owners: &variable_owners,
+scopes,
+construction_groups: &operand_groups[1..],
+fillet_radius_groups: &variable_assignments,
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
         variable_features[0].evaluation.definition()
     else {
@@ -1163,16 +1187,21 @@ fn assigned_and_unassigned_variable_fillet_groups_project_identical_radius_contr
             .collect::<Vec<_>>(),
         vec![(0.0, 2.0), (0.25, 4.0), (1.0, 6.0)]
     );
-    let (unassigned_features, _) = project_parameter_design(
-        &variable_parameters,
-        &variable_owners,
-        std::slice::from_ref(&scope),
-        &operand_groups[1..],
-        &[],
-        &[],
-        &[],
-        &[],
-    );
+    let (unassigned_features, _) = crate::test_support::with_decode_context(|ctx| {
+let scopes = std::slice::from_ref(&scope);
+let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+crate::design::feature_project::project_parameter_design_with_edge_identities(ctx, &crate::design::feature_project::ProjectInputs {
+native: &variable_parameters,
+owners: &variable_owners,
+scopes,
+construction_groups: &operand_groups[1..],
+fillet_radius_groups: &[],
+edge_operands: &[],
+face_operands: &[],
+placements: &[],
+timelines: &timelines,
+..Default::default()
+}).expect("test projection has a synthetic exact timeline") });
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: unassigned_groups,
     }) = unassigned_features[0].evaluation.definition()
