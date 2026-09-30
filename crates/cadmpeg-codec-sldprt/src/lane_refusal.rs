@@ -31,6 +31,9 @@ impl LaneRefusals {
         record: impl std::fmt::Display,
         error: &cadmpeg_ir::geometry::nurbs::NurbsError,
     ) -> Result<(), CodecError> {
+        if let cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) = error {
+            return Err((*limit).into());
+        }
         let message = ctx.format_retained(
             format_args!("{record}: {error}"),
             "record SLDPRT lane refusal",
@@ -89,4 +92,20 @@ mod tests {
             .expect("service budget");
         assert_eq!(refusals.take_records(), ["record: invalid"]);
     }
+    #[test]
+    fn lane_refusal_preserves_constructor_resource_limit() {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let CodecError::ResourceLimit(limit) = ctx.charge_collection_items(1, "test constructor admission").unwrap_err() else {
+            panic!("constructor admission must refuse the collection limit");
+        };
+        let error = NurbsError::ResourceLimit(limit);
+        let mut refusals = LaneRefusals::new();
+        assert!(matches!(refusals.note(&ctx, "record", &error), Err(CodecError::ResourceLimit(actual)) if actual == limit));
+        assert!(refusals.take_records().is_empty());
+        assert!(matches!(CodecError::from(error), CodecError::ResourceLimit(actual) if actual == limit));
+    }
+
 }

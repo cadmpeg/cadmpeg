@@ -3297,7 +3297,11 @@ pub fn nurbs_surface_isocurve(
     } else {
         None
     };
-    Ok(NurbsCurve::from_lanes(degree, admitted_knots, control_points, weights, periodic).ok())
+    match NurbsCurve::from_lanes(degree, admitted_knots, control_points, weights, periodic) {
+        Ok(curve) => Ok(Some(curve)),
+        Err(crate::geometry::nurbs::NurbsError::ResourceLimit(limit)) => Err(limit),
+        Err(_) => Ok(None),
+    }
 }
 
 /// Why an evaluator has no finite value at its input.

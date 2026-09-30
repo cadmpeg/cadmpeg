@@ -35,7 +35,10 @@ impl KnotVector {
 
     /// Build a knot vector from finite values. Only their order is checked.
     pub fn from_finite_lanes(knots: Vec<FiniteReal>) -> Result<Self, NurbsError> {
-        let knots = knots.into_iter().map(FiniteReal::get).collect::<Vec<_>>();
+        let mut values = Vec::new();
+        scratch::reserve_exact(&mut values, knots.len(), "IR finite knot values")?;
+        values.extend(knots.into_iter().map(FiniteReal::get));
+        let knots = values;
         if !knots_nondecreasing(&knots) {
             return Err(NurbsError::Structure("knots must be non-decreasing".into()));
         }
@@ -203,17 +206,12 @@ fn weighted_poles<P, W>(
     weights: Vec<W>,
     mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
 ) -> Result<Vec<WeightedPole3<P>>, NurbsError> {
-    points
-        .into_iter()
-        .zip(weights)
-        .enumerate()
-        .map(|(index, (point, value))| {
-            Ok(WeightedPole3 {
-                point,
-                weight: weight(index, value)?,
-            })
-        })
-        .collect()
+    let mut output = Vec::new();
+    scratch::reserve_exact(&mut output, points.len(), "IR weighted poles")?;
+    for (index, (point, value)) in points.into_iter().zip(weights).enumerate() {
+        output.push(WeightedPole3 { point, weight: weight(index, value)? });
+    }
+    Ok(output)
 }
 
 impl NurbsPoles3 {
@@ -248,7 +246,27 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoles3<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoles3<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        match self {
+            Self::Polynomial { points } => {
+                let mut output = Vec::new();
+                scratch::reserve_exact(&mut output, points.len(), "IR admitted polynomial poles")?;
+                for point in points {
+                    output.push(point.admit().ok_or_else(non_finite_control_point)?);
+                }
+                Ok(NurbsPoles3::Polynomial { points: output })
+            }
+            Self::Rational { points } => {
+                let mut output = Vec::new();
+                scratch::reserve_exact(&mut output, points.len(), "IR admitted rational poles")?;
+                for pole in points {
+                    output.push(WeightedPole3 {
+                        point: pole.point.admit().ok_or_else(non_finite_control_point)?,
+                        weight: pole.weight,
+                    });
+                }
+                Ok(NurbsPoles3::Rational { points: output })
+            }
+        }
     }
 }
 
@@ -449,13 +467,13 @@ fn weighted_rows<P, W>(
     mut weight: impl FnMut(usize, W) -> Result<NonZeroReal, NurbsError>,
 ) -> Result<Vec<Vec<WeightedPole3<P>>>, NurbsError> {
     require_weight_lane("pole grid", rows.len(), weights.len())?;
-    rows.into_iter()
-        .zip(weights)
-        .map(|(row, weight_row)| {
-            require_weight_lane("pole grid row", row.len(), weight_row.len())?;
-            weighted_poles(row, weight_row, &mut weight)
-        })
-        .collect()
+    let mut output = Vec::new();
+    scratch::reserve_exact(&mut output, rows.len(), "IR weighted pole rows")?;
+    for (row, weight_row) in rows.into_iter().zip(weights) {
+        require_weight_lane("pole grid row", row.len(), weight_row.len())?;
+        output.push(weighted_poles(row, weight_row, &mut weight)?);
+    }
+    Ok(output)
 }
 
 impl NurbsPoleGrid {
@@ -490,7 +508,30 @@ impl<P: PoleValue<FinitePoint3>> NurbsPoleGrid<P> {
     ///
     /// Refuses a pole position with a non-finite coordinate.
     fn admit(self) -> Result<NurbsPoleGrid<FinitePoint3>, NurbsError> {
-        self.try_map_points(|point| point.admit().ok_or_else(non_finite_control_point))
+        match self {
+            Self::Polynomial { rows } => {
+                let mut output = Vec::new();
+                scratch::reserve_exact(&mut output, rows.len(), "IR admitted polynomial grid rows")?;
+                for row in rows {
+                    let mut points = Vec::new();
+                    scratch::reserve_exact(&mut points, row.len(), "IR admitted polynomial grid poles")?;
+                    for point in row { points.push(point.admit().ok_or_else(non_finite_control_point)?); }
+                    output.push(points);
+                }
+                Ok(NurbsPoleGrid::Polynomial { rows: output })
+            }
+            Self::Rational { rows } => {
+                let mut output = Vec::new();
+                scratch::reserve_exact(&mut output, rows.len(), "IR admitted rational grid rows")?;
+                for row in rows {
+                    let mut points = Vec::new();
+                    scratch::reserve_exact(&mut points, row.len(), "IR admitted rational grid poles")?;
+                    for pole in row { points.push(WeightedPole3 { point: pole.point.admit().ok_or_else(non_finite_control_point)?, weight: pole.weight }); }
+                    output.push(points);
+                }
+                Ok(NurbsPoleGrid::Rational { rows: output })
+            }
+        }
     }
 }
 
@@ -706,10 +747,10 @@ impl BsplineSurface {
         let u_knots = bspline_axis_knots("u", u_degree, u_count, u_knots)?;
         let v_knots = bspline_axis_knots("v", v_degree, v_count, v_knots)?;
         require_rectangular_grid("control_points", &control_points)?;
-        let control_points = control_points
-            .into_iter()
-            .map(admit_finite_row_3)
-            .collect::<Result<Vec<_>, NurbsError>>()?;
+        let mut rows = Vec::new();
+        scratch::reserve_exact(&mut rows, control_points.len(), "IR admitted B-spline grid rows")?;
+        for row in control_points { rows.push(admit_finite_row_3(row)?); }
+        let control_points = rows;
         Ok(Self {
             u_degree,
             v_degree,
@@ -772,10 +813,10 @@ fn bspline_axis_knots(
 
 /// Admit one control-point row whose every point is finite.
 fn admit_finite_row_3(row: Vec<Point3>) -> Result<Vec<FinitePoint3>, NurbsError> {
-    row.into_iter()
-        .map(FinitePoint3::new)
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| NurbsError::Structure("control_points contains a non-finite point".into()))
+    let mut output = Vec::new();
+    scratch::reserve_exact(&mut output, row.len(), "IR admitted B-spline grid poles")?;
+    for point in row { output.push(FinitePoint3::new(point).ok_or_else(non_finite_control_point)?); }
+    Ok(output)
 }
 
 impl<'de> Deserialize<'de> for BsplineSurface {
@@ -807,6 +848,9 @@ impl<'de> Deserialize<'de> for BsplineSurface {
 /// Structural error in a NURBS knot or pole carrier.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum NurbsError {
+    /// Storage for a knot or pole carrier was refused.
+    #[error("resource limit: {0:?}")]
+    ResourceLimit(cadmpeg_core::decode::ResourceLimit),
     /// A source stated a weight lane that does not cover its pole lane.
     #[error("{field}: {poles} pole(s) against {weights} weight(s)")]
     WeightLaneLength {
@@ -835,9 +879,18 @@ pub enum NurbsError {
     EditRefused(String),
 }
 
+impl From<cadmpeg_core::decode::ResourceLimit> for NurbsError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::ResourceLimit(limit)
+    }
+}
+
 impl From<NurbsError> for cadmpeg_core::CodecError {
     fn from(error: NurbsError) -> Self {
-        Self::Malformed(error.to_string())
+        match error {
+            NurbsError::ResourceLimit(limit) => Self::ResourceLimit(limit),
+            error => Self::Malformed(error.to_string()),
+        }
     }
 }
 
@@ -1099,10 +1152,10 @@ impl NurbsSurface {
         let poles = poles.admit()?;
         let u_knots = u_knots
             .admit()
-            .map_err(|error| NurbsError::Structure(format!("u_{error}")))?;
+            .map_err(|error| match error { NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit), error => NurbsError::Structure(format!("u_{error}")) })?;
         let v_knots = v_knots
             .admit()
-            .map_err(|error| NurbsError::Structure(format!("v_{error}")))?;
+            .map_err(|error| match error { NurbsError::ResourceLimit(limit) => NurbsError::ResourceLimit(limit), error => NurbsError::Structure(format!("v_{error}")) })?;
         Ok(Self {
             u_degree,
             v_degree,
