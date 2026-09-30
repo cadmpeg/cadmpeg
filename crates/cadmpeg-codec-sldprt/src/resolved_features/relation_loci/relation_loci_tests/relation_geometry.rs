@@ -631,11 +631,11 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
     };
     let entities = [first.clone(), second.clone(), unrelated.clone()];
     assert_eq!(
-        unique_profile_line_distance_entity(&sketch, first.id(), &parameter, &entities),
+        unique_profile_line_distance_entity(&cadmpeg_test_support::service_decode_context(), &sketch, first.id(), &parameter, &entities).unwrap(),
         Some(second.id().clone())
     );
     assert_eq!(
-        unique_profile_line_distance_pair(&sketch, &parameter, &entities),
+        unique_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities).unwrap(),
         Some((first.id().clone(), second.id().clone()))
     );
 
@@ -645,7 +645,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, 2.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(
+        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             first.id(),
             wrong.id(),
@@ -656,7 +656,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
                 second.clone(),
                 unrelated.clone(),
             ],
-        ),
+        ).unwrap(),
         Some((first.id().clone(), second.id().clone()))
     );
 
@@ -666,13 +666,13 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, -5.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(
+        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             first.id(),
             wrong.id(),
             &parameter,
             &[first.clone(), wrong.clone(), second.clone(), other_solved,],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -687,7 +687,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(30.0, 25.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_distance_pair(
+        unique_repaired_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             first.id(),
             wrong.id(),
@@ -698,7 +698,7 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
                 unrelated_first,
                 unrelated_second,
             ],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -708,11 +708,11 @@ fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
         Point2::new(10.0, 10.0),
     );
     assert_eq!(
-        unique_profile_line_distance_pair(
+        unique_profile_line_distance_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &parameter,
             &[first, second, unrelated, ambiguous],
-        ),
+        ).unwrap(),
         None
     );
 }
@@ -759,11 +759,11 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
     };
     let entities = [horizontal.clone(), vertical.clone(), diagonal.clone()];
     assert_eq!(
-        unique_profile_line_angle_entity(&sketch, horizontal.id(), &parameter, &entities),
+        unique_profile_line_angle_entity(&cadmpeg_test_support::service_decode_context(), &sketch, horizontal.id(), &parameter, &entities).unwrap(),
         Some(vertical.id().clone())
     );
     assert_eq!(
-        unique_profile_line_angle_pair(&sketch, &parameter, &entities),
+        unique_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), &sketch, &parameter, &entities).unwrap(),
         Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
@@ -773,7 +773,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(3.0_f64.sqrt(), 1.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(
+        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -784,7 +784,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 vertical.clone(),
                 diagonal.clone(),
             ],
-        ),
+        ).unwrap(),
         Some((horizontal.id().clone(), vertical.id().clone()))
     );
 
@@ -794,7 +794,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(5.0, 10.0),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(
+        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -805,7 +805,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 vertical.clone(),
                 ambiguous.clone(),
             ],
-        ),
+        ).unwrap(),
         None
     );
 
@@ -820,7 +820,7 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
         Point2::new(-3.0_f64.sqrt() * 0.5, 0.5),
     );
     assert_eq!(
-        unique_repaired_profile_line_angle_pair(
+        unique_repaired_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             horizontal.id(),
             wrong.id(),
@@ -831,15 +831,15 @@ fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
                 unrelated_first,
                 unrelated_second,
             ],
-        ),
+        ).unwrap(),
         None
     );
     assert_eq!(
-        unique_profile_line_angle_pair(
+        unique_profile_line_angle_pair(&cadmpeg_test_support::service_decode_context(), 
             &sketch,
             &parameter,
             &[horizontal, vertical, diagonal, ambiguous],
-        ),
+        ).unwrap(),
         None
     );
 }
