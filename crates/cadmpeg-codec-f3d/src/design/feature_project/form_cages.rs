@@ -866,10 +866,10 @@ fn form_cage_objects(
         if frames.next().is_some() {
             return None;
         }
-        if View::u64_le_at(bytes, offset + 7)? != record_index as u64
+        if View::u64_le_at(bytes, offset + 7)? != u64::from(record_index)
             || bytes.get(offset + 15..offset + 21)? != [0; 6]
             || bytes.get(offset + 21) != Some(&1)
-            || View::u64_le_at(bytes, offset + 22)? != scope_record_index as u64
+            || View::u64_le_at(bytes, offset + 22)? != u64::from(scope_record_index)
             || bytes.get(offset + 30..offset + 32)? != [0, 0]
         {
             return None;
@@ -984,7 +984,7 @@ fn form_cage_surface(
         || bytes.get(carrier_at + 4..carrier_at + 7) != Some(b"457")
         || bytes.get(carrier_paired + 4..carrier_paired + 7) != Some(b"264")
         || bytes.get(carrier_at + 317) != Some(&1)
-        || View::u64_le_at(bytes, carrier_at + 318)? != scope_record as u64
+        || View::u64_le_at(bytes, carrier_at + 318)? != u64::from(scope_record)
         || bytes.get(carrier_at + 339) != Some(&1)
     {
         return None;

@@ -25,9 +25,12 @@
 //!   a fixed offset to the wrong version was invisible.
 //!
 //! After validation the test emits one `src/layout.rs` per mapped table: a
-//! module of `usize` offset constants per byte-layout record, a `*_VALUE`
-//! constant for each field that declares `value`, and a `token` module of tag
-//! constants. Records that declare a `[[record.discrepancy]]` are listed in a
+//! module of `usize` offset constants per byte-layout record, `*_VALUE`
+//! constants for stated field values, and a `token` module of tag constants.
+//! Only items read by the owning crate's Rust sources are emitted. Items read
+//! only by tests carry `cfg(test)`. Imports and paths determine the read set;
+//! comments, literals and the generated file do not contribute reads.
+//! Records that declare a `[[record.discrepancy]]` are listed in a
 //! comment and omitted. `UPDATE_LAYOUT_CODE=1` rewrites the checked-in files;
 //! a table edit without regeneration fails the byte-for-byte comparison.
 //! Parsing functions are not generated.
@@ -1421,7 +1424,7 @@ fn generated_layout_code_matches_the_tables() {
             "{}: format must match the mapping key",
             table.display()
         );
-        let rendered = match emit_layout_rs(&file) {
+        let rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);

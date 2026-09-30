@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use super::exact_pattern_identity_wrapper;
 use crate::design::decode::scopes::assembly_alignment::exact_assembly_alignment;
 use crate::design::decode::scopes::axial_assembly::bind_joint_origin_frames_from_assemblies;
@@ -80,7 +82,7 @@ fn circular_pattern_identity_wrapper_closes_on_its_persistent_identity() {
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             record_index,
         ),
-        Some((503, identity_offset as u64))
+        Some((503, u64_from_index(identity_offset)))
     );
     bytes[identity_offset - 1] = 1;
     assert_eq!(
@@ -395,19 +397,19 @@ fn run_pattern_constructions_fixture(probe: Option<fn(&[u8], &DesignParameterSco
         Some(DesignCircularPatternConstruction {
             count: 25,
             count_record_index,
-            count_offset: (count_start + 40) as u64,
+            count_offset: u64_from_index(count_start + 40),
             angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU)
                 .expect("checked fixture value"),
             angle_record_index,
-            angle_offset: (angle_start + 40) as u64,
+            angle_offset: u64_from_index(angle_start + 40),
             axis: crate::records::feature::patterns::DesignCircularPatternAxis::Inline {
                 origin: crate::test_support::reals([1.0, 2.0, 3.0]),
-                origin_offset: (axis_start + 25) as u64,
+                origin_offset: u64_from_index(axis_start + 25),
                 direction: cadmpeg_ir::units::UnitVector3::normalized(
                     cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0),
                 )
                 .expect("unit axis"),
-                direction_offset: (axis_start + 49) as u64,
+                direction_offset: u64_from_index(axis_start + 49),
             },
             axis_record_index,
             selection_record_index,

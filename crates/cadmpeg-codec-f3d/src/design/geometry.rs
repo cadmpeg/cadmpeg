@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Sketch-arrangement and profile-containment computational geometry.
 
+use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_i64, truncate_f64_to_usize};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use crate::design::profile_select::historical_face_points;
 use crate::records::{
     sketch_relations::SketchRelationOperand,
@@ -1522,7 +1525,7 @@ fn sketch_geometry_parameter_range(
             ..
         } => Some([start.get(), end.get()]),
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => Some([
-            curve.knots()[curve.degree() as usize],
+            curve.knots()[index_from_u32(curve.degree())],
             curve.knots()[curve.control_points().len()],
         ]),
         _ => None,
@@ -1557,19 +1560,21 @@ fn profile_use_polyline(
     // intersection witnesses only. Exact output retains source parameter
     // intervals rather than this derived representation.
     let count = if travel.is_finite() {
-        (travel / target).ceil().clamp(2.0, 256.0) as usize
+        geometric!(truncate_f64_to_usize(
+            (travel / target).ceil().clamp(2.0, 256.0)
+        ))
     } else {
         256
     };
     let mut points = Vec::new();
     if let Some(ctx) = ctx {
-        ctx.charge_collection_items((count + 1) as u64, "f3d profile use polyline")?;
+        ctx.charge_collection_items(u64_from_index(count + 1), "f3d profile use polyline")?;
         points
             .try_reserve(count + 1)
             .map_err(|_| ctx.refuse_codec_limit("f3d profile use polyline allocation", 0, 1))?;
     }
     for index in 0..=count {
-        let fraction = index as f64 / count as f64;
+        let fraction = geometric!(f64_from_index(index)) / geometric!(f64_from_index(count));
         let ordinary = range[0] + (range[1] - range[0]) * fraction;
         let parameter = if ordinary.is_finite() {
             ordinary
@@ -2222,7 +2227,10 @@ fn certified_profile_loop(
         }
         previous_end = entity_tubes.last().map(|tube| tube.end);
         if let Some(ctx) = ctx {
-            ctx.charge_collection_items(entity_tubes.len() as u64, "f3d certified profile tubes")?;
+            ctx.charge_collection_items(
+                u64_from_index(entity_tubes.len()),
+                "f3d certified profile tubes",
+            )?;
             tubes.try_reserve(entity_tubes.len()).map_err(|_| {
                 ctx.refuse_codec_limit("f3d certified profile tubes allocation", 0, 1)
             })?;
@@ -2312,7 +2320,8 @@ fn certified_arc_tubes(
     }
     let radius = radius.get();
     let count = geometric!(subdivision_count(radius * sweep.abs(), target_error));
-    let error = radius * sweep.abs() / count as f64;
+    let count_float = geometric!(f64_from_index(count));
+    let error = radius * sweep.abs() / count_float;
     let mut tubes = Vec::new();
     if let Some(ctx) = ctx {
         let charged_count = u64::try_from(count)
@@ -2323,7 +2332,9 @@ fn certified_arc_tubes(
             .map_err(|_| ctx.refuse_codec_limit("f3d certified arc tubes allocation", 0, 1))?;
     }
     for index in 0..count {
-        let parameter = |ordinal: usize| start + sweep * ordinal as f64 / count as f64;
+        let parameter = |ordinal: usize| {
+            f64_from_index(ordinal).map(|ordinal| start + sweep * ordinal / count_float)
+        };
         let point = |angle: f64| {
             Point2::new(
                 center.u + radius * angle.cos(),
@@ -2331,8 +2342,8 @@ fn certified_arc_tubes(
             )
         };
         tubes.push(CertifiedCurveTube {
-            start: point(parameter(index)),
-            end: point(parameter(index + 1)),
+            start: point(geometric!(parameter(index))),
+            end: point(geometric!(parameter(index + 1))),
             error,
         });
     }
@@ -2345,7 +2356,7 @@ fn certified_nurbs_tubes(
     ctx: Option<&DecodeContext<'_>>,
 ) -> Result<Option<Vec<CertifiedCurveTube>>, CodecError> {
     let speed = geometric!(nurbs_speed_bound(curve));
-    let degree = curve.degree() as usize;
+    let degree = index_from_u32(curve.degree());
     let knots = curve.knots();
     if let Some(ctx) = ctx {
         let count = u64::try_from(curve.pole_rows().count())
@@ -2372,33 +2383,35 @@ fn certified_nurbs_tubes(
             return Ok(None);
         };
         let subdivisions = geometric!(subdivision_count(travel_bound, target_error));
-        let error = travel_bound / subdivisions as f64;
+        let subdivisions_float = geometric!(f64_from_index(subdivisions));
+        let error = travel_bound / subdivisions_float;
         for index in 0..subdivisions {
             let parameter = |ordinal: usize| {
-                let fraction = ordinal as f64 / subdivisions as f64;
+                let ordinal = f64_from_index(ordinal)?;
+                let fraction = ordinal / subdivisions_float;
                 if width.is_finite() {
-                    span[0] + width * ordinal as f64 / subdivisions as f64
+                    Some(span[0] + width * ordinal / subdivisions_float)
                 } else {
-                    span[0].mul_add(1.0 - fraction, span[1] * fraction)
+                    Some(span[0].mul_add(1.0 - fraction, span[1] * fraction))
                 }
             };
             let start = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    degree as u32,
+                    curve.degree(),
                     knots,
                     &control_points,
                     weights.as_deref(),
-                    parameter(index),
+                    geometric!(parameter(index)),
                 )
             )?)
             .as_raw();
             let end = *geometric!(cadmpeg_ir::eval::finite_or_refusal(
                 cadmpeg_ir::eval::nurbs_pcurve_uv(
-                    degree as u32,
+                    curve.degree(),
                     knots,
                     &control_points,
                     weights.as_deref(),
-                    parameter(index + 1),
+                    geometric!(parameter(index + 1)),
                 )
             )?)
             .as_raw();
@@ -2417,7 +2430,7 @@ fn certified_nurbs_tubes(
 fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
     // Format invariant: densification above this count is outside the reader.
     // Session work for arrangement walks is charged separately via work_budget.
-    const MAX_SUBDIVISIONS: usize = 100_000;
+    const MAX_SUBDIVISIONS: f64 = 100_000.0;
     if !travel_bound.is_finite()
         || travel_bound < 0.0
         || !target_error.is_finite()
@@ -2426,7 +2439,9 @@ fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
         return None;
     }
     let count = (travel_bound / target_error).ceil().max(1.0);
-    (count <= MAX_SUBDIVISIONS as f64).then_some(count as usize)
+    (count <= MAX_SUBDIVISIONS)
+        .then(|| truncate_f64_to_usize(count))
+        .flatten()
 }
 
 fn nurbs_speed_bound(curve: &PcurveNurbs) -> Option<f64> {
@@ -3371,10 +3386,13 @@ pub(super) fn closed_sketch_profiles(
     }
     let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
     for (endpoint, point) in endpoints.iter().copied().enumerate() {
-        let cell = (
-            (point.u / linear_tolerance).floor() as i64,
-            (point.v / linear_tolerance).floor() as i64,
-        );
+        let Some(u) = truncate_f64_to_i64((point.u / linear_tolerance).floor()) else {
+            return Ok(Vec::new());
+        };
+        let Some(v) = truncate_f64_to_i64((point.v / linear_tolerance).floor()) else {
+            return Ok(Vec::new());
+        };
+        let cell = (u, v);
         for u_offset in -1..=1 {
             for v_offset in -1..=1 {
                 let adjacent = (
@@ -4004,7 +4022,7 @@ pub(super) fn sketch_entity_endpoints(
         }
         SketchGeometryDefinition::Nurbs { curve } if !curve.periodic() => {
             let (control_points, weights) = nurbs_pcurve_evaluator_lanes(curve, ctx)?;
-            let start_parameter = curve.knots()[curve.degree() as usize];
+            let start_parameter = curve.knots()[index_from_u32(curve.degree())];
             let end_parameter = curve.knots()[control_points.len()];
             let start = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
                 curve.degree(),

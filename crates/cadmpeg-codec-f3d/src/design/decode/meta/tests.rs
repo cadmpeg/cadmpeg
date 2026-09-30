@@ -6,6 +6,8 @@
     clippy::uninlined_format_args
 )]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::io::{Cursor, Write};
 
 use zip::CompressionMethod;
@@ -106,9 +108,9 @@ fn design_type_copy_refuses_table_entities_module_and_id_limits() {
                     && limit.operation == operation
         ));
     }
-    let module_len = "Component".len() as u64;
-    let prefix_len = crate::ids::native_scope(meta_name).len() as u64;
-    let suffix_len = ":design-type#0".len() as u64;
+    let module_len = u64_from_index("Component".len());
+    let prefix_len = u64_from_index(crate::ids::native_scope(meta_name).len());
+    let suffix_len = u64_from_index(":design-type#0".len());
     // Bytes the MetaStream parse and cache retain before the type copies.
     let parsed_len = 198;
     for (allowance, operation) in [
@@ -369,8 +371,8 @@ fn feature_timeline_id_refuses_prefix_and_suffix_limits() {
     bulk.extend_from_slice(&[0, 0]);
     bulk.extend_from_slice(&0_u32.to_le_bytes());
     let arena = DecodeArena::new();
-    let prefix_len = crate::ids::native_scope(stream).len() as u64;
-    let suffix_len = ":design-feature-timeline#0".len() as u64;
+    let prefix_len = u64_from_index(crate::ids::native_scope(stream).len());
+    let suffix_len = u64_from_index(":design-feature-timeline#0".len());
     for (allowance, operation) in [
         (prefix_len - 1, "f3d native stream key"),
         (prefix_len + suffix_len - 1, "retain F3D timeline identity"),
@@ -517,7 +519,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     fn typed_binding(out: &mut Vec<u8>, component: u64, context_uuid: &str) {
         out.push(1);
         out.extend_from_slice(&component.to_le_bytes());
-        out.extend_from_slice(&(COMPONENT_TYPE_GUID.len() as u32).to_le_bytes());
+        out.extend_from_slice(
+            &(u32::try_from(COMPONENT_TYPE_GUID.len()).expect("fixture value fits u32"))
+                .to_le_bytes(),
+        );
         out.extend_from_slice(COMPONENT_TYPE_GUID.as_bytes());
         out.extend_from_slice(&[0, 0]);
         out.extend_from_slice(&36_u32.to_le_bytes());
@@ -537,10 +542,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         };
         assert_eq!(space.component_record_index, 17);
         assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-        assert_eq!(space.byte_offset, marker as u64);
+        assert_eq!(space.byte_offset, u64_from_index(marker));
         assert_eq!(
             space.context_uuid_offset,
-            (marker + 9 + reserved_len) as u64
+            u64_from_index(marker + 9 + reserved_len)
         );
     }
 
@@ -556,7 +561,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     };
     assert_eq!(space.component_record_index, 17);
     assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-    assert_eq!(space.byte_offset, typed_marker as u64);
+    assert_eq!(space.byte_offset, u64_from_index(typed_marker));
 
     let mut overlapping_reference = vec![1];
     binding(
@@ -639,17 +644,17 @@ fn component_naming_space_refuses_each_collection_and_id_limit() {
                     && limit.operation == operation
         ));
     }
-    let prefix_len = crate::ids::native_scope(bulk_name).len() as u64;
-    let suffix_len = ":design-component-naming-space#2".len() as u64;
+    let prefix_len = u64_from_index(crate::ids::native_scope(bulk_name).len());
+    let suffix_len = u64_from_index(":design-component-naming-space#2".len());
     // Bytes the MetaStream parse and cache retain before the UUID text.
     let parsed_len = 198;
     for (allowance, operation) in [
         (
-            parsed_len + context_uuid.len() as u64 + prefix_len - 1,
+            parsed_len + u64_from_index(context_uuid.len()) + prefix_len - 1,
             "f3d native stream key",
         ),
         (
-            parsed_len + context_uuid.len() as u64 + prefix_len + suffix_len - 1,
+            parsed_len + u64_from_index(context_uuid.len()) + prefix_len + suffix_len - 1,
             "f3d component naming space id suffix",
         ),
     ] {
@@ -700,7 +705,9 @@ fn component_naming_uuid_refuses_retained_limit_in_both_reference_forms() {
         let mut bulk = vec![0xaa, 0xbb, 1];
         bulk.extend_from_slice(&17u64.to_le_bytes());
         if inline_type {
-            bulk.extend_from_slice(&(TYPE_GUID.len() as u32).to_le_bytes());
+            bulk.extend_from_slice(
+                &(u32::try_from(TYPE_GUID.len()).expect("fixture value fits u32")).to_le_bytes(),
+            );
             bulk.extend_from_slice(TYPE_GUID.as_bytes());
         }
         bulk.extend_from_slice(&[0, 0]);
@@ -802,11 +809,13 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
                 .collect::<Vec<_>>(),
             [101, 102]
         );
-        assert_eq!(timeline.frame().frame_length(), bulk.len() as u64);
+        assert_eq!(timeline.frame().frame_length(), u64_from_index(bulk.len()));
         for item in timeline.frame().items() {
             assert_eq!(
                 u64::from_le_bytes(
-                    bulk[item.offset as usize..item.offset as usize + 8]
+                    bulk[usize::try_from(item.offset).expect("fixture offset fits address space")
+                        ..usize::try_from(item.offset).expect("fixture offset fits address space")
+                            + 8]
                         .try_into()
                         .expect("timeline target")
                 ),
@@ -815,7 +824,8 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         }
 
         let mut duplicate = bulk.clone();
-        let second_offset = timeline.frame().items()[1].offset as usize;
+        let second_offset = usize::try_from(timeline.frame().items()[1].offset)
+            .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
         let error = with_scan(&archive(&meta, &duplicate), |scan| {
             crate::design::decode::meta::decode_feature_timelines(

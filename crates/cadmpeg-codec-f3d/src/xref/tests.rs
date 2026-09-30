@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use std::collections::HashSet;
@@ -124,7 +126,7 @@ fn docstruct_type_refuses_retained_limit() {
 fn docstruct_subtype_refuses_retained_limit() {
     with_docstruct_scan(|arena, scan| {
         let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-        policy.limits.max_retained_bytes = "assembly-design".len() as u64;
+        policy.limits.max_retained_bytes = u64_from_index("assembly-design".len());
         let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], arena, &policy)
             .unwrap()
             .0;
@@ -196,7 +198,7 @@ fn redirections_design_id_refuses_retained_limit() {
 fn redirections_reference_id_refuses_retained_limit() {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = 2 * "f3d:xref:design#0".len() as u64;
+    policy.limits.max_retained_bytes = 2 * u64_from_index("f3d:xref:design#0".len());
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -275,7 +277,7 @@ fn xref_occurrence_native_reference_refuses_retained_limit() {
     .unwrap();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let mut policy = cadmpeg_core::decode::DecodePolicy::service();
-    policy.limits.max_retained_bytes = "part.f3d".len() as u64;
+    policy.limits.max_retained_bytes = u64_from_index("part.f3d".len());
     let ctx = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
         .unwrap()
         .0;
@@ -616,14 +618,18 @@ fn redirections_keep_neutron_role_and_data_independent() {
 
 #[test]
 fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
-    for bytes in [
-        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":null}"# as &[u8],
+    let cases: [&[u8]; 5] = [
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":null}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{"unexpected":1}}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{}]}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[]}]}"#,
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"NUMBER"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
-    ] {
-        assert!(super::parse(&cadmpeg_test_support::service_decode_context(), bytes).is_err(), "malformed table admitted: {bytes:?}");
+    ];
+    for bytes in cases {
+        assert!(
+            super::parse(&cadmpeg_test_support::service_decode_context(), bytes).is_err(),
+            "malformed table admitted: {bytes:?}"
+        );
     }
 }
 
@@ -930,9 +936,11 @@ fn occurrence_record_with_serializer_magic(
     bytes.extend_from_slice(&entity_id.to_le_bytes());
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     bytes.push(1);
-    bytes.extend_from_slice(&(discriminators.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(discriminators.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (ordinal, discriminator) in discriminators.iter().enumerate() {
-        let target = 100 + ordinal as u64;
+        let target = 100 + u64_from_index(ordinal);
         if ordinal + 1 == discriminators.len() {
             bytes.extend(cross_document_reference(target, role));
         } else {
@@ -978,8 +986,10 @@ fn document_with_modern_placement(role: &str, matrix: [[f64; 4]; 4]) -> Vec<u8> 
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
-        .unwrap();
+    zip.write_all(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    )
+    .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
     zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
@@ -1036,14 +1046,25 @@ fn repeated_target_occurrence_record_with_path_role(
         .1;
     bytes.truncate(path_end);
     bytes.extend_from_slice(&envelope_discriminator.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(metadata_guid_a)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(metadata_guid_b)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(component_guid)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     match transform {
         Some(transform) => {
@@ -1055,7 +1076,9 @@ fn repeated_target_occurrence_record_with_path_role(
         None => bytes.push(1),
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     bytes.extend(local_reference(3));
     bytes
@@ -1130,7 +1153,8 @@ fn repeated_target_placements_decode_identity_and_matrix_forms() {
     .expect("identity carrier with an independent retained role");
     assert_eq!(decoded_role, retained_role);
     assert_eq!(transform_offset, None);
-    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role);
+    let encoded_role = crate::bytes::lp_utf16_bytes(&retained_role)
+        .expect("fixture UTF-16 code-unit count fits u32");
     assert_eq!(
         &local_carrier[role_offset - 4..role_offset - 4 + encoded_role.len()],
         encoded_role
@@ -1153,22 +1177,40 @@ fn grouped_identity_carrier(role: &str, record_index: u32) -> Vec<u8> {
     bytes.extend_from_slice(&17_u64.to_le_bytes());
     bytes.push(1);
     bytes.extend_from_slice(&[0; 4]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(component_guid)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_a));
-    bytes.extend(crate::bytes::lp_utf16_bytes(metadata_guid_b));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(metadata_guid_a)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(metadata_guid_b)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(component_guid));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(component_guid)
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     bytes.extend_from_slice(&36_u32.to_le_bytes());
     bytes.extend_from_slice(type_guid.as_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 0, 0, 0, 0]);
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     assert_eq!(bytes.len(), 695);
     bytes
@@ -1225,12 +1267,14 @@ fn legacy_occurrence_record(
     bytes.extend_from_slice(&1_u32.to_le_bytes());
     bytes.push(0);
     bytes.extend_from_slice(&1_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(
-        "11111111-2222-3333-4444-555555555555",
-    ));
-    bytes.extend(crate::bytes::lp_utf16_bytes(
-        "66666666-7777-8888-9999-aaaaaaaaaaaa",
-    ));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes("11111111-2222-3333-4444-555555555555")
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes("66666666-7777-8888-9999-aaaaaaaaaaaa")
+            .expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.push(0);
     bytes.extend(legacy_occurrence_reference(3, 0x1112_1314_1516_1718));
     match transform {
@@ -1243,7 +1287,9 @@ fn legacy_occurrence_record(
         None => bytes.push(1),
     }
     bytes.extend_from_slice(&0_u32.to_le_bytes());
-    bytes.extend(crate::bytes::lp_utf16_bytes(role));
+    bytes.extend(
+        crate::bytes::lp_utf16_bytes(role).expect("fixture UTF-16 code-unit count fits u32"),
+    );
     bytes.extend_from_slice(&[0, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     bytes
 }
@@ -1442,8 +1488,10 @@ fn paired_design_metastream_selects_the_tagged_placement_form() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
-        .unwrap();
+    zip.write_all(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    )
+    .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
     zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
@@ -1503,8 +1551,10 @@ fn paired_design_metastream_selects_the_legacy_typed_placement_form() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
-        .unwrap();
+    zip.write_all(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    )
+    .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
     zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())
@@ -1562,8 +1612,10 @@ fn malformed_typed_role_placement_reports_a_loss() {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file("Properties.dat", stored).unwrap();
-    zip.write_all(&(properties.len() as u32).to_le_bytes())
-        .unwrap();
+    zip.write_all(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    )
+    .unwrap();
     zip.write_all(properties).unwrap();
     zip.start_file("RedirectionsStream.dat", stored).unwrap();
     zip.write_all(redirections_json("root.f3d", &[("part.f3d", role)]).as_bytes())

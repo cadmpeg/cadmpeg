@@ -133,7 +133,7 @@ fn text_frame_curves_are_construction_geometry_not_profiles() {
             owner_reference: Some(42),
             class_tag: crate::records::references::DesignClassTag::try_from("375".to_owned())
                 .unwrap(),
-            byte_offset: record_index as u64,
+            byte_offset: u64::from(record_index),
             geometry_offset: 0,
             entity_genesis: Some(0),
             primary_id: std::num::NonZeroU64::new(primary_id).unwrap(),

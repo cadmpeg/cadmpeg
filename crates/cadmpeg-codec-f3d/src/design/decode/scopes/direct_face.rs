@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact direct-face, move and scale operation scopes.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::parameter_scope::parameter_scope_payload_length;
 use super::point_data::exact_point_data_construction;
 use super::shared_frames::exact_fixed_scalar;
@@ -256,10 +258,10 @@ pub(super) fn exact_move_operation(
             };
             let next = DesignMoveOperation {
                 transform,
-                transform_offset: (start + transform_offset) as u64,
+                transform_offset: u64_from_index(start + transform_offset),
                 transform_record_index: *record_index,
                 form,
-                form_offset: (start + form_offset) as u64,
+                form_offset: u64_from_index(start + form_offset),
             };
             if candidate.replace(next).is_some() {
                 return None;
@@ -381,7 +383,7 @@ pub(super) fn exact_scale_operation(
             center_position: center
                 .map(|(value, offset)| crate::records::identity::Located { value, offset }),
             uniform_factor,
-            uniform_factor_offset: uniform_factor_offset as u64,
+            uniform_factor_offset: u64_from_index(uniform_factor_offset),
         }))
     })()
     .transpose()

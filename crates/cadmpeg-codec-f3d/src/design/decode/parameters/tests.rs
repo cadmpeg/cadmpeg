@@ -6,6 +6,8 @@
     clippy::uninlined_format_args
 )]
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::io::{Cursor, Write};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
@@ -588,15 +590,16 @@ fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
 
 #[test]
 fn parameter_owner_requires_its_complete_structural_suffix() {
-    for build in [
-        parameter_owner_frame as fn() -> Vec<u8>,
+    let builders: [fn() -> Vec<u8>; 7] = [
+        parameter_owner_frame,
         compact_parameter_owner_frame,
         counted_parameter_owner_frame,
         compact_typed_counted_parameter_owner_frame,
         compact_counted_parameter_owner_frame,
         tagged_scalar_parameter_owner_frame,
         tagged_scalar_variant_parameter_owner_frame,
-    ] {
+    ];
+    for build in builders {
         let frame = build();
         assert!(parse_parameter_owner(&frame).is_some());
         let mut longer = frame.clone();
@@ -930,7 +933,7 @@ fn parameter_companion_decode_refuses_index_output_and_identifier_limits() {
     zip.write_all(&prefix).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let scope_len = crate::ids::native_scope(STREAM).len() as u64;
+        let scope_len = u64_from_index(crate::ids::native_scope(STREAM).len());
         for (items, retained, dimension, operation) in [
             (
                 0,

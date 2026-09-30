@@ -324,7 +324,7 @@ pub(in crate::design) fn parse_design_parameter(
                 (
                     Some(ParsedParameterUnit {
                         value: first,
-                        offset: FrameRelative((first_at + 4) as i128),
+                        offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
                     }),
                     second,
                     first_end,
@@ -352,13 +352,13 @@ pub(in crate::design) fn parse_design_parameter(
             owner_record_index,
             family_discriminator,
             expression,
-            expression_offset: FrameRelative((expression_at + 4) as i128),
-            source_kind_offset: FrameRelative((source_kind_at + 4) as i128),
+            expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
+            source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
             unit,
             name,
-            name_offset: FrameRelative((name_at + 4) as i128),
+            name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
-            evaluated_value_offset: FrameRelative(name_end as i128),
+            evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
         }))
     })();
     parsed.transpose()
@@ -488,16 +488,16 @@ fn parse_legacy_design_parameter(
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
             expression,
-            expression_offset: FrameRelative((expression_at + 4) as i128),
-            source_kind_offset: FrameRelative((source_kind_at + 4) as i128),
+            expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
+            source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
             unit: Some(ParsedParameterUnit {
                 value: unit,
-                offset: FrameRelative((unit_at + 4) as i128),
+                offset: FrameRelative(i128::from(u64_from_index(unit_at + 4))),
             }),
             name,
-            name_offset: FrameRelative((name_at + 4) as i128),
+            name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
             evaluated_value,
-            evaluated_value_offset: FrameRelative(name_end as i128),
+            evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
         }))
     })();
     parsed.transpose()
@@ -1077,7 +1077,9 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<ParsedParameterCompanion> 
         record_index: View::u32_le_at(prefix, indexed_header::RECORD_INDEX)?,
         owner_record_index: View::u32_le_at(prefix, companion_prefix::OWNER_RECORD_INDEX)?,
         timestamp_micros,
-        timestamp_micros_offset: FrameRelative(companion_prefix::TIMESTAMP_MICROS as i128),
+        timestamp_micros_offset: FrameRelative(i128::from(u64_from_index(
+            companion_prefix::TIMESTAMP_MICROS,
+        ))),
     })
 }
 

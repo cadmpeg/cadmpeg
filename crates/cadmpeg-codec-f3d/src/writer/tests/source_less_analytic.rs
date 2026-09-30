@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_core::convert::f64_from_index;
+
 use cadmpeg_test_support::EditableDecodeResult;
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
@@ -1639,7 +1641,7 @@ fn generated_source_less_closed_cylinder_band_keeps_compact_periodic_topology() 
         source_object: None,
     });
     for index in 0..2 {
-        let z = index as f64 * 10.0;
+        let z = f64_from_index(index).expect("fixture index is exact in f64") * 10.0;
         source_less.model.loops.push(Loop {
             id: loops[index].clone(),
             face: face.clone(),

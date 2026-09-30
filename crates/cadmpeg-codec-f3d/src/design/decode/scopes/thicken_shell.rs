@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact legacy thicken and shell scope frames.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
@@ -91,7 +93,7 @@ pub(super) fn exact_shell_class_369_261(
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "369"
         || scope.paired_class_tag.as_str() != "261"
-        || scope.frame_length() != shell_369_261::LEN as u64
+        || scope.frame_length() != u64_from_index(shell_369_261::LEN)
         || scope.reference_members().len() != 3
     {
         return None;

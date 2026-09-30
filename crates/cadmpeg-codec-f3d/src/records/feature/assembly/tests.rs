@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 #[test]
 // Fixture fields are appended from the bounded table of explicit test cases.
 #[allow(clippy::format_push_string)]
@@ -867,7 +869,7 @@ fn complete_combine_field_edit(wire: &mut serde_json::Value, field: &str) {
     }
     let end = |wire: &serde_json::Value, value: &str, offset: &str| {
         wire[offset].as_u64().unwrap()
-            + 2 * wire[value].as_str().unwrap().encode_utf16().count() as u64
+            + 2 * u64_from_index(wire[value].as_str().unwrap().encode_utf16().count())
     };
     wire["selector_context_id_offset"] =
         serde_json::json!(end(wire, "selector_asset_id", "selector_asset_id_offset") + 4);

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use super::named_parameter_scope_tail_is_valid;
 use super::{copy_sketch_entity_id, first_marked_reference_offsets};
 use crate::test_support::lp_utf16;
@@ -128,7 +130,7 @@ fn sketch_scope_entity_id_copy_refuses_retained_limit() {
         crate::records::identity::DesignEntityId::try_from("entity_42".to_owned()).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = source.as_str().len() as u64 - 1;
+    policy.limits.max_retained_bytes = u64_from_index(source.as_str().len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let result = copy_sketch_entity_id(&ctx, &source);
     assert!(matches!(

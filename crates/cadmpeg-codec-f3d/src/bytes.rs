@@ -9,6 +9,8 @@
 //! through the `bounds` and `allowed` parameters rather than sharing one
 //! unified policy.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_asm::kernel_header::RefWidth;
 use std::ops::RangeInclusive;
 
@@ -604,11 +606,18 @@ pub(crate) fn is_guid_prefix(value: &str) -> bool {
 
 /// Encode `value` as a u32-code-unit-prefixed UTF-16LE byte sequence, the form
 /// used both as a search needle and by test fixtures.
-pub(crate) fn lp_utf16_bytes(value: &str) -> Vec<u8> {
+pub(crate) fn lp_utf16_bytes(value: &str) -> Result<Vec<u8>, CodecError> {
     let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
-    let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
+    let count = u32::try_from(units.len() / 2).map_err(|_| {
+        cadmpeg_core::decode::refuse_local_limit(
+            "f3d UTF-16 code-unit count",
+            u64::from(u32::MAX),
+            u64_from_index(units.len() / 2),
+        )
+    })?;
+    let mut out = count.to_le_bytes().to_vec();
     out.extend(units);
-    out
+    Ok(out)
 }
 
 #[cfg(test)]

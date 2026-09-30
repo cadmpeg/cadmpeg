@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::work_geometry::{
     exact_joint_origin_frame, exact_work_axis_construction, exact_work_plane_frame,
@@ -134,10 +136,16 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         crate::records::feature::scope::DesignFeatureKind::Sketch
     );
     assert_eq!(scope.feature_ordinal.get(), 1);
-    assert_eq!(scope.feature_ordinal_offset(), feature_ordinal_at as u64);
+    assert_eq!(
+        scope.feature_ordinal_offset(),
+        u64_from_index(feature_ordinal_at)
+    );
     assert_eq!(scope.history_state_id(), Some(7));
     assert_eq!(scope.previous_history_state_id(), Some(2));
-    assert_eq!(scope.reference_count_offset(), reference_count_at as u64);
+    assert_eq!(
+        scope.reference_count_offset(),
+        u64_from_index(reference_count_at)
+    );
     assert_eq!(
         scope
             .reference_members()
@@ -152,11 +160,11 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             .offsets()
             .copied()
             .collect::<Vec<_>>(),
-        [reference_at as u64]
+        [u64_from_index(reference_at)]
     );
-    assert_eq!(scope.frame_length(), paired_at as u64);
+    assert_eq!(scope.frame_length(), u64_from_index(paired_at));
     assert_eq!(scope.paired_class_tag.as_str(), "261");
-    assert_eq!(scope.paired_byte_offset(), paired_at as u64);
+    assert_eq!(scope.paired_byte_offset(), u64_from_index(paired_at));
     let discovered =
         crate::design::decode::scopes::parameter_scope::parameter_scope_candidate_headers(
             &cadmpeg_test_support::service_decode_context(),
@@ -196,7 +204,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         compact.kind(),
         crate::records::feature::scope::DesignFeatureKind::Sketch
     );
-    assert_eq!(compact.frame_length(), paired_at as u64 - 1);
+    assert_eq!(compact.frame_length(), u64_from_index(paired_at) - 1);
     assert_eq!(compact.previous_history_state_id(), Some(2));
     assert!(
         !crate::design::decode::scopes::parameter_scope::parameter_scope_tail_length_is_valid(
@@ -231,7 +239,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         assert_eq!(decoded.previous_history_state_id(), Some(2));
         assert_eq!(
             decoded.previous_history_state_id_offset(),
-            Some((feature_ordinal_at + 30) as u64)
+            Some(u64_from_index(feature_ordinal_at + 30))
         );
     }
 
@@ -256,7 +264,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(extended.previous_history_state_id(), Some(3));
     assert_eq!(
         extended.previous_history_state_id_offset(),
-        Some((feature_ordinal_at + 41) as u64)
+        Some(u64_from_index(feature_ordinal_at + 41))
     );
 
     for tail_length in [82, 104] {
@@ -322,15 +330,15 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(copy.feature_ordinal.get(), 2);
     assert_eq!(
         copy.feature_ordinal_offset(),
-        copy_feature_ordinal_at as u64
+        u64_from_index(copy_feature_ordinal_at)
     );
     assert_eq!(copy.history_state_id(), None);
     assert_eq!(copy.previous_history_state_id(), None);
     assert_eq!(
         copy.previous_history_state_id_offset(),
-        Some((copy_feature_ordinal_at + 53) as u64)
+        Some(u64_from_index(copy_feature_ordinal_at + 53))
     );
-    assert_eq!(copy.frame_length(), copy_paired_at as u64);
+    assert_eq!(copy.frame_length(), u64_from_index(copy_paired_at));
 
     let mut operation_bytes = vec![0; 148];
     operation_bytes[29] = 1;
@@ -392,7 +400,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         .expect("operation decode resources")
         .expect("single-body CopyPasteBodies relation");
     assert_eq!(operation.body_group_record_index, 55);
-    assert_eq!(operation.body_group_byte_offset(), body_group_at as u64);
+    assert_eq!(
+        operation.body_group_byte_offset(),
+        u64_from_index(body_group_at)
+    );
     assert_eq!(
         operation
             .bodies()
@@ -402,7 +413,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         [66]
     );
     assert_eq!(operation.relation_record_index, 44);
-    assert_eq!(operation.relation_byte_offset(), relation_at as u64);
+    assert_eq!(
+        operation.relation_byte_offset(),
+        u64_from_index(relation_at)
+    );
     assert_eq!(
         operation
             .bodies()
@@ -482,8 +496,11 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("exact WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
-    assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
+    assert_eq!(decoded.transform_offset, u64_from_index(work_plane_at + 76));
+    assert_eq!(
+        decoded.reference,
+        Some((99, u64_from_index(work_plane_at + 58)))
+    );
 
     let extended_at = bytes.len();
     let mut extended = vec![0; 373];
@@ -517,8 +534,11 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("extended referenced WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (extended_at + 76) as u64);
-    assert_eq!(decoded.reference, Some((100, (extended_at + 58) as u64)));
+    assert_eq!(decoded.transform_offset, u64_from_index(extended_at + 76));
+    assert_eq!(
+        decoded.reference,
+        Some((100, u64_from_index(extended_at + 58)))
+    );
 
     let direct_at = bytes.len();
     let mut direct = vec![0; 352];
@@ -551,7 +571,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
+    assert_eq!(decoded.transform_offset, u64_from_index(direct_at + 66));
     assert_eq!(decoded.reference, None);
 
     let extended_direct_at = bytes.len();
@@ -585,7 +605,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("extended direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (extended_direct_at + 66) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(extended_direct_at + 66)
+    );
     assert_eq!(decoded.reference, None);
 
     let large_direct_at = bytes.len();
@@ -619,7 +642,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("large direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (large_direct_at + 66) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(large_direct_at + 66)
+    );
     assert_eq!(decoded.reference, None);
 
     let mut axis_bytes = vec![0; 232];
@@ -749,7 +775,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_at + 49) as u64);
+    assert_eq!(decoded.transform_offset, u64_from_index(compact_at + 49));
     assert_eq!(decoded.reference, None);
 
     let compact_431_at = bytes.len();
@@ -782,7 +808,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("class-431 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_431_at + 49) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_431_at + 49)
+    );
     assert_eq!(decoded.reference, None);
 
     let compact_364_at = bytes.len();
@@ -816,7 +845,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("class-364 marked compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_364_at + 49) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_364_at + 49)
+    );
     assert_eq!(decoded.reference, None);
 
     let compact_364_variant_at = bytes.len();
@@ -852,7 +884,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        (compact_364_variant_at + 49) as u64
+        u64_from_index(compact_364_variant_at + 49)
     );
     assert_eq!(decoded.reference, None);
 
@@ -886,7 +918,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("class-450 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_450_at + 50) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_450_at + 50)
+    );
     assert_eq!(decoded.reference, None);
 
     let class_279_at = bytes.len();
@@ -919,7 +954,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("class-279 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (class_279_at + 50) as u64);
+    assert_eq!(decoded.transform_offset, u64_from_index(class_279_at + 50));
     assert_eq!(decoded.reference, None);
 
     let compact_409_short_at = bytes.len();
@@ -946,7 +981,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("short class-409 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_409_short_at + 50) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_409_short_at + 50)
+    );
     assert_eq!(decoded.reference, None);
 
     let compact_409_at = bytes.len();
@@ -979,7 +1017,10 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("class-409 compact direct WorkPlane frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (compact_409_at + 50) as u64);
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(compact_409_at + 50)
+    );
     assert_eq!(decoded.reference, None);
 
     let joint_origin_at = bytes.len();
@@ -1017,8 +1058,14 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     )
     .expect("exact JointOrigin frame");
     assert_eq!(decoded.transform, transform.try_into().unwrap());
-    assert_eq!(decoded.transform_offset, (joint_origin_at + 60) as u64);
-    assert_eq!(decoded.reference, Some((61, (joint_origin_at + 46) as u64)));
+    assert_eq!(
+        decoded.transform_offset,
+        u64_from_index(joint_origin_at + 60)
+    );
+    assert_eq!(
+        decoded.reference,
+        Some((61, u64_from_index(joint_origin_at + 46)))
+    );
 
     for frame_length in [300, 322, 344] {
         let mut construction_scope = joint_origin_scope.clone();
@@ -1076,7 +1123,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        (compact_joint_origin_at + 49) as u64
+        u64_from_index(compact_joint_origin_at + 49)
     );
     assert_eq!(decoded.reference, None);
 
@@ -1118,7 +1165,7 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(decoded.transform, transform.try_into().unwrap());
     assert_eq!(
         decoded.transform_offset,
-        (legacy_joint_origin_at + joint_origin_class_337_266::MATRIX) as u64
+        u64_from_index(legacy_joint_origin_at + joint_origin_class_337_266::MATRIX)
     );
     assert_eq!(decoded.reference, None);
 

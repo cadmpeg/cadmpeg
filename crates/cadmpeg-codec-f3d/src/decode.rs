@@ -14,6 +14,8 @@
 //! A framing failure or a stream without decoded geometry produces a
 //! metadata-only document. The report marks geometry and topology as blocking,
 //! and retained source data remains available for native replay.
+use cadmpeg_core::decode::u64_from_index;
+
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
 
@@ -2482,7 +2484,7 @@ fn try_decode_text_model(
         parts.push((
             BrepFacts {
                 name: copy_decode_string(ctx, name, "retain F3D text B-rep fact name")?,
-                uncompressed_len: bytes.len() as u64,
+                uncompressed_len: u64_from_index(bytes.len()),
                 kernel: Some(crate::container::KernelFraming::Text {
                     header,
                     terminator: stream.terminator,
@@ -2631,7 +2633,7 @@ impl<'a> F3dDecodeSession<'a> {
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         // ASM transfer already charged its delta; keep the running counter in
         // sync so a later admit_entities call cannot double-count those bodies.
-        admitted_entities = admitted_entities.max(ir.model.entity_count() as u64);
+        admitted_entities = admitted_entities.max(u64_from_index(ir.model.entity_count()));
         let AsmTransferRemainder {
             unknowns,
             stats: _,
@@ -2649,7 +2651,7 @@ impl<'a> F3dDecodeSession<'a> {
         native.body_visibilities = body_visibilities;
         native.design_body_bindings = design_body_bindings;
         ctx.admit_entities(
-            ir.model.entity_count() as u64,
+            u64_from_index(ir.model.entity_count()),
             &mut admitted_entities,
             "admit F3D geometry entities",
         )?;
@@ -2717,7 +2719,7 @@ impl<'a> F3dDecodeSession<'a> {
 
     fn admit_model_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
         self.ctx.admit_entities(
-            self.ir.model.entity_count() as u64,
+            u64_from_index(self.ir.model.entity_count()),
             &mut self.admitted_entities,
             operation,
         )
@@ -3050,8 +3052,9 @@ impl<'a> F3dDecodeSession<'a> {
             &self.ir.model.sketch_entities,
             &self.ir.model.spatial_sketch_entities,
         )?;
-        let arrangement_budget =
-            ctx.work_budget(crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK as u64);
+        let arrangement_budget = ctx.work_budget(u64_from_index(
+            crate::design::geometry::MAX_ARRANGEMENT_WALK_WORK,
+        ));
         crate::design::profile_select::bind_sweep_sketch_selections(
             &mut self.ir.model.features,
             &crate::design::profile_select::SketchCurveSelectionResolution {
@@ -3469,7 +3472,7 @@ impl<'a> F3dDecodeSession<'a> {
                 )?;
                 report_design_projection_gaps(ctx, &mut self.report, &self.ir, &self.native)?;
                 ctx.admit_entities(
-                    self.ir.model.entity_count() as u64,
+                    u64_from_index(self.ir.model.entity_count()),
                     &mut self.admitted_entities,
                     "admit F3D entities",
                 )?;
@@ -3532,7 +3535,7 @@ impl<'a> F3dDecodeSession<'a> {
 
         report_design_projection_gaps(ctx, &mut self.report, &self.ir, &self.native)?;
         ctx.admit_entities(
-            self.ir.model.entity_count() as u64,
+            u64_from_index(self.ir.model.entity_count()),
             &mut self.admitted_entities,
             "admit F3D entities",
         )?;
@@ -3604,7 +3607,7 @@ fn decode_scanned_document<'a>(
 ) -> Result<AuthoredDecoded, CodecError> {
     let mut admitted_entities = 0_u64;
     ctx.admit_entities(
-        scan.entries.len() as u64,
+        u64_from_index(scan.entries.len()),
         &mut admitted_entities,
         "admit F3D archive entries",
     )?;
@@ -4397,7 +4400,7 @@ fn mesh_attribute_channels(
                     ctx.refuse_codec_limit(
                         "collect F3D mesh triangle selectors",
                         0,
-                        cadmpeg_core::decode::u64_from_index(triangles.len()),
+                        u64_from_index(triangles.len()),
                     )
                 })?;
                 for index in 0..triangles.len() {
@@ -4767,7 +4770,7 @@ fn decode_result(
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(
-        ir.model.entity_count() as u64,
+        u64_from_index(ir.model.entity_count()),
         admitted_entities,
         "admit F3D entities",
     )?;

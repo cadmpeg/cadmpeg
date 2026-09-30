@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::test_support::push_reference;
 use crate::test_support::lp_utf16;
 use cadmpeg_ir::math::Point2;
@@ -320,7 +322,9 @@ fn indexed_sketch_fixture() -> (
     const COMPANION: u64 = 60;
 
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let record_prefix = |class_tag: u32, entity_id: u64| {
@@ -491,24 +495,24 @@ fn indexed_sketch_fixture() -> (
             },
             RecordIndexEntry {
                 entity_id: POINT,
-                bulk_offset: live_point_at as u64,
+                bulk_offset: u64_from_index(live_point_at),
             },
             RecordIndexEntry {
                 entity_id: CURVE,
-                bulk_offset: live_curve_at as u64,
+                bulk_offset: u64_from_index(live_curve_at),
             },
             RecordIndexEntry {
                 entity_id: TEXT,
-                bulk_offset: live_text_at as u64,
+                bulk_offset: u64_from_index(live_text_at),
             },
             RecordIndexEntry {
                 entity_id: COMPANION,
-                bulk_offset: companion_at as u64,
+                bulk_offset: u64_from_index(companion_at),
             },
         ],
         secondary_records: vec![RecordIndexEntry {
             entity_id: PARENT,
-            bulk_offset: nested_at as u64,
+            bulk_offset: u64_from_index(nested_at),
         }],
     };
 
@@ -532,7 +536,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch points");
     assert_eq!(points.len(), 1);
-    assert_eq!(points[0].byte_offset, live_point_at as u64);
+    assert_eq!(points[0].byte_offset, u64_from_index(live_point_at));
     assert_eq!(points[0].coordinates(), Point2::new(70.0, -30.0));
     meta.types[1].type_guid = "00000000-0000-0000-0000-000000000002"
         .to_owned()
@@ -558,7 +562,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let curves = decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch curves");
     assert_eq!(curves.len(), 1);
-    assert_eq!(curves[0].byte_offset, live_curve_at as u64);
+    assert_eq!(curves[0].byte_offset, u64_from_index(live_curve_at));
     assert!(matches!(
         curves[0].geometry,
         Some(SketchCurveGeometry::Line { start, .. }) if start.get() == Point3::new(50.0, 0.0, 0.0)
@@ -567,7 +571,7 @@ fn sketch_records_use_the_primary_index_live_copy() {
     let texts = decode_sketch_texts_from_stream(&bytes, &meta, "Design/BulkStream.dat")
         .expect("indexed sketch texts");
     assert_eq!(texts.len(), 1);
-    assert_eq!(texts[0].byte_offset, live_text_at as u64);
+    assert_eq!(texts[0].byte_offset, u64_from_index(live_text_at));
     assert_eq!(texts[0].text, "live text");
 
     let mut mismatched_primary = bytes.clone();
@@ -646,7 +650,7 @@ fn sketch_point_and_curve_ids_refuse_retained_limit() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes =
-        crate::ids::native_scope("Design/BulkStream.dat").len() as u64;
+        u64_from_index(crate::ids::native_scope("Design/BulkStream.dat").len());
     for (decode_point, operation) in [
         (true, "f3d sketch point ID"),
         (false, "f3d sketch curve ID"),
@@ -1055,14 +1059,18 @@ fn sketch_text_record(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     push_ascii(&mut bytes, "329");
     bytes.extend_from_slice(&304u64.to_le_bytes());
     bytes.extend_from_slice(&[0; 5]);
     bytes.push(1);
-    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -1115,7 +1123,9 @@ fn sketch_text_record(
 fn indexed_sketch_text_record(text_type: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
@@ -1210,7 +1220,9 @@ fn txt_tag_sketch_text_record_at_with_rotation(
 ) -> Vec<u8> {
     let mut bytes = Vec::new();
     let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
-        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &(u32::try_from(value.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
         bytes.extend_from_slice(value.as_bytes());
     };
     let push_padded_reference = |bytes: &mut Vec<u8>, reference: u32| {
@@ -1222,13 +1234,17 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     bytes.extend_from_slice(&0u32.to_le_bytes());
     // The leading block: a reference and a u32 per entry.
     bytes.push(1);
-    bytes.extend_from_slice(&(frame.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(frame.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in frame {
         push_padded_reference(&mut bytes, *reference);
         bytes.extend_from_slice(&[0; 4]);
     }
     bytes.push(1);
-    bytes.extend_from_slice(&(properties.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(properties.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for (key, value) in properties {
         push_ascii(&mut bytes, key);
         push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
@@ -1247,7 +1263,9 @@ fn txt_tag_sketch_text_record_at_with_rotation(
     bytes.extend_from_slice(&anchor.1.to_le_bytes());
     bytes.extend_from_slice(&vec![0u8; if class_version < 4 { 10 } else { 11 }]);
     lp_utf16(&mut bytes, "sketch text");
-    bytes.extend_from_slice(&(run.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(
+        &(u32::try_from(run.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
     for reference in run {
         push_padded_reference(&mut bytes, *reference);
     }
