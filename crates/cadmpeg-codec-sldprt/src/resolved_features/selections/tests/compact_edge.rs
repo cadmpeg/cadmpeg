@@ -1106,3 +1106,93 @@ fn varfillet_roster_accepts_unframed_reference_lists() {
     assert_eq!(selections[0].references.len(), 4);
     assert_eq!(selections[0].references[3][0].instance, Some(0x8083));
 }
+
+#[test]
+fn scalar_binding_refuses_sparse_path_nesting_limit() {
+    let native_feature =
+        |id: &str, name: &str, source_id: Option<u32>, ordinal: u32, input_class: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: source_id.and_then(FeatureSource::from_value),
+            ordinal,
+            name: name.into(),
+            kind: "Feature".into(),
+            input_class: Some(input_class.into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+    let history = FeatureHistory {
+        id: "history".into(),
+        part_name: None,
+        properties: BTreeMap::new(),
+        content: Vec::new(),
+        configurations: Vec::new(),
+        features: vec![
+            native_feature("producer", "Producer", None, 0, "moExtrusion_c"),
+            native_feature("consumer", "Consumer", Some(2), 1, "Chamfer_c"),
+        ],
+    };
+    let marker = 52;
+    let mut payload = vec![0; 96];
+    payload[marker - 12..marker - 8].copy_from_slice(&1u32.to_le_bytes());
+    payload[marker - 8..marker - 4].copy_from_slice(&[0, 2, 0, 0]);
+    payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let entry = marker + 18;
+    payload[entry..entry + 2].copy_from_slice(&0x8130u16.to_le_bytes());
+    payload[entry + 4..entry + 8].copy_from_slice(&[0x2a, 0x81, 0x2c, 1]);
+    payload[entry + 8..entry + 12].copy_from_slice(&1u32.to_le_bytes());
+    payload[entry + 12..entry + 16].copy_from_slice(&[0x24, 1, 0xd3, 0x48]);
+    payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
+    let lane = FeatureInputLane {
+        id: "lane".into(),
+        configuration: None,
+        native_payload: payload,
+        classes: Vec::new(),
+        names: vec![
+            FeatureInputName {
+                id: "producer-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                object_id: ObjectId::from_value(1),
+                value: "Producer".into(),
+            },
+            FeatureInputName {
+                id: "consumer-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 24,
+                object_id: ObjectId::from_value(2),
+                value: "Consumer".into(),
+            },
+        ],
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    };
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &arena, &policy,
+    ).unwrap();
+    let error = crate::resolved_features::bindings::bind_scalar_operands(
+        &ctx, &[history], &mut [lane],
+    ).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
+            && limit.operation == "decode SLDPRT sparse component path"));
+}
