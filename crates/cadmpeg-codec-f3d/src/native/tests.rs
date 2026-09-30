@@ -93,7 +93,7 @@ fn native_owner_index_refuses_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(Some(&ctx), ["first", "second"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, ["first", "second"].into_iter()).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -109,7 +109,7 @@ fn native_owner_index_refuses_retained_key_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::owner_indices(Some(&ctx), ["key"].into_iter()).unwrap_err();
+    let error = super::owner_indices(&ctx, ["key"].into_iter()).unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
         cadmpeg_core::CodecError::ResourceLimit(limit)
@@ -125,14 +125,7 @@ fn native_owner_groups_refuse_outer_collection_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_collection_items = 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::group_by_owner(
-        Some(&ctx),
-        Vec::<(&str, &str)>::new(),
-        &std::collections::HashMap::new(),
-        2,
-        |record| record.0,
-        |record| record.1,
-    )
+    let error = super::group_by_owner(&ctx, Vec::<(&str, &str)>::new(), &std::collections::HashMap::new(), 2, |record| record.0, |record| record.1)
     .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -150,14 +143,7 @@ fn native_owner_groups_refuse_child_collection_limit() {
     policy.limits.max_collection_items = 2;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let owners = std::collections::HashMap::from([("owner".to_owned(), 0)]);
-    let error = super::group_by_owner(
-        Some(&ctx),
-        vec![("first", "owner"), ("second", "owner")],
-        &owners,
-        1,
-        |record| record.0,
-        |record| record.1,
-    )
+    let error = super::group_by_owner(&ctx, vec![("first", "owner"), ("second", "owner")], &owners, 1, |record| record.0, |record| record.1)
     .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
@@ -174,14 +160,7 @@ fn native_missing_owner_text_refuses_retained_limit() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let error = super::group_by_owner(
-        Some(&ctx),
-        vec![("child", "missing")],
-        &std::collections::HashMap::new(),
-        0,
-        |record| record.0,
-        |record| record.1,
-    )
+    let error = super::group_by_owner(&ctx, vec![("child", "missing")], &std::collections::HashMap::new(), 0, |record| record.0, |record| record.1)
     .unwrap_err();
     assert!(matches!(
         cadmpeg_core::CodecError::from(error),
