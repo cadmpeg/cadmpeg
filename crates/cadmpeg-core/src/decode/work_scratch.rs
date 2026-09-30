@@ -46,14 +46,19 @@ mod tests {
         let mut policy = DecodePolicy::service();
         policy.limits.max_materialized_bytes = 8;
         let arena = DecodeArena::new();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (ctx, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &policy).expect("admitted test operation");
         let budget = ctx.work_budget(10);
         {
-            let mut scratch = budget.reserve_scratch(4, "test evaluator scratch").unwrap();
-            scratch.grow(4).unwrap();
+            let mut scratch = budget
+                .reserve_scratch(4, "test evaluator scratch")
+                .expect("admitted test operation");
+            scratch.grow(4).expect("admitted test operation");
         }
-        let mut scratch = budget.reserve_scratch(8, "test evaluator scratch").unwrap();
-        let error = scratch.grow(1).unwrap_err();
+        let mut scratch = budget
+            .reserve_scratch(8, "test evaluator scratch")
+            .expect("admitted test operation");
+        let error = scratch.grow(1).expect_err("test operation must refuse");
         assert_eq!(error.dimension, ResourceDimension::MaterializedBytes);
         assert_eq!(error.used, 8);
         assert_eq!(error.additional, 1);

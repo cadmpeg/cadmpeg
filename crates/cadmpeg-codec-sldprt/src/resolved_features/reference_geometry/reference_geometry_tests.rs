@@ -311,13 +311,19 @@ fn legacy_reference_axis_triad_requires_consecutive_native_records() {
     .unwrap();
     assert_eq!(
         legacy_reference_axis_triads(&ctx, &features).unwrap(),
-        vec![([3, 4, 5], [[40, 41], [40, 42], [42, 41]])]
+        vec![super::ReferenceAxisTriad(
+            [3, 4, 5],
+            [[40, 41], [40, 42], [42, 41]]
+        )]
     );
 
     features.insert(3, feature(99, 4, "moRefPlane_c"));
     assert_eq!(
         legacy_reference_axis_triads(&ctx, &features).unwrap(),
-        vec![([4, 5, 6], [[40, 41], [40, 42], [42, 41]])]
+        vec![super::ReferenceAxisTriad(
+            [4, 5, 6],
+            [[40, 41], [40, 42], [42, 41]]
+        )]
     );
 
     features[5].source_id = FeatureSource::from_value(99);

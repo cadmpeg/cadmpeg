@@ -696,7 +696,7 @@ fn assert_isocurve_route_limit(dimension: cadmpeg_core::decode::ResourceDimensio
     assert!(!expected.model.pcurves.is_empty());
     let set_limit = |options: &mut DecodeOptions, limit| match dimension {
         ResourceDimension::MaterializedBytes => {
-            options.policy.limits.max_materialized_bytes = limit
+            options.policy.limits.max_materialized_bytes = limit;
         }
         ResourceDimension::WorkUnits => options.policy.limits.max_work_units = limit,
         _ => panic!("unexpected isocurve route dimension"),

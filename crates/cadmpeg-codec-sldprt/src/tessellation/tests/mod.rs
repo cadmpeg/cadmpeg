@@ -1967,8 +1967,10 @@ fn planar_boundary_accepts_bounded_ellipse_arcs() {
         Point3::new(0.0, 1.0, 0.0),
         &surface,
         frame,
-        EPS_DISPLAY_QUANTIZATION,
-        SAMPLE_TOLERANCE,
+        crate::tessellation::BoundaryTolerance {
+            tolerance: EPS_DISPLAY_QUANTIZATION,
+            sampling_tolerance: SAMPLE_TOLERANCE,
+        },
     )
     .unwrap()
     .unwrap();
@@ -2011,8 +2013,10 @@ fn planar_boundary_accepts_bounded_circle_arcs() {
         Point3::new(0.0, 2.0, 0.0),
         &surface,
         frame,
-        EPS_DISPLAY_QUANTIZATION,
-        SAMPLE_TOLERANCE,
+        crate::tessellation::BoundaryTolerance {
+            tolerance: EPS_DISPLAY_QUANTIZATION,
+            sampling_tolerance: SAMPLE_TOLERANCE,
+        },
     )
     .unwrap()
     .unwrap();

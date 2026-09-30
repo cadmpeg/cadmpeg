@@ -1075,7 +1075,6 @@ impl crate::geometry::nurbs::KnotVector {
 
     /// The intervals between consecutive distinct knots among knots
     /// `first..=last`, in increasing order.
-    #[must_use]
     pub(crate) fn active_spans(
         &self,
         first: usize,

@@ -375,16 +375,25 @@ where
 
 /// The face-identity payload an instance references, when exactly one distinct
 /// payload qualifies.
+struct AtomPayload<'a> {
+    values: &'a [u32; 5],
+    trailing_fields: &'a [u32],
+}
+
 fn atom_payload<'a>(
     ctx: &DecodeContext<'_>,
     buf: &[u8],
     from: usize,
     lists: &'a HashMap<u16, Vec<u32>>,
-) -> Result<Option<(&'a [u32; 5], &'a [u32])>, cadmpeg_core::CodecError> {
+) -> Result<Option<AtomPayload<'a>>, cadmpeg_core::CodecError> {
     Ok(referenced_payload(ctx, buf, from, lists, |values| {
         ATOM_WIDTHS.contains(&values.len()) && values.get(ATOM_GUARD) == Some(&0)
     })?
-    .and_then(|values| values.split_first_chunk::<5>()))
+    .and_then(|values| values.split_first_chunk::<5>())
+    .map(|(values, trailing_fields)| AtomPayload {
+        values,
+        trailing_fields,
+    }))
 }
 
 /// Decode every `ATOM_ID_2001` binding carried by one stream body.
@@ -418,7 +427,10 @@ pub(super) fn scan(
         if face_attr <= 1 {
             continue;
         }
-        let Some((values, trailing_fields)) = atom_payload(ctx, buf, p + attr_inst::LEN, &lists)?
+        let Some(AtomPayload {
+            values,
+            trailing_fields,
+        }) = atom_payload(ctx, buf, p + attr_inst::LEN, &lists)?
         else {
             continue;
         };

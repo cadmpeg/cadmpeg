@@ -75,18 +75,29 @@ pub(crate) struct TopologyIdentityIndex {
     sequence_targets: BTreeMap<u64, Option<PmiTarget>>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PrimaryTopology<'a> {
+    pub bodies: &'a [Body],
+    pub faces: &'a [Face],
+    pub edges: &'a [Edge],
+    pub vertices: &'a [Vertex],
+}
+
 impl TopologyIdentityIndex {
     /// Build an index from the emitted primary topology arenas.
     pub(crate) fn from_model(
         ctx: &DecodeContext<'_>,
-        bodies: &[Body],
-        faces: &[Face],
-        edges: &[Edge],
-        vertices: &[Vertex],
+        topology: PrimaryTopology<'_>,
         face_bridge_sequences: &[(u32, u16)],
         edge_use_sequences: &[(u32, u16)],
         vertex_use_sequences: &[(u32, u16)],
     ) -> Result<Self, CodecError> {
+        let PrimaryTopology {
+            bodies,
+            faces,
+            edges,
+            vertices,
+        } = topology;
         let mut index = Self::default();
         for body in bodies {
             ctx.charge_work(1, "index SWIFT body identities")?;
@@ -696,7 +707,10 @@ fn read_strings(
     let Some(count) = cursor.u32_le() else {
         return Ok(None);
     };
-    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+    let Some(count) = cursor
+        .counted(u64::from(count), 2)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+    else {
         return Ok(None);
     };
     let mut values = BTreeMap::new();
@@ -731,7 +745,10 @@ fn read_integers(
     let Some(count) = cursor.u32_le() else {
         return Ok(None);
     };
-    let Some(count) = cursor.counted(u64::from(count), 5).map(|count| count.get()) else {
+    let Some(count) = cursor
+        .counted(u64::from(count), 5)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+    else {
         return Ok(None);
     };
     let mut values = BTreeMap::new();
@@ -761,7 +778,10 @@ fn read_doubles(
     let Some(count) = cursor.u32_le() else {
         return Ok(None);
     };
-    let Some(count) = cursor.counted(u64::from(count), 9).map(|count| count.get()) else {
+    let Some(count) = cursor
+        .counted(u64::from(count), 9)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+    else {
         return Ok(None);
     };
     let mut values = BTreeMap::new();
@@ -793,7 +813,10 @@ fn read_objects(
     let Some(count) = cursor.u32_le() else {
         return Ok(None);
     };
-    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+    let Some(count) = cursor
+        .counted(u64::from(count), 2)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+    else {
         return Ok(None);
     };
     let mut references = Vec::new();
@@ -860,7 +883,10 @@ fn read_related(
     let Some(count) = cursor.u32_le() else {
         return Ok(None);
     };
-    let Some(count) = cursor.counted(u64::from(count), 2).map(|count| count.get()) else {
+    let Some(count) = cursor
+        .counted(u64::from(count), 2)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+    else {
         return Ok(None);
     };
     let mut descriptors = Vec::new();
@@ -1096,9 +1122,11 @@ fn project_with_topology(
             }
         } else if let Some(annotation) = project_dimension(
             ctx,
-            root,
-            reference,
-            entity,
+            DimensionSource {
+                root,
+                reference,
+                entity,
+            },
             &feature_index,
             topology,
             rendered,
@@ -1138,7 +1166,7 @@ fn project_datum(
     };
     let name = object_name(ctx, entity)?;
     Ok(
-        (short_class(&entity.class) == "GdtDatum").then(|| PmiAnnotation {
+        (short_class(&entity.class) == "GdtDatum").then_some(PmiAnnotation {
             id,
             name,
             visible: None,
@@ -1236,16 +1264,26 @@ fn project_lower_profile_tier(
     }))
 }
 
+#[derive(Clone, Copy)]
+struct DimensionSource<'a> {
+    root: &'a Entity,
+    reference: &'a Reference,
+    entity: &'a Entity,
+}
+
 fn project_dimension(
     ctx: &DecodeContext<'_>,
-    root: &Entity,
-    reference: &Reference,
-    entity: &Entity,
+    source: DimensionSource<'_>,
     feature_index: &BTreeMap<&str, &Entity>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
     pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
+    let DimensionSource {
+        root,
+        reference,
+        entity,
+    } = source;
     let Some(dimension) = dimension_kind(short_class(&entity.class)) else {
         return Ok(None);
     };
@@ -2021,9 +2059,9 @@ fn direct_feature_context<'a>(
     let mut context = BTreeSet::new();
     for reference in &annotation.features.references {
         ctx.charge_work(1, "scan SWIFT feature context")?;
-        if !(feature_index
+        if feature_index
             .get(reference.id.as_str())
-            .is_none_or(|feature| short_class(&feature.class) != operation_class))
+            .is_some_and(|feature| short_class(&feature.class) == operation_class)
         {
             continue;
         }
@@ -2788,9 +2826,7 @@ fn targets(
                     };
                     if let Some(target) = topology.resolve(identifier) {
                         ctx.charge_work(
-                            u64_from_index(
-                                targets.len().checked_sub(first_target).unwrap_or_default(),
-                            ),
+                            u64_from_index((first_target..targets.len()).len()),
                             "deduplicate SWIFT topology targets",
                         )?;
                         if !targets

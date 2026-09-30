@@ -19,7 +19,7 @@ pub(crate) fn validate_native(
     };
     let native = match crate::native::SldprtNative::load_charged(ctx, namespace) {
         Ok(native) => native,
-        Err(error) => return invalid_namespace(ctx, error),
+        Err(error) => return invalid_namespace(ctx, &error),
     };
     let mut findings = Vec::new();
     for history in &native.feature_histories {
@@ -238,7 +238,7 @@ pub(crate) fn validate_native(
 
 fn invalid_namespace(
     ctx: &DecodeContext<'_>,
-    error: cadmpeg_ir::NativeConvertError,
+    error: &cadmpeg_ir::NativeConvertError,
 ) -> Result<Vec<Finding>, CodecError> {
     ctx.charge_work(0, "validate SLDPRT native namespace")?;
     let mut findings = Vec::new();

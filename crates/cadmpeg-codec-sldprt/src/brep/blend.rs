@@ -147,12 +147,16 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
     })
 }
 
+pub(super) struct BlendCarriers {
+    pub blends: HashMap<u16, BlendCarrier>,
+    pub pairs: HashMap<u16, SupportPairCarrier>,
+}
+
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
 pub(super) fn scan(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-) -> Result<(HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>), cadmpeg_core::CodecError>
-{
+) -> Result<BlendCarriers, cadmpeg_core::CodecError> {
     ctx.charge_work(bytes.len() as u64, "scan SLDPRT blend carriers")?;
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
@@ -188,7 +192,7 @@ pub(super) fn scan(
             }
         }
     }
-    Ok((blends, pairs))
+    Ok(BlendCarriers { blends, pairs })
 }
 
 #[cfg(test)]
@@ -206,7 +210,9 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test carrier bytes fit service policy");
-        super::scan(&ctx, bytes).expect("test carriers fit service policy")
+        let super::BlendCarriers { blends, pairs } =
+            super::scan(&ctx, bytes).expect("test carriers fit service policy");
+        (blends, pairs)
     }
 
     #[test]

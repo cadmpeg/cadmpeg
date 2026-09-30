@@ -458,6 +458,8 @@ pub(crate) fn resolve_display_appearances(
         }
     }
     for (source_id, face_indexes) in faces_by_source {
+        const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
+
         let Some(Some(assignment)) = feature_by_source.get(&source_id) else {
             continue;
         };
@@ -465,7 +467,6 @@ pub(crate) fn resolve_display_appearances(
             ctx.charge_collection_items(1, "collect matched SLDPRT appearance sources")?;
         }
         matched_feature_sources.insert(source_id);
-        const FEATURE_APPEARANCE_NAME: &str = "SolidWorks feature appearance";
         ctx.charge_retained(
             u64::try_from(FEATURE_APPEARANCE_NAME.len()).map_err(|_| {
                 ctx.refuse_codec_limit(

@@ -2261,12 +2261,13 @@ pub(crate) fn project_marker_dimensioned_circles(
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
+    const OPERATION: &str = "project SLDPRT marker circles";
+
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
     let transforms =
         marker_transform_candidates_by_feature(ctx, features, sketches, entities, lanes)?;
-    const OPERATION: &str = "project SLDPRT marker circles";
     let mut radial_records_by_lane = HashMap::<&str, Vec<_>>::new();
     for lane in lanes {
         let work = u64::try_from(lane.native_payload.len())
@@ -2512,18 +2513,18 @@ pub(crate) fn project_marker_dimensioned_circles(
                             let Ok(entity_id) = SketchEntityId::mint(id_text) else {
                                 continue;
                             };
-                            let geometry =
-                                match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                            let Ok(geometry) =
+                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                                     center,
                                     radius: Length::new(radius).ok_or_else(|| {
                                         cadmpeg_core::CodecError::Malformed(
                                             "SolidWorks projected length must be finite".into(),
                                         )
                                     })?,
-                                }) {
-                                    Ok(geometry) => geometry,
-                                    Err(_) => continue,
-                                };
+                                })
+                            else {
+                                continue;
+                            };
                             let same_carrier = carrier_radius
                                 .is_some_and(|carrier| same_dimension_length(carrier, radius));
                             let native_reference = if same_carrier {
@@ -2728,7 +2729,7 @@ pub(crate) fn project_marker_dimensioned_circles(
                             ctx,
                             &mut consumed_carrier_refs,
                             reference,
-                            |key| key.len(),
+                            std::string::String::len,
                         )?;
                     }
                 }
@@ -3051,16 +3052,15 @@ pub(crate) fn project_marker_dimensioned_circles(
             let Ok(entity_id) = SketchEntityId::mint(id_text) else {
                 continue;
             };
-            let geometry = match SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center,
                 radius: Length::new(radius).ok_or_else(|| {
                     cadmpeg_core::CodecError::Malformed(
                         "SolidWorks projected length must be finite".into(),
                     )
                 })?,
-            }) {
-                Ok(geometry) => geometry,
-                Err(_) => continue,
+            }) else {
+                continue;
             };
             let geometry_reference = parameter
                 .native_ref

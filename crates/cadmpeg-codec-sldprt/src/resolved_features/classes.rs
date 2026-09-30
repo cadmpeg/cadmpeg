@@ -239,7 +239,7 @@ pub(crate) fn bind_history_classes(
         ctx.stable_sort_by(
             classes,
             Ord::cmp,
-            |class| class.len(),
+            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -318,7 +318,7 @@ pub(crate) fn bind_history_classes(
         ctx.stable_sort_by(
             classes,
             Ord::cmp,
-            |class| class.len(),
+            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -384,7 +384,7 @@ pub(crate) fn bind_history_classes(
         ctx.stable_sort_by(
             classes,
             Ord::cmp,
-            |class| class.len(),
+            std::string::String::len,
             "sort SLDPRT bound classes",
         )?;
         classes.dedup();
@@ -433,7 +433,7 @@ pub(crate) fn bind_history_classes(
         ctx.stable_sort_by(
             &mut candidates,
             Ord::cmp,
-            |class| class.len(),
+            std::string::String::len,
             "sort SLDPRT class candidates",
         )?;
         candidates.dedup();

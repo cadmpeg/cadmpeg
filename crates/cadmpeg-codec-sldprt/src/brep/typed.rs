@@ -1681,6 +1681,11 @@ mod tests {
 
     #[test]
     fn extended_references_close_every_typed_ownership_edge() {
+        const BODY: u32 = 40_000;
+        const SHELL: u32 = 40_001;
+        const REGION: u32 = 40_002;
+        const FACE: u16 = 40_003;
+
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
@@ -1688,10 +1693,6 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        const BODY: u32 = 40_000;
-        const SHELL: u32 = 40_001;
-        const REGION: u32 = 40_002;
-        const FACE: u16 = 40_003;
 
         let mut bytes = vec![0, 0x0c, 0x1b, b'C', b'Z'];
         bytes.extend(body_node_with_topology(

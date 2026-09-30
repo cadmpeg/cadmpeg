@@ -1556,7 +1556,7 @@ fn variable_fillet_radii_join_control_vertices_to_edge_endpoints() {
     .expect("vertex join");
     assert!(matches!(
         groups.as_slice(),
-        [(RadiusSpec::Variable { points }, selections)]
+        [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
@@ -1749,7 +1749,7 @@ fn variable_fillet_legacy_edge_controls_apply_one_profile_to_endpointless_edges(
     .expect("legacy edge-control join");
     assert!(matches!(
         groups.as_slice(),
-        [(RadiusSpec::Variable { points }, selections)]
+        [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },
@@ -1823,7 +1823,7 @@ fn variable_fillet_two_control_roster_rejects_endpoint_collision() {
     .expect("endpoint-less two-control roster");
     assert!(matches!(
         groups.as_slice(),
-        [(RadiusSpec::Variable { points }, selections)]
+        [super::RadiusSelectionGroup(RadiusSpec::Variable { points }, selections)]
             if matches!(points.as_slice(), [
                 VariableRadius { parameter: first_parameter, radius: actual_radius },
                 VariableRadius { parameter: second_parameter, radius: actual_radius_2 },

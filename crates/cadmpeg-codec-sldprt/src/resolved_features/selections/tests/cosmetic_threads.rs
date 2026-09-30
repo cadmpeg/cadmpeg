@@ -258,7 +258,7 @@ fn cosmetic_thread_retains_unique_cylinder_marker_without_component_path() {
             &HashSet::from([0x802f]),
         )
         .expect("charged cylinder marker scan"),
-        vec![(marker, None)]
+        vec![crate::resolved_features::selections::CylinderMarkerReference(marker, None)]
     );
 }
 

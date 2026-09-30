@@ -300,7 +300,7 @@ pub(crate) fn enrich_history_hole_constructions(
                     std::cmp::Ordering::Equal => {
                         entry.1 = entry.1.checked_add(1).ok_or_else(|| {
                             ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX)
-                        })?
+                        })?;
                     }
                     std::cmp::Ordering::Less => {}
                 }
@@ -2213,7 +2213,7 @@ pub(crate) fn project_spatial_hole_position_sketches(
                 (candidate.native_ref.as_deref() == Some(position_feature.id.as_str()))
                     .then_some(sketch)
             })
-            .last()
+            .next_back()
         else {
             continue;
         };
@@ -2544,6 +2544,8 @@ pub(crate) fn project_generated_hole_axes(
     for feature in features {
         let solution =
             (|| -> Result<Option<Vec<HolePlacement>>, CodecError> {
+                const OPERATION: &str = "sort SLDPRT generated hole lanes";
+
                 let FeatureDefinition::Operation(FeatureOperation::Hole {
                     placements, shape, ..
                 }) = feature.evaluation.definition()
@@ -2694,7 +2696,6 @@ pub(crate) fn project_generated_hole_axes(
                     ],
                     HolePlacement::Directed { .. } => [GridCoordinate::Cell(0); 6],
                 };
-                const OPERATION: &str = "sort SLDPRT generated hole lanes";
                 ctx.charge_work(u64_from_index(lane_solutions.len()), OPERATION)?;
                 let maximum_length = lane_solutions
                     .iter()
@@ -2791,6 +2792,8 @@ pub(crate) fn project_hole_topology_axes(
     }
 
     for (unresolved_index, diameter) in unresolved {
+        const CANDIDATE_KEYS: &str = "index SLDPRT counterbore candidate axes";
+
         let diameter = diameter.get();
 
         let Some(candidates) = counterbore_topology_candidates(
@@ -2838,7 +2841,6 @@ pub(crate) fn project_hole_topology_axes(
             continue;
         }
 
-        const CANDIDATE_KEYS: &str = "index SLDPRT counterbore candidate axes";
         let mut candidate_keys = HashSet::new();
         for key in candidates.iter().filter_map(hole_axis_key) {
             ctx.charge_work(1, CANDIDATE_KEYS)?;
@@ -2914,7 +2916,7 @@ pub(crate) fn project_hole_topology_axes(
 fn project_flat_blind_topology_axes(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
+    cylinders: &[BoreFaceSpan],
 ) -> Result<(), CodecError> {
     let candidates = features
         .iter()
@@ -2960,13 +2962,13 @@ fn project_flat_blind_topology_axes(
         let length_tolerance = (length.abs() * EPS_HOLE_GEOMETRY).max(EPS_HOLE_POSITION);
         let Some(placements) = carrier_placements(
             ctx,
-            cylinders
-                .iter()
-                .filter_map(|(origin, axis, candidate_radius, candidate_span, _)| {
+            cylinders.iter().filter_map(
+                |BoreFaceSpan(origin, axis, candidate_radius, candidate_span, _)| {
                     ((candidate_radius - radius).abs() <= radius_tolerance
                         && (candidate_span - length).abs() <= length_tolerance)
                         .then_some((*origin, *axis))
-                }),
+                },
+            ),
         )?
         else {
             continue;
@@ -2979,7 +2981,7 @@ fn project_flat_blind_topology_axes(
 fn project_drilled_hole_topology_axes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
+    cylinders: &[BoreFaceSpan],
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     expand_seeded_drilled_hole_topology_axes(ctx, features, cylinders, topology)?;
@@ -3056,7 +3058,7 @@ fn drilled_hole_topology_candidates(
     diameter: f64,
     length: f64,
     drill_point_angle: f64,
-    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
+    cylinders: &[BoreFaceSpan],
     surfaces: &[Surface],
 ) -> Result<Option<Vec<HolePlacement>>, CodecError> {
     let radius = diameter * 0.5;
@@ -3102,13 +3104,13 @@ fn drilled_hole_topology_candidates(
     }
     let Some(placements) = carrier_placements(
         ctx,
-        cylinders
-            .iter()
-            .filter_map(|(origin, axis, candidate_radius, candidate_span, _)| {
+        cylinders.iter().filter_map(
+            |BoreFaceSpan(origin, axis, candidate_radius, candidate_span, _)| {
                 ((candidate_radius - radius).abs() <= radius_tolerance
                     && (candidate_span - length).abs() <= length_tolerance)
                     .then_some((*origin, *axis))
-            }),
+            },
+        ),
     )?
     else {
         return Ok(None);
@@ -3127,7 +3129,7 @@ fn drilled_hole_topology_candidates(
 fn expand_seeded_drilled_hole_topology_axes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
-    cylinders: &[(Point3, FeatureDirection3, f64, f64, bool)],
+    cylinders: &[BoreFaceSpan],
     topology: &HoleTopology<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut visited = HashSet::new();
@@ -3271,9 +3273,9 @@ fn unclaimed_seeded_hole_candidates(
         else {
             continue;
         };
-        if !shape
+        if shape
             .diameter()
-            .is_some_and(|candidate| candidate.get().to_bits() == diameter.to_bits())
+            .is_none_or(|candidate| candidate.get().to_bits() != diameter.to_bits())
         {
             continue;
         }
@@ -3720,8 +3722,9 @@ pub(crate) fn project_hole_axes(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) -> Result<(), CodecError> {
-    let surfaces = topology.surfaces;
     const INDEX_OPERATION: &str = "index SLDPRT hole position features";
+
+    let surfaces = topology.surfaces;
     let mut native_features = HashMap::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
         ctx.charge_work(1, INDEX_OPERATION)?;
@@ -3799,8 +3802,9 @@ pub(crate) fn project_hole_axes(
     }
     let mut feature_ranges = HashMap::new();
     for lane in lanes {
-        ctx.charge_work(1, INDEX_OPERATION)?;
         const OPERATION: &str = "group SLDPRT feature object byte ranges by lane";
+
+        ctx.charge_work(1, INDEX_OPERATION)?;
         if !feature_ranges.contains_key(lane.id.as_str()) {
             ctx.charge_collection_items(1, OPERATION)?;
             feature_ranges
@@ -4256,10 +4260,13 @@ fn topology_index<'a, T, K: Eq + std::hash::Hash>(
     Ok(index)
 }
 
+#[derive(Debug)]
+struct BoreFaceSpan(Point3, FeatureDirection3, f64, f64, bool);
+
 fn cylindrical_bore_face_spans(
     ctx: &DecodeContext<'_>,
     topology: &HoleTopology<'_>,
-) -> Result<Vec<(Point3, FeatureDirection3, f64, f64, bool)>, CodecError> {
+) -> Result<Vec<BoreFaceSpan>, CodecError> {
     let surfaces = topology_index(ctx, topology.surfaces, |surface| &surface.id)?;
     let loops = topology_index(ctx, topology.loops, |loop_| &loop_.id)?;
     let coedges = topology_index(ctx, topology.coedges, |coedge| &coedge.id)?;
@@ -4327,7 +4334,13 @@ fn cylindrical_bore_face_spans(
         let span = maximum - minimum;
         if span.is_finite() && span > 0.0 {
             ctx.reserve_collection_vec(&mut spans, 1, "collect SLDPRT hole bore spans")?;
-            spans.push((origin, axis, radius, span, face.sense == Sense::Reversed));
+            spans.push(BoreFaceSpan(
+                origin,
+                axis,
+                radius,
+                span,
+                face.sense == Sense::Reversed,
+            ));
         }
     }
     Ok(spans)
@@ -4376,7 +4389,7 @@ pub(crate) fn project_topological_hole_constructions(
                         break;
                     };
                     let mut candidates = Vec::new();
-                    for (origin, axis, radius, span, reversed) in &bore_faces {
+                    for BoreFaceSpan(origin, axis, radius, span, reversed) in &bore_faces {
                         ctx.charge_work(1, "match SLDPRT hole bore faces")?;
                         if !reversed {
                             continue;
@@ -4765,9 +4778,7 @@ fn marker_pattern_bore_axes(
                 .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
             paired_marker_ids.insert(paired.id());
         }
-        let reduced = if paired.kind() != SketchInputKind::Point {
-            true
-        } else {
+        let reduced = if paired.kind() == SketchInputKind::Point {
             ctx.charge_work(u64_from_index(lane.sketch_entities.len()), OPERATION)?;
             !lane.sketch_entities.iter().any(|candidate| {
                 candidate.id() != paired.id()
@@ -4779,6 +4790,8 @@ fn marker_pattern_bore_axes(
                             && same_dimension_length(paired_v * 1000.0, v * 1000.0)
                     })
             })
+        } else {
+            true
         };
         if reduced && !reduced_marker_ids.contains(paired.id()) {
             ctx.charge_collection_items(1, OPERATION)?;

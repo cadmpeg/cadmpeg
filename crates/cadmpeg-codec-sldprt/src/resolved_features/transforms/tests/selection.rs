@@ -1185,6 +1185,8 @@ fn circular_profile_binding_refuses_retained_limit() {
 
 #[test]
 fn dimensioned_circle_matching_keeps_large_radius_identity() {
+    use crate::resolved_features::grid::GridCoordinate;
+
     let resource_arena = cadmpeg_core::decode::DecodeArena::new();
     let (resource_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -1192,7 +1194,6 @@ fn dimensioned_circle_matching_keeps_large_radius_identity() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    use crate::resolved_features::grid::GridCoordinate;
     let sketch = cadmpeg_ir::sketches::Sketch {
         id: cadmpeg_ir::sketches::SketchId::mint("test:model:sketch#large-radius").unwrap(),
         name: None,

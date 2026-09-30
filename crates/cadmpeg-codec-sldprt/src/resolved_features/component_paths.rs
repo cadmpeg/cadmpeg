@@ -423,7 +423,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     profile: existing,
                     strength: existing_strength,
                 } if *existing == profile.id.as_str() => ProfileVote::Unique {
-                    profile: *existing,
+                    profile: existing,
                     strength: (*existing_strength).max(strength),
                 },
                 ProfileVote::Unique {

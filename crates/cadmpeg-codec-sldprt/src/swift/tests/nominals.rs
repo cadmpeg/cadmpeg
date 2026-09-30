@@ -1243,7 +1243,8 @@ fn rendered_literal_limit_error(
 ) -> CodecError {
     let mut payload = vec![0xff, 0xfe, 0xff, 0];
     let text = "<MOD-DIAM> .156";
-    payload[3] = u8::try_from(text.len()).expect("fixture length");
+    *payload.get_mut(3).expect("fixture length byte") =
+        u8::try_from(text.len()).expect("fixture length");
     for unit in text.encode_utf16() {
         payload.extend_from_slice(&unit.to_le_bytes());
     }

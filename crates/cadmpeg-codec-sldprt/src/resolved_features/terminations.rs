@@ -221,7 +221,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             }
             names_by_id.insert(name.id.as_str(), name);
         }
-        let scan_end = lane.native_payload.len().checked_sub(103).unwrap_or(0);
+        let scan_end = if lane.native_payload.len() >= 103 {
+            lane.native_payload.len() - 103
+        } else {
+            0
+        };
         ctx.charge_work(
             u64_from_index(scan_end)
                 .checked_mul(64)
@@ -401,7 +405,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let mut candidates = Vec::new();
-            let scan_end = end_spec_end.checked_sub(103).unwrap_or(0);
+            let scan_end = (103..end_spec_end).len();
             for offset in start..scan_end {
                 ctx.charge_work(64, OPERATION)?;
                 let candidate =
@@ -1512,7 +1516,7 @@ pub(crate) fn project_surface_sweep_profiles(
                     dependencies.push(id);
                 }
                 PlanarProfileRef::Generated { curves, .. } => {
-                    for curve in curves.iter() {
+                    for curve in curves {
                         let id = copy_termination_feature_id(ctx, &curve.feature, OPERATION)?;
                         ctx.reserve_collection_vec(&mut dependencies, 1, OPERATION)?;
                         dependencies.push(id);
@@ -1909,7 +1913,7 @@ pub(crate) fn project_compact_combine_paths(
         }
         for selection in [&projection.target, &projection.tools] {
             if let BodySelection::Generated { bodies, .. } = selection {
-                for body in bodies.iter() {
+                for body in bodies {
                     let work = u64_from_index(body.feature.as_str().len())
                         .checked_add(u64_from_index(body.local_id.as_str().len()))
                         .and_then(|work| work.checked_add(2))
@@ -2409,7 +2413,9 @@ fn compact_single_face_reference_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Result<Option<Vec<FeatureInputComponentPathEntry>>, cadmpeg_core::CodecError> {
-    if let Some((components, _)) = compact_single_face_reference_record_at(ctx, payload, marker)? {
+    if let Some(super::selections::ComponentPathReference(components, _)) =
+        compact_single_face_reference_record_at(ctx, payload, marker)?
+    {
         return Ok(Some(components));
     }
     legacy_single_face_reference_path_at(ctx, payload, marker)
@@ -2613,7 +2619,7 @@ pub(super) fn compact_single_face_reference_record_at(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
-) -> Result<Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)>, cadmpeg_core::CodecError> {
+) -> Result<Option<super::selections::ComponentPathReference>, cadmpeg_core::CodecError> {
     ctx.charge_work(32, "decode SLDPRT single face record")?;
     let count = (|| {
         let count = marker
@@ -2642,7 +2648,9 @@ pub(super) fn compact_single_face_reference_record_at(
         count,
         "decode SLDPRT component path layout",
     )? {
-        return Ok(Some((components, None)));
+        return Ok(Some(super::selections::ComponentPathReference(
+            components, None,
+        )));
     }
     for serialized_roots in [1usize, 2] {
         let Some(entry_count) = count.checked_sub(serialized_roots) else {
@@ -2685,7 +2693,9 @@ pub(super) fn compact_single_face_reference_record_at(
                 .then_some(Some(source))
         });
         if let Some(source) = source {
-            return Ok(Some((components, source)));
+            return Ok(Some(super::selections::ComponentPathReference(
+                components, source,
+            )));
         }
     }
     Ok(None)

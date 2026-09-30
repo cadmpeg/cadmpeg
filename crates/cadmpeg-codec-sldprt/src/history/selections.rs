@@ -233,7 +233,7 @@ pub(crate) fn bind_topology_selections(
                             distance,
                         }) => match reference {
                             Some(DatumPlaneReference::Face { face: reference }) => {
-                                resolve_face(reference)?
+                                resolve_face(reference)?;
                             }
                             Some(DatumPlaneReference::ResolvedPlane { frame }) => {
                                 let origin = frame.origin();

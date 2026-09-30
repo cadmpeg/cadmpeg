@@ -13,16 +13,16 @@ fn sketch_block_error(policy: DecodePolicy) -> CodecError {
         kind: String::new(),
         input_class: Some(class.into()),
         suppressed: false,
-        parameters: Default::default(),
-        dimension_properties: Default::default(),
-        properties: Default::default(),
+        parameters: std::collections::BTreeMap::default(),
+        dimension_properties: std::collections::BTreeMap::default(),
+        properties: std::collections::BTreeMap::default(),
         text: None,
         content: Vec::new(),
     };
     let mut histories = [super::FeatureHistory {
         id: "history".into(),
         part_name: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         content: Vec::new(),
         configurations: Vec::new(),
         features: vec![

@@ -756,10 +756,11 @@ fn append_design_losses(
 
     let mut feature_names = HashMap::new();
     for feature in &ir.model.features {
+        const OPERATION: &str = "index SLDPRT feature names";
+
         let Some(name) = &feature.name else {
             continue;
         };
-        const OPERATION: &str = "index SLDPRT feature names";
         ctx.charge_work(
             cadmpeg_core::decode::u64_from_index(feature.id.as_str().len()),
             OPERATION,
@@ -1534,7 +1535,7 @@ fn append_design_losses(
                     || sources.iter().any(|source| {
                         incomplete_binder_target(
                             &source.target,
-                            &feature_positions,
+                            feature_positions,
                             state.feature.ordinal,
                             state.dependencies,
                         ) || source
@@ -1554,7 +1555,7 @@ fn append_design_losses(
                             ..
                         } if incomplete_binder_target(
                             context,
-                            &feature_positions,
+                            feature_positions,
                             state.feature.ordinal,
                             state.dependencies,
                         )
@@ -1974,7 +1975,7 @@ fn unbound_feature_input_operation_objects(
         ctx,
         features
             .clone()
-            .filter_map(|feature| feature.source_value()),
+            .filter_map(super::records::Feature::source_value),
         "count SLDPRT feature-input sources",
     )?;
     let binding_counts = count_keys(
@@ -2286,6 +2287,11 @@ fn appearance_assignment_loss_message(
     matched: &BTreeSet<FeatureSourceId>,
     conflicts: &[String],
 ) -> Result<Option<String>, CodecError> {
+    const PREFIX: &str = "VisualStates feature appearance assignment unresolved: ";
+    const MISSING_PREFIX: &str = "feature source ID(s) ";
+    const MISSING_SUFFIX: &str = " have no agreeing DisplayFace persistent reference";
+    const CONFLICT_PREFIX: &str = "conflicting references rejected for ";
+
     const OPERATION: &str = "retain SLDPRT appearance assignment loss";
     let scan_work = [assigned.len(), matched.len(), conflicts.len()]
         .into_iter()
@@ -2295,10 +2301,6 @@ fn appearance_assignment_loss_message(
         .and_then(|work| work.checked_mul(4))
         .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(scan_work, OPERATION)?;
-    const PREFIX: &str = "VisualStates feature appearance assignment unresolved: ";
-    const MISSING_PREFIX: &str = "feature source ID(s) ";
-    const MISSING_SUFFIX: &str = " have no agreeing DisplayFace persistent reference";
-    const CONFLICT_PREFIX: &str = "conflicting references rejected for ";
     let has_unmatched = assigned.difference(matched).next().is_some();
     if !has_unmatched && conflicts.is_empty() {
         return Ok(None);
@@ -2756,6 +2758,29 @@ fn build_geometry_ir(
     ),
     CodecError,
 > {
+    fn add_opaque_link<'a>(
+        ctx: &DecodeContext<'_>,
+        opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
+        record: &'a str,
+        entity: &str,
+    ) -> Result<(), CodecError> {
+        ctx.charge_work(1, "index SLDPRT opaque geometry link")?;
+        let links = match opaque_links.entry(record) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => {
+                ctx.charge_collection_items(1, "index SLDPRT opaque geometry record")?;
+                entry.insert(Vec::new())
+            }
+        };
+        ctx.reserve_collection_vec(links, 1, "index SLDPRT opaque geometry link")?;
+        links.push(copy_retained_string(
+            ctx,
+            entity,
+            "retain SLDPRT opaque geometry link",
+        )?);
+        Ok(())
+    }
+
     let DecodedBrep {
         metadata_header,
         mut brep,
@@ -2899,7 +2924,7 @@ fn build_geometry_ir(
             ctx,
             &mut ir.model.features,
             &histories,
-            &sketch_lanes,
+            sketch_lanes,
         )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
@@ -2909,7 +2934,7 @@ fn build_geometry_ir(
         &mut sketches,
         &mut sketch_entities,
         &histories,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         ctx,
@@ -2917,7 +2942,7 @@ fn build_geometry_ir(
         &mut sketches,
         &mut sketch_entities,
         &histories,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::history::bind::bind_unique_sketch_feature(
         ctx,
@@ -2935,7 +2960,7 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
         &sketches,
         &brep.surfaces,
     )?;
@@ -2943,13 +2968,13 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         ctx,
@@ -2958,7 +2983,7 @@ fn build_geometry_ir(
         &brep.surfaces,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::dimensions::project_marker_dimensioned_circles(
         ctx,
@@ -2966,21 +2991,21 @@ fn build_geometry_ir(
         &mut sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         ctx,
         &mut sketch_entities,
         &sketches,
         &ir.model.features,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         ctx,
         &mut sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         ctx,
@@ -2988,7 +3013,7 @@ fn build_geometry_ir(
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
         ctx,
@@ -2996,7 +3021,7 @@ fn build_geometry_ir(
         &sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
@@ -3005,7 +3030,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &sketch_entities,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         ctx,
@@ -3014,7 +3039,7 @@ fn build_geometry_ir(
         &ir.model.spatial_sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     stamp_feature_baseline(ctx, &mut ir)?;
     let mut attributes = crate::metadata::attributes(ctx, scan, &mut annotations)?;
@@ -3051,10 +3076,12 @@ fn build_geometry_ir(
     let vertex_use_sequences = std::mem::take(&mut brep.vertex_use_sequences);
     let topology_index = crate::swift::TopologyIdentityIndex::from_model(
         ctx,
-        &ir.model.bodies,
-        &ir.model.faces,
-        &ir.model.edges,
-        &ir.model.vertices,
+        crate::swift::PrimaryTopology {
+            bodies: &ir.model.bodies,
+            faces: &ir.model.faces,
+            edges: &ir.model.edges,
+            vertices: &ir.model.vertices,
+        },
         &face_bridge_sequences,
         &edge_use_sequences,
         &vertex_use_sequences,
@@ -3108,8 +3135,10 @@ fn build_geometry_ir(
         ctx,
         &mut ir.model.features,
         &histories,
-        &face_producers,
-        &body_modifiers,
+        crate::history::bind::FeatureOutputSources {
+            face_producers: &face_producers,
+            body_modifiers: &body_modifiers,
+        },
         &ir.model.faces,
         &ir.model.shells,
         &ir.model.regions,
@@ -3714,28 +3743,6 @@ fn build_geometry_ir(
             Vec::new(),
         ));
     }
-    fn add_opaque_link<'a>(
-        ctx: &DecodeContext<'_>,
-        opaque_links: &mut BTreeMap<&'a str, Vec<String>>,
-        record: &'a str,
-        entity: &str,
-    ) -> Result<(), CodecError> {
-        ctx.charge_work(1, "index SLDPRT opaque geometry link")?;
-        let links = match opaque_links.entry(record) {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                ctx.charge_collection_items(1, "index SLDPRT opaque geometry record")?;
-                entry.insert(Vec::new())
-            }
-        };
-        ctx.reserve_collection_vec(links, 1, "index SLDPRT opaque geometry link")?;
-        links.push(copy_retained_string(
-            ctx,
-            entity,
-            "retain SLDPRT opaque geometry link",
-        )?);
-        Ok(())
-    }
     let mut opaque_links = BTreeMap::<&str, Vec<String>>::new();
     for surface in &ir.model.surfaces {
         if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
@@ -4316,7 +4323,7 @@ fn build_metadata_ir(
             ctx,
             &mut ir.model.features,
             &histories,
-            &sketch_lanes,
+            sketch_lanes,
         )?;
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
@@ -4326,7 +4333,7 @@ fn build_metadata_ir(
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::profiles::project_sketch_block_profiles(
         ctx,
@@ -4334,7 +4341,7 @@ fn build_metadata_ir(
         &mut ir.model.sketches,
         &mut ir.model.sketch_entities,
         &histories,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::history::bind::bind_unique_sketch_feature(
         ctx,
@@ -4352,7 +4359,7 @@ fn build_metadata_ir(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
         &ir.model.sketches,
         &ir.model.surfaces,
     )?;
@@ -4360,13 +4367,13 @@ fn build_metadata_ir(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
         ctx,
@@ -4375,7 +4382,7 @@ fn build_metadata_ir(
         &ir.model.surfaces,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_spatial_relation_bindings(
         ctx,
@@ -4384,21 +4391,21 @@ fn build_metadata_ir(
         &ir.model.spatial_sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_point_geometry(
         ctx,
         &mut ir.model.sketch_entities,
         &ir.model.sketches,
         &ir.model.features,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::dimensions::project_relation_point_dimensioned_circles(
         ctx,
         &mut ir.model.sketch_entities,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_line_geometry(
         ctx,
@@ -4406,7 +4413,7 @@ fn build_metadata_ir(
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_solved_point_geometry(
         ctx,
@@ -4414,7 +4421,7 @@ fn build_metadata_ir(
         &ir.model.sketches,
         &ir.model.features,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
@@ -4423,14 +4430,14 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::holes::project_profiled_hole_constructions(
         ctx,
         &mut ir.model.features,
         &ir.model.sketch_entities,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::holes::project_hole_position_sketches(
         ctx,
@@ -4438,7 +4445,7 @@ fn build_metadata_ir(
         &ir.model.sketches,
         &ir.model.sketch_entities,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::holes::project_spatial_hole_position_sketches(
         ctx,
@@ -4447,7 +4454,7 @@ fn build_metadata_ir(
         &ir.model.spatial_sketch_entities,
         &ir.model.surfaces,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::holes::project_topological_hole_constructions(
         ctx,
@@ -4476,7 +4483,7 @@ fn build_metadata_ir(
             points: &ir.model.points,
         },
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::holes::project_hole_topology_axes(
         ctx,
@@ -4498,7 +4505,7 @@ fn build_metadata_ir(
         &mut ir.model.sketch_entities,
         &ir.model.surfaces,
         &histories,
-        &lanes,
+        lanes,
     )?;
     crate::resolved_features::relation_geometry::project_relation_bindings(
         ctx,
@@ -4507,13 +4514,13 @@ fn build_metadata_ir(
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
-        &sketch_lanes,
+        sketch_lanes,
     )?;
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         ctx,
         &mut ir.model.features,
         &histories,
-        &lanes,
+        lanes,
         &ir.model.faces,
         &ir.model.surfaces,
     )?;
@@ -4529,7 +4536,7 @@ fn build_metadata_ir(
         ctx,
         &mut ir,
         &histories,
-        &lanes,
+        lanes,
         &mut annotations,
     )?;
     ctx.reserve_collection_vec(
@@ -4803,6 +4810,8 @@ fn snapshot_active_configuration(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
 ) -> Result<(), CodecError> {
+    const FEATURE_SNAPSHOT: &str = "retain SLDPRT configuration feature snapshot";
+
     let mut active = ir
         .model
         .configurations
@@ -4851,7 +4860,6 @@ fn snapshot_active_configuration(
         ctx.charge_collection_items(1, "snapshot SLDPRT configuration parameter")?;
         parameter_values.insert(id, value);
     }
-    const FEATURE_SNAPSHOT: &str = "retain SLDPRT configuration feature snapshot";
     ctx.charge_work(
         cadmpeg_core::decode::u64_from_index(ir.model.features.len()),
         FEATURE_SNAPSHOT,

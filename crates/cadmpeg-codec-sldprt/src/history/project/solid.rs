@@ -554,7 +554,7 @@ fn hole_profile_construction(
             sole = Some(construction);
         }
     }
-    complete.or_else(|| if multiple { None } else { sole })
+    complete.or(if multiple { None } else { sole })
 }
 
 pub(super) fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {

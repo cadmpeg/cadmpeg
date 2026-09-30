@@ -1306,7 +1306,10 @@ fn nested_profile_must_contain_its_declared_entity_handle_circular_carrier() {
         })
         .unwrap(),
     );
-    let declared = [([0.010, 0.020], 5.0)];
+    let declared = [crate::resolved_features::profiles::CircleCarrier(
+        [0.010, 0.020],
+        5.0,
+    )];
 
     assert!(nested_profile_contains_declared_circular_carriers(
         &sketch,

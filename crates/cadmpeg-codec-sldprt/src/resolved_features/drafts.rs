@@ -151,7 +151,7 @@ fn compact_parting_line_draft_operands(
         {
             continue;
         }
-        if let Some((role, paths, selection_end)) =
+        if let Some(CompactDraftSelection(role, paths, selection_end)) =
             compact_draft_selection_at(ctx, &lane.native_payload, marker, OPERATION)?
         {
             ctx.reserve_collection_vec(&mut records, 1, OPERATION)?;
@@ -215,19 +215,19 @@ enum CompactDraftSelectionRole {
     DraftedFace,
 }
 
+#[derive(Debug)]
+struct CompactDraftSelection(
+    CompactDraftSelectionRole,
+    Vec<Vec<FeatureInputComponentPathEntry>>,
+    usize,
+);
+
 fn compact_draft_selection_at(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     marker: usize,
     reserve_operation: &'static str,
-) -> Result<
-    Option<(
-        CompactDraftSelectionRole,
-        Vec<Vec<FeatureInputComponentPathEntry>>,
-        usize,
-    )>,
-    CodecError,
-> {
+) -> Result<Option<CompactDraftSelection>, CodecError> {
     let Some(header) = marker.checked_sub(compact_sel::COMPONENT_MARKER) else {
         return Ok(None);
     };
@@ -292,7 +292,7 @@ fn compact_draft_selection_at(
             }
         }
         let Some((path, path_end)) = candidate else {
-            return Ok((!paths.is_empty()).then_some((role, paths, cursor)));
+            return Ok((!paths.is_empty()).then_some(CompactDraftSelection(role, paths, cursor)));
         };
         ctx.reserve_collection_vec(&mut paths, 1, reserve_operation)?;
         paths.push(path);
@@ -937,14 +937,15 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .expect("test decode context");
-        let (_, parting_paths, parsed_parting_end) = compact_draft_selection_at(
-            &ctx,
-            &lane.native_payload,
-            object_start + 12,
-            "collect SLDPRT compact draft paths",
-        )
-        .expect("compact selection parse")
-        .expect("compact parting-tool selection");
+        let super::CompactDraftSelection(_, parting_paths, parsed_parting_end) =
+            compact_draft_selection_at(
+                &ctx,
+                &lane.native_payload,
+                object_start + 12,
+                "collect SLDPRT compact draft paths",
+            )
+            .expect("compact selection parse")
+            .expect("compact parting-tool selection");
         assert_eq!(parting_paths.len(), 2);
         assert_eq!(parsed_parting_end, parting_selection_end);
         assert_eq!(

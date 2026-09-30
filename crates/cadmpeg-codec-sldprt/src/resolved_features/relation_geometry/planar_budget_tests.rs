@@ -248,7 +248,7 @@ fn project_owned_loci_with_policy(policy: &DecodePolicy) -> Result<(), CodecErro
         (
             "third",
             Point2::new(1.0, 0.0),
-            Point2::new(1.000000001, 0.0),
+            Point2::new(1.000_000_001, 0.0),
         ),
     ] {
         let mut entity = SketchEntity::new(

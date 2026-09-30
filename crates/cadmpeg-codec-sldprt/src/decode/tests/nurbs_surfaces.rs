@@ -353,6 +353,8 @@ fn surface_rejects_nonzero_terminal_multiplicity() {
 
 #[test]
 fn surface_descriptor_uses_terminal_array_references() {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -360,7 +362,6 @@ fn surface_descriptor_uses_terminal_array_references() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
     let mut bytes = nurbs_surface_carrier(180, 181, 10);
     let descriptor = bytes

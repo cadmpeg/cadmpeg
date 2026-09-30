@@ -1235,7 +1235,7 @@ fn coordinate_system_endpoint_origins<'a>(
         .map(
             move |(marker, bytes)| -> Result<Option<CoordinateSystemOrigin>, CodecError> {
                 ctx.charge_work(1, "scan SLDPRT coordinate system origins")?;
-                if !(bytes == COMPACT_EDGE_VECTOR_MARKER) {
+                if bytes != COMPACT_EDGE_VECTOR_MARKER {
                     return Ok(None);
                 }
                 ctx.charge_work(256, "parse SLDPRT coordinate system origin")?;
@@ -2262,7 +2262,8 @@ pub(crate) fn enrich_history_reference_axes(
     }
 
     for history in histories.iter_mut() {
-        for (axes, pairs) in legacy_reference_axis_triads(ctx, &history.features)? {
+        for ReferenceAxisTriad(axes, pairs) in legacy_reference_axis_triads(ctx, &history.features)?
+        {
             for (axis_index, planes) in axes.into_iter().zip(pairs) {
                 let axis = &mut history.features[axis_index];
                 if !axis.properties.contains_key("Planes") {
@@ -2326,7 +2327,8 @@ pub(crate) fn enrich_history_reference_axes(
 
     for history in histories {
         let mut completions = Vec::new();
-        for (indices, _) in legacy_reference_axis_triads(ctx, &history.features)? {
+        for ReferenceAxisTriad(indices, _) in legacy_reference_axis_triads(ctx, &history.features)?
+        {
             let Some(completion) = (|| {
                 let frames = indices.map(|index| {
                     let feature = &history.features[index];
@@ -2551,10 +2553,13 @@ fn reference_axis_frame_key((origin, direction): &(Point3, Vector3)) -> [u64; 6]
     ]
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct ReferenceAxisTriad([usize; 3], [[u32; 2]; 3]);
+
 fn legacy_reference_axis_triads(
     ctx: &DecodeContext<'_>,
     features: &[crate::records::Feature],
-) -> Result<Vec<([usize; 3], [[u32; 2]; 3])>, CodecError> {
+) -> Result<Vec<ReferenceAxisTriad>, CodecError> {
     let mut by_source = HashMap::<u32, Option<usize>>::new();
     for (index, feature) in features.iter().enumerate() {
         let Some(source) = feature.source_value() else {
@@ -2616,7 +2621,7 @@ fn legacy_reference_axis_triads(
             continue;
         };
         ctx.reserve_collection_vec(&mut triads, 1, "collect SLDPRT reference axis triads")?;
-        triads.push((
+        triads.push(ReferenceAxisTriad(
             [indices[3], indices[4], indices[5]],
             [
                 [first_source, second_source],
@@ -2866,7 +2871,6 @@ pub(super) fn explicit_reference_plane_frame(
         .chain(fixed_reference_plane_frame_candidates(payload).map(|(_, frame)| frame))
         .chain(
             angled_reference_plane_frame_candidates(payload)
-                .into_iter()
                 .filter(|(offset, _)| {
                     !strong_reference_plane_overlap(
                         payload,
@@ -2879,7 +2883,6 @@ pub(super) fn explicit_reference_plane_frame(
         .chain(minimal_reference_plane_frame(payload))
         .chain(
             compact_reference_plane_frame_candidates(payload)
-                .into_iter()
                 .filter(|(offset, _)| {
                     !strong_reference_plane_overlap(
                         payload,
@@ -2900,9 +2903,10 @@ pub(super) fn explicit_reference_plane_frame(
 }
 
 fn strong_reference_plane_overlap(payload: &[u8], offset: usize, len: usize) -> bool {
+    let preceding_bytes = matrix_plane::LEN.max(fixed_plane::LEN) - 1;
     let start = offset
-        .checked_sub(matrix_plane::LEN.max(fixed_plane::LEN) - 1)
-        .unwrap_or(0);
+        .checked_sub(preceding_bytes)
+        .map_or(0, std::convert::identity);
     let end = offset
         .checked_add(len)
         .unwrap_or(payload.len())
@@ -3488,7 +3492,7 @@ fn compact_reference_plane_frame_candidates(
                 });
                 Some(pair)
             })();
-            candidates.into_iter().flatten().into_iter().flatten()
+            candidates.into_iter().flatten().flatten()
         })
 }
 

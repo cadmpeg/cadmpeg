@@ -254,7 +254,7 @@ impl CanonError {
         };
         let admitted = (|| {
             ctx.reserve_collection_vec(&mut steps, 1, WORK)?;
-            Ok::<_, Self>(step()?)
+            step()
         })();
         match admitted {
             Ok(step) => {
@@ -653,12 +653,12 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         variant: &'static str,
         len: usize,
     ) -> Result<CanonVariantSeq<'a>, Error> {
-        let (depth, _nested) = self.enter()?;
+        let (depth, nested) = self.enter()?;
         emit_bytes(self.sink, b"{")?;
         emit(self.sink, variant)?;
         emit_bytes(self.sink, b":")?;
         Ok(CanonVariantSeq {
-            _nested,
+            _nested: nested,
             variant,
             seq: CanonValue::within(self.ctx, depth, self.sink).serialize_seq(Some(len))?,
         })
@@ -700,12 +700,12 @@ impl<'a> ser::Serializer for CanonValue<'a> {
         variant: &'static str,
         len: usize,
     ) -> Result<CanonVariantMap<'a>, Error> {
-        let (depth, _nested) = self.enter()?;
+        let (depth, nested) = self.enter()?;
         emit_bytes(self.sink, b"{")?;
         emit(self.sink, variant)?;
         emit_bytes(self.sink, b":")?;
         Ok(CanonVariantMap {
-            _nested,
+            _nested: nested,
             variant,
             map: CanonValue::within(self.ctx, depth, self.sink).serialize_map(Some(len))?,
         })

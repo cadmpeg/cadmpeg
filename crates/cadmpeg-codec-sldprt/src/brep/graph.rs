@@ -896,21 +896,20 @@ struct WalkedFace {
 /// derived exactness)`. A spun surface is exact for an exact profile; a swept
 /// surface patch is derived because its ruling extent comes from the face's
 /// vertex points rather than a stored interval.
+struct SweepSurfaceResolution {
+    geometry: SolvedSurfaceGeometry,
+    offset: usize,
+    tag: &'static str,
+    exactness: Option<Exactness>,
+}
+
 fn resolve_sweep_surface(
     ctx: &DecodeContext<'_>,
     carriers: &CarrierIndex,
     tables: &topology::Tables,
     face: &WalkedFace,
     refusal: &mut crate::lane_refusal::LaneRefusals,
-) -> Result<
-    Option<(
-        SolvedSurfaceGeometry,
-        usize,
-        &'static str,
-        Option<Exactness>,
-    )>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Option<SweepSurfaceResolution>, cadmpeg_core::CodecError> {
     let Some(construction) = carriers.sweep(face.surface_attr) else {
         return Ok(None);
     };
@@ -930,13 +929,11 @@ fn resolve_sweep_surface(
         SweepKind::Spun { base, axis } => Ok(sweep::spun_nurbs(
             ctx, &curve, *base, *axis, &record, refusal,
         )?
-        .map(|surface| {
-            (
-                SolvedSurfaceGeometry::Nurbs(surface),
-                construction.offset,
-                "00_44",
-                profile_derived.then_some(Exactness::Derived),
-            )
+        .map(|surface| SweepSurfaceResolution {
+            geometry: SolvedSurfaceGeometry::Nurbs(surface),
+            offset: construction.offset,
+            tag: "00_44",
+            exactness: profile_derived.then_some(Exactness::Derived),
         })),
         SweepKind::Swept { direction } => {
             let unit_direction = *direction;
@@ -1006,13 +1003,11 @@ fn resolve_sweep_surface(
                 &record,
                 refusal,
             )?
-            .map(|surface| {
-                (
-                    SolvedSurfaceGeometry::Nurbs(surface),
-                    construction.offset,
-                    "00_43",
-                    Some(Exactness::Derived),
-                )
+            .map(|surface| SweepSurfaceResolution {
+                geometry: SolvedSurfaceGeometry::Nurbs(surface),
+                offset: construction.offset,
+                tag: "00_43",
+                exactness: Some(Exactness::Derived),
             }))
         }
     }
@@ -2740,48 +2735,47 @@ fn decode_graph(
     let loop_set = kept_loops;
 
     // Surfaces + faces.
-    let bind_bridges =
-        |body_records: &[BodyRecord],
-         faces: &[WalkedFace]|
-         -> Result<(HashMap<u16, usize>, HashMap<u16, u16>), cadmpeg_core::CodecError> {
-            let mut bridge_group = HashMap::new();
-            let mut bridge_shell = HashMap::new();
-            for (group, body_record) in body_records.iter().enumerate() {
-                for face in faces {
-                    ctx.charge_work(1, "bind Parasolid face bridges")?;
-                    let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
-                    if body_record.refs.contains(&face.bridge_attr)
-                        || owner.is_some_and(|owner| body_record.refs.contains(&owner))
+    let bind_bridges = |body_records: &[BodyRecord],
+                        faces: &[WalkedFace]|
+     -> Result<_, cadmpeg_core::CodecError> {
+        let mut bridge_group = HashMap::new();
+        let mut bridge_shell = HashMap::new();
+        for (group, body_record) in body_records.iter().enumerate() {
+            for face in faces {
+                ctx.charge_work(1, "bind Parasolid face bridges")?;
+                let owner = t.bridges().get(&face.bridge_attr).and_then(|r| r.owner);
+                if body_record.refs.contains(&face.bridge_attr)
+                    || owner.is_some_and(|owner| body_record.refs.contains(&owner))
+                {
+                    reserve_graph_map_key(
+                        ctx,
+                        &mut bridge_group,
+                        &face.bridge_attr,
+                        "index Parasolid bridge groups",
+                    )?;
+                    bridge_group.insert(face.bridge_attr, group);
+                    if let Some(shell) = body_record
+                        .regions
+                        .iter()
+                        .flat_map(|region| &region.shells)
+                        .find(|shell| {
+                            shell.refs.contains(&face.bridge_attr)
+                                || owner.is_some_and(|owner| shell.refs.contains(&owner))
+                        })
                     {
                         reserve_graph_map_key(
                             ctx,
-                            &mut bridge_group,
+                            &mut bridge_shell,
                             &face.bridge_attr,
-                            "index Parasolid bridge groups",
+                            "index Parasolid bridge shells",
                         )?;
-                        bridge_group.insert(face.bridge_attr, group);
-                        if let Some(shell) = body_record
-                            .regions
-                            .iter()
-                            .flat_map(|region| &region.shells)
-                            .find(|shell| {
-                                shell.refs.contains(&face.bridge_attr)
-                                    || owner.is_some_and(|owner| shell.refs.contains(&owner))
-                            })
-                        {
-                            reserve_graph_map_key(
-                                ctx,
-                                &mut bridge_shell,
-                                &face.bridge_attr,
-                                "index Parasolid bridge shells",
-                            )?;
-                            bridge_shell.insert(face.bridge_attr, shell.attr);
-                        }
+                        bridge_shell.insert(face.bridge_attr, shell.attr);
                     }
                 }
             }
-            Ok((bridge_group, bridge_shell))
-        };
+        }
+        Ok((bridge_group, bridge_shell))
+    };
     let (bridge_group, bridge_shell) = bind_bridges(&body_records, &faces)?;
     if !body_records.is_empty() {
         out.stats.unclaimed_faces += faces
@@ -3076,7 +3070,12 @@ fn decode_graph(
                         source_object: None,
                         geometry,
                     });
-                } else if let Some((geometry, offset, tag, exactness)) = {
+                } else if let Some(SweepSurfaceResolution {
+                    geometry,
+                    offset,
+                    tag,
+                    exactness,
+                }) = {
                     let mut sweep_refusal = crate::lane_refusal::LaneRefusals::new();
                     let resolved = resolve_sweep_surface(ctx, carriers, t, f, &mut sweep_refusal)?;
                     for record in sweep_refusal.take_records() {
@@ -5377,7 +5376,7 @@ fn derive_nurbs_isoparametric_pcurves(
                             )?;
                             continue;
                         }
-                        Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit.into()),
+                        Err(NurbsPcurveFailure::Resource(limit)) => return Err(limit),
                     };
                 match resolution {
                     NurbsPcurveResolution::Exact(geometry) => {
@@ -5656,7 +5655,7 @@ fn intersection_support_pcurve(
                         ) {
                             Ok(Some(parameters)) => parameters,
                             Ok(None) => return Ok(None),
-                            Err(limit) => return Err(limit.into()),
+                            Err(limit) => return Err(limit),
                         };
                         control_points.push(parameters.get());
                     }
@@ -5729,7 +5728,7 @@ fn intersection_support_pcurve(
                 ) {
                     Ok(Some(parameters)) => parameters.get(),
                     Ok(None) => return Ok(None),
-                    Err(limit) => return Err(limit.into()),
+                    Err(limit) => return Err(limit),
                 };
             }
         } else {
@@ -5804,17 +5803,13 @@ fn intersection_support_pcurve(
         {
             let exceeds = match surface {
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) => {
-                    match nurbs_surface_parameter_segment_chord_bound(
+                    let error = nurbs_surface_parameter_segment_chord_bound(
                         ctx,
                         surface,
                         [parameters[0], parameters[1]],
                         [chord[0].get(), chord[1].get()],
-                    ) {
-                        Ok(error) => {
-                            error.is_none_or(|error| error > support_data.fit_tolerance_mm)
-                        }
-                        Err(limit) => return Err(limit.into()),
-                    }
+                    )?;
+                    error.is_none_or(|error| error > support_data.fit_tolerance_mm)
                 }
                 _ => analytic_pcurve_chord_bound(surface, parameters[0], parameters[1]).is_none_or(
                     |curvature_error| {
@@ -6292,10 +6287,7 @@ fn nurbs_homogeneous_controls(
         let Some(point) = curve.pole_rows().point_at(index) else {
             return Ok(None);
         };
-        let weight = match curve.pole_rows().weight_at(index) {
-            Some(value) => value,
-            None => 1.0,
-        };
+        let weight = curve.pole_rows().weight_at(index).unwrap_or(1.0);
         if weight <= 0.0 {
             return Ok(None);
         }
@@ -6304,13 +6296,18 @@ fn nurbs_homogeneous_controls(
     Ok(Some(controls))
 }
 
+struct HomogeneousCurveLanes {
+    knots: Vec<f64>,
+    controls: Vec<[f64; 4]>,
+}
+
 fn insert_nurbs_homogeneous_knot(
     ctx: &DecodeContext<'_>,
     degree: usize,
     knots: &[f64],
     controls: &[[f64; 4]],
     value: f64,
-) -> Result<Option<(Vec<f64>, Vec<[f64; 4]>)>, cadmpeg_core::CodecError> {
+) -> Result<Option<HomogeneousCurveLanes>, cadmpeg_core::CodecError> {
     let Some(expected_knots) = controls
         .len()
         .checked_add(degree)
@@ -6396,7 +6393,10 @@ fn insert_nurbs_homogeneous_knot(
             });
         }
     }
-    Ok(Some((inserted_knots, inserted_controls)))
+    Ok(Some(HomogeneousCurveLanes {
+        knots: inserted_knots,
+        controls: inserted_controls,
+    }))
 }
 
 /// The knots, control points and weights of one clamped NURBS segment, before
@@ -6452,7 +6452,8 @@ fn clamp_nurbs_curve_to_domain_lanes(
             else {
                 return Ok(None);
             };
-            (knots, controls) = inserted;
+            knots = inserted.knots;
+            controls = inserted.controls;
         }
     }
     let (Some(start), Some(end), Some(end_last)) = (
@@ -9768,6 +9769,11 @@ mod tests {
 
     #[test]
     fn ambiguous_cylindrical_endpoint_withholds_the_derived_pcurve() {
+        use cadmpeg_ir::annotations::AnnotationBuilder;
+        use cadmpeg_ir::geometry::{Curve, Surface};
+        use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
+        use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
+
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
             &[],
@@ -9775,10 +9781,6 @@ mod tests {
             &cadmpeg_core::decode::DecodePolicy::service(),
         )
         .unwrap();
-        use cadmpeg_ir::annotations::AnnotationBuilder;
-        use cadmpeg_ir::geometry::{Curve, Surface};
-        use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, LoopId, PointId, SurfaceId, VertexId};
-        use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 
         let surface_id = SurfaceId::mint("test:model:entity#surface").expect("identity grammar");
         let curve_id = CurveId::mint("test:model:entity#curve").expect("identity grammar");
