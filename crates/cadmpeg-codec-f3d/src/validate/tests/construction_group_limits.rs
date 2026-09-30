@@ -149,3 +149,73 @@ fn construction_group_duplicate_slot_finding_refuses_collection_limit() {
         if limit.operation == "collect F3D native validation findings")
     );
 }
+
+fn tail_findings(byte_offset: u64, flag: bool) -> Vec<cadmpeg_ir::report::check::Finding> {
+    use crate::records::{
+        decal::DesignRecordHeader,
+        identity::Located,
+        sketch_placement::SketchPlacementMatrix,
+        topology::construction::{
+            DesignConstructionOperandDualTransform, DesignConstructionOperandFlag,
+            DesignConstructionOperandGroupFrame, DesignConstructionOperandGroupFrameDraft,
+        },
+    };
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(true, false);
+        let class_tag: crate::records::references::DesignClassTag = "280".to_owned().try_into().unwrap();
+        let mut frame = DesignConstructionOperandGroupFrame::try_from(DesignConstructionOperandGroupFrameDraft {
+            member_count_offset: 1_021,
+            auxiliary_records: Vec::new(), auxiliary_paths: Vec::new(),
+            trailing_records: vec![Located { value: 102, offset: 1_030 }],
+            trailing_transforms: Vec::new(), trailing_dual_transforms: Vec::new(),
+            trailing_flags: Vec::new(), opaque_index: 1,
+            opaque_index_offset: 1_058, opaque_scalar: 0.0,
+            opaque_scalar_offset: 1_062, variant: false,
+        }).unwrap();
+        if flag {
+            frame.try_set_trailing_flags(vec![DesignConstructionOperandFlag {
+                record_index: 102, byte_offset, class_tag: class_tag.clone(),
+                value: true, value_offset: byte_offset.saturating_add(22),
+            }]).unwrap();
+        } else {
+            frame.try_set_trailing_dual_transforms(vec![DesignConstructionOperandDualTransform {
+                record_index: 102, byte_offset, class_tag: class_tag.clone(),
+                first_transform: SketchPlacementMatrix::IDENTITY,
+                first_transform_offset: byte_offset.saturating_add(21),
+                second_transform: SketchPlacementMatrix::IDENTITY,
+                second_transform_offset: byte_offset.saturating_add(149),
+            }]).unwrap();
+        }
+        native.design_construction_operand_groups[0].frame = frame;
+        native.design_record_headers.push(DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:design-record-header#102".into(),
+            record_index: 102, class_tag, byte_offset,
+        });
+        let ctx = super::super::Ctx::new(&ir, &native, decode).unwrap();
+        let mut findings = Vec::new();
+        super::super::validate_construction_operand_groups(&ctx, &mut findings).unwrap();
+        findings
+    })
+}
+
+#[test]
+fn construction_group_preserves_representable_tail_offsets() {
+    assert!(tail_findings(2_000, false).is_empty());
+    assert!(tail_findings(2_000, true).is_empty());
+}
+
+#[test]
+fn construction_group_rejects_overflowed_first_transform() {
+    assert_eq!(tail_findings(u64::MAX, false).len(), 1);
+}
+
+#[test]
+fn construction_group_rejects_overflowed_second_transform() {
+    assert_eq!(tail_findings(u64::MAX - 100, false).len(), 1);
+}
+
+#[test]
+fn construction_group_rejects_overflowed_flag() {
+    assert_eq!(tail_findings(u64::MAX, true).len(), 1);
+}
