@@ -501,7 +501,7 @@ fn probe_table(
             item_size as u32,
             kind,
             flags,
-            ctx.copy_retained(&bytes[data..end], "copy display-list channel bytes")?,
+            crate::byte_admission::copy_retained(ctx, &bytes[data..end], "copy display-list channel bytes")?,
         ) else {
             return Ok(None);
         };
