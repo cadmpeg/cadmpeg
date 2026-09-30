@@ -90,24 +90,45 @@ pub(crate) fn bind_sketch_profiles(
     let declared_carriers = declared_entity_handle_circular_carriers(ctx, features, parameters, lanes)?;
     let mut superseded = HashSet::new();
     let metadata_ids = history_metadata_ids(ctx, histories)?;
-    let native_features = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .map(|feature| (feature.id.as_str(), feature))
-        .collect::<HashMap<_, _>>();
+    const OPERATION: &str = "bind SLDPRT sketch profiles";
+    let mut native_features = HashMap::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        native_features.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        native_features.insert(feature.id.as_str(), feature);
+    }
     for lane in lanes {
-        let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
+        let mut starts = Vec::<(u64, usize, &crate::records::Feature)>::new();
         for feature in native_features.values() {
+            ctx.charge_work(u64_from_index(feature.id.len()), OPERATION)?;
             if metadata_ids.contains(feature.id.as_str()) {
                 continue;
+            }
+            for name in &lane.names {
+                let work = u64_from_index(name.value.len()).checked_add(u64_from_index(feature.name.len()))
+                    .and_then(|work| work.checked_add(2))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
             }
             let Some(name) = feature_object_name(feature, lane) else {
                 continue;
             };
-            starts.push((name.offset, feature));
+            let ordinal = starts.len();
+            ctx.reserve_collection_vec(&mut starts, 1, OPERATION)?;
+            starts.push((name.offset, ordinal, feature));
         }
-        starts.sort_by_key(|start| start.0);
-        for (index, &(start, native_feature)) in starts.iter().enumerate() {
+        let levels = if starts.len() > 1 { starts.len().ilog2() + 1 } else { 1 };
+        ctx.charge_work(u64_from_index(starts.len()).checked_mul(u64::from(levels))
+            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+        starts.sort_unstable_by_key(|start| (start.0, start.1));
+        for (index, &(start, _, native_feature)) in starts.iter().enumerate() {
+            for feature in features.iter() {
+                let work = u64_from_index(feature.native_ref.as_ref().map_or(0, String::len))
+                    .checked_add(u64_from_index(native_feature.id.len())).and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
             let Some(feature) = features
                 .iter_mut()
                 .find(|feature| feature.native_ref.as_deref() == Some(native_feature.id.as_str()))
@@ -115,6 +136,13 @@ pub(crate) fn bind_sketch_profiles(
                 continue;
             };
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            for sketch in sketches.iter() {
+                let work = u64_from_index(sketch.native_ref.as_ref().map_or(0, String::len))
+                    .checked_add(u64_from_index(lane.id.len())).and_then(|work| work.checked_add(u64_from_index(sketch.id.as_str().len())))
+                    .and_then(|work| work.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(work, OPERATION)?;
+            }
             let mut enclosed = sketches.iter_mut().filter(|sketch| {
                 sketch.native_ref.as_deref() == Some(lane.id.as_str())
                     && annotations
@@ -138,62 +166,53 @@ pub(crate) fn bind_sketch_profiles(
                     )
                 })
             {
-                superseded.insert(sketch.id.clone());
+                ctx.charge_collection_items(1, OPERATION)?;
+                superseded.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                superseded.insert(copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?);
                 continue;
             }
-            let mut definition = feature.evaluation.definition().clone();
-            match &mut definition {
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Sketch {
-                        sketch: feature_sketch,
-                    },
-                ) => {
-                    sketch.name = Some(native_feature.name.clone());
-                    *feature_sketch =
-                        cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.id.clone()));
-                }
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Sweep { shape, .. },
-                ) if shape.section_is_unresolved() => {
-                    shape.set_referenced_profile(sketch.id.clone().into());
-                }
-                cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
-                ) => {
-                    if matches!(
-                        &*profile,
-                        cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
-                            if owner == &native_feature.id
-                    ) {
-                        *profile = cadmpeg_ir::features::ProfileRef::Planar(
-                            cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch.id.clone()),
-                        );
-                    }
-                }
-                _ => {}
+            let replace = match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. }) => true,
+                FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => shape.section_is_unresolved(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => matches!(profile,
+                    cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Unresolved(owner))
+                        if owner == &native_feature.id),
+                _ => false,
+            };
+            if !replace { continue; }
+            let sketch_id = SketchId::mint(copy_profile_text(ctx, sketch.id.as_str(), OPERATION)?)
+                .map_err(|_| CodecError::malformed("invalid SLDPRT profile sketch identity"))?;
+            if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { .. })) {
+                sketch.name = Some(copy_profile_text(ctx, &native_feature.name, OPERATION)?);
             }
-            feature.evaluation.set_definition(definition);
+            feature.evaluation.edit(|definition, _outputs| {
+                match definition {
+                    FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: feature_sketch }) => {
+                        *feature_sketch = cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch_id));
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) => {
+                        shape.set_referenced_profile(sketch_id.into());
+                    }
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. }) => {
+                        *profile = cadmpeg_ir::features::ProfileRef::Planar(cadmpeg_ir::features::PlanarProfileRef::Sketch(sketch_id));
+                    }
+                    _ => {}
+                }
+            });
         }
     }
-    let mut removed = superseded
-        .iter()
-        .map(|sketch| sketch.as_str().to_owned())
-        .collect::<HashSet<_>>();
-    removed.extend(
-        sketch_entities
-            .iter()
-            .filter(|entity| superseded.contains(&entity.sketch))
-            .map(|entity| entity.id().as_str().to_owned()),
-    );
-    removed.extend(
-        sketch_constraints
-            .iter()
-            .filter(|constraint| superseded.contains(&constraint.sketch))
-            .map(|constraint| constraint.id.as_str().to_owned()),
-    );
-    sketches.retain(|sketch| !superseded.contains(&sketch.id));
-    sketch_entities.retain(|entity| !superseded.contains(&entity.sketch));
-    sketch_constraints.retain(|constraint| !superseded.contains(&constraint.sketch));
+    let mut removed = HashSet::new();
+    for id in superseded.iter().map(String::as_str)
+        .chain(sketch_entities.iter().filter(|entity| superseded.contains(entity.sketch.as_str())).map(|entity| entity.id().as_str()))
+        .chain(sketch_constraints.iter().filter(|constraint| superseded.contains(constraint.sketch.as_str())).map(|constraint| constraint.id.as_str())) {
+        ctx.charge_work(u64_from_index(id.len()), OPERATION)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        removed.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        removed.insert(copy_profile_text(ctx, id, OPERATION)?);
+    }
+    sketches.retain(|sketch| !superseded.contains(sketch.id.as_str()));
+    sketch_entities.retain(|entity| !superseded.contains(entity.sketch.as_str()));
+    sketch_constraints.retain(|constraint| !superseded.contains(constraint.sketch.as_str()));
     annotations.provenance.retain(|id, _| !removed.contains(id));
     let mut builder = AnnotationBuilder::resume(std::mem::take(annotations));
     builder.retain_exactness(|id| !removed.contains(id));
@@ -209,10 +228,14 @@ fn declared_entity_handle_circular_carriers(
     lanes: &[FeatureInputLane],
 ) -> Result<HashMap<String, Vec<([f64; 2], f64)>>, CodecError> {
     let ownership = owned_relation_parameters(ctx, features, parameters, lanes)?;
-    let parameters_by_id = parameters
-        .iter()
-        .map(|parameter| (&parameter.id, parameter))
-        .collect::<HashMap<_, _>>();
+    const OPERATION: &str = "collect SLDPRT declared circular carriers";
+    let mut parameters_by_id = HashMap::new();
+    for parameter in parameters {
+        ctx.charge_work(u64_from_index(parameter.id.as_str().len()), OPERATION)?;
+        ctx.charge_collection_items(1, OPERATION)?;
+        parameters_by_id.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+        parameters_by_id.insert(&parameter.id, parameter);
+    }
     let mut carriers = HashMap::<String, Vec<([f64; 2], f64)>>::new();
     for lane in lanes {
         for relation in lane
@@ -249,13 +272,29 @@ fn declared_entity_handle_circular_carriers(
             let Some(coordinates) = center.coordinates_m else {
                 continue;
             };
-            carriers
-                .entry(relation.feature_ref.clone())
-                .or_default()
-                .push((coordinates.get(), encoded_radius));
+            ctx.charge_work(u64_from_index(relation.feature_ref.len()).checked_mul(3)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+            if !carriers.contains_key(relation.feature_ref.as_str()) {
+                let key = copy_profile_text(ctx, &relation.feature_ref, OPERATION)?;
+                ctx.charge_collection_items(1, OPERATION)?;
+                carriers.try_reserve(1).map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                carriers.insert(key, Vec::new());
+            }
+            if let Some(votes) = carriers.get_mut(relation.feature_ref.as_str()) {
+                ctx.reserve_collection_vec(votes, 1, OPERATION)?;
+                votes.push((coordinates.get(), encoded_radius));
+            }
         }
     }
     Ok(carriers)
+}
+
+fn copy_profile_text(ctx: &DecodeContext<'_>, text: &str, operation: &'static str) -> Result<String, CodecError> {
+    ctx.charge_work(u64_from_index(text.len()), operation)?;
+    let mut copy = String::new();
+    ctx.reserve_retained_string(&mut copy, text.len(), operation)?;
+    copy.push_str(text);
+    Ok(copy)
 }
 
 pub(super) fn nested_profile_contains_declared_circular_carriers(
@@ -3267,6 +3306,77 @@ mod detached_legacy_sketch_tests {
             profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
             native_ref: Some("lane".into()),
         }
+    }
+
+    fn profile_binding_error(policy: cadmpeg_core::decode::DecodePolicy) -> cadmpeg_core::CodecError {
+        let history = FeatureHistory {
+            id: "history".into(), part_name: None, properties: BTreeMap::new(), content: Vec::new(),
+            configurations: Vec::new(), features: vec![feature()],
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(), configuration: None, native_payload: vec![0; 32], classes: Vec::new(),
+            names: vec![crate::records::FeatureInputName {
+                id: "name".into(), parent: "lane".into(), ordinal: 0, offset: 0,
+                object_id: ObjectId::from_value(30), value: "profile".into(),
+            }],
+            scalars: Vec::new(), relation_bindings: Vec::new(), relation_instances: Vec::new(),
+            body_selections: Vec::new(), edge_selections: Vec::new(), surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(), references: Vec::new(), sketch_entities: Vec::new(),
+        };
+        let feature = cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#profile-feature").unwrap(),
+            ordinal: 0, name: None, suppressed: None, dependencies: Default::default(),
+            source_properties: BTreeMap::new(), source_tag: None, source_text: None,
+            source_content: Default::default(), native_ref: Some("feature".into()),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Unresolved,
+                }),
+            ),
+        };
+        let sketch = sketch();
+        let mut builder = cadmpeg_ir::AnnotationBuilder::new();
+        let stream = cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test:profile"));
+        builder.note(sketch.id.as_str(), &stream, 1).tag("profile");
+        let annotations = builder.build();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (service, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &lane.native_payload, &arena, &cadmpeg_core::decode::DecodePolicy::service(),
+        ).unwrap();
+        let mut admitted = [feature.clone()];
+        super::bind_sketch_profiles(&service, &mut admitted, &mut vec![sketch.clone()],
+            &mut Vec::new(), &mut Vec::new(), &[], &[history.clone()], &[lane.clone()], &mut annotations.clone()).unwrap();
+        assert!(matches!(admitted[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(id)),
+            }) if id == &sketch.id));
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&lane.native_payload, &arena, &policy).unwrap();
+        super::bind_sketch_profiles(&ctx, &mut [feature], &mut vec![sketch],
+            &mut Vec::new(), &mut Vec::new(), &[], &[history], std::slice::from_ref(&lane), &mut annotations.clone()).unwrap_err()
+    }
+
+    #[test]
+    fn sketch_profile_binding_refuses_collection_limit() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_collection_items = 0;
+        assert!(matches!(profile_binding_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::CollectionItems));
+    }
+
+    #[test]
+    fn sketch_profile_binding_refuses_retained_limit() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_retained_bytes = 0;
+        assert!(matches!(profile_binding_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    }
+
+    #[test]
+    fn sketch_profile_binding_refuses_work_limit() {
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_work_units = 0;
+        assert!(matches!(profile_binding_error(policy), cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::WorkUnits));
     }
 
     fn marker(
