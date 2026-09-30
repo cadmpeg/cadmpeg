@@ -650,15 +650,29 @@ pub(crate) fn project_configuration_sketch_states(
                     ));
             }
         }
-        let mut parameters = ir.model.parameters.clone();
-        for parameter in &mut parameters {
-            if let Some(value) = ir.model.configurations[configuration_index]
-                .parameter_values
-                .get(&parameter.id)
-            {
-                parameter.value = Some(value.clone());
+        let mut parameters = std::mem::take(&mut ir.model.parameters);
+        let mut saved_values = Vec::new();
+        let result = (|| -> Result<(), cadmpeg_core::CodecError> {
+            const OPERATION: &str = "overlay SLDPRT configuration parameter values";
+            let values = &ir.model.configurations[configuration_index].parameter_values;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(values.len()), OPERATION)?;
+            let key_bytes = values.keys().try_fold(0_usize, |bytes, id| {
+                bytes.checked_add(id.as_str().len())
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))
+            })?;
+            for (index, parameter) in parameters.iter_mut().enumerate() {
+                let work = key_bytes.checked_add(parameter.id.as_str().len()).and_then(|bytes| bytes.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+                let Some(value) = values.get(&parameter.id) else { continue; };
+                let work = saved_values.len().checked_add(1)
+                    .and_then(|count| count.checked_mul(std::mem::size_of::<(usize, Option<ParameterValue>)>()))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+                ctx.reserve_collection_vec(&mut saved_values, 1, OPERATION)?;
+                let copied = value.try_clone_charged(ctx, OPERATION)?;
+                saved_values.push((index, parameter.value.replace(copied)));
             }
-        }
         crate::resolved_features::profiles::bind_sketch_profiles(
             ctx,
             &mut features,
@@ -853,6 +867,13 @@ pub(crate) fn project_configuration_sketch_states(
             };
             *state = configuration_feature_state(feature).1;
         }
+            Ok(())
+        })();
+        for (index, value) in saved_values {
+            parameters[index].value = value;
+        }
+        ir.model.parameters = parameters;
+        result?;
     }
     let scoped_configuration_indices = configuration_lane_assignments(ctx, &ir.model.configurations, lanes)?;
     let base = ConfigurationDefinitions::new(ctx, &ir.model.features)?;

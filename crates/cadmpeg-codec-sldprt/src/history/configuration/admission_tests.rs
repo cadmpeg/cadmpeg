@@ -627,3 +627,71 @@ fn configuration_sketch_projection_refuses_hole_profile_termination_retained_lim
 fn configuration_sketch_projection_refuses_hole_profile_termination_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_hole_profile_termination);
 }
+
+fn run_parameter_overlay(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for index in 0..7 {
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId::mint(format!("synthetic:test:id#parameter-{index}")).unwrap(),
+            owner: None, ordinal: index, name: format!("Parameter {index}"),
+            expression: format!("original expression {index}"), display: None,
+            value: (index != 1).then(|| ParameterValue::String(format!("original value {index}"))),
+            dependencies: if index == 0 { cadmpeg_ir::features::DistinctMembers::default() } else {
+                vec![ParameterId::mint("synthetic:test:id#parameter-0").unwrap()].try_into().unwrap()
+            },
+            properties: std::collections::BTreeMap::from([(cadmpeg_core::nonblank_literal!("property"), "retained property text".into())]),
+            pmi: Some(ParameterPmi {
+                subtype: PmiDimensionSubtype::Linear, precision: 3, display_text: Some("retained PMI text".into()),
+                basic: false, inspection: true, reference_only: false, native_ref: "retained PMI reference".into(),
+            }), native_ref: Some(format!("retained parameter reference {index}")),
+        });
+    }
+    for (index, values) in [
+        (0, [
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(2.0).unwrap()),
+            ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(1.0).unwrap()),
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap()),
+            ParameterValue::Integer(7), ParameterValue::Boolean(true), ParameterValue::String("first lane text".into()),
+        ]),
+        (1, [
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(3.0).unwrap()),
+            ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(2.0).unwrap()),
+            ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(2.5).unwrap()),
+            ParameterValue::Integer(9), ParameterValue::Boolean(false), ParameterValue::String("second lane text".into()),
+        ]),
+    ] {
+        let mut configuration = design_configuration(&format!("overlay-{index}"), index, Some(index), None);
+        for (ordinal, value) in values.into_iter().enumerate() {
+            configuration.parameter_values.insert(ir.model.parameters[ordinal].id.clone(), value);
+        }
+        ir.model.configurations.push(configuration);
+    }
+    let expected = ir.clone();
+    let result = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[feature_input_lane("first", Some("0")), feature_input_lane("second", Some("1"))],
+        &mut cadmpeg_ir::Annotations::default(),
+    );
+    assert_eq!(ir.model.parameters, expected.model.parameters);
+    let losses = result?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_parameter_overlay_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_parameter_overlay);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_parameter_overlay_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_parameter_overlay);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_parameter_overlay_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_parameter_overlay);
+}
