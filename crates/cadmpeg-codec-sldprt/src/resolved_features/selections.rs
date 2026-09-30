@@ -366,10 +366,11 @@ pub(super) fn compact_edge_selections(
             .filter(|offset| (start..end).contains(offset));
         let mut selections = Vec::new();
         if let Some(child_start) = direct_child {
-            if let Some(selection) = lane
-                .native_payload
-                .get(child_start..end)
-                .and_then(|payload| compact_edge_selection_vector(payload, child_start))
+            let selection = match lane.native_payload.get(child_start..end) {
+                Some(payload) => compact_edge_selection_vector(ctx, payload, child_start)?,
+                None => None,
+            };
+            if let Some(selection) = selection
             {
                 ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
                 selections.push(selection);
@@ -1770,7 +1771,7 @@ fn repeated_edge_selections(
             ctx.charge_work(3, OPERATION)?;
             if payload.get(offset..offset + 2) != Some(token.as_slice()) || payload.get(offset + 2) != Some(&2) { continue; }
             let marker = offset + 108;
-            if let Some(ids) = compact_edge_selection_at(payload, marker) {
+            if let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? {
                 ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
                 selections.push((marker, ids));
             }
@@ -1791,7 +1792,7 @@ fn edge_selection_vectors_in_interval(
         for marker in scan_start..scan_end {
             ctx.charge_work(16, OPERATION)?;
             if payload.get(marker..marker + COMPACT_EDGE_VECTOR_MARKER.len()) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
-            if let Some(ids) = compact_edge_selection_at(payload, marker) {
+            if let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? {
                 ctx.reserve_collection_vec(&mut selections, 1, OPERATION)?;
                 selections.push((marker, ids));
             }
@@ -2324,63 +2325,74 @@ pub(crate) fn generated_surface_identities(
     Ok(identities)
 }
 
-fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
-    for marker in 12..=payload
-        .len()
-        .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len())
-    {
-        if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) {
-            continue;
-        }
-        if let Some(ids) = compact_edge_selection_at(payload, marker) {
-            return Some((base + marker, ids));
+fn compact_edge_selection_vector(
+    ctx: &DecodeContext<'_>, payload: &[u8], base: usize,
+) -> Result<Option<(usize, Vec<u32>)>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact edge selection vector";
+    let Some(last_marker) = payload.len().checked_sub(COMPACT_EDGE_VECTOR_MARKER.len()) else { return Ok(None); };
+    for marker in 12..=last_marker {
+        ctx.charge_work(16, OPERATION)?;
+        if payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice()) { continue; }
+        if let Some(ids) = compact_edge_selection_at(ctx, payload, marker)? {
+            let offset = base.checked_add(marker)
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            return Ok(Some((offset, ids)));
         }
     }
-    None
+    Ok(None)
 }
 
-pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
-    let count_start = marker.checked_sub(12)?;
-    let kind_start = marker.checked_sub(8)?;
-    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
-        || payload.get(marker + 16..marker + 18)? != [0, 0]
-    {
-        return None;
-    }
-    let count = usize::try_from(View::u32_le_at(payload, count_start)?).ok()?;
-    if !(1..=64).contains(&count) {
-        return None;
-    }
+pub(crate) fn compact_edge_selection_at(
+    ctx: &DecodeContext<'_>, payload: &[u8], marker: usize,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT compact edge identities";
+    ctx.charge_work(32, OPERATION)?;
+    let count = (|| {
+        let count_start = marker.checked_sub(12)?;
+        let kind_start = marker.checked_sub(8)?;
+        if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+            || payload.get(kind_start + 1..kind_start + 4)? != [0x02, 0x00, 0x00]
+            || payload.get(marker + 16..marker + 18)? != [0, 0] { return None; }
+        usize::try_from(View::u32_le_at(payload, count_start)?).ok().filter(|count| (1..=64).contains(count))
+    })();
+    let Some(count) = count else { return Ok(None); };
     if let Some(references) = compact_component_reference_list_at(payload, marker) {
-        return Some(
-            references
-                .iter()
-                .filter_map(|reference| reference.last()?.local_id)
-                .collect(),
-        );
-    }
-    let mut candidates = Vec::new();
-    if let Some(ids) = compact_homogeneous_edge_ids(payload, marker + 18, count) {
-        candidates.push(ids);
-    }
-    for (components, _) in compact_edge_component_path_candidates(payload, marker, count) {
-        let ids = components
-            .into_iter()
-            .filter_map(|component| component.local_id)
-            .collect::<Vec<_>>();
-        if !ids.is_empty() {
-            candidates.push(ids);
+        let mut ids = Vec::new();
+        for reference in references {
+            ctx.charge_work(1, OPERATION)?;
+            if let Some(id) = reference.last().and_then(|entry| entry.local_id) {
+                ctx.reserve_collection_vec(&mut ids, 1, OPERATION)?;
+                ids.push(id);
+            }
         }
+        return Ok(Some(ids));
     }
-    if let Some(ids) = compact_u16_edge_ids(payload, marker + 18, count) {
-        candidates.push(ids);
-    }
-    let candidates = distinct_candidates(candidates);
-    let [candidate] = candidates.as_slice() else {
-        return None;
+    let mut candidate: Option<Vec<u32>> = None;
+    let mut ambiguous = false;
+    let mut consider = |ids: Vec<u32>| {
+        if let Some(candidate) = &candidate {
+            let work = u64_from_index(candidate.len()).checked_add(u64_from_index(ids.len()))
+                .and_then(|work| work.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(work, OPERATION)?;
+            if candidate != &ids { ambiguous = true; }
+        } else { candidate = Some(ids); }
+        Ok::<_, CodecError>(())
     };
-    Some(candidate.clone())
+    if let Some(ids) = compact_homogeneous_edge_ids(ctx, payload, marker + 18, count)? { consider(ids)?; }
+    for (components, _) in compact_edge_component_path_candidates(payload, marker, count) {
+        let mut ids = Vec::new();
+        for component in components {
+            ctx.charge_work(1, OPERATION)?;
+            if let Some(id) = component.local_id {
+                ctx.reserve_collection_vec(&mut ids, 1, OPERATION)?;
+                ids.push(id);
+            }
+        }
+        if !ids.is_empty() { consider(ids)?; }
+    }
+    if let Some(ids) = compact_u16_edge_ids(ctx, payload, marker + 18, count)? { consider(ids)?; }
+    Ok(if ambiguous { None } else { candidate })
 }
 
 pub(crate) fn compact_edge_component_path_at(
@@ -2797,14 +2809,23 @@ pub(crate) fn surface_selection_terminal_feature_at(
 }
 
 fn compact_homogeneous_edge_ids(
+    ctx: &DecodeContext<'_>,
     payload: &[u8],
     mut cursor: usize,
     count: usize,
-) -> Option<Vec<u32>> {
-    let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
-    // Each edge id consumes at least a 20-byte record from `cursor` onward.
-    bounded_len(count as u64, 20, payload.len().saturating_sub(cursor))?;
-    let mut ids = Vec::with_capacity(count);
+) -> Result<Option<Vec<u32>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT homogeneous edge identities";
+    let window = (|| {
+        let signature = payload.get(cursor + 4..cursor + 16)?;
+        bounded_len(u64_from_index(count), 20, payload.len().checked_sub(cursor)?)?;
+        Some(signature)
+    })();
+    let Some(signature) = window else { return Ok(None); };
+    let mut ids = Vec::new();
+    ctx.reserve_collection_vec(&mut ids, count, OPERATION)?;
+    ctx.charge_work(u64_from_index(count).checked_mul(40)
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    Ok((|| {
     for index in 0..count {
         if payload.get(cursor + 4..cursor + 16)? != signature {
             return None;
@@ -2827,6 +2848,7 @@ fn compact_homogeneous_edge_ids(
         }
     }
     Some(ids)
+    })())
 }
 
 pub(super) fn compact_heterogeneous_component_path(
@@ -2995,12 +3017,23 @@ fn compact_sparse_component_path(
     parse(payload, cursor, count, &mut HashSet::new())
 }
 
-fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
-    let mut view = View::over_retained(payload);
-    view.seek(cursor)?;
-    let ids = view.read_counted(count as u64, 2, |view| view.u16_le().map(u32::from))?;
-    let end = view.position();
-    let suffix = payload.get(end..)?;
+fn compact_u16_edge_ids(
+    ctx: &DecodeContext<'_>, payload: &[u8], cursor: usize, count: usize,
+) -> Result<Option<Vec<u32>>, CodecError> {
+    const OPERATION: &str = "decode SLDPRT short edge identities";
+    let end = count.checked_mul(2).and_then(|len| cursor.checked_add(len));
+    let Some(end) = end else { return Ok(None); };
+    let Some(bytes) = payload.get(cursor..end) else { return Ok(None); };
+    let Some(suffix) = payload.get(end..) else { return Ok(None); };
+    let mut ids = Vec::new();
+    ctx.reserve_collection_vec(&mut ids, count, OPERATION)?;
+    ctx.charge_work(u64_from_index(count).checked_mul(2).and_then(|work| work.checked_add(32))
+        .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?, OPERATION)?;
+    let mut view = View::over_retained(bytes);
+    for _ in 0..count {
+        let Some(id) = view.u16_le() else { return Ok(None); };
+        ids.push(u32::from(id));
+    }
     let sentinel_terminated = suffix.get(..19).is_some_and(|suffix| {
         suffix[..16].iter().all(|byte| *byte == 0) && suffix[16..19] == [0xff, 0xfe, 0xff]
     });
@@ -3008,7 +3041,7 @@ fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<V
         suffix[..8].iter().all(|byte| *byte == 0)
             && View::u16_le_at(suffix, 8).is_some_and(is_class_token)
     });
-    (ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids)
+    Ok((ids.iter().all(|id| *id != 0) && (sentinel_terminated || object_terminated)).then_some(ids))
 }
 
 fn compact_body_selection_vector(

@@ -68,6 +68,10 @@ fn extrusion_endpoint_selector_is_found_after_feature_name_offset() {
 
 #[test]
 fn compact_edge_selection_accepts_counted_u16_ids() {
+    let edge_ids_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (edge_ids_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[], &edge_ids_arena, &cadmpeg_core::decode::DecodePolicy::service(),
+    ).unwrap();
     let marker = 12;
     let mut payload = vec![0; 80];
     payload[..4].copy_from_slice(&3u32.to_le_bytes());
@@ -77,7 +81,7 @@ fn compact_edge_selection_accepts_counted_u16_ids() {
     payload[ids..ids + 6].copy_from_slice(&[4, 0, 8, 0, 12, 0]);
     payload[ids + 22..ids + 25].copy_from_slice(&[0xff, 0xfe, 0xff]);
     assert_eq!(
-        compact_edge_selection_at(&payload, marker),
+        compact_edge_selection_at(&edge_ids_ctx, &payload, marker).unwrap(),
         Some(vec![4, 8, 12])
     );
     assert_eq!(compact_edge_component_path_at(&payload, marker), None);

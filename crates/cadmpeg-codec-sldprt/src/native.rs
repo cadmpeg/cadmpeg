@@ -1520,14 +1520,10 @@ fn edge_selection_disagrees_with_payload(
         selection_payload_span(lane, record.offset),
         "validate SLDPRT edge selection candidates",
     )?;
-    Ok(usize::try_from(record.offset)
-        .ok()
-        .and_then(|offset| {
-            crate::resolved_features::selections::compact_edge_selection_at(
-                &lane.native_payload,
-                offset,
-            )
-        })
+    Ok(match usize::try_from(record.offset) {
+        Ok(offset) => crate::resolved_features::selections::compact_edge_selection_at(ctx, &lane.native_payload, offset)?,
+        Err(_) => None,
+    }
         .as_ref()
         != Some(&record.local_edge_ids)
         || usize::try_from(record.offset)
