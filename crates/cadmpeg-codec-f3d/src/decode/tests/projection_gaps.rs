@@ -768,9 +768,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
     )
     .unwrap();
     let (features, _) =
-        crate::design::feature_project::project_parameter_design_with_edge_identities(
-            None,
-            &crate::design::feature_project::ProjectInputs {
+        crate::test_support::with_decode_context(|decode_ctx| crate::design::feature_project::project_parameter_design_with_edge_identities(decode_ctx, &crate::design::feature_project::ProjectInputs {
                 native: &[],
                 owners: &[],
                 scopes: &scopes,
@@ -789,8 +787,7 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
                 body_bindings: &[],
                 component_naming_spaces: &[],
                 histories: &[],
-            },
-        )
+            }))
         .expect("timeline projection through one internal scope");
     let mut native = F3dNative::default();
     native.design_parameter_scopes = scopes;
