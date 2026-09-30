@@ -276,3 +276,44 @@ fn configuration_design_projection_refuses_collection_limit() {
 fn configuration_design_projection_refuses_work_limit() {
     assert_projection_refusal(ResourceDimension::WorkUnits, run_design);
 }
+
+fn run_unscoped_datum(policy: &DecodePolicy) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{DatumPlaneReference, FeatureDefinition, FeatureId, FeatureOperation};
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy)?;
+    let mut ir = datum_model();
+    let mut expected = ir.clone();
+    let state = expected.model.configurations[0].feature_states
+        .get_mut(&FeatureId::mint("synthetic:test:id#offset-second").unwrap()).unwrap();
+    state.definition = FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+        reference: Some(DatumPlaneReference::Feature {
+            feature: FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+        }),
+        distance: cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+    });
+    state.dependencies = vec![
+        FeatureId::mint("synthetic:test:id#plane").unwrap(),
+        FeatureId::mint("synthetic:test:id#offset-first").unwrap(),
+    ].try_into().unwrap();
+    let losses = project_configuration_sketch_states(
+        &ctx, &mut ir, &[], &[], &mut cadmpeg_ir::Annotations::default(),
+    )?;
+    assert!(losses.is_empty());
+    assert_eq!(ir, expected);
+    Ok(())
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_unscoped_datum_collection_limit() {
+    assert_projection_refusal(ResourceDimension::CollectionItems, run_unscoped_datum);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_unscoped_datum_retained_limit() {
+    assert_projection_refusal(ResourceDimension::RetainedBytes, run_unscoped_datum);
+}
+
+#[test]
+fn configuration_sketch_projection_refuses_unscoped_datum_work_limit() {
+    assert_projection_refusal(ResourceDimension::WorkUnits, run_unscoped_datum);
+}
