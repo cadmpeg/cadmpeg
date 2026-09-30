@@ -174,7 +174,7 @@ impl Brep {
             ctx.refuse_codec_limit("qualify SLDPRT site", u64::MAX - 1, u64::MAX)
         })?;
         let (mut tail_text, _tail_reservation) =
-            ctx.reserve_scoped_string(tail_len, "qualify SLDPRT site")?;
+            crate::text_admission::reserve_scoped_string(ctx, tail_len, "qualify SLDPRT site")?;
         tail_text.push('@');
         tail_text.push_str(site);
         let tail =
@@ -350,7 +350,7 @@ impl Brep {
                 *target = qualify(target)?;
             }
             let mut site_key = String::new();
-            ctx.reserve_retained_string(&mut site_key, site.len(), "copy SLDPRT face color site")?;
+            crate::text_admission::reserve_retained_string(ctx, &mut site_key, site.len(), "copy SLDPRT face color site")?;
             site_key.push_str(site);
             color.site_key = Some(site_key);
         }
@@ -544,7 +544,7 @@ fn shell_face_components(
                 continue;
             };
             let mut id = String::new();
-            ctx.reserve_retained_string(
+            crate::text_admission::reserve_retained_string(ctx, 
                 &mut id,
                 face.as_str().len(),
                 "copy Parasolid face identity",
@@ -731,7 +731,7 @@ fn qualified_reference(
         ctx.refuse_codec_limit("qualify SLDPRT reference", u64::MAX - 1, u64::MAX)
     })?;
     let mut result = String::new();
-    ctx.reserve_retained_string(&mut result, size, "qualify SLDPRT reference")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut result, size, "qualify SLDPRT reference")?;
     result.push_str(value);
     if tail != 0 {
         result.push('@');
@@ -1784,7 +1784,7 @@ fn copy_graph_stream_name(
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<cadmpeg_ir::StreamName, cadmpeg_core::CodecError> {
     let mut name = String::new();
-    ctx.reserve_retained_string(&mut name, stream.as_str().len(), "copy Parasolid graph stream name")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut name, stream.as_str().len(), "copy Parasolid graph stream name")?;
     name.push_str(stream.as_str());
     cadmpeg_ir::StreamName::try_from(name)
         .map_err(|_| cadmpeg_core::CodecError::malformed("empty Parasolid graph stream name"))
@@ -2939,7 +2939,7 @@ fn decode_graph(
     for modifier in &mut out.body_modifiers {
         modifier.target = if let Some(Some(id)) = body_ids_by_attr.get(&modifier.body_attr) {
             let mut target = String::new();
-            ctx.reserve_retained_string(&mut target, id.len(), "copy Parasolid modifier body ID")?;
+            crate::text_admission::reserve_retained_string(ctx, &mut target, id.len(), "copy Parasolid modifier body ID")?;
             target.push_str(id);
             Some(target)
         } else {

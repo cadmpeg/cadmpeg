@@ -26,7 +26,7 @@ fn property_text(
     name: &str,
 ) -> Result<Option<String>, CodecError> {
     feature.properties.get(name).map(|value| {
-        crate::retained_text::format_retained(ctx, format_args!("{value}"), "retain SLDPRT edit selection reference")
+        crate::text_admission::format_retained(ctx, format_args!("{value}"), "retain SLDPRT edit selection reference")
     }).transpose()
 }
 

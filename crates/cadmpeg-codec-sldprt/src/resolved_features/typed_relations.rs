@@ -348,7 +348,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             operands.push(SketchNativeOperand {
                 native_kind: nonblank_literal!("sldprt:marker-local-id"), field: None,
                 object_index: Some(u32::from(link.local_id)),
-                native_ref: Some(crate::retained_text::format_retained(ctx, format_args!("{}", link.entity_ref), OPERATION)?),
+                native_ref: Some(crate::text_admission::format_retained(ctx, format_args!("{}", link.entity_ref), OPERATION)?),
             });
         }
         for owner in owners {
@@ -358,7 +358,7 @@ pub(super) fn typed_marker_relation_definition_in_sketch(
             operands.push(SketchNativeOperand {
                 native_kind: nonblank_literal!("sldprt:marker-constraint-owner"), field: None,
                 object_index: owner.object_index().or(owner.local_id()),
-                native_ref: Some(crate::retained_text::format_retained(ctx, format_args!("{}", owner.id()), OPERATION)?),
+                native_ref: Some(crate::text_admission::format_retained(ctx, format_args!("{}", owner.id()), OPERATION)?),
             });
         }
         Ok(SketchConstraintDefinitionInput::Native {

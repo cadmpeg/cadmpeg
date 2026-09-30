@@ -43,7 +43,7 @@ pub(super) fn admit(
             let length = characters().fold(0usize, |length, character| {
                 length + character.map_or(0, char::len_utf8)
             });
-            let (mut expected, _reservation) = ctx.reserve_scoped_string(
+            let (mut expected, _reservation) = crate::text_admission::reserve_scoped_string(ctx, 
                 length, "decode SLDPRT native validation name",
             )?;
             expected.extend(characters().filter_map(Result::ok));
@@ -257,7 +257,7 @@ fn copy_feature_ref(
         .as_deref()
         .map(|feature| {
             let mut copy = String::new();
-            ctx.reserve_retained_string(&mut copy, feature.len(), "retain SLDPRT native lane owner")?;
+            crate::text_admission::reserve_retained_string(ctx, &mut copy, feature.len(), "retain SLDPRT native lane owner")?;
             copy.push_str(feature);
             Ok(copy)
         })

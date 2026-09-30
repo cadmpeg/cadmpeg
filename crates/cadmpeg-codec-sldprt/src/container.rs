@@ -585,7 +585,7 @@ fn compound_streams<'a>(
         let payload = ctx.copy_retained(view.window(), "retain SolidWorks CFB stream")?;
         let decoded = decode_wrapped_payload_budgeted(ctx, view)?;
         let mut path = String::new();
-        ctx.reserve_retained_string(&mut path, entry.path().len(), "retain SLDPRT stream path")?;
+        crate::text_admission::reserve_retained_string(ctx, &mut path, entry.path().len(), "retain SLDPRT stream path")?;
         path.push_str(entry.path());
         let stream = compound_stream(
             ctx,
@@ -1059,7 +1059,7 @@ pub(crate) fn notes_charged(
                 ctx.refuse_codec_limit("retain SLDPRT active site note", u64::MAX, u64::MAX)
             })?;
             let mut active = String::new();
-            ctx.reserve_retained_string(
+            crate::text_admission::reserve_retained_string(ctx, 
                 &mut active,
                 required,
                 "retain SLDPRT active site note",
@@ -1302,7 +1302,7 @@ impl ScanAdmission<'_, '_> {
             Self::Probe => Ok(value.to_owned()),
             Self::Decode(ctx) => {
                 let mut copy = String::new();
-                ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+                crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
                 copy.push_str(value);
                 Ok(copy)
             }
@@ -1332,7 +1332,7 @@ impl ScanAdmission<'_, '_> {
             Self::Probe => Ok(String::with_capacity(bytes)),
             Self::Decode(ctx) => {
                 let mut value = String::new();
-                ctx.reserve_retained_string(&mut value, bytes, operation)?;
+                crate::text_admission::reserve_retained_string(ctx, &mut value, bytes, operation)?;
                 Ok(value)
             }
         }
@@ -1361,7 +1361,7 @@ pub(crate) fn xml_text_charged<'ctx>(
                 ctx.refuse_codec_limit(operation, u64::MAX, u64::MAX)
             })
         })?;
-        let (mut text, scope) = ctx.reserve_scoped_string(length, operation)?;
+        let (mut text, scope) = crate::text_admission::reserve_scoped_string(ctx, length, operation)?;
         for value in chars() {
             text.push(value);
         }
@@ -1370,7 +1370,7 @@ pub(crate) fn xml_text_charged<'ctx>(
         let Ok(source) = std::str::from_utf8(bytes) else {
             return Ok(None);
         };
-        let (mut text, scope) = ctx.reserve_scoped_string(source.len(), operation)?;
+        let (mut text, scope) = crate::text_admission::reserve_scoped_string(ctx, source.len(), operation)?;
         text.push_str(source);
         Ok(Some(EnvelopeText { text, _scope: Some(scope) }))
     }

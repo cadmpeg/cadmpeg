@@ -405,7 +405,7 @@ mod literal_tests {
         ] {
             let length = Length::new(value).unwrap();
             assert_eq!(format_length_mm(length), expected);
-            assert_eq!(crate::retained_text::format_retained(&ctx, format_args!("{}", LengthLiteral(length)), "test length literal").unwrap(), expected);
+            assert_eq!(crate::text_admission::format_retained(&ctx, format_args!("{}", LengthLiteral(length)), "test length literal").unwrap(), expected);
         }
     }
 }

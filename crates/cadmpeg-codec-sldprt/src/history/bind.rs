@@ -28,7 +28,7 @@ fn copy_binding_text(
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT sketch binding identity", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT sketch binding identity")?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), "retain SLDPRT sketch binding identity")?;
     copy.push_str(value);
     Ok(copy)
 }
@@ -522,7 +522,7 @@ fn copy_output_body_id(
     id: &str,
 ) -> Result<BodyId, cadmpeg_core::CodecError> {
     let mut text = String::new();
-    ctx.reserve_retained_string(&mut text, id.len(), "retain SLDPRT feature output body")?;
+    crate::text_admission::reserve_retained_string(ctx, &mut text, id.len(), "retain SLDPRT feature output body")?;
     text.push_str(id);
     BodyId::mint(text).map_err(cadmpeg_core::CodecError::malformed)
 }

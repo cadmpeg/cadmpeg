@@ -89,7 +89,7 @@ pub(crate) fn project_parameters(ctx: &DecodeContext<'_>, histories: &[FeatureHi
                     id: neutral_parameter_id(ctx, feature, ordinal)?,
                     owner: Some(neutral_feature_id_charged(ctx, &feature.id)?),
                     ordinal: ordinal_u32, properties, name,
-                    expression: crate::retained_text::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT parameter expression")?,
+                    expression: crate::text_admission::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT parameter expression")?,
                     display, value,
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
                     native_ref: None, pmi: None,
@@ -123,13 +123,13 @@ fn bare_text_parameter_literal(ctx: &DecodeContext<'_>, expression: &str) -> Res
     }) { return Ok(None); }
     let Some(identifiers) = expression_identifier_tokens(ctx, expression)? else { return Ok(None); };
     if identifiers.iter().any(definite_parameter_reference) { return Ok(None); }
-    Ok(Some(ParameterValue::String(crate::retained_text::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT text parameter literal")?)))
+    Ok(Some(ParameterValue::String(crate::text_admission::format_retained(ctx, format_args!("{expression}"), "retain SLDPRT text parameter literal")?)))
 }
 
 fn formatted_text_dimension_literal(ctx: &DecodeContext<'_>, name: &str, expression: &str) -> Result<Option<ParameterValue>, CodecError> {
     ctx.charge_work(name.len() as u64, "parse SLDPRT formatted parameter name")?;
     ctx.charge_work(expression.len() as u64, "parse SLDPRT formatted parameter literal")?;
-    formatted_text_dimension_value(name, expression).map(|value| crate::retained_text::format_retained(ctx, 
+    formatted_text_dimension_value(name, expression).map(|value| crate::text_admission::format_retained(ctx, 
         format_args!("{value}"), "retain SLDPRT formatted parameter literal",
     ).map(ParameterValue::String)).transpose()
 }
@@ -205,7 +205,7 @@ pub(super) fn apply_evaluated_parameters(ctx: &DecodeContext<'_>, histories: &mu
             }).and_then(|parameter| parameter.value.as_ref());
             let Some(value) = value else { continue; };
             let value = match value {
-                ParameterValue::String(value) => crate::retained_text::format_retained(ctx, format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
+                ParameterValue::String(value) => crate::text_admission::format_retained(ctx, format_args!("{value}"), "retain SLDPRT evaluated parameter text")?,
                 _ => format_parameter_value(value),
             };
             let name = cadmpeg_core::text::NonBlankString::new(copy_projected_feature_text(ctx, name.as_str())?)
@@ -322,7 +322,7 @@ fn copy_parameter_id(ctx: &DecodeContext<'_>, id: &ParameterId) -> Result<Parame
     let copy_work = cadmpeg_core::decode::u64_from_index(id.as_str().len()).checked_mul(4)
         .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter reference", u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, "retain SLDPRT parameter reference")?;
-    ParameterId::mint(crate::retained_text::format_retained(ctx, format_args!("{id}"), "retain SLDPRT parameter reference")?)
+    ParameterId::mint(crate::text_admission::format_retained(ctx, format_args!("{id}"), "retain SLDPRT parameter reference")?)
         .map_err(CodecError::malformed)
 }
 
@@ -332,7 +332,7 @@ fn copy_parameter_value(ctx: &DecodeContext<'_>, value: &ParameterValue) -> Resu
             let work = cadmpeg_core::decode::u64_from_index(value.len()).checked_mul(4)
                 .ok_or_else(|| ctx.refuse_codec_limit("retain SLDPRT parameter value text", u64::MAX - 1, u64::MAX))?;
             ctx.charge_work(work, "retain SLDPRT parameter value text")?;
-            Ok(ParameterValue::String(crate::retained_text::format_retained(ctx, 
+            Ok(ParameterValue::String(crate::text_admission::format_retained(ctx, 
                 format_args!("{value}"), "retain SLDPRT parameter value text",
             )?))
         },
@@ -480,7 +480,7 @@ impl ParameterAliases {
         feature_names: &HashMap<FeatureId, String>, global_owners: &HashSet<FeatureId>,
     ) -> Result<Self, CodecError> {
         const OPERATION: &str = "retain SLDPRT parameter alias";
-        let copy = |value: &str| crate::retained_text::format_retained(ctx, format_args!("{value}"), OPERATION);
+        let copy = |value: &str| crate::text_admission::format_retained(ctx, format_args!("{value}"), OPERATION);
         let mut aliases = Self {
             global: HashMap::new(), exact: HashMap::new(), document_local: HashMap::new(), feature_local: HashMap::new(),
         };
@@ -490,11 +490,11 @@ impl ParameterAliases {
             let unqualified = [Some(parameter.name.as_str()), parameter.properties.get("EquationId")
                 .filter(|equation_id| !equation_id.contains('@')).map(String::as_str)];
             if let Some(owner_name) = parameter.owner.as_ref().and_then(|owner| feature_names.get(owner)) {
-                let qualified = crate::retained_text::format_retained(ctx, format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
+                let qualified = crate::text_admission::format_retained(ctx, format_args!("{}@{owner_name}", parameter.name), OPERATION)?;
                 insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 if let Some(equation_id) = parameter.properties.get("EquationId") {
                     let qualified = if equation_id.contains('@') { copy(equation_id)? }
-                        else { crate::retained_text::format_retained(ctx, format_args!("{equation_id}@{owner_name}"), OPERATION)? };
+                        else { crate::text_admission::format_retained(ctx, format_args!("{equation_id}@{owner_name}"), OPERATION)? };
                     insert_parameter_alias(ctx, &mut aliases.exact, qualified, &parameter.id)?;
                 }
             }
@@ -785,7 +785,7 @@ impl<'a, 'ctx> ExpressionIdentifier<'a, 'ctx> {
         let Some(inner) = raw.strip_prefix('"').and_then(|inner| inner.strip_suffix('"')).filter(|inner| !inner.is_empty()) else { return Ok(None); };
         ctx.charge_work(inner.len() as u64, "unescape SLDPRT parameter identifier")?;
         let value = if inner.contains("\"\"") {
-            let (mut value, reservation) = ctx.reserve_scoped_string(inner.len(), "unescape SLDPRT parameter identifier")?;
+            let (mut value, reservation) = crate::text_admission::reserve_scoped_string(ctx, inner.len(), "unescape SLDPRT parameter identifier")?;
             let mut segments = inner.split("\"\"");
             if let Some(first) = segments.next() { value.push_str(first); }
             for segment in segments { value.push('"'); value.push_str(segment); }

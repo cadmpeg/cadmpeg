@@ -741,7 +741,7 @@ pub(super) fn copy_sketch_entity_identity(
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(entity.as_str().len())
         .checked_mul(4).and_then(|work| work.checked_add(1))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?, operation)?;
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", entity.as_str()), operation)?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", entity.as_str()), operation)?;
     let entity = SketchEntityId::mint(text).map_err(|error| cadmpeg_core::CodecError::malformed(format_args!("invalid decoded sketch entity identity: {error}")))?;
     Ok(entity)
 }

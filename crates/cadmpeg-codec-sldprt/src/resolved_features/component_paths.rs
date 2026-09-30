@@ -604,12 +604,12 @@ pub(crate) fn project_dissected_sketches(
 }
 
 fn copy_dissected_feature_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::features::FeatureId) -> Result<cadmpeg_ir::features::FeatureId, CodecError> {
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::features::FeatureId::mint(text).map_err(CodecError::malformed)
 }
 
 fn copy_dissected_sketch_id(ctx: &DecodeContext<'_>, id: &cadmpeg_ir::sketches::SketchId) -> Result<cadmpeg_ir::sketches::SketchId, CodecError> {
-    let text = crate::retained_text::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
+    let text = crate::text_admission::format_retained(ctx, format_args!("{}", id.as_str()), "retain SLDPRT dissected profile identity")?;
     cadmpeg_ir::sketches::SketchId::mint(text).map_err(CodecError::malformed)
 }
 
@@ -623,26 +623,26 @@ fn append_compact_edge_path_charged(
         for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
                 value.push(',');
             }
             let digits = edge_id.to_string();
-            ctx.reserve_retained_string(value, digits.len(), OPERATION)?;
+            crate::text_admission::reserve_retained_string(ctx, value, digits.len(), OPERATION)?;
             value.push_str(&digits);
         }
     } else {
         for (index, component) in selection.components.iter().enumerate() {
             ctx.charge_work(1, OPERATION)?;
             if index != 0 {
-                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
                 value.push(',');
             }
             if let Some(id) = component.local_id {
                 let digits = id.to_string();
-                ctx.reserve_retained_string(value, digits.len(), OPERATION)?;
+                crate::text_admission::reserve_retained_string(ctx, value, digits.len(), OPERATION)?;
                 value.push_str(&digits);
             } else {
-                ctx.reserve_retained_string(value, 1, OPERATION)?;
+                crate::text_admission::reserve_retained_string(ctx, value, 1, OPERATION)?;
                 value.push('_');
             }
         }
@@ -670,18 +670,18 @@ pub(crate) fn compact_edge_selection_set_value_charged(
         "sldprt:feature-input:edge-selection-vectors:"
     };
     let mut value = String::new();
-    ctx.reserve_retained_string(&mut value, prefix.len(), OPERATION)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut value, prefix.len(), OPERATION)?;
     value.push_str(prefix);
     if let [selection] = selections {
         if selection.components.iter().all(|component| component.local_id.is_some()) {
             for (index, edge_id) in selection.local_edge_ids.iter().enumerate() {
                 ctx.charge_work(1, OPERATION)?;
                 if index != 0 {
-                    ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+                    crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
                     value.push(',');
                 }
                 let digits = edge_id.to_string();
-                ctx.reserve_retained_string(&mut value, digits.len(), OPERATION)?;
+                crate::text_admission::reserve_retained_string(ctx, &mut value, digits.len(), OPERATION)?;
                 value.push_str(&digits);
             }
             return Ok(value);
@@ -690,7 +690,7 @@ pub(crate) fn compact_edge_selection_set_value_charged(
     for (index, selection) in selections.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+            crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
             value.push(';');
         }
         append_compact_edge_path_charged(ctx, &mut value, selection)?;
@@ -705,16 +705,16 @@ pub(crate) fn compact_body_selection_value_charged(
     const OPERATION: &str = "format SLDPRT compact body selection";
     let prefix = "sldprt:feature-input:body-ids:";
     let mut value = String::new();
-    ctx.reserve_retained_string(&mut value, prefix.len(), OPERATION)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut value, prefix.len(), OPERATION)?;
     value.push_str(prefix);
     for (index, body_id) in local_body_ids.iter().enumerate() {
         ctx.charge_work(1, OPERATION)?;
         if index != 0 {
-            ctx.reserve_retained_string(&mut value, 1, OPERATION)?;
+            crate::text_admission::reserve_retained_string(ctx, &mut value, 1, OPERATION)?;
             value.push(',');
         }
         let digits = body_id.to_string();
-        ctx.reserve_retained_string(&mut value, digits.len(), OPERATION)?;
+        crate::text_admission::reserve_retained_string(ctx, &mut value, digits.len(), OPERATION)?;
         value.push_str(&digits);
     }
     Ok(value)
@@ -726,7 +726,7 @@ pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
 
 fn copy_component_text(ctx: &DecodeContext<'_>, text: &str) -> Result<String, CodecError> {
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(text.len()), "retain SLDPRT adjacent profile identity")?;
-    crate::retained_text::format_retained(ctx, format_args!("{text}"), "retain SLDPRT adjacent profile identity")
+    crate::text_admission::format_retained(ctx, format_args!("{text}"), "retain SLDPRT adjacent profile identity")
 }
 
 fn reserve_component_map<K: Eq + std::hash::Hash, V>(ctx: &DecodeContext<'_>, values: &mut HashMap<K, V>, operation: &'static str) -> Result<(), CodecError> {

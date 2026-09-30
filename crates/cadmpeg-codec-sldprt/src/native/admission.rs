@@ -85,7 +85,7 @@ pub(super) fn invalid_owner(
     }
     ctx.charge_work(cadmpeg_core::decode::u64_from_index(count.bytes), "format SLDPRT native validation error")?;
     let mut text = String::new();
-    ctx.reserve_retained_string(
+    crate::text_admission::reserve_retained_string(ctx, 
         &mut text,
         count.bytes,
         "format SLDPRT native validation error",

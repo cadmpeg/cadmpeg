@@ -118,7 +118,7 @@ fn ensure_spatial_relation_point(
     if let Some(entity) = first {
         return copy_spatial_entity_id(ctx, entity.id()).map(Some);
     }
-    let id_text = crate::retained_text::format_retained(ctx, format_args!(
+    let id_text = crate::text_admission::format_retained(ctx, format_args!(
         "{}:relation-point:{}",
         sketch.as_str(),
         marker.offset()
@@ -128,7 +128,7 @@ fn ensure_spatial_relation_point(
     };
     let entity_id = copy_spatial_entity_id(ctx, &id)?;
     let sketch_id = copy_spatial_sketch_id(ctx, sketch)?;
-    let native_ref = crate::retained_text::format_retained(ctx, 
+    let native_ref = crate::text_admission::format_retained(ctx, 
         format_args!("{}", marker.id()),
         "copy SLDPRT spatial relation marker identity",
     )?;
@@ -154,7 +154,7 @@ fn copy_spatial_entity_id(
     ctx: &DecodeContext<'_>,
     id: &SpatialSketchEntityId,
 ) -> Result<SpatialSketchEntityId, cadmpeg_core::CodecError> {
-    let text = crate::retained_text::format_retained(ctx, 
+    let text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", id.as_str()),
         "copy SLDPRT spatial entity identity",
     )?;
@@ -167,7 +167,7 @@ fn copy_spatial_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SpatialSketchId,
 ) -> Result<cadmpeg_ir::sketches::SpatialSketchId, cadmpeg_core::CodecError> {
-    let text = crate::retained_text::format_retained(ctx, 
+    let text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", id.as_str()),
         "copy SLDPRT spatial sketch identity",
     )?;
@@ -286,7 +286,7 @@ fn spatial_relation_point_line_entities(
     let line_id = if let Some(line_id) = existing_line_id {
         copy_spatial_entity_id(ctx, line_id)?
     } else {
-        let id_text = crate::retained_text::format_retained(ctx, 
+        let id_text = crate::text_admission::format_retained(ctx, 
             format_args!("{}:relation-line", relation.id),
             "format SLDPRT spatial relation line identity",
         )?;
@@ -295,15 +295,15 @@ fn spatial_relation_point_line_entities(
         };
         let entity_id = copy_spatial_entity_id(ctx, &id)?;
         let sketch_id = copy_spatial_sketch_id(ctx, sketch)?;
-        let geometry_ref = crate::retained_text::format_retained(ctx, 
+        let geometry_ref = crate::text_admission::format_retained(ctx, 
             format_args!("{}:relation-line", relation.id),
             "copy SLDPRT spatial relation line reference",
         )?;
-        let start_ref = crate::retained_text::format_retained(ctx, 
+        let start_ref = crate::text_admission::format_retained(ctx, 
             format_args!("{}", start_id.as_str()),
             "copy SLDPRT spatial line endpoint",
         )?;
-        let end_ref = crate::retained_text::format_retained(ctx, 
+        let end_ref = crate::text_admission::format_retained(ctx, 
             format_args!("{}", end_id.as_str()),
             "copy SLDPRT spatial line endpoint",
         )?;
@@ -400,7 +400,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 constraints_by_native_ref.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                 })?;
-                let key = crate::retained_text::format_retained(ctx, 
+                let key = crate::text_admission::format_retained(ctx, 
                     format_args!("{native_ref}"),
                     "copy SLDPRT spatial constraint reference",
                 )?;
@@ -442,7 +442,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 let mut operands = Vec::new();
                 for operand in &relation.operands {
                     let native_ref = operand.entity_ref.as_deref().map(|reference| {
-                        crate::retained_text::format_retained(ctx, 
+                        crate::text_admission::format_retained(ctx, 
                             format_args!("{reference}"),
                             "copy SLDPRT spatial relation operand reference",
                         )
@@ -469,7 +469,7 @@ pub(crate) fn project_spatial_relation_bindings(
             else {
                 continue;
             };
-            let id_text = crate::retained_text::format_retained(ctx, format_args!(
+            let id_text = crate::text_admission::format_retained(ctx, format_args!(
                     "sldprt:model:spatial-sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
                 ), "format SLDPRT spatial relation constraint identity")?;
@@ -480,7 +480,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 },
                 sketch: copy_spatial_sketch_id(ctx, sketch)?,
                 definition,
-                native_ref: Some(crate::retained_text::format_retained(ctx, 
+                native_ref: Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", relation.id),
                     "copy SLDPRT spatial relation reference",
                 )?),
@@ -501,7 +501,7 @@ pub(crate) fn project_spatial_relation_bindings(
                 constraints_by_native_ref.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                 })?;
-                let key = crate::retained_text::format_retained(ctx, 
+                let key = crate::text_admission::format_retained(ctx, 
                     format_args!("{}", relation.id),
                     "copy SLDPRT spatial constraint reference",
                 )?;
@@ -765,7 +765,7 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             let position = Point2::new(position.0 as f64 * QUANTUM, position.1 as f64 * QUANTUM);
-            let id_text = crate::retained_text::format_retained(ctx, 
+            let id_text = crate::text_admission::format_retained(ctx, 
                 format_args!(
                     "sldprt:model:sketch-entity#relation-point:{lane_key}:{}",
                     marker.offset()
@@ -784,7 +784,7 @@ pub(crate) fn project_relation_point_geometry(
                 marker.kind(),
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             ) {
-                Some(crate::retained_text::format_retained(ctx, 
+                Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT relation-point native reference",
                 )?)
@@ -794,7 +794,7 @@ pub(crate) fn project_relation_point_geometry(
             let geometry_ref = if qualified_point
                 && matches!(marker.kind(), SketchInputKind::LineOrCircle | SketchInputKind::Arc)
             {
-                Some(crate::retained_text::format_retained(ctx, 
+                Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT relation-point geometry reference",
                 )?)
@@ -982,7 +982,7 @@ pub(crate) fn project_relation_point_geometry(
             if already_present {
                 continue;
             }
-            let id_text = crate::retained_text::format_retained(ctx, 
+            let id_text = crate::text_admission::format_retained(ctx, 
                 format_args!(
                     "sldprt:model:sketch-entity#relation-line:{lane_key}:{}",
                     marker.offset()
@@ -998,7 +998,7 @@ pub(crate) fn project_relation_point_geometry(
             };
             let sketch_id = copy_planar_sketch_id(ctx, sketch)?;
             let native_ref = if !matches!(marker.kind(), SketchInputKind::Relation(_)) {
-                Some(crate::retained_text::format_retained(ctx, 
+                Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT relation-line native reference",
                 )?)
@@ -1006,7 +1006,7 @@ pub(crate) fn project_relation_point_geometry(
                 None
             };
             let geometry_ref = if matches!(marker.kind(), SketchInputKind::Relation(_)) {
-                Some(crate::retained_text::format_retained(ctx, 
+                Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT relation-line geometry reference",
                 )?)
@@ -1014,11 +1014,11 @@ pub(crate) fn project_relation_point_geometry(
                 None
             };
             let endpoint_refs = vec![
-                crate::retained_text::format_retained(ctx, 
+                crate::text_admission::format_retained(ctx, 
                     format_args!("{}", first_marker.id()),
                     "copy SLDPRT relation-line first endpoint reference",
                 )?,
-                crate::retained_text::format_retained(ctx, 
+                crate::text_admission::format_retained(ctx, 
                     format_args!("{}", second_marker.id()),
                     "copy SLDPRT relation-line second endpoint reference",
                 )?,
@@ -1551,7 +1551,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             .rsplit_once('#')
                             .map_or(relation.feature_ref.as_str(), |(_, key)| key);
                         for (operand, line) in relation.operands.iter().zip(selected) {
-                            let geometry_ref = crate::retained_text::format_retained(ctx, 
+                            let geometry_ref = crate::text_admission::format_retained(ctx, 
                                 format_args!(
                                     "{}:solver-line:{}",
                                     relation.feature_ref,
@@ -1565,7 +1565,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             }) {
                                 continue;
                             }
-                            let id_text = crate::retained_text::format_retained(ctx, 
+                            let id_text = crate::text_admission::format_retained(ctx, 
                                 format_args!(
                                     "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
                                     operand.entity_index
@@ -1578,7 +1578,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                             let sketch_id = copy_planar_sketch_id(ctx, &line.sketch)?;
                             let mut endpoint_refs = Vec::new();
                             for reference in &line.endpoint_refs {
-                                let reference = crate::retained_text::format_retained(ctx, 
+                                let reference = crate::text_admission::format_retained(ctx, 
                                     format_args!("{reference}"),
                                     "copy SLDPRT dynamic solver-line endpoint reference",
                                 )?;
@@ -1607,7 +1607,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 .rsplit_once('#')
                 .map_or(relation.feature_ref.as_str(), |(_, key)| key);
             for (operand, markers, line) in lines {
-                let geometry_ref = crate::retained_text::format_retained(ctx, 
+                let geometry_ref = crate::text_admission::format_retained(ctx, 
                     format_args!(
                         "{}:solver-line:{}",
                         relation.feature_ref,
@@ -1621,7 +1621,7 @@ pub(crate) fn project_relation_solved_line_geometry(
                 }) {
                     continue;
                 }
-                let id_text = crate::retained_text::format_retained(ctx, 
+                let id_text = crate::text_admission::format_retained(ctx, 
                     format_args!(
                         "sldprt:model:sketch-entity#solver-line:{feature_key}:{}",
                         operand.entity_index
@@ -1636,17 +1636,17 @@ pub(crate) fn project_relation_solved_line_geometry(
                     .native_ref
                     .as_deref()
                     .map(|reference| {
-                        crate::retained_text::format_retained(ctx, 
+                        crate::text_admission::format_retained(ctx, 
                             format_args!("{reference}"),
                             "copy SLDPRT solver-line native reference",
                         )
                     })
                     .transpose()?;
-                let first_ref = crate::retained_text::format_retained(ctx, 
+                let first_ref = crate::text_admission::format_retained(ctx, 
                     format_args!("{}", markers[0].id()),
                     "copy SLDPRT solver-line first endpoint reference",
                 )?;
-                let second_ref = crate::retained_text::format_retained(ctx, 
+                let second_ref = crate::text_admission::format_retained(ctx, 
                     format_args!("{}", markers[1].id()),
                     "copy SLDPRT solver-line second endpoint reference",
                 )?;
@@ -1767,7 +1767,7 @@ fn copy_dynamic_line_entity(
     ctx: &DecodeContext<'_>,
     entity: &SketchEntity,
 ) -> Result<SketchEntity, cadmpeg_core::CodecError> {
-    let id_text = crate::retained_text::format_retained(ctx, 
+    let id_text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", entity.id().as_str()),
         "copy SLDPRT dynamic line identity",
     )?;
@@ -1779,7 +1779,7 @@ fn copy_dynamic_line_entity(
         .native_ref
         .as_deref()
         .map(|reference| {
-            crate::retained_text::format_retained(ctx, 
+            crate::text_admission::format_retained(ctx, 
                 format_args!("{reference}"),
                 "copy SLDPRT dynamic line native reference",
             )
@@ -1789,7 +1789,7 @@ fn copy_dynamic_line_entity(
         .geometry_ref
         .as_deref()
         .map(|reference| {
-            crate::retained_text::format_retained(ctx, 
+            crate::text_admission::format_retained(ctx, 
                 format_args!("{reference}"),
                 "copy SLDPRT dynamic line geometry reference",
             )
@@ -1797,7 +1797,7 @@ fn copy_dynamic_line_entity(
         .transpose()?;
     let mut endpoint_refs = Vec::new();
     for reference in &entity.endpoint_refs {
-        let reference = crate::retained_text::format_retained(ctx, 
+        let reference = crate::text_admission::format_retained(ctx, 
             format_args!("{reference}"),
             "copy SLDPRT dynamic line endpoint reference",
         )?;
@@ -1923,7 +1923,7 @@ pub(crate) fn project_relation_solved_point_geometry(
                     inferred_point_coordinates_by_index(ctx, lane, relation.feature_ref.as_str())?;
                 let mut resolved_positions = Vec::with_capacity(relation.operands.len());
                 for (index, operand) in relation.operands.iter().enumerate() {
-                    let geometry_ref = crate::retained_text::format_retained(ctx, 
+                    let geometry_ref = crate::text_admission::format_retained(ctx, 
                         format_args!("{}:operand:{index}", relation.id),
                         "format SLDPRT solved-point operand reference",
                     )?;
@@ -1985,11 +1985,11 @@ pub(crate) fn project_relation_solved_point_geometry(
                     .enumerate()
                     .filter_map(|(index, position)| position.map(|position| (index, position)))
                 {
-                    let geometry_ref = crate::retained_text::format_retained(ctx, 
+                    let geometry_ref = crate::text_admission::format_retained(ctx, 
                         format_args!("{}:operand:{index}", relation.id),
                         "format SLDPRT solved-point operand reference",
                     )?;
-                    let id_text = crate::retained_text::format_retained(ctx, format_args!(
+                    let id_text = crate::text_admission::format_retained(ctx, format_args!(
                                 "sldprt:model:sketch-entity#solver-point:{lane_key}:{}:{index}",
                                 relation.offset
                             ), "format SLDPRT solved-point entity identity")?;
@@ -2067,7 +2067,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             if candidates.any(|candidate| candidate != point) {
                 continue;
             }
-            let geometry_ref = crate::retained_text::format_retained(ctx, 
+            let geometry_ref = crate::text_admission::format_retained(ctx, 
                 format_args!("{}:operand:{missing_index}", relation.id),
                 "format SLDPRT dimension-point operand reference",
             )?;
@@ -2077,7 +2077,7 @@ pub(crate) fn project_relation_solved_point_geometry(
             {
                 continue;
             }
-            let id_text = crate::retained_text::format_retained(ctx, format_args!(
+            let id_text = crate::text_admission::format_retained(ctx, format_args!(
                         "sldprt:model:sketch-entity#dimension-point:{lane_key}:{}:{missing_index}",
                         relation.offset
                     ), "format SLDPRT dimension-point entity identity")?;
@@ -2679,7 +2679,7 @@ pub(crate) fn project_relation_bindings(
                 constraints_by_native_ref.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                 })?;
-                let key = crate::retained_text::format_retained(ctx, 
+                let key = crate::text_admission::format_retained(ctx, 
                     format_args!("{native_ref}"),
                     "copy SLDPRT planar constraint reference",
                 )?;
@@ -2777,7 +2777,7 @@ pub(crate) fn project_relation_bindings(
                 let mut operands = Vec::new();
                 for operand in &relation.operands {
                     let native_ref = operand.entity_ref.as_deref().map(|reference| {
-                        crate::retained_text::format_retained(ctx, 
+                        crate::text_admission::format_retained(ctx, 
                             format_args!("{reference}"),
                             "copy SLDPRT planar relation operand reference",
                         )
@@ -2811,7 +2811,7 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let id_text = crate::retained_text::format_retained(ctx, format_args!(
+            let id_text = crate::text_admission::format_retained(ctx, format_args!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
                 ), "format SLDPRT planar relation constraint identity")?;
@@ -2834,7 +2834,7 @@ pub(crate) fn project_relation_bindings(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(crate::retained_text::format_retained(ctx, 
+                native_ref: Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", relation.id),
                     "copy SLDPRT planar relation reference",
                 )?),
@@ -2852,7 +2852,7 @@ pub(crate) fn project_relation_bindings(
                 constraints_by_native_ref.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                 })?;
-                let key = crate::retained_text::format_retained(ctx, 
+                let key = crate::text_admission::format_retained(ctx, 
                     format_args!("{}", relation.id),
                     "copy SLDPRT planar constraint reference",
                 )?;
@@ -2895,7 +2895,7 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let id_text = crate::retained_text::format_retained(ctx, format_args!(
+            let id_text = crate::text_admission::format_retained(ctx, format_args!(
                     "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
                     marker.offset()
                 ), "format SLDPRT planar marker constraint identity")?;
@@ -2915,7 +2915,7 @@ pub(crate) fn project_relation_bindings(
                 label_distance: None,
                 label_position: None,
                 metadata: None,
-                native_ref: Some(crate::retained_text::format_retained(ctx, 
+                native_ref: Some(crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT planar marker relation reference",
                 )?),
@@ -2933,7 +2933,7 @@ pub(crate) fn project_relation_bindings(
                 constraints_by_native_ref.try_reserve(1).map_err(|_| {
                     ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
                 })?;
-                let key = crate::retained_text::format_retained(ctx, 
+                let key = crate::text_admission::format_retained(ctx, 
                     format_args!("{}", marker.id()),
                     "copy SLDPRT planar constraint reference",
                 )?;
@@ -2950,7 +2950,7 @@ fn copy_planar_sketch_id(
     ctx: &DecodeContext<'_>,
     id: &cadmpeg_ir::sketches::SketchId,
 ) -> Result<cadmpeg_ir::sketches::SketchId, cadmpeg_core::CodecError> {
-    let text = crate::retained_text::format_retained(ctx, 
+    let text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", id.as_str()),
         "copy SLDPRT planar sketch identity",
     )?;
@@ -2970,7 +2970,7 @@ fn copy_relation_parameter_id(
     id: &cadmpeg_ir::features::ParameterId,
 ) -> Result<cadmpeg_ir::features::ParameterId, cadmpeg_core::CodecError> {
     charge_relation_parameter_work(ctx, id.as_str().len(), 4, "copy SLDPRT relation parameter identity")?;
-    let text = crate::retained_text::format_retained(ctx, 
+    let text = crate::text_admission::format_retained(ctx, 
         format_args!("{}", id.as_str()),
         "copy SLDPRT relation parameter identity",
     )?;
@@ -3016,7 +3016,7 @@ fn record_relation_parameter(
             ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX)
         })?;
     }
-    let relation_id = crate::retained_text::format_retained(ctx, 
+    let relation_id = crate::text_admission::format_retained(ctx, 
         format_args!("{relation_id}"),
         "copy SLDPRT relation identity",
     )?;

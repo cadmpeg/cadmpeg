@@ -276,7 +276,7 @@ pub(super) fn project_hole(
         face: feature
             .properties
             .get("Face")
-            .map(|face| crate::retained_text::format_retained(ctx, format_args!("{face}"), "retain SLDPRT hole face reference")).transpose()?
+            .map(|face| crate::text_admission::format_retained(ctx, format_args!("{face}"), "retain SLDPRT hole face reference")).transpose()?
             .map(FaceSelection::Native),
         direction: None,
         placements: feature

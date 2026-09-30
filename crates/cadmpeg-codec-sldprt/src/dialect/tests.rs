@@ -483,3 +483,35 @@ fn exactly_one_entry_names_the_reporting_format() {
         Some(&SldprtDialect::SwVersion12000Plus.id())
     );
 }
+
+#[test]
+fn dialect_decode_route_refuses_work_at_minimum_admission() {
+    use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
+    use cadmpeg_ir::codec::DecodeOptions;
+    use std::io::Cursor;
+    let source = container_declaring("unverified-declaration");
+    let mut options = DecodeOptions { policy: DecodePolicy::service(), ..DecodeOptions::default() };
+    let expected = SldprtCodec.decode(&mut Cursor::new(&source), &options).unwrap().ir().clone();
+    let admitted = |options: &DecodeOptions| match SldprtCodec.decode(&mut Cursor::new(&source), options) {
+        Ok(actual) => { assert_eq!(actual.ir(), &expected); true }
+        Err(cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))) => {
+            assert_eq!(limit.dimension, ResourceDimension::WorkUnits); false
+        }
+        Err(error) => panic!("unexpected dialect decode error: {error}"),
+    };
+    let mut lower = 0;
+    let mut upper = 1_u64;
+    loop {
+        options.policy.limits.max_work_units = upper;
+        if admitted(&options) { break; }
+        upper = upper.checked_mul(2).unwrap();
+    }
+    while lower < upper {
+        let middle = lower + (upper - lower) / 2;
+        options.policy.limits.max_work_units = middle;
+        if admitted(&options) { upper = middle; } else { lower = middle + 1; }
+    }
+    assert!(upper > 0);
+    options.policy.limits.max_work_units = upper; assert!(admitted(&options));
+    options.policy.limits.max_work_units = upper - 1; assert!(!admitted(&options));
+}

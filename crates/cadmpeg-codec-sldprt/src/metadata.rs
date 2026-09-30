@@ -152,7 +152,7 @@ fn scan_length_user_units(
             })
         })?;
         let mut value = String::new();
-        ctx.reserve_retained_string(&mut value, text_bytes, "retain SLDPRT linear unit name")?;
+        crate::text_admission::reserve_retained_string(ctx, &mut value, text_bytes, "retain SLDPRT linear unit name")?;
         for scalar in scalars() {
             value.push(scalar);
         }

@@ -34,7 +34,7 @@ impl LaneRefusals {
         if let cadmpeg_ir::geometry::nurbs::NurbsError::ResourceLimit(limit) = error {
             return Err((*limit).into());
         }
-        let message = crate::retained_text::format_retained(ctx, 
+        let message = crate::text_admission::format_retained(ctx, 
             format_args!("{record}: {error}"),
             "record SLDPRT lane refusal",
         )?;

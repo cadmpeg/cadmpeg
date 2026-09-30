@@ -40,7 +40,7 @@ fn copy_retained_string(
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(copy_work, operation)?;
     let mut copy = String::new();
-    ctx.reserve_retained_string(&mut copy, value.len(), operation)?;
+    crate::text_admission::reserve_retained_string(ctx, &mut copy, value.len(), operation)?;
     copy.push_str(value);
     Ok(copy)
 }
