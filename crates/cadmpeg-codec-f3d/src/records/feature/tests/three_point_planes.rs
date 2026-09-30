@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::records::feature::work_geometry::{
     DesignVertexRecipe, DesignVertexResolution as Resolution, DesignWorkPlaneConstruction as Plane,
 };
 
 fn inputs() -> Box<[DesignVertexRecipe; 3]> {
     Box::new(std::array::from_fn(|ordinal| {
-        let record_index = 2 + ordinal as u32 * 5;
-        let base = 10 + ordinal as u64 * 100;
+        let record_index = 2 + u32::try_from(ordinal).expect("fixture value fits u32") * 5;
+        let base = 10 + u64_from_index(ordinal) * 100;
         serde_json::from_value(serde_json::json!({
             "record_index": record_index, "byte_offset": base, "class_tag": "369",
             "paired_byte_offset": base + 10, "paired_class_tag": "261",
@@ -27,7 +29,8 @@ fn three_point_planes_reject_every_partial_resolution_at_both_admission_routes()
         let mut inputs = inputs();
         for (ordinal, input) in inputs.iter_mut().enumerate() {
             if mask & (1 << ordinal) != 0 {
-                input.resolution = Resolution::new(4, ordinal as i64);
+                input.resolution =
+                    Resolution::new(4, i64::try_from(ordinal).expect("fixture value fits i64"));
             }
         }
         let wire = serde_json::json!({"kind": "three_point", "placement_record_index": 9, "inputs": inputs});

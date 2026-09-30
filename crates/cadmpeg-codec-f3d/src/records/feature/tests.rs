@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use super::scope::{DesignFeatureKind, DesignParameterScope};
 
 fn empty_scope(kind: DesignFeatureKind) -> serde_json::Value {
@@ -697,7 +699,7 @@ fn rectangular_pattern_rows_preserve_wire_and_reject_parallel_mismatch() {
         let expected = serde_json::to_string(&wire).unwrap();
         let native: crate::records::feature::patterns::DesignRectangularPatternInstances =
             serde_json::from_str(&expected).unwrap();
-        assert_eq!(native.instance_count(), count as usize);
+        assert_eq!(native.instance_count(), index_from_u32(count));
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
         if count != 0 {
             let mut component = value.clone();
@@ -781,7 +783,10 @@ fn edge_flange_rows_preserve_wire_and_reject_parallel_mismatch() {
         let expected = serde_json::to_string(&wire).unwrap();
         let native: crate::records::feature::sheet_metal::DesignEdgeFlangeOperation =
             serde_json::from_str(&expected).unwrap();
-        assert_eq!(native.selection.shape().edges().count(), count as usize);
+        assert_eq!(
+            native.selection.shape().edges().count(),
+            index_from_u32(count)
+        );
         assert_eq!(serde_json::to_string(&native).unwrap(), expected);
         for radius in [0.0, -1.0, f64::INFINITY, f64::NAN] {
             let mut invalid = wire.clone();
@@ -938,7 +943,7 @@ fn scope_reference_runs_preserve_wire_and_reject_partial_locations() {
                 "\"reference_member_offsets\":[14]",
                 &format!("\"reference_member_offsets\":{offsets}"),
             );
-        let count = serde_json::from_str::<Vec<u32>>(values).unwrap().len() as u64;
+        let count = u64_from_index(serde_json::from_str::<Vec<u32>>(values).unwrap().len());
         let kind_offset = 21 + 11 * count;
         let wire = wire
             .replace(
@@ -1028,10 +1033,10 @@ fn fixed_fillet_law_wire_preserves_scalar_order_and_rejects_partial_lanes() {
             }
             let group: crate::records::feature::fixed_parameters::DesignFixedFilletGroup =
                 serde_json::from_value(wire.clone()).unwrap();
-            assert_eq!(group.law().radii().count(), radius_count as usize);
+            assert_eq!(group.law().radii().count(), index_from_u32(radius_count));
             assert_eq!(
                 group.law().intermediate().len(),
-                intermediate_count as usize
+                index_from_u32(intermediate_count)
             );
             assert_eq!(serde_json::to_value(&group).unwrap(), wire);
             for field in [
@@ -1584,9 +1589,9 @@ fn vertex_recipe_resolution_preserves_wire_and_rejects_partial_pairs() {
         if let Some((_, slot)) = resolution {
             for (ordinal, input) in plane_inputs.iter_mut().enumerate() {
                 input["resolved_vertex_slot"] = if slot == 0 {
-                    ordinal as i64
+                    i64::try_from(ordinal).expect("fixture value fits i64")
                 } else {
-                    slot - ordinal as i64
+                    slot - i64::try_from(ordinal).expect("fixture value fits i64")
                 }
                 .into();
             }

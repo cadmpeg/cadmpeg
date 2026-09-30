@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact legacy class 383, 388 and 412 assembly operand paths.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
@@ -32,8 +34,9 @@ pub(super) fn exact_legacy_class_388_scope(
 ) -> Option<()> {
     if scope.class_tag.as_str() != "388"
         || scope.paired_class_tag.as_str() != "266"
-        || scope.frame_length() != class_388_assemble::LEN as u64
-        || scope.reference_members().len() != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+        || scope.frame_length() != u64_from_index(class_388_assemble::LEN)
+        || scope.reference_members().len()
+            != index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE)
     {
         return None;
     }
@@ -525,7 +528,7 @@ pub(super) fn exact_legacy_class_388_operand_paths(
             .operand_frame_variant(),
             Some(crate::design::assembly::AssemblyOperandFrameVariant::LegacyClass388)
         ) || scope.reference_members().len()
-            != class_388_assemble::REFERENCE_COUNT_VALUE as usize
+            != index_from_u32(class_388_assemble::REFERENCE_COUNT_VALUE)
         {
             return None;
         }

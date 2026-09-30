@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_test_support::bytes::{put_u32, put_u64};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::base_feature::exact_base_feature_construction;
 use crate::design::decode::scopes::surfaces::{
@@ -271,7 +271,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             draft.kind_offset = 265;
             draft.paired_byte_offset = 366;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -371,7 +371,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
         "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
     ];
     for guid in related_guids {
-        let encoded = crate::bytes::lp_utf16_bytes(guid);
+        let encoded =
+            crate::bytes::lp_utf16_bytes(guid).expect("fixture UTF-16 code-unit count fits u32");
         snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
         cursor += encoded.len();
     }
@@ -396,7 +397,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     cursor += 4;
     let third_guid = "00000000-0000-0000-0000-000000000000";
-    let encoded = crate::bytes::lp_utf16_bytes(third_guid);
+    let encoded =
+        crate::bytes::lp_utf16_bytes(third_guid).expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     cursor += 3;
@@ -409,7 +411,8 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
     cursor += 6;
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&7u32.to_le_bytes());
     cursor += 4;
-    let encoded = crate::bytes::lp_utf16_bytes("Base Feature");
+    let encoded = crate::bytes::lp_utf16_bytes("Base Feature")
+        .expect("fixture UTF-16 code-unit count fits u32");
     snapshot_bytes[cursor..cursor + encoded.len()].copy_from_slice(&encoded);
     cursor += encoded.len();
     snapshot_bytes[cursor..cursor + 4].copy_from_slice(&1u32.to_le_bytes());
@@ -573,7 +576,7 @@ fn base_feature_scope_decodes_class_452_compact_result_body_run() {
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![301]);
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -636,26 +639,32 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         let frame_length = 262 + 52 * body_count;
         let mut bytes = vec![0u8; frame_length];
         bytes[19] = 1;
-        bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+        bytes[20..24].copy_from_slice(
+            &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let mut cursor = 24;
         for ordinal in 0..body_count {
-            let value = 101 + ordinal as u64;
+            let value = 101 + u64_from_index(ordinal);
             bytes[cursor] = 1;
             bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
             cursor += 15;
         }
         for ordinal in 0..body_count {
-            let value = 201 + ordinal as u64;
+            let value = 201 + u64_from_index(ordinal);
             bytes[cursor] = 1;
             bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
             cursor += 15;
         }
         bytes[cursor] = 1;
-        bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+        bytes[cursor + 7..cursor + 11].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 11;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + ordinal as u32).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         bytes[cursor] = 0;
@@ -663,11 +672,15 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         bytes[cursor] = 1;
         bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
         cursor += 11;
-        bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+        bytes[cursor..cursor + 4].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 4;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         let mut scope = DesignParameterScope::empty(
@@ -681,13 +694,13 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
             crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
         scope
             .try_edit(|draft| {
-                draft.frame_length = frame_length as u64;
-                draft.kind_offset = (frame_length - 102) as u64;
-                draft.paired_byte_offset = frame_length as u64;
+                draft.frame_length = u64_from_index(frame_length);
+                draft.kind_offset = u64_from_index(frame_length - 102);
+                draft.paired_byte_offset = u64_from_index(frame_length);
                 draft.reference_members =
                     crate::records::identity::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
@@ -784,14 +797,14 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
     zero_scope
         .try_edit(|draft| {
-            draft.byte_offset = prefix as u64;
+            draft.byte_offset = u64_from_index(prefix);
             draft.frame_length = 258;
-            draft.kind_offset = (prefix + 157) as u64;
-            draft.paired_byte_offset = (prefix + 258) as u64;
+            draft.kind_offset = u64_from_index(prefix + 157);
+            draft.paired_byte_offset = u64_from_index(prefix + 258);
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![701]);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -819,7 +832,7 @@ fn base_feature_scope_decodes_class_409_262_result_body_variants() {
         .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
-    assert_eq!(metadata_record_offset, (prefix + 33) as u64);
+    assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 6]);
 
     let mut nonzero_padding = zero_body.clone();
@@ -839,7 +852,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     let frame_length = 261 + 52 * body_count;
     let mut bytes = vec![0u8; frame_length];
     bytes[19] = 1;
-    bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+    bytes[20..24].copy_from_slice(
+        &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     let mut cursor = 24;
     for value in [101u64, 102] {
         bytes[cursor] = 1;
@@ -852,7 +867,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         cursor += 15;
     }
     bytes[cursor] = 1;
-    bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+    bytes[cursor + 7..cursor + 11].copy_from_slice(
+        &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     cursor += 11;
     for value in [201u32, 202] {
         bytes[cursor] = 1;
@@ -864,7 +881,9 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
     bytes[cursor] = 1;
     bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
     cursor += 11;
-    bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+    bytes[cursor..cursor + 4].copy_from_slice(
+        &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+    );
     cursor += 4;
     for value in [401u32, 402] {
         bytes[cursor] = 1;
@@ -882,12 +901,12 @@ fn base_feature_scope_decodes_class_290_261_result_body_variant() {
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.frame_length = frame_length as u64;
-            draft.kind_offset = (frame_length - 102) as u64;
-            draft.paired_byte_offset = frame_length as u64;
+            draft.frame_length = u64_from_index(frame_length);
+            draft.kind_offset = u64_from_index(frame_length - 102);
+            draft.paired_byte_offset = u64_from_index(frame_length);
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![301]);
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -935,26 +954,32 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         let frame_length = 262 + 52 * body_count;
         let mut bytes = vec![0u8; frame_length];
         bytes[19] = 1;
-        bytes[20..24].copy_from_slice(&(2 * body_count as u32).to_le_bytes());
+        bytes[20..24].copy_from_slice(
+            &(2 * u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         let mut cursor = 24;
         for ordinal in 0..body_count {
-            let value = 101 + ordinal as u64;
+            let value = 101 + u64_from_index(ordinal);
             bytes[cursor] = 1;
             bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
             cursor += 15;
         }
         for ordinal in 0..body_count {
-            let value = 201 + ordinal as u64;
+            let value = 201 + u64_from_index(ordinal);
             bytes[cursor] = 1;
             bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
             cursor += 15;
         }
         bytes[cursor] = 1;
-        bytes[cursor + 7..cursor + 11].copy_from_slice(&(body_count as u32).to_le_bytes());
+        bytes[cursor + 7..cursor + 11].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 11;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(201 + ordinal as u32).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(201 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         bytes[cursor] = 0;
@@ -962,11 +987,15 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         bytes[cursor] = 1;
         bytes[cursor + 1..cursor + 9].copy_from_slice(&301u64.to_le_bytes());
         cursor += 11;
-        bytes[cursor..cursor + 4].copy_from_slice(&(body_count as u32).to_le_bytes());
+        bytes[cursor..cursor + 4].copy_from_slice(
+            &(u32::try_from(body_count).expect("fixture value fits u32")).to_le_bytes(),
+        );
         cursor += 4;
         for ordinal in 0..body_count {
             bytes[cursor] = 1;
-            bytes[cursor + 1..cursor + 5].copy_from_slice(&(401 + ordinal as u32).to_le_bytes());
+            bytes[cursor + 1..cursor + 5].copy_from_slice(
+                &(401 + u32::try_from(ordinal).expect("fixture value fits u32")).to_le_bytes(),
+            );
             cursor += 11;
         }
         let mut scope = DesignParameterScope::empty(
@@ -980,13 +1009,13 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
             crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
         scope
             .try_edit(|draft| {
-                draft.frame_length = frame_length as u64;
-                draft.kind_offset = (frame_length - 102) as u64;
-                draft.paired_byte_offset = frame_length as u64;
+                draft.frame_length = u64_from_index(frame_length);
+                draft.kind_offset = u64_from_index(frame_length - 102);
+                draft.paired_byte_offset = u64_from_index(frame_length);
                 draft.reference_members =
                     crate::records::identity::ReferenceRun::unlocated(vec![301]);
                 draft.reference_count_offset =
-                    draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                    draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
                 draft.layout_fixture_references();
                 draft.layout_fixture_tail();
             })
@@ -1074,14 +1103,14 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
     zero_scope
         .try_edit(|draft| {
-            draft.byte_offset = prefix as u64;
+            draft.byte_offset = u64_from_index(prefix);
             draft.frame_length = 258;
-            draft.kind_offset = (prefix + 157) as u64;
-            draft.paired_byte_offset = (prefix + 258) as u64;
-            draft.reference_count_offset = (prefix + 134) as u64;
+            draft.kind_offset = u64_from_index(prefix + 157);
+            draft.paired_byte_offset = u64_from_index(prefix + 258);
+            draft.reference_count_offset = u64_from_index(prefix + 134);
             draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![701],
-                vec![(prefix + 139) as u64],
+                vec![u64_from_index(prefix + 139)],
                 "reference_members",
             )
             .unwrap();
@@ -1112,7 +1141,7 @@ fn base_feature_scope_decodes_class_444_263_result_body_variants() {
         .collect::<Vec<_>>();
     assert!(body_entity_suffixes.is_empty());
     assert_eq!(metadata_record, 701);
-    assert_eq!(metadata_record_offset, (prefix + 33) as u64);
+    assert_eq!(metadata_record_offset, u64_from_index(prefix + 33));
     assert_eq!(metadata_field, [0; 14]);
 
     let mut nonzero_tail = zero_body.clone();
@@ -1180,7 +1209,8 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     bytes[class_377::AUXILIARY_REFERENCE_MARKER] = class_377::AUXILIARY_REFERENCE_MARKER_VALUE;
     bytes[class_377::AUXILIARY_RECORD..class_377::AUXILIARY_REFERENCE_FIELD]
         .copy_from_slice(&202u32.to_le_bytes());
-    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f");
+    let guid = crate::bytes::lp_utf16_bytes("fcec56e3-832f-4468-88a4-d710e62e629f")
+        .expect("fixture UTF-16 code-unit count fits u32");
     bytes[class_377::ENVELOPE_GUID_CODE_UNIT_COUNT..class_377::ZERO_RUN_3].copy_from_slice(&guid);
     bytes[class_377::REFERENCE_COUNT..class_377::GENERIC_SCOPE_REFERENCE_MARKER]
         .copy_from_slice(&class_377::REFERENCE_COUNT_VALUE.to_le_bytes());
@@ -1192,8 +1222,10 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         .copy_from_slice(&20u32.to_le_bytes());
     bytes[class_377::KIND_LENGTH..class_377::KIND]
         .copy_from_slice(&class_377::KIND_LENGTH_VALUE.to_le_bytes());
-    bytes[class_377::KIND..class_377::FEATURE_ORDINAL]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
+    bytes[class_377::KIND..class_377::FEATURE_ORDINAL].copy_from_slice(
+        &crate::bytes::lp_utf16_bytes("Base Feature")
+            .expect("fixture UTF-16 code-unit count fits u32")[4..],
+    );
     bytes[class_377::FEATURE_ORDINAL..class_377::FEATURE_ORDINAL + 4]
         .copy_from_slice(&1u32.to_le_bytes());
     bytes[class_377::PREVIOUS_HISTORY_STATE_ID..class_377::PREVIOUS_HISTORY_STATE_ID + 4]
@@ -1221,11 +1253,11 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         crate::records::references::DesignClassTag::try_from("259".to_owned()).unwrap();
     scope
         .try_edit(|draft| {
-            draft.paired_byte_offset = class_377::LEN as u64;
-            draft.frame_length = class_377::LEN as u64;
-            draft.kind_offset = class_377::KIND as u64;
+            draft.paired_byte_offset = u64_from_index(class_377::LEN);
+            draft.frame_length = u64_from_index(class_377::LEN);
+            draft.kind_offset = u64_from_index(class_377::KIND);
             draft.reference_count_offset =
-                draft.kind_offset - 12 - 11 * draft.reference_members.len() as u64;
+                draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -1233,16 +1265,16 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
     scope
         .try_edit(|draft| {
-            draft.feature_ordinal_offset = class_377::FEATURE_ORDINAL as u64;
+            draft.feature_ordinal_offset = u64_from_index(class_377::FEATURE_ORDINAL);
             draft.history_state_id = Some(20);
 
             draft.previous_history_state_id = Some(19);
             draft.previous_history_state_id_offset =
-                Some(class_377::PREVIOUS_HISTORY_STATE_ID as u64);
-            draft.reference_count_offset = class_377::REFERENCE_COUNT as u64;
+                Some(u64_from_index(class_377::PREVIOUS_HISTORY_STATE_ID));
+            draft.reference_count_offset = u64_from_index(class_377::REFERENCE_COUNT);
             draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
                 vec![196],
-                vec![class_377::GENERIC_SCOPE_REFERENCE_RECORD as u64],
+                vec![u64_from_index(class_377::GENERIC_SCOPE_REFERENCE_RECORD)],
                 "reference_members",
             )
             .unwrap();
@@ -1274,7 +1306,7 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         *body,
         crate::records::identity::Located {
             value: 201,
-            offset: class_377::BODY_ENTITY_SUFFIX as u64
+            offset: u64_from_index(class_377::BODY_ENTITY_SUFFIX)
         }
     );
     assert_eq!(
@@ -1284,18 +1316,24 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
     assert_eq!(*parameter_body_record, 198);
     assert_eq!(
         *parameter_body_record_offset,
-        class_377::PARAMETER_BODY_RECORD as u64
+        u64_from_index(class_377::PARAMETER_BODY_RECORD)
     );
     assert_eq!(*auxiliary_record, 202);
-    assert_eq!(*auxiliary_record_offset, class_377::AUXILIARY_RECORD as u64);
+    assert_eq!(
+        *auxiliary_record_offset,
+        u64_from_index(class_377::AUXILIARY_RECORD)
+    );
     assert_eq!(
         envelope_guid.as_str(),
         "fcec56e3-832f-4468-88a4-d710e62e629f"
     );
-    assert_eq!(*envelope_guid_offset, class_377::ENVELOPE_GUID as u64);
+    assert_eq!(
+        *envelope_guid_offset,
+        u64_from_index(class_377::ENVELOPE_GUID)
+    );
     assert_eq!(
         *tag_body_based_on_faces_offset,
-        class_377::TAG_BODY_BASED_ON_FACES_VALUE as u64
+        u64_from_index(class_377::TAG_BODY_BASED_ON_FACES_VALUE)
     );
 
     let mut class_365_scope = scope.clone();
@@ -1351,469 +1389,6 @@ fn base_feature_scope_decodes_shared_body_based_on_faces_envelope() {
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
         &mismatched_pair
-    )
-    .unwrap()
-    .is_none());
-}
-
-#[test]
-fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
-    use crate::layout::base_feature_class_452_262_compact as compact;
-    use crate::layout::base_feature_class_452_262_expanded as expanded;
-    use crate::records::feature::base_feature::DesignBaseFeatureBodyReferenceForm;
-
-    fn put_u64_reference(bytes: &mut [u8], marker: usize, value: u64) {
-        bytes[marker] = compact::BODY_ENTITY_REFERENCE_MARKER_VALUE;
-        put_u64(bytes, marker + 1, value);
-    }
-
-    fn put_u32_reference(bytes: &mut [u8], marker: usize, value: u32) {
-        bytes[marker] = expanded::BODY_ENTITY_ONE_MARKER_VALUE;
-        put_u32(bytes, marker + 1, value);
-    }
-
-    fn put_property(bytes: &mut [u8], marker: usize) {
-        bytes[marker] = compact::TAG_BODY_BASED_ON_FACES_MARKER_VALUE;
-        put_u32(
-            bytes,
-            marker + 1,
-            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_COUNT_VALUE,
-        );
-        put_u32(
-            bytes,
-            marker + 5,
-            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_KEY_LENGTH_VALUE,
-        );
-        bytes[marker + 9..marker + 28].copy_from_slice(b"TagBodyBasedOnFaces");
-        put_u32(
-            bytes,
-            marker + 28,
-            crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_TYPE_LENGTH_VALUE,
-        );
-        bytes[marker + 32..marker + 53].copy_from_slice(b"IntrinsicMetaTypebool");
-        bytes[marker + 53..marker + 55].copy_from_slice(
-            &crate::layout::base_feature_class_377_prefix::TAG_BODY_BASED_ON_FACES_VALUE_VALUE
-                .to_le_bytes(),
-        );
-    }
-
-    fn put_kind_tail(
-        bytes: &mut [u8],
-        layout: (usize, usize, usize, usize, usize, usize, usize, usize),
-        scope_reference: u32,
-        current_state: u32,
-        previous_state: u32,
-        ordinal: u32,
-    ) -> DesignParameterScope {
-        let (
-            reference_count,
-            generic_marker,
-            generic_record,
-            _generic_field,
-            history_state_id,
-            kind_length,
-            kind,
-            feature_ordinal,
-        ) = layout;
-        put_u32(bytes, reference_count, 1);
-        put_u32_reference(bytes, generic_marker, scope_reference);
-        put_u32(bytes, history_state_id, current_state);
-        put_u32(
-            bytes,
-            kind_length,
-            crate::layout::base_feature_class_377_prefix::KIND_LENGTH_VALUE,
-        );
-        bytes[kind..feature_ordinal]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes("Base Feature")[4..]);
-        put_u32(bytes, feature_ordinal, ordinal);
-
-        let mut scope = DesignParameterScope::empty(
-            "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-            crate::records::feature::scope::DesignFeatureKind::BaseFeature,
-            452,
-        );
-        scope
-            .try_edit(|draft| {
-                draft.byte_offset = 0;
-                draft.reference_count_offset = draft.byte_offset + 9;
-                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-                draft.layout_fixture_references();
-                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-                draft.layout_fixture_tail();
-            })
-            .unwrap();
-        scope.class_tag =
-            crate::records::references::DesignClassTag::try_from("452".to_owned()).unwrap();
-        scope.paired_class_tag =
-            crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-        scope
-            .try_edit(|draft| {
-                draft.reference_members =
-                    crate::records::identity::ReferenceRun::unlocated(vec![scope_reference]);
-                draft.reference_count_offset = reference_count as u64;
-                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
-                    draft.reference_members.values().copied().collect(),
-                    vec![generic_record as u64],
-                    "reference_members",
-                )
-                .unwrap();
-                draft.history_state_id = Some(i64::from(current_state));
-
-                draft.previous_history_state_id = Some(i64::from(previous_state));
-                draft.frame_length = bytes.len() as u64;
-                draft.paired_byte_offset = bytes.len() as u64;
-                draft.feature_ordinal_offset = feature_ordinal as u64;
-                draft.previous_history_state_id_offset = Some(
-                    (feature_ordinal
-                        + crate::design::decode::scopes::parameter_scope::parameter_scope_previous_history_offset(
-                            "Base Feature",
-                            bytes.len() - feature_ordinal,
-                        )
-                        .unwrap()) as u64,
-                );
-                draft.kind_offset = kind as u64;
-            })
-            .unwrap();
-        scope.feature_ordinal = std::num::NonZeroU32::new(ordinal).expect("nonzero ordinal");
-        scope
-            .try_edit(|draft| {
-                draft.feature_ordinal_offset = feature_ordinal as u64;
-            })
-            .unwrap();
-        scope
-    }
-
-    let compact_frame = |mode: u8| {
-        let mut bytes = vec![0_u8; compact::LEN];
-        bytes[compact::BODY_COUNT_MARKER] = compact::BODY_COUNT_MARKER_VALUE;
-        put_u32(&mut bytes, compact::BODY_COUNT, compact::BODY_COUNT_VALUE);
-        put_u64_reference(&mut bytes, compact::BODY_ENTITY_REFERENCE_MARKER, 201);
-        bytes[compact::BODY_ENTITY_REFERENCE_FIELD..compact::TAG_BODY_BASED_ON_FACES_MARKER]
-            .copy_from_slice(&[0, 0, 1, 0, 0, 0]);
-        put_property(&mut bytes, compact::TAG_BODY_BASED_ON_FACES_MARKER);
-        bytes[compact::MODE] = mode;
-        bytes[compact::PARAMETER_BODY_COUNT] = compact::PARAMETER_BODY_COUNT_VALUE;
-        put_u64_reference(&mut bytes, compact::PARAMETER_BODY_REFERENCE_MARKER, 198);
-        put_u64_reference(&mut bytes, compact::SCOPE_REFERENCE_MARKER, 196);
-        bytes[compact::AUXILIARY_GROUP_MARKER] = 1;
-        put_u64_reference(&mut bytes, compact::AUXILIARY_REFERENCE_MARKER, 202);
-        bytes[compact::ENVELOPE_GUID_CODE_UNIT_COUNT..compact::ZERO_RUN_AFTER_GUID]
-            .copy_from_slice(&crate::bytes::lp_utf16_bytes(
-                "fcec56e3-832f-4468-88a4-d710e62e629f",
-            ));
-        let _ = put_kind_tail(
-            &mut bytes,
-            (
-                compact::REFERENCE_COUNT,
-                compact::GENERIC_SCOPE_REFERENCE_MARKER,
-                compact::GENERIC_SCOPE_REFERENCE_RECORD,
-                compact::GENERIC_SCOPE_REFERENCE_FIELD,
-                compact::HISTORY_STATE_ID,
-                compact::KIND_LENGTH,
-                compact::KIND,
-                compact::FEATURE_ORDINAL,
-            ),
-            196,
-            20,
-            19,
-            1,
-        );
-        put_u32(&mut bytes, compact::PREVIOUS_HISTORY_STATE_ID, 19);
-        bytes
-    };
-
-    let mut compact_bytes = compact_frame(0);
-    let mut compact_scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#452",
-        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
-        452,
-    );
-    compact_scope.class_tag =
-        crate::records::references::DesignClassTag::try_from("452".to_owned()).unwrap();
-    compact_scope.paired_class_tag =
-        crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap();
-    compact_scope
-        .try_edit(|draft| {
-            draft.frame_length = compact::LEN as u64;
-            draft.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
-            draft.paired_byte_offset = compact::LEN as u64;
-            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![196]);
-            draft.reference_count_offset = compact::REFERENCE_COUNT as u64;
-            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
-                draft.reference_members.values().copied().collect(),
-                vec![compact::GENERIC_SCOPE_REFERENCE_RECORD as u64],
-                "reference_members",
-            )
-            .unwrap();
-            draft.history_state_id = Some(20);
-
-            draft.previous_history_state_id = Some(19);
-            draft.previous_history_state_id_offset =
-                Some(compact::PREVIOUS_HISTORY_STATE_ID as u64);
-            draft.kind_offset = compact::KIND as u64;
-        })
-        .unwrap();
-    compact_scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
-    compact_scope
-        .try_edit(|draft| {
-            draft.feature_ordinal_offset = compact::FEATURE_ORDINAL as u64;
-        })
-        .unwrap();
-    let compact_construction = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &compact_bytes,
-        &compact_scope,
-    )
-    .unwrap()
-    .expect("class-452 compact Base Feature frame is canonical");
-    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
-        form,
-        scope_reference,
-        scope_reference_offset,
-        envelope_guid,
-        envelope_guid_offset,
-        tag_body_based_on_faces_offset,
-        ..
-    } = &compact_construction
-    else {
-        panic!("class-452 compact frame selected the wrong form");
-    };
-    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, body } = form else {
-        panic!("compact frame requires one body");
-    };
-    assert_eq!(
-        crate::records::identity::Located {
-            value: mode.value as u8,
-            offset: mode.offset
-        },
-        crate::records::identity::Located {
-            value: 0,
-            offset: compact::MODE as u64
-        }
-    );
-    let body_entity_suffixes = &[u64::from(body.entity.value)];
-    let body_entity_suffix_offsets = &[body.entity.offset];
-    let body_entity_fields = &[body.entity.field];
-    let body_reference_records = &[body.entity.value];
-    let parameter_body_records = &[body.parameter_body.value];
-    let parameter_body_record_offsets = &[body.parameter_body.offset];
-    let auxiliary_records = &[body.auxiliary.value];
-    let auxiliary_record_offsets = &[body.auxiliary.offset];
-    assert_eq!(body_entity_suffixes, &[201]);
-    assert_eq!(
-        body_entity_suffix_offsets,
-        &[compact::BODY_ENTITY_SUFFIX as u64]
-    );
-    assert_eq!(body_entity_fields, &[[0, 0, 1, 0, 0, 0]]);
-    assert_eq!(body_reference_records, &[201]);
-    assert_eq!(parameter_body_records, &[198]);
-    assert_eq!(
-        parameter_body_record_offsets,
-        &[compact::PARAMETER_BODY_RECORD as u64]
-    );
-    assert_eq!(auxiliary_records, &[202]);
-    assert_eq!(
-        auxiliary_record_offsets,
-        &[compact::AUXILIARY_RECORD as u64]
-    );
-    assert_eq!(*scope_reference, 196);
-    assert_eq!(*scope_reference_offset, compact::SCOPE_REFERENCE as u64);
-    assert_eq!(
-        envelope_guid.as_str(),
-        "fcec56e3-832f-4468-88a4-d710e62e629f"
-    );
-    assert_eq!(*envelope_guid_offset, compact::ENVELOPE_GUID as u64);
-    assert_eq!(
-        serde_json::to_value(&compact_construction).unwrap()["tag_body_based_on_faces"],
-        true
-    );
-    assert_eq!(
-        *tag_body_based_on_faces_offset,
-        compact::TAG_BODY_BASED_ON_FACES_VALUE as u64
-    );
-    let serialized = serde_json::to_value(&compact_construction).expect("serialize compact form");
-    assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize compact form"),
-        compact_construction
-    );
-
-    compact_bytes[compact::MODE] = 1;
-    let mode_one = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &compact_bytes,
-        &compact_scope,
-    )
-    .unwrap()
-    .expect("mode-one class-452 compact frame is canonical");
-    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces { form, .. } = mode_one else {
-        panic!("class-452 compact mode-one frame selected the wrong form");
-    };
-    let DesignBaseFeatureBodyReferenceForm::CompactOneBody { mode, .. } = form else {
-        panic!("compact mode-one form");
-    };
-    assert_eq!(
-        crate::records::identity::Located {
-            value: mode.value as u8,
-            offset: mode.offset
-        },
-        crate::records::identity::Located {
-            value: 1,
-            offset: compact::MODE as u64
-        }
-    );
-
-    let mut expanded_bytes = vec![0_u8; expanded::LEN];
-    expanded_bytes[expanded::BODY_COUNT_MARKER] = expanded::BODY_COUNT_MARKER_VALUE;
-    put_u32(
-        &mut expanded_bytes,
-        expanded::BODY_COUNT,
-        expanded::BODY_COUNT_VALUE,
-    );
-    put_u64_reference(&mut expanded_bytes, expanded::BODY_ENTITY_ONE_MARKER, 401);
-    put_u64_reference(&mut expanded_bytes, expanded::BODY_ENTITY_TWO_MARKER, 402);
-    put_property(
-        &mut expanded_bytes,
-        expanded::TAG_BODY_BASED_ON_FACES_MARKER,
-    );
-    expanded_bytes[expanded::PARAMETER_BODY_GROUP_MARKER] =
-        expanded::PARAMETER_BODY_GROUP_MARKER_VALUE;
-    put_u32(
-        &mut expanded_bytes,
-        expanded::PARAMETER_BODY_COUNT,
-        expanded::PARAMETER_BODY_COUNT_VALUE,
-    );
-    put_u32_reference(
-        &mut expanded_bytes,
-        expanded::PARAMETER_BODY_ONE_MARKER,
-        301,
-    );
-    put_u32_reference(
-        &mut expanded_bytes,
-        expanded::PARAMETER_BODY_TWO_MARKER,
-        302,
-    );
-    put_u32_reference(&mut expanded_bytes, expanded::SCOPE_REFERENCE_MARKER, 300);
-    put_u32(
-        &mut expanded_bytes,
-        expanded::AUXILIARY_BODY_COUNT,
-        expanded::AUXILIARY_BODY_COUNT_VALUE,
-    );
-    put_u32_reference(
-        &mut expanded_bytes,
-        expanded::AUXILIARY_BODY_ONE_MARKER,
-        303,
-    );
-    put_u32_reference(
-        &mut expanded_bytes,
-        expanded::AUXILIARY_BODY_TWO_MARKER,
-        304,
-    );
-    expanded_bytes[expanded::ENVELOPE_GUID_CODE_UNIT_COUNT..expanded::ZERO_RUN_AFTER_GUID]
-        .copy_from_slice(&crate::bytes::lp_utf16_bytes(
-            "00000000-0000-0000-0000-000000000000",
-        ));
-    let mut expanded_scope = put_kind_tail(
-        &mut expanded_bytes,
-        (
-            expanded::REFERENCE_COUNT,
-            expanded::GENERIC_SCOPE_REFERENCE_MARKER,
-            expanded::GENERIC_SCOPE_REFERENCE_RECORD,
-            expanded::GENERIC_SCOPE_REFERENCE_FIELD,
-            expanded::HISTORY_STATE_ID,
-            expanded::KIND_LENGTH,
-            expanded::KIND,
-            expanded::FEATURE_ORDINAL,
-        ),
-        300,
-        55,
-        54,
-        2,
-    );
-    put_u32(&mut expanded_bytes, expanded::PREVIOUS_HISTORY_STATE_ID, 54);
-    expanded_scope
-        .try_edit(|draft| {
-            draft.frame_length = expanded::LEN as u64;
-            draft.paired_byte_offset = expanded::LEN as u64;
-            draft.reference_count_offset = expanded::REFERENCE_COUNT as u64;
-            draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
-                draft.reference_members.values().copied().collect(),
-                vec![expanded::GENERIC_SCOPE_REFERENCE_RECORD as u64],
-                "reference_members",
-            )
-            .unwrap();
-
-            draft.previous_history_state_id_offset =
-                Some(expanded::PREVIOUS_HISTORY_STATE_ID as u64);
-            draft.kind_offset = expanded::KIND as u64;
-            draft.feature_ordinal_offset = expanded::FEATURE_ORDINAL as u64;
-        })
-        .unwrap();
-    let expanded_construction = exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &expanded_bytes,
-        &expanded_scope,
-    )
-    .unwrap()
-    .expect("class-452 expanded Base Feature frame is canonical");
-    let DesignBaseFeatureConstruction::LegacyBodyBasedOnFaces {
-        form,
-        scope_reference,
-        ..
-    } = &expanded_construction
-    else {
-        panic!("class-452 expanded frame selected the wrong form");
-    };
-    let DesignBaseFeatureBodyReferenceForm::ExpandedTwoBody { bodies } = form else {
-        panic!("expanded frame requires two bodies");
-    };
-    let body_entity_suffixes = &bodies.map(|body| u64::from(body.entity.value));
-    let body_entity_fields = &bodies.map(|body| body.entity.field);
-    let parameter_body_records = &bodies.map(|body| body.parameter_body.value);
-    let auxiliary_records = &bodies.map(|body| body.auxiliary.value);
-    assert_eq!(body_entity_suffixes, &[401, 402]);
-    assert_eq!(body_entity_fields, &[[0; 6], [0; 6]]);
-    assert_eq!(parameter_body_records, &[301, 302]);
-    assert_eq!(auxiliary_records, &[303, 304]);
-    assert_eq!(*scope_reference, 300);
-    let serialized = serde_json::to_value(&expanded_construction).expect("serialize expanded form");
-    assert_eq!(
-        serde_json::from_value::<DesignBaseFeatureConstruction>(serialized)
-            .expect("deserialize expanded form"),
-        expanded_construction
-    );
-
-    let mut invalid_mode = compact_bytes;
-    invalid_mode[compact::MODE] = 2;
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_mode,
-        &compact_scope
-    )
-    .unwrap()
-    .is_none());
-
-    let mut invalid_count = expanded_bytes.clone();
-    put_u32(&mut invalid_count, expanded::BODY_COUNT, 1);
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_count,
-        &expanded_scope
-    )
-    .unwrap()
-    .is_none());
-
-    let mut invalid_scope_reference = expanded_bytes;
-    put_u32_reference(
-        &mut invalid_scope_reference,
-        expanded::SCOPE_REFERENCE_MARKER,
-        999,
-    );
-    assert!(exact_base_feature_construction(
-        &cadmpeg_test_support::service_decode_context(),
-        &invalid_scope_reference,
-        &expanded_scope
     )
     .unwrap()
     .is_none());
@@ -1957,3 +1532,5 @@ fn surface_patch_boundary_refuses_collection_limit() {
         1
     );
 }
+
+mod base_feature_legacy;

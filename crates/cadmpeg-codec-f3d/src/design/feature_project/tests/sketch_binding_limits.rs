@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::feature_project::bind_sketch_feature_geometry;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
 use cadmpeg_core::CodecError;
@@ -245,7 +247,7 @@ fn extrude_spatial_selection_ref_refuses_retained_limit() {
     let expected = format!("{stream}:design-record-header#42");
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
-    policy.limits.max_retained_bytes = expected.len() as u64 - 1;
+    policy.limits.max_retained_bytes = u64_from_index(expected.len()) - 1;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let error = crate::design::feature_project::copy_feature_record_ref(
         Some(&ctx),

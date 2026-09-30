@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Record patchers that apply validated edit sets to archive bytes.
 
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::records::{
@@ -492,7 +494,7 @@ pub(super) fn patch_persistent_references(
         let value = edit.identity;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|offset| offset.checked_add(value_offset as usize))
+            .and_then(|offset| offset.checked_add(index_from_u32(value_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("persistent-reference offset exceeds address space".into())
             })?;
@@ -513,7 +515,7 @@ pub(super) fn patch_history_states(
     if let Some(history) = &edits.preamble {
         let start = history
             .byte_offset
-            .checked_add(PREAMBLE_LEN as u64)
+            .checked_add(u64_from_index(PREAMBLE_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
@@ -526,7 +528,7 @@ pub(super) fn patch_history_states(
     for state in &edits.states {
         let first_tag = state
             .byte_offset
-            .checked_add(DELTA_HEADER_LEN as u64)
+            .checked_add(u64_from_index(DELTA_HEADER_LEN))
             .ok_or_else(|| {
                 CodecError::Malformed("ASM history offset exceeds address space".into())
             })?;
@@ -577,7 +579,7 @@ pub(super) fn patch_sketch_points(
         let coordinates = &edit.coordinates;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(coordinate_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(coordinate_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-point offset exceeds address space".into())
             })?;
@@ -600,7 +602,7 @@ pub(crate) fn patch_sketch_curves(
         let geometry = &edit.geometry;
         let start = usize::try_from(record_offset)
             .ok()
-            .and_then(|record| record.checked_add(geometry_offset as usize))
+            .and_then(|record| record.checked_add(index_from_u32(geometry_offset)))
             .ok_or_else(|| {
                 CodecError::Malformed("sketch-curve offset exceeds address space".into())
             })?;

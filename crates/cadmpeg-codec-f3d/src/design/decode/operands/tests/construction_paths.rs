@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::parse_construction_operand_dual_transform;
 use crate::design::decode::operands::parse_construction_operand_flag;
 use crate::design::decode::operands::parse_construction_operand_path;
@@ -150,7 +152,7 @@ fn construction_operand_trailing_transform_has_exact_affine_frame() {
     assert_eq!(parsed.transform, transform.try_into().unwrap());
     assert_eq!(parsed.transform_offset(), 22);
     assert_eq!(parsed.following_record_index(), 301);
-    assert_eq!(parsed.following_byte_offset(), following_at as u64);
+    assert_eq!(parsed.following_byte_offset(), u64_from_index(following_at));
     assert_eq!(parsed.following_class_tag.as_str(), "432");
 
     bytes[150] = 0;
@@ -252,7 +254,7 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     assert_eq!(expanded.following_record_index(), 101);
     assert_eq!(
         expanded.following_byte_offset(),
-        expanded_following_at as u64
+        u64_from_index(expanded_following_at)
     );
 
     let mut compact = Vec::new();
@@ -275,7 +277,10 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
     );
     assert_eq!(compact.scope_record_index_offset(), 35);
     assert_eq!(compact.nested_record_index_offset(), 46);
-    assert_eq!(compact.following_byte_offset(), compact_following_at as u64);
+    assert_eq!(
+        compact.following_byte_offset(),
+        u64_from_index(compact_following_at)
+    );
 }
 
 #[test]

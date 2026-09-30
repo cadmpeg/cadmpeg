@@ -53,8 +53,9 @@ fn legacy_class_397_symmetric_extrude_scope_decodes_473_byte_frame() {
     let mut guid = Vec::new();
     lp_utf16(&mut guid, "00000000-0000-0000-0000-000000000000");
     bytes[layout::GUID..layout::GUID + guid.len()].copy_from_slice(&guid);
-    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4]
-        .copy_from_slice(&(REFERENCE_MEMBERS.len() as u32).to_le_bytes());
+    bytes[layout::REFERENCE_COUNT..layout::REFERENCE_COUNT + 4].copy_from_slice(
+        &(u32::try_from(REFERENCE_MEMBERS.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
 
     let prologue = super::super::legacy_class_397::exact_symmetric_extrude_prologue(
         &bytes,

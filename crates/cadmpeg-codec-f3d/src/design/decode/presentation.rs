@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse typed Design body-presentation and browser-node records.
 
+use cadmpeg_core::decode::u64_from_index;
+
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -151,7 +153,7 @@ pub(super) fn browser_node_records(
             record_index,
             guid,
             entity_suffix,
-            hidden_offset: (frame.start + after_guid) as u64,
+            hidden_offset: u64_from_index(frame.start + after_guid),
             hidden: hidden == 1,
         });
     }
@@ -217,7 +219,7 @@ pub(crate) fn body_presentations(
                 entity_suffix,
                 BodyPresentationOwner::Named {
                     entity_id,
-                    entity_id_offset: entity_id_offset as u64,
+                    entity_id_offset: u64_from_index(entity_id_offset),
                 },
                 presentation_material(
                     ctx,
@@ -277,7 +279,7 @@ pub(crate) fn body_presentations(
             ctx.refuse_codec_limit("f3d body presentation records allocation", 0, 1)
         })?;
         out.push(BodyPresentation {
-            byte_offset: frame.start as u64,
+            byte_offset: u64_from_index(frame.start),
             entity_suffix,
             owner,
             browser_node,
@@ -342,10 +344,10 @@ fn presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID);
-    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID);
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
+    let physical_marker = lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    let legacy_marker = lp_utf16_bytes(APPEARANCE_LIBRARY_ID)?;
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
     for physical_at in find_all(bytes, start, end, &physical_marker) {
         let Some((physical_guid_at, physical_guid)) =
@@ -462,12 +464,12 @@ fn presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (visual_at + 4) as u64,
+            visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: visual_preset.map(|(at, value)| crate::records::identity::Located {
                 value,
-                offset: (at + 4) as u64,
+                offset: u64_from_index(at + 4),
             }),
         });
     }
@@ -486,12 +488,12 @@ fn bare_presentation_material(
     let Some(bytes) = bytes.get(..end) else {
         return Ok(None);
     };
-    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)
+    let marker = lp_utf16_bytes(BODY_PRESENTATION_MATERIAL_ENVELOPE_ID)?
         .into_iter()
-        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID))
+        .chain(lp_utf16_bytes(PHYSICAL_MATERIAL_LIBRARY_ID)?)
         .collect::<Vec<_>>();
-    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0]);
-    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]);
+    let modern_marker = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[0])?;
+    let modern_trailer = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])?;
     let mut candidate = None;
     for marker_at in find_all(bytes, start, end, &marker) {
         let Some(token_at) = skip_zeros(bytes, marker_at + marker.len(), end) else {
@@ -574,9 +576,9 @@ fn bare_presentation_material(
         candidate = Some(PresentationMaterial {
             node_guid,
             physical_token,
-            physical_token_offset: (token_at + 4) as u64,
+            physical_token_offset: u64_from_index(token_at + 4),
             visual_guid,
-            visual_guid_offset: (visual_at + 4) as u64,
+            visual_guid_offset: u64_from_index(visual_at + 4),
             visual_preset: None,
         });
     }
@@ -695,6 +697,8 @@ fn preceding_lp_utf16(
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_core::decode::u64_from_index;
+
     use super::{
         bare_presentation_material as bare_presentation_material_with_context,
         body_presentations as body_presentations_with_context,
@@ -1000,7 +1004,7 @@ mod tests {
                     && limit.operation == "f3d body presentation records"
         ));
         policy.limits.max_collection_items = DecodePolicy::service().limits.max_collection_items;
-        policy.limits.max_retained_bytes = (node_guid.len() - 1) as u64;
+        policy.limits.max_retained_bytes = u64_from_index(node_guid.len() - 1);
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let nodes = browser_node_records(&bytes, &meta).unwrap();
         let error = super::copy_browser_node(&ctx, &nodes[0]).err().unwrap();
@@ -1246,7 +1250,9 @@ mod tests {
 
         let node_start = bytes.len();
         assert!(bare_presentation_material(&bytes, 15, node_start, entity).is_some());
-        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1]).len();
+        let trailer_len = lp_utf16_bytes(MODERN_APPEARANCE_LIBRARY_IDS[1])
+            .expect("fixture UTF-16 code-unit count fits u32")
+            .len();
         assert!(
             bare_presentation_material(&bytes, 15, node_start - trailer_len, entity,).is_none()
         );

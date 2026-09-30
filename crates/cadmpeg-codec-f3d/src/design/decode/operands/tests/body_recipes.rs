@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::operands::body_recipe_operand_end;
 use crate::design::decode::operands::body_recipe_prologue_end;
 use crate::design::decode::operands::parse_body_recipe_operand;
@@ -170,7 +172,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     indexed_header(&mut bytes, *b"311", 104);
     let mut recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: recipe_at as u64,
+        byte_offset: u64_from_index(recipe_at),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
@@ -264,7 +266,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
     assert_eq!(operand.nested_record_index(), 103);
     assert_eq!(operand.recipe_id, recipe.id);
-    assert_eq!(operand.next_byte_offset(), next_at as u64);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
     operand.id = "f3d:Design/BulkStream.dat:body-recipe-operand#0".into();
     let limited_arena = cadmpeg_core::decode::DecodeArena::new();
     let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
@@ -382,7 +384,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let empty_next_at = next_at - 24;
     let empty_recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{empty_recipe_at}"),
-        byte_offset: empty_recipe_at as u64,
+        byte_offset: u64_from_index(empty_recipe_at),
         ..recipe.clone()
     };
     let empty = parse_body_recipe_operand(&ctx, &empty_bytes, &group, 0, &record, &empty_recipe)
@@ -390,7 +392,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         .unwrap();
     assert!(empty.references().is_empty());
     assert_eq!(empty.nested_record_index(), 103);
-    assert_eq!(empty.next_byte_offset(), empty_next_at as u64);
+    assert_eq!(empty.next_byte_offset(), u64_from_index(empty_next_at));
 
     let mut combine_scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#80",
@@ -464,7 +466,10 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     let operand = parse_body_recipe_operand(&ctx, &bytes, &group, 0, &record, &recipe)
         .expect("body recipe operand with nested recipe records")
         .unwrap();
-    assert_eq!(operand.next_byte_offset(), (next_at + nested.len()) as u64);
+    assert_eq!(
+        operand.next_byte_offset(),
+        u64_from_index(next_at + nested.len())
+    );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let archive = crate::test_support::zip_test::f3d_with_configuration(
@@ -592,7 +597,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     };
     let recipe = ConstructionRecipe {
         id: format!("f3d:Design/BulkStream.dat:construction-recipe#{recipe_at}"),
-        byte_offset: recipe_at as u64,
+        byte_offset: u64_from_index(recipe_at),
         kind: ConstructionRecipeKind::Body,
         design: Some(crate::records::recipes::ConstructionRecipeDesign {
             id: crate::records::identity::RecordedValue {
@@ -634,7 +639,7 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
         Some(208)
     );
     assert_eq!(operand.nested_record_index(), 103);
-    assert_eq!(operand.next_byte_offset(), next_at as u64);
+    assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
 }
 
 #[test]
@@ -670,7 +675,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     };
     let early = ConstructionRecipe {
         id: "stream:recipe-early".into(),
-        byte_offset: EARLY_RECIPE_AT as u64,
+        byte_offset: u64_from_index(EARLY_RECIPE_AT),
         kind: ConstructionRecipeKind::Body,
         design: None,
         recipe_index: 0,
@@ -681,7 +686,7 @@ fn body_recipe_envelope_uses_its_structural_record_boundary() {
     };
     let late = ConstructionRecipe {
         id: "stream:recipe-late".into(),
-        byte_offset: LATE_RECIPE_AT as u64,
+        byte_offset: u64_from_index(LATE_RECIPE_AT),
         recipe_index: 1,
         ..early.clone()
     };

@@ -2,6 +2,8 @@
 //! Source-less pre-write validators for the neutral `CadIr` and its F3D native
 //! extension.
 
+use cadmpeg_core::decode::index_from_u32;
+
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
@@ -816,7 +818,7 @@ pub(super) fn validate_source_less_design_links(
     for (target, mut tags) in subentity_groups {
         tags.sort_by_key(|tag| tag.ordinal);
         for (ordinal, tag) in tags.iter().enumerate() {
-            if tag.ordinal as usize != ordinal {
+            if index_from_u32(tag.ordinal) != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent subentity tags for {target:?} require contiguous ordinals"
                 )));
@@ -826,7 +828,7 @@ pub(super) fn validate_source_less_design_links(
     for (target, mut links) in groups {
         links.sort_by_key(|link| link.ordinal);
         for (ordinal, link) in links.iter().enumerate() {
-            if link.ordinal as usize != ordinal {
+            if index_from_u32(link.ordinal) != ordinal {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D persistent design links for {target:?} require contiguous ordinals"
                 )));

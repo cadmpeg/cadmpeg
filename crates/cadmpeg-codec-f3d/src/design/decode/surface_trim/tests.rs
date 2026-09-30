@@ -5,6 +5,8 @@
     clippy::trivially_copy_pass_by_ref,
     clippy::uninlined_format_args
 )]
+use cadmpeg_core::decode::u64_from_index;
+
 use super::exact_surface_trim_operation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
@@ -100,7 +102,7 @@ fn surface_trim_output_refuses_identifier_and_collection_limits() {
                 scope.byte_offset(),
             ),
         );
-        let scope_len = crate::ids::native_scope(ENTRY).len() as u64;
+        let scope_len = u64_from_index(crate::ids::native_scope(ENTRY).len());
         for (items, retained, dimension, operation) in [
             (
                 27,

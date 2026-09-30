@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::fixed_parameters::{
     exact_fixed_chamfer_parameters,
@@ -144,9 +146,9 @@ fn fixed_kind_edge_and_revolve_operations(
     let expected = Some(DesignDraftOperation {
         angle: cadmpeg_ir::scalar::Angle::new(0.4).unwrap(),
         angle_record_index: 175,
-        angle_offset: (draft_start + 40) as u64,
+        angle_offset: u64_from_index(draft_start + 40),
         opposite_angle_record_index: 176,
-        opposite_angle_offset: (draft_start + 155) as u64,
+        opposite_angle_offset: u64_from_index(draft_start + 155),
     });
     assert_eq!(
         exact_draft_operation_with_owners(
@@ -277,29 +279,29 @@ fn fixed_kind_edge_and_revolve_operations(
                 Some(crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                     value: crate::test_support::real(1.0),
                     record_index: 77,
-                    value_offset: (fillet_start + 40) as u64,
+                    value_offset: u64_from_index(fillet_start + 40),
                 }),
                 crate::records::feature::fixed_parameters::DesignFixedFilletLaw::Variable {
                     start: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                         value: crate::test_support::real(0.0),
                         record_index: 78,
-                        value_offset: (fillet_start + 115 + 40) as u64
+                        value_offset: u64_from_index(fillet_start + 115 + 40)
                     },
                     end: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                         value: crate::test_support::real(0.65),
                         record_index: 79,
-                        value_offset: (fillet_start + 230 + 40) as u64
+                        value_offset: u64_from_index(fillet_start + 230 + 40)
                     },
                     intermediate: vec![crate::records::feature::fixed_parameters::DesignFixedFilletIntermediate {
                         radius: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: crate::test_support::real(0.4),
                             record_index: 87,
-                            value_offset: (fillet_start + 345 + 40) as u64
+                            value_offset: u64_from_index(fillet_start + 345 + 40)
                         },
                         parameter: crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: crate::test_support::real(0.2),
                             record_index: 88,
-                            value_offset: (fillet_start + 460 + 40) as u64
+                            value_offset: u64_from_index(fillet_start + 460 + 40)
                         },
                     }],
                 },
@@ -331,7 +333,7 @@ fn fixed_kind_edge_and_revolve_operations(
                         crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: crate::test_support::real(1.0),
                             record_index: 77,
-                            value_offset: (fillet_start + 40) as u64
+                            value_offset: u64_from_index(fillet_start + 40)
                         }
                     ),
                 )
@@ -384,7 +386,7 @@ fn fixed_kind_edge_and_revolve_operations(
                         crate::records::feature::fixed_parameters::DesignFixedFilletScalar {
                             value: crate::test_support::real(0.5),
                             record_index: 89,
-                            value_offset: (dynamic_scalar_at + 40) as u64
+                            value_offset: u64_from_index(dynamic_scalar_at + 40)
                         }
                     ),
                 )
@@ -450,7 +452,7 @@ fn fixed_kind_edge_and_revolve_operations(
         fixed.groups[1]
             .tangency_weight()
             .map(|weight| (weight.value.get(), weight.value_offset)),
-        Some((0.75, (second_group_at + 2 * 115 + 40) as u64))
+        Some((0.75, u64_from_index(second_group_at + 2 * 115 + 40)))
     );
 
     let chamfer_scalar_start = bytes.len();
@@ -490,7 +492,7 @@ fn fixed_kind_edge_and_revolve_operations(
             distance: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
                 record_index: 86,
-                value_offset: (chamfer_scalar_start + 40) as u64,
+                value_offset: u64_from_index(chamfer_scalar_start + 40),
             },
         })
     );
@@ -524,12 +526,12 @@ fn fixed_kind_edge_and_revolve_operations(
             first: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: cadmpeg_ir::scalar::PositiveReal::new(0.04).expect("checked fixture value"),
                 record_index: 86,
-                value_offset: (chamfer_scalar_start + 40) as u64,
+                value_offset: u64_from_index(chamfer_scalar_start + 40),
             },
             second: crate::records::feature::fixed_parameters::DesignFixedChamferDistance {
                 value: cadmpeg_ir::scalar::PositiveReal::new(0.08).expect("checked fixture value"),
                 record_index: 96,
-                value_offset: (second_chamfer_scalar_start + 40) as u64,
+                value_offset: u64_from_index(second_chamfer_scalar_start + 40),
             },
         })
     );
@@ -587,7 +589,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut revolve_scope = scope.clone();
     revolve_scope
         .try_edit(|draft| {
-            draft.byte_offset = revolve_start as u64;
+            draft.byte_offset = u64_from_index(revolve_start);
             draft.payload = crate::records::feature::scope::DesignFeatureKind::Revolve
                 .try_into()
                 .unwrap();
@@ -612,13 +614,13 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (revolve_start + 25) as u64,
+                operation_offset: u64_from_index(revolve_start + 25),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(3.5).unwrap(),
                 angle_record_index: 1_779,
-                angle_offset: (revolve_scalar_start + 40) as u64,
+                angle_offset: u64_from_index(revolve_scalar_start + 40),
                 opposite_angle: Some(crate::records::identity::Located {
                     value: 1_780,
-                    offset: (revolve_scalar_start + 116 + 40) as u64
+                    offset: u64_from_index(revolve_scalar_start + 116 + 40)
                 }),
             }
         ))
@@ -636,7 +638,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut indexed_revolve_scope = revolve_scope.clone();
     indexed_revolve_scope
         .try_edit(|draft| {
-            draft.byte_offset = indexed_revolve_start as u64;
+            draft.byte_offset = u64_from_index(indexed_revolve_start);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -690,7 +692,7 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: (indexed_revolve_start + 21) as u64,
+                operation_offset: u64_from_index(indexed_revolve_start + 21),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: 45,
@@ -717,7 +719,7 @@ fn fixed_kind_edge_and_revolve_operations(
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
     class403_scope
         .try_edit(|draft| {
-            draft.byte_offset = class403_start as u64;
+            draft.byte_offset = u64_from_index(class403_start);
             draft.frame_length = 387;
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200,
@@ -740,8 +742,8 @@ fn fixed_kind_edge_and_revolve_operations(
         let mut wire =
             crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
         wire.scope_record_index = class403_scope.record_index;
-        wire.byte_offset = class403_start as u64;
-        wire.evaluated_value_offset = (class403_start + 40) as u64;
+        wire.byte_offset = u64_from_index(class403_start);
+        wire.evaluated_value_offset = u64_from_index(class403_start + 40);
         class403_angle = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
     assert_eq!(
@@ -754,10 +756,10 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: (class403_start + 21) as u64,
+                operation_offset: u64_from_index(class403_start + 21),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: indexed_angle_record_index,
-                angle_offset: (class403_start + 40) as u64,
+                angle_offset: u64_from_index(class403_start + 40),
                 opposite_angle: None,
             }
         ))
@@ -785,7 +787,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut legacy_revolve_scope = revolve_scope.clone();
     legacy_revolve_scope
         .try_edit(|draft| {
-            draft.byte_offset = legacy_revolve_start as u64;
+            draft.byte_offset = u64_from_index(legacy_revolve_start);
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
@@ -843,7 +845,7 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (legacy_revolve_start + 25) as u64,
+                operation_offset: u64_from_index(legacy_revolve_start + 25),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
@@ -883,7 +885,7 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (legacy_revolve_start + 25) as u64,
+                operation_offset: u64_from_index(legacy_revolve_start + 25),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
@@ -921,7 +923,7 @@ fn fixed_kind_edge_and_revolve_operations(
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
-                operation_offset: (legacy_revolve_start + 25) as u64,
+                operation_offset: u64_from_index(legacy_revolve_start + 25),
                 angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,

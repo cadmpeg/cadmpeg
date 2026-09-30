@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use cadmpeg_core::decode::u64_from_index;
+
 use crate::records::dimensions::{
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationFrameDraft,
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
@@ -67,9 +69,9 @@ fn annotation() -> DesignDimensionAnnotationFrame {
             .enumerate()
             .map(|(ordinal, index)| DesignDimensionAnnotationOperand {
                 geometry_record_index: NonZeroU32::new(index),
-                geometry_reference_offset: 125 + ordinal as u64 * 15,
+                geometry_reference_offset: 125 + u64_from_index(ordinal) * 15,
                 role: 1,
-                role_offset: 135 + ordinal as u64 * 15,
+                role_offset: 135 + u64_from_index(ordinal) * 15,
             })
             .collect(),
         entity_genesis: 0,
@@ -82,7 +84,7 @@ fn annotation() -> DesignDimensionAnnotationFrame {
             .enumerate()
             .map(|(ordinal, index)| Located {
                 value: NonZeroU32::new(index).unwrap(),
-                offset: 259 + ordinal as u64 * 11,
+                offset: 259 + u64_from_index(ordinal) * 11,
             })
             .collect(),
         paired_class_tag: "259".to_owned().try_into().unwrap(),
