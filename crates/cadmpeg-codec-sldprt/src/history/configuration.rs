@@ -572,36 +572,46 @@ pub(crate) fn project_configuration_sketch_states(
             })
             .collect::<Vec<_>>();
         inherit_configuration_reference_plane_semantics(ctx, &mut features, &ir.model.features)?;
-        let reusable_spatial_sketches = ir
-            .model
-            .spatial_sketches
-            .iter()
-            .filter(|sketch| {
-                sketch.configuration.is_none()
-                    || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
-                    || scoped_lanes[0]
-                        .configuration
-                        .as_deref()
-                        .is_some_and(|configuration| {
-                            sketch.configuration.as_deref() == Some(configuration)
-                        })
-            })
-            .map(|sketch| &sketch.id)
-            .collect::<HashSet<_>>();
+        let mut reusable_spatial_sketches = ConfigurationIdentitySet::new(
+            "index SLDPRT configuration spatial sketches", "match SLDPRT configuration spatial sketch",
+        );
+        for sketch in &ir.model.spatial_sketches {
+            const OPERATION: &str = "match SLDPRT configuration spatial sketch scope";
+            let work = sketch.configuration.as_deref().map_or(0, str::len)
+                .checked_add(sketch.native_ref.as_deref().map_or(0, str::len))
+                .and_then(|bytes| bytes.checked_add(scoped_lanes[0].id.len()))
+                .and_then(|bytes| bytes.checked_add(scoped_lanes[0].configuration.as_deref().map_or(0, str::len)))
+                .and_then(|bytes| bytes.checked_add(1))
+                .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            if sketch.configuration.is_none()
+                || sketch.native_ref.as_deref() == Some(scoped_lanes[0].id.as_str())
+                || scoped_lanes[0].configuration.as_deref().is_some_and(|configuration| {
+                    sketch.configuration.as_deref() == Some(configuration)
+                })
+            {
+                reusable_spatial_sketches.insert(ctx, &sketch.id, sketch.id.as_str())?;
+            }
+        }
         let base_definitions = ConfigurationDefinitions::new(ctx, &ir.model.features)?;
         for feature in &mut features {
             if let FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch }) =
                 feature.evaluation.definition()
             {
-                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(
-                    feature
-                        .id
-                        .as_str()
-                        .replacen(":model:feature#", ":model:spatial-sketch#", 1),
-                ) else {
+                const OPERATION: &str = "retain SLDPRT configuration spatial sketch identity";
+                let id = feature.id.as_str();
+                let work = id.len().checked_mul(4).and_then(|bytes| bytes.checked_add(32))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+                let text = if let Some((prefix, suffix)) = id.split_once(":model:feature#") {
+                    ctx.format_retained(format_args!("{prefix}:model:spatial-sketch#{suffix}"), OPERATION)?
+                } else {
+                    ctx.format_retained(format_args!("{id}"), OPERATION)?
+                };
+                let Ok(expected) = cadmpeg_ir::sketches::SpatialSketchId::mint(text) else {
                     continue;
                 };
-                if sketch.is_none() && reusable_spatial_sketches.contains(&expected) {
+                if sketch.is_none() && reusable_spatial_sketches.contains(ctx, &expected, expected.as_str())? {
                     feature
                         .evaluation
                         .set_definition(FeatureDefinition::Operation(
@@ -623,12 +633,19 @@ pub(crate) fn project_configuration_sketch_states(
             else {
                 continue;
             };
-            if sketch.id().is_none() && reusable_spatial_sketches.contains(base_sketch) {
+            if sketch.id().is_none() && reusable_spatial_sketches.contains(ctx, base_sketch, base_sketch.as_str())? {
+                const OPERATION: &str = "copy SLDPRT configuration spatial sketch identity";
+                let work = base_sketch.as_str().len().checked_mul(4).and_then(|bytes| bytes.checked_add(1))
+                    .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+                ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+                let text = ctx.format_retained(format_args!("{base_sketch}"), OPERATION)?;
+                let copied = cadmpeg_ir::sketches::SpatialSketchId::mint(text)
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
                 feature
                     .evaluation
                     .set_definition(FeatureDefinition::Operation(
                         FeatureOperation::SpatialSketch {
-                            sketch: Some(base_sketch.clone()),
+                            sketch: Some(copied),
                         },
                     ));
             }
@@ -1244,14 +1261,16 @@ pub(crate) fn inherit_configuration_reference_plane_states(
     Ok(())
 }
 
-struct ConfigurationCarrierIds<'id, T> {
+struct ConfigurationIdentitySet<'id, T> {
     ids: HashSet<&'id T>,
     key_bytes: usize,
+    insert_operation: &'static str,
+    match_operation: &'static str,
 }
 
-impl<'id, T: Eq + std::hash::Hash> ConfigurationCarrierIds<'id, T> {
-    fn new() -> Self {
-        Self { ids: HashSet::new(), key_bytes: 0 }
+impl<'id, T: Eq + std::hash::Hash> ConfigurationIdentitySet<'id, T> {
+    fn new(insert_operation: &'static str, match_operation: &'static str) -> Self {
+        Self { ids: HashSet::new(), key_bytes: 0, insert_operation, match_operation }
     }
 
     fn insert(
@@ -1260,15 +1279,15 @@ impl<'id, T: Eq + std::hash::Hash> ConfigurationCarrierIds<'id, T> {
         id: &'id T,
         text: &str,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        const OPERATION: &str = "index SLDPRT configuration surface ancestry";
+        let operation = self.insert_operation;
         let bytes = self.key_bytes.checked_add(text.len())
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         let work = bytes.checked_add(1).and_then(|bytes| bytes.checked_mul(4))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
-        ctx.charge_collection_items(1, OPERATION)?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
+        ctx.charge_collection_items(1, operation)?;
         self.ids.try_reserve(1)
-            .map_err(|_| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
+            .map_err(|_| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
         self.ids.insert(id);
         self.key_bytes = bytes;
         Ok(())
@@ -1280,10 +1299,10 @@ impl<'id, T: Eq + std::hash::Hash> ConfigurationCarrierIds<'id, T> {
         id: &T,
         text: &str,
     ) -> Result<bool, cadmpeg_core::CodecError> {
-        const OPERATION: &str = "match SLDPRT configuration surface ancestry";
+        let operation = self.match_operation;
         let work = self.key_bytes.checked_add(text.len()).and_then(|bytes| bytes.checked_add(1))
-            .ok_or_else(|| ctx.refuse_codec_limit(OPERATION, u64::MAX - 1, u64::MAX))?;
-        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), OPERATION)?;
+            .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
+        ctx.charge_work(cadmpeg_core::decode::u64_from_index(work), operation)?;
         Ok(self.ids.contains(id))
     }
 }
@@ -1304,27 +1323,27 @@ fn configuration_surface_carriers(
         }
         return Ok(surfaces);
     };
-    let mut bodies = ConfigurationCarrierIds::new();
+    let mut bodies = ConfigurationIdentitySet::new("index SLDPRT configuration surface ancestry", "match SLDPRT configuration surface ancestry");
     for id in body_ids { bodies.insert(ctx, id, id.as_str())?; }
-    let mut regions = ConfigurationCarrierIds::new();
+    let mut regions = ConfigurationIdentitySet::new("index SLDPRT configuration surface ancestry", "match SLDPRT configuration surface ancestry");
     for body in &ir.model.bodies {
         if bodies.contains(ctx, &body.id, body.id.as_str())? {
             for id in &body.regions { regions.insert(ctx, id, id.as_str())?; }
         }
     }
-    let mut shells = ConfigurationCarrierIds::new();
+    let mut shells = ConfigurationIdentitySet::new("index SLDPRT configuration surface ancestry", "match SLDPRT configuration surface ancestry");
     for region in &ir.model.regions {
         if regions.contains(ctx, &region.id, region.id.as_str())? {
             for id in &region.shells { shells.insert(ctx, id, id.as_str())?; }
         }
     }
-    let mut faces = ConfigurationCarrierIds::new();
+    let mut faces = ConfigurationIdentitySet::new("index SLDPRT configuration surface ancestry", "match SLDPRT configuration surface ancestry");
     for shell in &ir.model.shells {
         if shells.contains(ctx, &shell.id, shell.id.as_str())? {
             for id in shell.faces() { faces.insert(ctx, id, id.as_str())?; }
         }
     }
-    let mut surface_ids = ConfigurationCarrierIds::new();
+    let mut surface_ids = ConfigurationIdentitySet::new("index SLDPRT configuration surface ancestry", "match SLDPRT configuration surface ancestry");
     for face in &ir.model.faces {
         if faces.contains(ctx, &face.id, face.id.as_str())? {
             surface_ids.insert(ctx, &face.surface, face.surface.as_str())?;
