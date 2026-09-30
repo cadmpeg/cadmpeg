@@ -601,7 +601,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
     let Some((center, radius)) =
-        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers)
+        super::compact_legacy_terminal_diameter_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap()
     else {
         panic!("terminal circle did not resolve");
     };
@@ -610,7 +610,7 @@ fn compact_legacy_terminal_diameter_circle_uses_embedded_coordinate_roster() {
 
     payload[circle_offset + 44..circle_offset + 46].copy_from_slice(&1u16.to_le_bytes());
     assert_eq!(
-        super::compact_legacy_terminal_diameter_circle(&payload, &entities[4], &markers),
+        super::compact_legacy_terminal_diameter_circle(&cadmpeg_test_support::service_decode_context(), &payload, &entities[4], &markers).unwrap(),
         None
     );
 }

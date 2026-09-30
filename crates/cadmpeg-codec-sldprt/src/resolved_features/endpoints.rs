@@ -429,7 +429,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
         }
     }
     if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
-        return Ok(compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers));
+        return compact_legacy_96_profile_roster_endpoint_markers(ctx, payload, curve, markers);
     }
     if legacy_wide_profile_roster_curve(payload, offset) {
         return coordinate_roster_curve_endpoint_markers(ctx, payload, curve, markers);
@@ -581,7 +581,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                 }
             }
             let roster =
-                legacy_compact_84_coordinate_roster_endpoint_markers(payload, curve, markers);
+                legacy_compact_84_coordinate_roster_endpoint_markers(ctx, payload, curve, markers)?;
             if roster.len() == 2 {
                 return Ok(roster);
             }
@@ -601,7 +601,7 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
                     return Ok(indexed);
                 }
                 if roster_preferred {
-                    return Ok(legacy_compact_direct_endpoint_markers(payload, offset, curve, markers));
+                    return legacy_compact_direct_endpoint_markers(ctx, payload, offset, curve, markers);
                 }
             }
         }
@@ -609,35 +609,35 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
             if let Some(direct) = wide_direct_line_endpoint_markers(payload, curve, markers) {
                 return copy_endpoint_markers(ctx, &direct);
             }
-            let direct = extended_compact_endpoint_markers(payload, curve, markers);
+            let direct = extended_compact_endpoint_markers(ctx, payload, curve, markers)?;
             if direct.len() == 2 {
                 return Ok(direct);
             }
             let terminal =
-                extended_terminal_84_construction_line_endpoint_markers(payload, curve, markers);
+                extended_terminal_84_construction_line_endpoint_markers(ctx, payload, curve, markers)?;
             if terminal.len() == 2 {
                 return Ok(terminal);
             }
-            let endpoints = compact_complete_marker_roster_endpoints(payload, curve, markers);
+            let endpoints = compact_complete_marker_roster_endpoints(ctx, payload, curve, markers)?;
             if endpoints.len() == 2 {
                 return Ok(endpoints);
             }
         }
         return Ok(indexed);
     }
-    let roster = legacy_compact_84_coordinate_roster_endpoint_markers(payload, curve, markers);
+    let roster = legacy_compact_84_coordinate_roster_endpoint_markers(ctx, payload, curve, markers)?;
     if roster.len() == 2 {
         return Ok(roster);
     }
-    let direct = extended_compact_endpoint_markers(payload, curve, markers);
+    let direct = extended_compact_endpoint_markers(ctx, payload, curve, markers)?;
     if direct.len() == 2 {
         return Ok(direct);
     }
-    let terminal = extended_terminal_84_construction_line_endpoint_markers(payload, curve, markers);
+    let terminal = extended_terminal_84_construction_line_endpoint_markers(ctx, payload, curve, markers)?;
     if terminal.len() == 2 {
         return Ok(terminal);
     }
-    let endpoints = compact_complete_marker_roster_endpoints(payload, curve, markers);
+    let endpoints = compact_complete_marker_roster_endpoints(ctx, payload, curve, markers)?;
     if endpoints.len() == 2 {
         return Ok(endpoints);
     }
@@ -699,12 +699,14 @@ pub(super) fn roster_curve_endpoint_markers<'a>(
 }
 
 fn extended_terminal_84_construction_line_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT extended terminal 84 construction line endpoint markers";
+    ctx.charge_work(1024, OPERATION)?;
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -723,24 +725,25 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         || payload.get(offset + 80..offset + 84) != Some(&[0xff; 4])
         || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let indices = [56, 58].map(|relative| {
         View::u16_le_at(payload, offset + relative)
             .and_then(|index| usize::from(index).checked_sub(1))
     });
     let [Some(first), Some(second)] = indices else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if first == second {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut owned = markers
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
     let endpoints = [first, second].map(|index| {
         owned.get(index).copied().filter(|marker| {
             marker.coordinates_m.is_some()
@@ -754,8 +757,8 @@ fn extended_terminal_84_construction_line_endpoint_markers<'a>(
         })
     });
     match endpoints {
-        [Some(first), Some(second)] if first.id() != second.id() => vec![first, second],
-        _ => Vec::new(),
+        [Some(first), Some(second)] if first.id() != second.id() => copy_endpoint_markers(ctx, &[first, second]),
+        _ => Ok(Vec::new()),
     }
 }
 
@@ -822,12 +825,14 @@ fn extended_geometry_locus_terminal_curve(payload: &[u8], offset: usize) -> bool
 }
 
 fn extended_compact_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT extended compact endpoint markers";
+    ctx.charge_work(1024, OPERATION)?;
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
@@ -863,15 +868,16 @@ fn extended_compact_endpoint_markers<'a>(
             && payload.get(offset + 72..offset + 102) == Some(&[0; 30])
             && !sketch_marker_prefix_at(payload, offset.saturating_add(102)))
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let ids = [56, 58].map(|relative| View::u16_le_at(payload, offset + relative).map(u32::from));
     let [Some(first), Some(second)] = ids else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if first == second {
-        return Vec::new();
+        return Ok(Vec::new());
     }
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
     let endpoint_by_object = |id| {
         let mut candidates = markers.iter().copied().filter(|marker| {
             marker.feature_ref == curve.feature_ref
@@ -890,12 +896,12 @@ fn extended_compact_endpoint_markers<'a>(
         candidates.next().is_none().then_some(candidate)
     };
     match (endpoint_by_object(first), endpoint_by_object(second)) {
-        (Some(first), Some(second)) if first.id() != second.id() => vec![first, second],
+        (Some(first), Some(second)) if first.id() != second.id() => copy_endpoint_markers(ctx, &[first, second]),
         _ => {
             if compact_indexed_curve_record_end(payload, offset)
                 == Some(CompactIndexedCurveRecordEnd::Terminal116)
             {
-                let mut owned = markers
+                let mut owned = collect_endpoint_values(ctx, markers
                     .iter()
                     .copied()
                     .filter(|marker| {
@@ -906,25 +912,25 @@ fn extended_compact_endpoint_markers<'a>(
                                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                             )
                     })
-                    .collect::<Vec<_>>();
-                owned.sort_unstable_by_key(|marker| marker.offset());
+                    , OPERATION)?;
+                sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
                 let endpoint = |id: u32| {
                     let index = usize::try_from(id.checked_sub(1)?).ok()?;
                     owned.get(index).copied()
                 };
                 if let (Some(first), Some(second)) = (endpoint(first), endpoint(second)) {
                     if first.id() != second.id() {
-                        return vec![first, second];
+                        return copy_endpoint_markers(ctx, &[first, second]);
                     }
                 }
             }
             if marker_profile_curve_role(payload, offset) == Some(1) {
-                let mut owned = markers
+                let mut owned = collect_endpoint_values(ctx, markers
                     .iter()
                     .copied()
                     .filter(|marker| marker.feature_ref == curve.feature_ref)
-                    .collect::<Vec<_>>();
-                owned.sort_unstable_by_key(|marker| marker.offset());
+                    , OPERATION)?;
+                sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
                 let endpoint_by_roster_index = |id| {
                     owned
                         .get(usize::try_from(id).ok()?)
@@ -941,38 +947,41 @@ fn extended_compact_endpoint_markers<'a>(
                     endpoint_by_roster_index(first),
                     endpoint_by_roster_index(second),
                 ) {
-                    (Some(first), Some(second)) if first.id() != second.id() => vec![first, second],
-                    _ => Vec::new(),
+                    (Some(first), Some(second)) if first.id() != second.id() => copy_endpoint_markers(ctx, &[first, second]),
+                    _ => Ok(Vec::new()),
                 }
             } else {
-                Vec::new()
+                Ok(Vec::new())
             }
         }
     }
 }
 
 fn legacy_compact_direct_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     offset: usize,
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy compact direct endpoint markers";
+    ctx.charge_work(1024, OPERATION)?;
     if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER)
         || marker_native_code(payload, offset) != Some(2)
         || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
         || compact_indexed_curve_endpoint_indices(payload, offset).is_none()
         || !sketch_marker_prefix_at(payload, offset.saturating_add(84))
     {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let endpoint = |relative: usize| View::u16_le_at(payload, offset + relative).map(u32::from);
     let Some(indices) = endpoint(56).zip(endpoint(58)) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if indices.0 == 0 || indices.0 == indices.1 {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let endpoints = [indices.0, indices.1]
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let endpoints = collect_endpoint_values(ctx, [indices.0, indices.1]
         .into_iter()
         .filter_map(|index| {
             let mut candidates = markers.iter().copied().filter(|marker| {
@@ -987,11 +996,11 @@ fn legacy_compact_direct_endpoint_markers<'a>(
             let candidate = candidates.next()?;
             candidates.next().is_none().then_some(candidate)
         })
-        .collect::<Vec<_>>();
+        , OPERATION)?;
     if endpoints.len() == 2 {
-        endpoints
+        Ok(endpoints)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
@@ -1139,7 +1148,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         return Ok(Vec::new());
     };
     if compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
-        return Ok(compact_legacy_96_profile_roster_endpoint_markers(payload, curve, markers));
+        return compact_legacy_96_profile_roster_endpoint_markers(ctx, payload, curve, markers);
     }
     let current_complete_roster =
         current_referenced_compact_curve_uses_marker_roster(payload, offset);
@@ -1154,7 +1163,7 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
         explicit_endpoint_offset.or_else(|| coordinate_roster_endpoint_offset(payload, offset));
     if endpoint_offset.is_none() && compact_legacy_coordinate_roster_curve_record(payload, offset) {
         if let Some(endpoints) =
-            compact_legacy_embedded_coordinate_roster_endpoint_markers(payload, curve, markers, 42)
+            compact_legacy_embedded_coordinate_roster_endpoint_markers(ctx, payload, curve, markers, 42)?
         {
             return Ok(endpoints);
         }
@@ -1162,12 +1171,12 @@ pub(super) fn coordinate_roster_curve_endpoint_markers_at<'a>(
     let Some(endpoint_offset) = endpoint_offset else {
         return Ok(Vec::new());
     };
-    if let Some(endpoints) = compact_legacy_embedded_coordinate_roster_endpoint_markers(
+    if let Some(endpoints) = compact_legacy_embedded_coordinate_roster_endpoint_markers(ctx,
         payload,
         curve,
         markers,
         endpoint_offset,
-    ) {
+    )? {
         return Ok(endpoints);
     }
     let one_based = extended_state_one_84_profile_line_uses_point_roster(payload, offset)
@@ -1289,11 +1298,14 @@ fn marker_pair_coordinates_match(
 }
 
 fn compact_complete_marker_roster_pair<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
     one_based: bool,
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact complete marker roster pair";
+    ctx.charge_work(1024, OPERATION)?;
+    let raw = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
         curve.kind(),
@@ -1314,12 +1326,17 @@ fn compact_complete_marker_roster_pair<'a>(
     if raw[0] == raw[1] {
         return None;
     }
-    let mut owned = markers
+    Some(raw)
+    })();
+    let Some(raw) = raw else { return Ok(None); };
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+    Ok((|| {
     let index = |raw: u16| {
         let index = usize::from(raw);
         if one_based {
@@ -1329,6 +1346,7 @@ fn compact_complete_marker_roster_pair<'a>(
         }
     };
     Some([*owned.get(index(raw[0])?)?, *owned.get(index(raw[1])?)?])
+    })())
 }
 
 fn compact_terminal_84_record(payload: &[u8], offset: usize) -> bool {
@@ -1340,13 +1358,17 @@ fn compact_terminal_84_record(payload: &[u8], offset: usize) -> bool {
 }
 
 fn compact_complete_marker_roster_endpoints<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
-    let candidates = unique_marker_pair([true, false].map(|one_based| {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT complete endpoint roster";
+    ctx.charge_work(1024, OPERATION)?;
+    for marker in markers { charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?; }
+    let pairs = [compact_complete_marker_roster_pair(ctx, payload, curve, markers, true)?, compact_complete_marker_roster_pair(ctx, payload, curve, markers, false)?];
+    let candidates = unique_marker_pair(pairs.map(|pair| {
         let [first, second] =
-            compact_complete_marker_roster_pair(payload, curve, markers, one_based)?;
+            pair?;
         [first, second]
             .iter()
             .all(|marker| {
@@ -1362,9 +1384,9 @@ fn compact_complete_marker_roster_endpoints<'a>(
             .then_some([first, second])
     }));
     let Some(endpoints) = candidates else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    endpoints.to_vec()
+    copy_endpoint_markers(ctx, &endpoints)
 }
 
 fn legacy_relation_continuation_body(payload: &[u8], offset: usize) -> bool {
@@ -1424,10 +1446,13 @@ fn legacy_relation_continuation_body(payload: &[u8], offset: usize) -> bool {
 }
 
 fn legacy_relation_continuation_marker_pair<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<[&'a SketchInputEntity; 2]> {
+) -> Result<Option<[&'a SketchInputEntity; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy relation continuation marker pair";
+    ctx.charge_work(1024, OPERATION)?;
+    let raw = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !matches!(
         curve.kind(),
@@ -1443,37 +1468,46 @@ fn legacy_relation_continuation_marker_pair<'a>(
     if raw[0] == raw[1] {
         return None;
     }
-    let mut owned = markers
+    Some(raw)
+    })();
+    let Some(raw) = raw else { return Ok(None); };
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref)
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+    Ok((|| {
     Some([
         *owned.get(usize::from(raw[0]))?,
         *owned.get(usize::from(raw[1]))?,
     ])
+    })())
 }
 
 fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT legacy compact 84 coordinate roster endpoint markers";
+    ctx.charge_work(1024, OPERATION)?;
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     let Some(indices) = legacy_compact_84_coordinate_roster_endpoint_indices(payload, offset)
     else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    let mut owned = markers
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
-    let endpoints = indices
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+    let endpoints = collect_endpoint_values(ctx, indices
         .into_iter()
         .filter_map(|index| owned.get(index).copied())
         .filter(|marker| {
@@ -1485,26 +1519,29 @@ fn legacy_compact_84_coordinate_roster_endpoint_markers<'a>(
                     | SketchInputKind::Arc
             )
         })
-        .collect::<Vec<_>>();
+        , OPERATION)?;
     if endpoints.len() == 2 && endpoints[0].id() != endpoints[1].id() {
-        endpoints
+        Ok(endpoints)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
 fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Vec<&'a SketchInputEntity> {
+) -> Result<Vec<&'a SketchInputEntity>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT compact legacy 96 profile roster endpoint markers";
+    ctx.charge_work(1024, OPERATION)?;
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
     if !compact_legacy_96_profile_roster_curve_uses_complete_roster(payload, offset) {
-        return Vec::new();
+        return Ok(Vec::new());
     }
-    let mut owned = markers
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| {
@@ -1518,50 +1555,60 @@ fn compact_legacy_96_profile_roster_endpoint_markers<'a>(
                         | SketchInputKind::Arc
                 )
         })
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
-    let endpoints = [
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+    let endpoints = collect_endpoint_values(ctx, [
         View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_FIRST),
         View::u16_le_at(payload, offset + legacy_96_roster::ENDPOINT_SECOND),
     ]
     .into_iter()
     .filter_map(|index| owned.get(usize::from(index?)).copied())
-    .collect::<Vec<_>>();
+    , OPERATION)?;
     if endpoints.len() == 2 && endpoints[0].id() != endpoints[1].id() {
-        endpoints
+        Ok(endpoints)
     } else {
-        Vec::new()
+        Ok(Vec::new())
     }
 }
 
 fn compact_legacy_embedded_coordinate_roster_endpoint_markers<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
     endpoint_offset: usize,
-) -> Option<Vec<&'a SketchInputEntity>> {
+) -> Result<Option<Vec<&'a SketchInputEntity>>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT embedded endpoint ordinals";
+    ctx.charge_work(1024, OPERATION)?;
+    let offset = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !compact_legacy_coordinate_roster_curve_record(payload, offset) || endpoint_offset != 42 {
         return None;
     }
-    let roster = compact_legacy_embedded_coordinate_roster(payload, curve, markers)?;
+    Some(offset)
+    })();
+    let Some(offset) = offset else { return Ok(None); };
+    let Some(roster) = compact_legacy_embedded_coordinate_roster(ctx, payload, curve, markers)? else { return Ok(None); };
+    admit_endpoint_marker_matching(ctx, curve, markers, OPERATION)?;
     let endpoint = |relative| {
         let index = usize::from(View::u16_le_at(payload, offset + relative)?);
         roster.get(index).copied()
     };
     let [first, second] = [endpoint(endpoint_offset), endpoint(endpoint_offset + 2)];
     match (first, second) {
-        (Some(first), Some(second)) if first.id() != second.id() => Some(vec![first, second]),
-        _ => None,
+        (Some(first), Some(second)) if first.id() != second.id() => Ok(Some(copy_endpoint_markers(ctx, &[first, second])?)),
+        _ => Ok(None),
     }
 }
 
 fn compact_legacy_embedded_coordinate_roster<'a>(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     owner: &SketchInputEntity,
     markers: &[&'a SketchInputEntity],
-) -> Option<Vec<&'a SketchInputEntity>> {
-    let mut owned = markers
+) -> Result<Option<Vec<&'a SketchInputEntity>>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT embedded coordinate roster";
+    ctx.charge_work(1024, OPERATION)?;
+    admit_endpoint_marker_matching(ctx, owner, markers, OPERATION)?;
+    let mut owned = collect_endpoint_values(ctx, markers
         .iter()
         .copied()
         .filter(|marker| {
@@ -1575,17 +1622,25 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
                         | SketchInputKind::Arc
                 )
         })
-        .collect::<Vec<_>>();
-    owned.sort_unstable_by_key(|marker| marker.offset());
+        , OPERATION)?;
+    sort_endpoint_markers(ctx, &mut owned, OPERATION)?;
+    let range = (|| {
     let first = usize::try_from(owned.first()?.offset()).ok()?;
     let owner_offset = usize::try_from(owner.offset()).ok()?;
     if owner_offset < first {
         return None;
     }
+    Some((first, owner_offset))
+    })();
+    let Some((first, owner_offset)) = range else { return Ok(None); };
     let mut raw = Vec::new();
     let mut has_code_two_point = false;
     let mut has_embedded_geometry = false;
-    for candidate in first..=owner_offset.saturating_sub(LEGACY_SKETCH_MARKER.len()) {
+    let last = owner_offset.checked_sub(LEGACY_SKETCH_MARKER.len()).unwrap_or(0);
+    if let Some(span) = last.checked_sub(first) {
+        charge_endpoint_work(ctx, span, 1024, OPERATION)?;
+    }
+    for candidate in first..=last {
         let Some(coordinates) = compact_legacy_coordinate_roster_coordinates(payload, candidate)
         else {
             continue;
@@ -1594,25 +1649,24 @@ fn compact_legacy_embedded_coordinate_roster<'a>(
             compact_legacy_code_two_profile_point_coordinates(payload, candidate).is_some();
         has_embedded_geometry |=
             compact_legacy_embedded_geometry_coordinates(payload, candidate).is_some();
+        if raw.len() == raw.capacity() { charge_endpoint_work(ctx, raw.len(), 32, OPERATION)?; }
+        ctx.reserve_collection_vec(&mut raw, 1, OPERATION)?;
         raw.push((candidate, coordinates));
     }
-    if !has_code_two_point || !has_embedded_geometry {
-        return None;
+    if !has_code_two_point || !has_embedded_geometry { return Ok(None); }
+    let mut roster = Vec::new();
+    for (_, coordinates) in raw {
+        charge_endpoint_work(ctx, owned.len(), 128, OPERATION)?;
+        let mut matches = owned.iter().copied().filter(|marker| marker.coordinates_m.is_some_and(|candidate| {
+            same_dimension_length(candidate[0], coordinates[0]) && same_dimension_length(candidate[1], coordinates[1])
+        }));
+        let Some(marker) = matches.next() else { return Ok(None); };
+        if matches.next().is_some() { return Ok(None); }
+        if roster.len() == roster.capacity() { charge_endpoint_work(ctx, roster.len(), 8, OPERATION)?; }
+        ctx.reserve_collection_vec(&mut roster, 1, OPERATION)?;
+        roster.push(marker);
     }
-    let roster = raw
-        .into_iter()
-        .map(|(_, coordinates)| {
-            let mut matches = owned.iter().copied().filter(|marker| {
-                marker.coordinates_m.is_some_and(|candidate| {
-                    same_dimension_length(candidate[0], coordinates[0])
-                        && same_dimension_length(candidate[1], coordinates[1])
-                })
-            });
-            let marker = matches.next()?;
-            matches.next().is_none().then_some(marker)
-        })
-        .collect::<Option<Vec<_>>>()?;
-    Some(roster)
+    Ok(Some(roster))
 }
 
 fn compact_legacy_coordinate_roster_curve_record(payload: &[u8], offset: usize) -> bool {
@@ -1981,31 +2035,27 @@ fn point_distance_assignment_exists(
 }
 
 pub(super) fn implicit_coordinate_roster_curve_endpoints(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
     inferred: &HashMap<u32, [f64; 2]>,
-) -> Option<[[f64; 2]; 2]> {
+) -> Result<Option<[[f64; 2]; 2]>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT inferred roster endpoints";
+    ctx.charge_work(1024, OPERATION)?;
+    let offset = (|| {
     let offset = usize::try_from(curve.offset()).ok()?;
     if !coordinate_roster_curve_layout(payload, offset) {
         return None;
     }
-    let mut coordinates = markers
-        .iter()
-        .copied()
-        .filter(|marker| {
-            marker.feature_ref == curve.feature_ref
-                && marker.coordinates_m.is_some()
-                && matches!(
-                    marker.kind(),
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                )
-        })
-        .collect::<Vec<_>>();
-    coordinates.sort_unstable_by_key(|marker| marker.offset());
+    Some(offset)
+    })();
+    let Some(offset) = offset else { return Ok(None); };
+    let mut coordinates = collect_endpoint_markers(ctx, markers.iter().copied(), curve, |marker| {
+        marker.coordinates_m.is_some() && matches!(marker.kind(), SketchInputKind::Point | SketchInputKind::ConstrainedPoint | SketchInputKind::LineOrCircle | SketchInputKind::Arc)
+    }, OPERATION)?;
+    sort_endpoint_markers(ctx, &mut coordinates, OPERATION)?;
+    ctx.charge_work(128, OPERATION)?;
+    Ok((|| {
     let endpoint_offset = coordinate_roster_endpoint_offset(payload, offset)?;
     let endpoint_index = |relative| Some(u32::from(View::u16_le_at(payload, offset + relative)?));
     let indices = [
@@ -2029,6 +2079,7 @@ pub(super) fn implicit_coordinate_roster_curve_endpoints(
         }
     });
     used_inferred.then_some([endpoints[0]?, endpoints[1]?])
+    })())
 }
 
 pub(super) fn implicit_profile_chain_closure_endpoints(
@@ -3240,10 +3291,13 @@ pub(super) fn compact_profile_full_circle(
 }
 
 pub(super) fn compact_legacy_terminal_diameter_circle(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     circle: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> Option<([f64; 2], f64)> {
+) -> Result<Option<([f64; 2], f64)>, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT terminal diameter circle";
+    ctx.charge_work(1024, OPERATION)?;
+    let radial_index = (|| {
     let offset = usize::try_from(circle.offset()).ok()?;
     if circle.kind() != SketchInputKind::LineOrCircle
         || !compact_legacy_marker_body(payload, offset)
@@ -3280,11 +3334,16 @@ pub(super) fn compact_legacy_terminal_diameter_circle(
         payload,
         offset + diam_circ::RADIAL_ORDINAL,
     )?);
-    let roster = compact_legacy_embedded_coordinate_roster(payload, circle, markers)?;
+    Some(radial_index)
+    })();
+    let Some(radial_index) = radial_index else { return Ok(None); };
+    let Some(roster) = compact_legacy_embedded_coordinate_roster(ctx, payload, circle, markers)? else { return Ok(None); };
+    Ok((|| {
     let center = roster.first()?.coordinates_m?.get();
     let radial = roster.get(radial_index)?.coordinates_m?.get();
     let radius = (radial[0] - center[0]).hypot(radial[1] - center[1]);
     (radius.is_finite() && radius > 0.0).then_some((center, radius))
+    })())
 }
 
 pub(super) fn compact_legacy_profile_full_circle(
@@ -3569,6 +3628,16 @@ fn charge_endpoint_work(ctx: &DecodeContext<'_>, len: usize, factor: u64, operat
     let work = u64_from_index(len).checked_add(1).and_then(|work| work.checked_mul(factor))
         .ok_or_else(|| ctx.refuse_codec_limit(operation, u64::MAX - 1, u64::MAX))?;
     ctx.charge_work(work, operation)
+}
+
+fn admit_endpoint_marker_matching(ctx: &DecodeContext<'_>, owner: &SketchInputEntity, markers: &[&SketchInputEntity], operation: &'static str) -> Result<(), CodecError> {
+    for marker in markers {
+        charge_endpoint_work(ctx, marker.feature_ref.as_deref().map_or(0, str::len), 8, operation)?;
+        charge_endpoint_work(ctx, owner.feature_ref.as_deref().map_or(0, str::len), 8, operation)?;
+        charge_endpoint_work(ctx, marker.id().len(), 8, operation)?;
+        ctx.charge_work(256, operation)?;
+    }
+    Ok(())
 }
 
 fn collect_endpoint_values<T>(ctx: &DecodeContext<'_>, values: impl IntoIterator<Item = T>, operation: &'static str) -> Result<Vec<T>, CodecError> {
@@ -6208,76 +6277,70 @@ pub(super) fn auxiliary_profile_record(payload: &[u8], offset: usize) -> bool {
 /// Profile curves use the same feature-local namespace, but both endpoint
 /// identifiers must resolve to distinct coordinate-bearing point markers.
 pub(super) fn relation_reference_curve_record(
-    payload: &[u8],
+    ctx: &DecodeContext<'_>, payload: &[u8],
     curve: &SketchInputEntity,
     markers: &[&SketchInputEntity],
-) -> bool {
+) -> Result<bool, CodecError> {
+    const OPERATION: &str = "resolve SLDPRT relation reference carrier";
+    ctx.charge_work(1024, OPERATION)?;
     if !matches!(
         curve.kind(),
         SketchInputKind::LineOrCircle | SketchInputKind::Arc
     ) {
-        return false;
+        return Ok(false);
     }
     let Some(offset) = usize::try_from(curve.offset()).ok() else {
-        return false;
+        return Ok(false);
     };
     if legacy_relation_continuation_body(payload, offset) {
-        return legacy_relation_continuation_marker_pair(payload, curve, markers).is_some_and(
+        return Ok(legacy_relation_continuation_marker_pair(ctx, payload, curve, markers)?.is_some_and(
             |[first, second]| {
                 matches!(first.kind(), SketchInputKind::Relation(_))
                     || matches!(second.kind(), SketchInputKind::Relation(_))
             },
-        );
+        ));
     }
     if let Some([first_id, second_id]) = compact_indexed_curve_endpoint_indices(payload, offset) {
         if first_id != second_id {
+            charge_endpoint_work(ctx, markers.len(), 128, OPERATION)?;
             let resolve = |object_index| {
-                let candidates = markers
-                    .iter()
-                    .copied()
-                    .filter(|marker| marker.object_index() == Some(object_index))
-                    .collect::<Vec<_>>();
-                let relations = candidates
-                    .iter()
-                    .copied()
-                    .filter(|marker| matches!(marker.kind(), SketchInputKind::Relation(_)))
-                    .collect::<Vec<_>>();
-                if relations.len() == 1 {
-                    return relations.into_iter().next();
+                let mut only_candidate = None;
+                let mut many_candidates = false;
+                let mut only_relation = None;
+                let mut many_relations = false;
+                let mut only_point = None;
+                let mut many_points = false;
+                for marker in markers.iter().copied().filter(|marker| marker.object_index() == Some(object_index)) {
+                    if only_candidate.is_some() { many_candidates = true; } else { only_candidate = Some(marker); }
+                    match marker.kind() {
+                        SketchInputKind::Relation(_) => { if only_relation.is_some() { many_relations = true; } else { only_relation = Some(marker); } },
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint => { if only_point.is_some() { many_points = true; } else { only_point = Some(marker); } },
+                        _ => {},
+                    }
                 }
-                let points = candidates
-                    .iter()
-                    .copied()
-                    .filter(|marker| {
-                        matches!(
-                            marker.kind(),
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                if points.len() == 1 {
-                    return points.into_iter().next();
-                }
-                (candidates.len() == 1).then(|| candidates[0])
+                if !many_relations && only_relation.is_some() { only_relation }
+                else if !many_points && only_point.is_some() { only_point }
+                else if !many_candidates { only_candidate } else { None }
             };
             if let (Some(first), Some(second)) = (resolve(first_id), resolve(second_id)) {
                 if matches!(first.kind(), SketchInputKind::Relation(_))
                     || matches!(second.kind(), SketchInputKind::Relation(_))
                 {
-                    return true;
+                    return Ok(true);
                 }
             }
         }
     }
-    let candidates =
-        unique_marker_pair([false, true].map(|one_based| {
-            compact_complete_marker_roster_pair(payload, curve, markers, one_based)
-        }));
+    for marker in markers { charge_endpoint_work(ctx, marker.id().len(), 8, OPERATION)?; }
+    let candidates = unique_marker_pair([
+        compact_complete_marker_roster_pair(ctx, payload, curve, markers, false)?,
+        compact_complete_marker_roster_pair(ctx, payload, curve, markers, true)?,
+    ]);
     let Some([first, second]) = candidates else {
-        return false;
+        return Ok(false);
     };
-    matches!(first.kind(), SketchInputKind::Relation(_))
-        || matches!(second.kind(), SketchInputKind::Relation(_))
+    Ok(matches!(first.kind(), SketchInputKind::Relation(_))
+        || matches!(second.kind(), SketchInputKind::Relation(_)))
 }
 
 fn legacy_compact_selected_axis_body(payload: &[u8], offset: usize) -> bool {

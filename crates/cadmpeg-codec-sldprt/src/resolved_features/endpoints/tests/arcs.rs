@@ -1754,7 +1754,7 @@ fn compact_legacy_bounded_curve_can_use_direct_point_ids() {
     ];
     let markers = entities.iter().collect::<Vec<_>>();
 
-    let endpoints = legacy_compact_direct_endpoint_markers(&payload, 0, &entities[0], &markers);
+    let endpoints = legacy_compact_direct_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, 0, &entities[0], &markers).unwrap();
     assert_eq!(
         endpoints
             .iter()

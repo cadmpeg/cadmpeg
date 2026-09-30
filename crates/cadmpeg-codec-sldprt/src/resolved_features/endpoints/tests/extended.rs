@@ -703,7 +703,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -713,7 +713,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[27..29].copy_from_slice(&2u16.to_le_bytes());
     payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -729,7 +729,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
         SketchInputKind::Point,
     );
     let ambiguous = [&entities[0], &entities[1], &entities[2], &duplicate];
-    assert!(extended_compact_endpoint_markers(&payload, &entities[0], &ambiguous).is_empty());
+    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &ambiguous).unwrap().is_empty());
 
     payload.resize(96 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
     payload[60..64].copy_from_slice(&1u32.to_le_bytes());
@@ -740,14 +740,14 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[92..96].copy_from_slice(&1u32.to_le_bytes());
     payload[96..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["explicit", "implicit-zero"]
     );
     payload[82..84].fill(0);
-    assert!(extended_compact_endpoint_markers(&payload, &entities[0], &markers).is_empty());
+    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap().is_empty());
 
     payload.resize(102, 0);
     payload[56..58].copy_from_slice(&14u16.to_le_bytes());
@@ -756,7 +756,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[72..102].fill(0);
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -764,7 +764,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     );
     payload[17..21].copy_from_slice(&0u32.to_le_bytes());
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -779,7 +779,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[58..60].copy_from_slice(&3u16.to_le_bytes());
     let markers = roster_indexed.iter().collect::<Vec<_>>();
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &roster_indexed[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -793,7 +793,7 @@ fn extended_compact_curve_resolves_zero_based_point_object_ids() {
     payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
     payload[72..116].fill(0);
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &roster_indexed[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &roster_indexed[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -849,7 +849,7 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     let markers = entities.iter().collect::<Vec<_>>();
 
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
@@ -857,14 +857,14 @@ fn extended_geometry_locus_terminal_curve_resolves_point_object_ids() {
     );
     payload[29..31].copy_from_slice(&[0; 2]);
     assert_eq!(
-        extended_compact_endpoint_markers(&payload, &entities[0], &markers)
+        extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap()
             .iter()
             .map(|marker| marker.id())
             .collect::<Vec<_>>(),
         ["first", "second"]
     );
     payload[29..31].copy_from_slice(&2u16.to_le_bytes());
-    assert!(extended_compact_endpoint_markers(&payload, &entities[0], &markers).is_empty());
+    assert!(extended_compact_endpoint_markers(&cadmpeg_test_support::service_decode_context(), &payload, &entities[0], &markers).unwrap().is_empty());
 }
 
 #[test]
